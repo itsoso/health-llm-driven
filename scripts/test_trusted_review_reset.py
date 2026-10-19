@@ -1194,3 +1194,134 @@ print('ISOLATED_FIXTURE_OK')
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoricalReviewMaintenanceTests(unittest.TestCase):
+    def test_historical_target_requires_stable_successful_ci(self):
+        maintenance = load('trusted_review_maintenance')
+        gate = SimpleNamespace(
+            verify_release=lambda sha, workflow, **kw: {'ci_run_id': 1},
+            _get_json=lambda url: None,
+            _latest=lambda get, sha: {'sha': sha},
+            _receipt=lambda run, sha, workflow: {'ci_run_id': 2, 'sha': sha},
+            _read=lambda get, path: {'sha': SHA},
+            _main_sha=lambda get: 'c' * 40,
+        )
+        result = maintenance.attest_maintenance(gate, 'c' * 40, SHA)
+        self.assertEqual(result['target']['sha'], SHA)
+
+
+class HistoricalMaintenanceFlowTests(ReviewResetTests):
+    """Offline filesystem/locking checks for explicit historical maintenance."""
+    def setUp(self):
+        super().setUp()
+        self.maintenance = load('trusted_review_maintenance')
+        self.patch(self.maintenance, 'STATE', self.state)
+        self.env_path = self.production / '.env'
+        put(self.env_path, self.production_env.encode(), 0o640)
+        self.patch(self.maintenance, 'PRODUCTION_ENV', self.env_path)
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, None))
+        self.ci = {'operator': {'ci_run_id': 1}, 'target': {'ci_run_id': 2}}
+        def attest(*args):
+            self.events.append('gate')
+            if self.gate_error:
+                raise self.gate_error
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', attest)
+
+    def maintenance_run(self):
+        return self.maintenance.run_maintenance('c' * 40, SHA, OP)
+
+    def missing_env(self):
+        (self.workspace / 'deployment.env').unlink()
+
+    def test_atomic_release_missing_env_is_prepared_then_reset_under_original_lock(self):
+        self.missing_env()
+        inode = self.lock.stat().st_ino
+        result = self.maintenance_run()
+        self.assertEqual(result['state'], 'SUCCEEDED')
+        self.assertEqual(self.lock.stat().st_ino, inode)
+        self.assertEqual(self.events.count('execute'), 1)
+        self.assertEqual((self.workspace / 'deployment.env').stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.workspace / 'deployment.env').read_bytes(), b'SECRET=offline-fixture\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n')
+        self.assertEqual(self.env_path.read_bytes(), self.production_env.encode())
+        proof = json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())
+        self.assertEqual(proof, result)
+        self.assertNotIn('offline-fixture', json.dumps(result))
+
+    def test_existing_env_and_consumed_preparation_are_not_overwritten(self):
+        before = (self.workspace / 'deployment.env').read_bytes()
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertEqual(before, (self.workspace / 'deployment.env').read_bytes())
+        self.missing_env()
+        self.maintenance_run()
+        before = (self.workspace / 'deployment.env').read_bytes()
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertEqual(self.events.count('execute'), 1)
+        self.assertEqual(before, (self.workspace / 'deployment.env').read_bytes())
+
+    def test_missing_env_and_failed_ci_never_read_credentials_or_create_intent(self):
+        self.missing_env()
+        self.gate_error = RuntimeError('offline gate failure')
+        self.patch(self.server, 'read_production_env', lambda: self.fail('credentials before CI'))
+        with self.assertRaises(RuntimeError):
+            self.maintenance_run()
+        self.assertFalse((self.workspace / 'review-environment-preparation').exists())
+
+    def test_failed_reset_preserves_unknown_and_blocks_second_operation(self):
+        self.missing_env()
+        self.command_error = subprocess.TimeoutExpired('offline', 1)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.maintenance_run()
+        self.assertEqual(json.loads((self.operation / 'completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
+        proof = json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())
+        self.assertEqual(proof['state'], 'NEEDS_OPERATOR')
+        with self.assertRaises(self.reset.ResetError):
+            self.maintenance.run_maintenance('c' * 40, SHA, OTHER)
+        self.assertEqual(self.events.count('execute'), 1)
+
+    def test_configuration_drift_after_intent_leaves_failed_evidence_without_reset(self):
+        self.missing_env()
+        original = self.maintenance.production_identity
+        calls = [0]
+        def drift(server):
+            calls[0] += 1
+            identity, digest, raw = original(server)
+            return identity, ('0' * 64 if calls[0] > 1 else digest), raw
+        self.patch(self.maintenance, 'production_identity', drift)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertNotIn('execute', self.events)
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+        self.assertEqual(json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
+
+    def test_changed_target_and_busy_lock_do_not_prepare_env(self):
+        self.missing_env()
+        self.head = 'e' * 40
+        with self.assertRaises(self.reset.ResetError):
+            self.maintenance_run()
+        self.assertFalse((self.workspace / 'review-environment-preparation').exists())
+        self.head = SHA
+        with self.lock.open('r+') as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                self.maintenance_run()
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+
+    def test_both_sha_values_are_exact_and_distinct(self):
+        for operator, target, operation in ((SHA, SHA, OP), ('c' * 39, SHA, OP), ('c' * 40, SHA, '../x')):
+            with self.subTest(operator=operator), self.assertRaises(self.maintenance.MaintenanceError):
+                self.maintenance.run_maintenance(operator, target, operation)
+
+    def test_execution_inventory_detects_changed_or_extra_executable(self):
+        before = self.maintenance.execution_inventory(self.source)
+        put(self.source / 'scripts/trusted_review_maintenance.py', b'new reviewed operator')
+        self.assertEqual(before, self.maintenance.execution_inventory(self.source))
+        put(self.source / 'scripts/unexpected.py', b'unreviewed')
+        self.assertNotEqual(before, self.maintenance.execution_inventory(self.source))
+        (self.source / 'scripts/unexpected.py').unlink()
+        (self.source / 'scripts/evil').symlink_to(self.env_path)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance.execution_inventory(self.source)

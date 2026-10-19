@@ -866,6 +866,20 @@ build 锁（后端-only 已证明不存在时继续复证缺失）。第一阶�
 
 #### 审核账号维护入口
 
+原子发布成功但没有 legacy `deployment.env` 时，旧 reset 不可重试或手工补文件。
+专用 `scripts/trusted_review_maintenance.py --operator-sha <current-main> --target-sha <deployed-sha> --operation-id <32hex>`
+区分当前维护工具与固定生产版本。仅用户明确批准审核演示重置后可用，须独立安全审查和完整 CI。
+两者从 canonical staging 加载；当前工具要求精确 main 全绿，目标要求历史完整 CI 稳定成功、
+生产 SUCCEEDED/runtime COMMITTED、原 installed policy 和执行器匹配。全 scripts/ 与 deploy.sh
+执行闭包字节和权限相同，仅新维护入口及其测试例外；不执行 operator 的业务代码。
+在原 launcher 锁内先完成目标证明，再以独占 0600 创建派生环境，前后核对生产配置身份及摘要。
+独立 `review-environment-preparation` 意图绑定两个 SHA、原配置身份、CI 及 operation ID；
+已存在配置或准备意图均拒绝重试，不覆盖、不备份、不轮换。准备后再次通过原 workspace 校验，
+由固定 target 的 `deploy.sh -R` 和原 lease 内 seeder 执行；原 reset 回执格式保持不变。
+部分失败保留 NEEDS_OPERATOR 或不完整意图，需独立调查，不以新 ID 重发。
+此入口不授予 backend/OTA 发布权限，不放宽普通 reset、release gate 或轮换规则。
+
+
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
 以系统 Python `-I -S -B` 执行 `scripts/trusted_review_reset.py --sha <sha> --operation-id <32hex>`。
 它不是 cloud SSH RPC，不接受账号、密码、命令或路径参数，不用于业务部署。
