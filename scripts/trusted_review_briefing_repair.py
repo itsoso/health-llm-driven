@@ -68,6 +68,27 @@ def context(sha, *, verify_ci=True, token_stdin=False):
 
 def acknowledgement_evidence(b, readers, ack, sha):
     record = STATE / 'review-maintenance-acknowledgements' / TARGET
+    if os.path.lexists(STATE / 'review-maintenance-ack-reconciliations' / TARGET):
+        failed_inventory, old_evidence = ack.failed_ack_evidence(b)
+        record = STATE / 'review-maintenance-ack-reconciliations' / TARGET
+        inventory = b._inventory(record, {'intent.json', 'completed.json'})
+        intent, complete = (b._read_json(record / name) for name in ('intent.json', 'completed.json'))
+        evidence = intent.get('evidence', {})
+        expected = {**old_evidence, 'closing_sha': sha, 'failed_ack': failed_inventory}
+        if (evidence != expected or intent.get('accept_unknown_review_writes') is not True
+                or intent.get('original_outcome') != 'UNKNOWN'
+                or intent.get('evidence_sha256') != ack.digest(expected)
+                or complete.get('evidence_sha256') != ack.digest(expected)
+                or complete.get('state') != ack.RECONCILED
+                or complete.get('original_outcome') != 'UNKNOWN'
+                or complete.get('authority') != {'reset': False, 'retry': False, 'rotation': False, 'deployment': False}
+                or complete.get('reset_authorized') is not False
+                or complete.get('release_unblocked') is not False
+                or complete.get('historical_no_write_proven') is not False):
+            raise BriefingError('fixed same-operator reconciliation required')
+        readers.validate_account_summary(complete.get('account'))
+        return {'inventory': inventory, 'failed_ack': failed_inventory,
+                'completed_sha256': inventory['completed.json']['sha256']}
     inventory = b._inventory(record, {'intent.json', 'completed.json'})
     intent, complete = (b._read_json(record / name) for name in ('intent.json', 'completed.json'))
     evidence = intent.get('evidence', {})

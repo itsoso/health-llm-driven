@@ -427,3 +427,31 @@ def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monke
         for fd in (lfd, bfd, read_fd, write_fd):
             if fd is not None:
                 os.close(fd)
+
+
+@pytest.mark.parametrize('fault', [None, 'operator', 'digest', 'authority', 'state', 'unknown'])
+def test_briefing_accepts_only_fixed_reconciliation(tmp_path, fault):
+    from types import SimpleNamespace
+    m, core, ack = modules()
+    m.STATE = tmp_path
+    sha = 'e' * 40
+    (tmp_path / 'review-maintenance-ack-reconciliations' / m.TARGET).mkdir(parents=True)
+    old = {'closing_sha':ack.FAILED_ACK_OPERATOR, 'old_sha':m.TARGET,'operation_id':m.OPERATION,'original_outcome':'UNKNOWN'}
+    failed = {'intent.json':{'sha256':ack.FAILED_ACK_INTENT}}
+    evidence = {**old, 'closing_sha':sha,'failed_ack':failed}
+    if fault == 'operator':evidence['closing_sha'] = 'a' * 40
+    intent = {'evidence':evidence,'evidence_sha256':ack.digest(evidence),'accept_unknown_review_writes':True,'original_outcome':'UNKNOWN'}
+    complete = {'evidence_sha256':ack.digest(evidence),'state':ack.RECONCILED,'original_outcome':'UNKNOWN',
+      'authority':{'reset':False,'retry':False,'rotation':False,'deployment':False},
+      'reset_authorized':False,'release_unblocked':False,'historical_no_write_proven':False,'account':{}}
+    if fault == 'digest':complete['evidence_sha256'] = '0' * 64
+    if fault == 'authority':complete['authority']['deployment'] = True
+    if fault == 'state':complete['state'] = 'SUCCEEDED'
+    if fault == 'unknown':complete['historical_no_write_proven'] = True
+    ack.failed_ack_evidence = lambda b:(failed, old)
+    b = SimpleNamespace(_inventory=lambda *a:{'completed.json':{'sha256':'f' * 64}},_read_json=lambda p:intent if p.name=='intent.json' else complete)
+    readers = SimpleNamespace(validate_account_summary=lambda a:None)
+    if fault is None:
+        assert m.acknowledgement_evidence(b,readers,ack,sha)['failed_ack'] == failed
+    else:
+        with pytest.raises(m.BriefingError):m.acknowledgement_evidence(b,readers,ack,sha)

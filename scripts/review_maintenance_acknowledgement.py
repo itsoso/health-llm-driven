@@ -20,6 +20,9 @@ import sys
 STATE = Path('/var/lib/reva-release')
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C'}
 TERMINAL = 'UNKNOWN_ACCEPTED_AUDIT_ONLY'
+RECONCILED = 'FAILED_ACK_RECONCILED_AUDIT_ONLY'
+FAILED_ACK_OPERATOR = 'f373e2bc1c89d3ec7d10e8a50ee6ae3bce22a3c4'
+FAILED_ACK_INTENT = 'ca5f1c0d3a8bcb32cdcb40afcfa64f44e14d6f8ac2e95de5708baa5a867ce701'
 TARGET = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
 OPERATION = 'a71c3840b6f24bc79937d178cb838066'
 ORIGINAL_OPERATOR = '6d3374d77e69522406abd812c80571ce13ac439c'
@@ -79,6 +82,39 @@ def acknowledge(adapter, *, accept_unknown=False, evidence_sha256=None):
         'historical_no_write_proven': False, 'reset_authorized': False, 'release_unblocked': False}
     adapter.write('completed.json', result)
     return {'state': TERMINAL, 'original_outcome': 'UNKNOWN', 'evidence_sha256': fingerprint}
+
+
+def reconcile_failed_ack(adapter, *, accept_unknown=False, evidence_sha256=None):
+    """Audit a single fixed failed acknowledgement; never complete or replay it."""
+    if os.path.lexists(adapter.record):
+        raise AcknowledgementError('reconciliation already attempted; no retry')
+    evidence = adapter.inspect()
+    key = secrets.token_bytes(32)
+    before = adapter.inspect_account(key)
+    adapter.validate_account(before)
+    if adapter.inspect() != evidence:
+        raise AcknowledgementError('reconciliation evidence changed')
+    after = adapter.inspect_account(key)
+    adapter.validate_account(after)
+    if before != after or adapter.inspect() != evidence:
+        raise AcknowledgementError('reconciliation snapshot changed')
+    fingerprint = digest(evidence)
+    if evidence_sha256 is None:
+        return {'state': 'RECONCILIATION_INSPECTED_ONLY', 'evidence_sha256': fingerprint}
+    if accept_unknown is not True or evidence_sha256 != fingerprint:
+        raise AcknowledgementError('fresh explicit reconciliation required')
+    # All dependency, account and state proofs precede any new durable record.
+    adapter.prepare_record()
+    adapter.write('intent.json', {'evidence': evidence, 'evidence_sha256': fingerprint,
+        'accept_unknown_review_writes': True, 'original_outcome': 'UNKNOWN'})
+    if adapter.inspect() != evidence:
+        raise AcknowledgementError('reconciliation evidence changed after intent')
+    result = {'state': RECONCILED, 'original_outcome': 'UNKNOWN',
+        'evidence_sha256': fingerprint, 'account': after,
+        'authority': {'reset': False, 'retry': False, 'rotation': False, 'deployment': False},
+        'historical_no_write_proven': False, 'reset_authorized': False, 'release_unblocked': False}
+    adapter.write('completed.json', result)
+    return {'state': RECONCILED, 'original_outcome': 'UNKNOWN', 'evidence_sha256': fingerprint}
 
 
 def verify_operator_ci(gate, sha, token_stdin):
@@ -274,7 +310,23 @@ def assert_acknowledgement_ssh_sessions(proc=Path('/proc')):
         'authority': 'ACKNOWLEDGEMENT_ONLY_USER_CONFIRMED_CHATLOG'})
 
 
-def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
+
+def failed_ack_evidence(b):
+    record = STATE / 'review-maintenance-acknowledgements' / TARGET
+    inventory = b._inventory(record, {'intent.json'})
+    if inventory['intent.json']['sha256'] != FAILED_ACK_INTENT:
+        raise AcknowledgementError('fixed failed acknowledgement intent differs')
+    intent = b._read_json(record / 'intent.json')
+    evidence = intent.get('evidence', {})
+    if (intent.get('accept_unknown_review_writes') is not True
+            or intent.get('original_outcome') != 'UNKNOWN'
+            or evidence.get('closing_sha') != FAILED_ACK_OPERATOR
+            or evidence.get('old_sha') != TARGET or evidence.get('operation_id') != OPERATION
+            or intent.get('evidence_sha256') != digest(evidence)):
+        raise AcknowledgementError('fixed failed acknowledgement invalid')
+    return inventory, evidence
+
+def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check, *, reconcile=False):
     validate_profile(old_sha, operation_id)
     class Adapter:
         # Reuse only methods whose dependency closure is read-only. Do not
@@ -289,13 +341,18 @@ def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
         def inspect(self):
             evidence = helpers.Adapter.inspect(self)
             evidence['ssh_observation'] = self.ssh_observation
+            if reconcile:
+                inventory, old_evidence = failed_ack_evidence(b)
+                if {**evidence, 'closing_sha': FAILED_ACK_OPERATOR} != old_evidence:
+                    raise AcknowledgementError('original failed acknowledgement evidence changed')
+                evidence['failed_ack'] = inventory
             return evidence
 
         def __init__(self):
             self.source, self.b, self.server = source, b, server
             self.sha, self.old_sha, self.operation_id = sha, old_sha, operation_id
             self.check = check
-            self.record = STATE / 'review-maintenance-acknowledgements' / old_sha
+            self.record = STATE / ('review-maintenance-ack-reconciliations' if reconcile else 'review-maintenance-acknowledgements') / old_sha
             self.volatile = Path('/run/lock/health-app-release.review-retired-' + old_sha)
             for filename in ('contained_release_retirement.py', 'recover_contained_services.py',
                              'trusted_review_reset.py', 'contained_recovery_proof.py'):
@@ -379,7 +436,8 @@ def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
             self._quiescent()
             process = subprocess.run(['/usr/bin/python3.12', '-I', '-S', '-B',
                 str(source / 'scripts/review_maintenance_acknowledgement.py'), '--sha', sha,
-                '--release-sha', old_sha, '--operation-id', operation_id, '--account-probe'],
+                '--release-sha', old_sha, '--operation-id', operation_id, '--account-probe',
+                *(['--reconcile-failed-ack'] if reconcile else [])],
                 env=ENV, input=key, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
                 timeout=180, check=True)
             if len(process.stdout) > 16384:
@@ -400,15 +458,17 @@ def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
     return Adapter()
 
 
-def account_child(sha, old_sha, operation_id):
+def account_child(sha, old_sha, operation_id, *, reconcile=False):
     validate_profile(old_sha, operation_id)
     source, b, server, helpers = context(sha, verify_ci=False)
     record = STATE / 'review-maintenance-acknowledgements' / old_sha
     b.secure(record)
     intent = b._read_json(record / 'intent.json')
     evidence = intent.get('evidence', {})
+    if reconcile:
+        failed_ack_evidence(b)
     if (intent.get('accept_unknown_review_writes') is not True or intent.get('original_outcome') != 'UNKNOWN'
-            or intent.get('evidence_sha256') != digest(evidence) or evidence.get('closing_sha') != sha
+            or intent.get('evidence_sha256') != digest(evidence) or evidence.get('closing_sha') != (FAILED_ACK_OPERATOR if reconcile else sha)
             or evidence.get('old_sha') != old_sha or evidence.get('operation_id') != operation_id
             or evidence.get('lease') != {'state': 'ABSENT_NOT_AUTHORITY'}
             or os.path.lexists(record / 'completed.json')):
@@ -456,6 +516,7 @@ def main():
         parser.add_argument('--accept-unknown-review-writes', action='store_true')
         parser.add_argument('--evidence-sha256')
         parser.add_argument('--token-stdin', action='store_true')
+        parser.add_argument('--reconcile-failed-ack', action='store_true')
         parser.add_argument('--account-probe', action='store_true', help=argparse.SUPPRESS)
         args = parser.parse_args()
         if (re.fullmatch('[a-f0-9]{40}', args.release_sha) is None or args.sha == args.release_sha
@@ -466,7 +527,7 @@ def main():
         if args.account_probe:
             if args.accept_unknown_review_writes or args.evidence_sha256 or args.token_stdin:
                 raise AcknowledgementError('invalid probe arguments')
-            result = account_child(args.sha, args.release_sha, args.operation_id)
+            result = account_child(args.sha, args.release_sha, args.operation_id, reconcile=args.reconcile_failed_ack)
         else:
             source, b, server, helpers = context(args.sha, token_stdin=args.token_stdin)
             lock = b.STATE / 'launcher.lock'
@@ -484,8 +545,9 @@ def main():
                         raise AcknowledgementError('build lock presence changed')
                     if build_fd is not None:
                         b._assert_original_lock(build, build_fd)
-                adapter = make_adapter(source, b, server, helpers, args.sha, args.release_sha, args.operation_id, check)
-                result = acknowledge(adapter, accept_unknown=args.accept_unknown_review_writes, evidence_sha256=args.evidence_sha256)
+                adapter = make_adapter(source, b, server, helpers, args.sha, args.release_sha, args.operation_id, check, reconcile=args.reconcile_failed_ack)
+                operation = reconcile_failed_ack if args.reconcile_failed_ack else acknowledge
+                result = operation(adapter, accept_unknown=args.accept_unknown_review_writes, evidence_sha256=args.evidence_sha256)
             finally:
                 if build_fd is not None:
                     os.close(build_fd)

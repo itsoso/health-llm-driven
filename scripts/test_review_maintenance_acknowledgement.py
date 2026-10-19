@@ -574,3 +574,66 @@ def test_account_probe_loads_verified_dependencies_before_parsing_environment(fi
     script = "import sys\nfrom types import SimpleNamespace\nverified=[]\ndef parse(raw):\n from dotenv.parser import parse_stream\n assert verified == [True]\n return list(parse_stream(__import__('io').StringIO(raw)))\nreset=SimpleNamespace(_assert_isolated_search_path=lambda: None,_validate_production=lambda *a: verified.append(True),_parse_maintenance_environment=parse)\nserver=SimpleNamespace(read_production_env=lambda: 'SYNTHETIC=yes')\nold_sha=TARGET=target=b=None\n" + prefix + "\nassert environment[0].value == 'yes'"
     result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script], capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
+
+
+def test_reconcile_failed_ack_preflights_account_before_durable_intent(tmp_path):
+    m, a = load(), Adapter(tmp_path)
+    a.inspect_account = lambda key: (_ for _ in ()).throw(ModuleNotFoundError('synthetic'))
+    with pytest.raises(ModuleNotFoundError):
+        m.reconcile_failed_ack(a, accept_unknown=True, evidence_sha256=m.digest(a.evidence))
+    assert not a.record.exists()
+
+
+def test_reconcile_failed_ack_records_separate_audit_without_authority(tmp_path):
+    m, a = load(), Adapter(tmp_path)
+    a.inspect_account = lambda key: a.account.copy()
+    original = a.original.read_bytes()
+    inspected = m.reconcile_failed_ack(a)
+    assert inspected['state'] == 'RECONCILIATION_INSPECTED_ONLY'
+    assert not a.record.exists()
+    result = m.reconcile_failed_ack(a, accept_unknown=True, evidence_sha256=inspected['evidence_sha256'])
+    assert result['state'] == 'FAILED_ACK_RECONCILED_AUDIT_ONLY'
+    complete = json.loads((a.record / 'completed.json').read_text())
+    assert not any(complete['authority'].values())
+    assert complete['original_outcome'] == 'UNKNOWN'
+    assert not complete['historical_no_write_proven']
+    assert a.original.read_bytes() == original
+    with pytest.raises(m.AcknowledgementError, match='no retry'):
+        m.reconcile_failed_ack(a)
+
+
+@pytest.mark.parametrize('fault', ['missing_acceptance', 'stale', 'snapshot', 'evidence', 'post_intent'])
+def test_reconciliation_fails_closed(tmp_path, fault):
+    m, a = load(), Adapter(tmp_path)
+    calls = []
+    def account(key):
+        calls.append(key)
+        return {'snapshot': len(calls) if fault == 'snapshot' else 1}
+    a.inspect_account = account
+    if fault == 'evidence':
+        a.change_at = 2
+    if fault == 'post_intent':
+        a.change_at = 4
+    with pytest.raises(m.AcknowledgementError):
+        m.reconcile_failed_ack(a, accept_unknown=fault != 'missing_acceptance',
+            evidence_sha256='0' * 64 if fault == 'stale' else m.digest(a.evidence))
+    assert not (a.record / 'completed.json').exists()
+    assert a.record.exists() == (fault == 'post_intent')
+
+
+@pytest.mark.parametrize('changed', [None, 'hash', 'operator', 'digest', 'accepted'])
+def test_failed_ack_is_bound_to_exact_original(tmp_path, changed):
+    from types import SimpleNamespace
+    m = load()
+    evidence = {'closing_sha':m.FAILED_ACK_OPERATOR, 'old_sha':m.TARGET, 'operation_id':m.OPERATION}
+    if changed == 'operator':
+        evidence['closing_sha'] = 'a' * 40
+    intent = {'evidence':evidence,'evidence_sha256':m.digest(evidence),'original_outcome':'UNKNOWN','accept_unknown_review_writes':True}
+    if changed == 'digest':intent['evidence_sha256'] = '0' * 64
+    if changed == 'accepted':intent['accept_unknown_review_writes'] = False
+    inventory = {'intent.json':{'sha256':'0' * 64 if changed == 'hash' else m.FAILED_ACK_INTENT}}
+    b = SimpleNamespace(_inventory=lambda *a:inventory, _read_json=lambda *a:intent)
+    if changed is None:
+        assert m.failed_ack_evidence(b) == (inventory, evidence)
+    else:
+        with pytest.raises(m.AcknowledgementError):m.failed_ack_evidence(b)
