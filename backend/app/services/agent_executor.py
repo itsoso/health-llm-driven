@@ -7907,8 +7907,8 @@ def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
         message = f"已按你的取消要求处理，本轮没有{action}饮食记录。"
         recovery_guidance = None
     elif reason == "non_diet_photo_intent":
-        message = f"本轮图片用于运动记录，本轮没有{action}饮食记录。"
-        recovery_guidance = "请继续补充运动类型和时长，不要将运动照片作为餐食保存。"
+        message = f"本轮图片并非用于记录餐食，本轮没有{action}饮食记录。"
+        recovery_guidance = "请按本轮明确的图片用途继续处理，不要将非餐食照片作为饮食保存。"
     elif reason == "capture_failed":
         message = f"图片资产未能安全保存，本轮没有{action}饮食记录。"
         recovery_guidance = "请重新上传图片后再试。"
@@ -25582,7 +25582,8 @@ class AgentExecutor:
             return True
         return bool(re.search(
             r"皮肤|皮疹|伤口|磨破|擦伤|破皮|红疹|湿疹|荨麻疹|水疱|"
-            r"(?:手|脚|足|腿|胳膊|皮肤|腕|指头|掌).{0,8}水泡|"
+            r"(?:手腕|手掌|手指|脚趾|脚后跟|脚|手|胳膊|腿)(?:上|处)?"
+            r"(?:起了?|长了?|有|出现了?)(?:一个|几个|一些)?水泡|"
             r"烫伤|晒伤|蚊虫叮咬|表带.*(?:过敏|红肿|痒)|"
             r"\b(?:rash|wound|blister|abrasion|eczema)\b|skin\s+irritation",
             user_message or "", re.I,

@@ -1967,7 +1967,7 @@ async def test_food_stream_guards_block_actual_record_and_draft(db,tmp_path,monk
     assert all('diet_photo_recognition' not in (source.meta or {}) for source in sources)
 
 
-@pytest.mark.parametrize('message', ['记录这餐', '鸡皮和鱼皮各吃了一点', '记录早餐：开水泡燕麦', '记录这餐，米饭用水泡软了', '骑行后记录午餐', '分析早餐营养'])
+@pytest.mark.parametrize('message', ['记录这餐', '鸡皮和鱼皮各吃了一点', '记录早餐：开水泡燕麦', '记录这餐，米饭用水泡软了', '记录这餐：鸡腿用水泡软了', '猪脚用水泡了一晚', '骑行后记录午餐', '分析早餐营养'])
 def test_food_subjects_do_not_match_skin_photo_exclusion(message):
     assert not AgentExecutor._is_non_diet_photo_context(message)
 
@@ -1980,3 +1980,10 @@ async def test_skin_photo_general_vision_skips_structured_food(db, monkeypatch, 
     monkeypatch.setattr(settings, 'llm_vision_base_url', '')
     assert await executor._analyze_image_with_vision(message, [{'base64': 'synthetic', 'type': 'jpeg'}]) is None
     food.assert_not_awaited()
+
+
+def test_non_diet_photo_rejection_does_not_invent_exercise_purpose():
+    from app.services.agent_executor import _contextual_diet_write_rejection
+    result = _contextual_diet_write_rejection('non_diet_photo_intent', action='写入')
+    assert '运动' not in str(result)
+    assert '饮食' in str(result)
