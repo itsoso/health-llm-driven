@@ -351,6 +351,7 @@ def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
     evidence = None
     if mode == 'apply':
         record = record_path()
+        b._inventory(record, {'intent.json'})
         intent = b._read_json(record / 'intent.json')
         evidence = validate_apply_intent(intent, proof, sha, core, record)
         readers.write_json(record / 'database-started.json', {'state': 'DATABASE_ATTEMPT_STARTED',
