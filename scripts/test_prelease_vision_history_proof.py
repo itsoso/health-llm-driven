@@ -96,8 +96,11 @@ def test_configuration_no_candidate_env_and_exact_chronology(tmp_path,monkeypatc
     (workspace/'started.json').write_text('{}')
     realpath=Path
     monkeypatch.setattr(m,'Path',lambda p:env if p=='/opt/health-app/backend/.env' else realpath(p))
+    def reject_private_identity(path):
+        pytest.fail('production 0640 env must not use the private 0600 identity helper')
     b=SimpleNamespace(STATE=state,BUSINESS_LEASE=tmp_path/'lease',secure=lambda *a,**k:None,
-        _recovery_file_identity=lambda p:{'sha256':hashlib.sha256(p.read_bytes()).hexdigest()})
+        _recovery_file_identity=reject_private_identity)
+    monkeypatch.setattr(m, '_production_env_identity', lambda b,p: ({'sha256':hashlib.sha256(p.read_bytes()).hexdigest()}, p.stat()))
     result=m.configuration(b,m.FAILED,m.PRODUCTION,live)
     assert result['candidate_environment_absent'] is True
     assert result['historical_env_digest_available'] is False
@@ -141,3 +144,48 @@ def test_new_branch_rejects_configuration_drift_between_reads(monkeypatch,tmp_pa
     monkeypatch.setattr(b,'_prelease_vision_module',lambda:SimpleNamespace(configuration=lambda *a:next(values)))
     with pytest.raises(b.BootstrapError,match='configuration changed'):
         b._predeploy_production_proof(SHA,PRODUCTION,tmp_path,prelease_vision=True)
+
+
+@pytest.mark.parametrize('damage', [None, 'owner', 'group', 'write', 'public', 'private', 'symlink', 'hardlink', 'changed', 'oversize'])
+def test_production_environment_identity_retains_canonical_0640_contract(tmp_path, monkeypatch, damage):
+    from types import SimpleNamespace
+    from test_trusted_release_server import load_server
+    import os, stat, hashlib
+    m = load(); server = load_server()
+    env = tmp_path / 'env'; env.write_bytes(b'SYNTHETIC=only\n'); env.chmod(0o640)
+    # Local fixtures retain real modes, file types, links, inode and timestamps;
+    # only root ownership/group are synthesized on developer machines.
+    original_lstat = Path.lstat; original_fstat = os.fstat
+    def metadata(info):
+        fields = ('st_mode', 'st_nlink', 'st_ino', 'st_dev', 'st_size', 'st_ctime_ns', 'st_mtime_ns')
+        result = {key: getattr(info, key) for key in fields}
+        result.update(st_uid=1 if damage == 'owner' else 0, st_gid=997 if damage == 'group' else 996)
+        return SimpleNamespace(**result)
+    monkeypatch.setattr(Path, 'lstat', lambda p: metadata(original_lstat(p)) if p == env else original_lstat(p))
+    monkeypatch.setattr(m.os, 'fstat', lambda fd: metadata(original_fstat(fd)))
+    monkeypatch.setattr(server, 'secure_path', lambda p: server.validate_metadata(p.lstat()))
+    monkeypatch.setattr(server.grp, 'getgrnam', lambda name: SimpleNamespace(gr_gid=996))
+    b = SimpleNamespace(_predeploy_module=lambda source, name: server)
+    if damage == 'write': env.chmod(0o660)
+    if damage == 'public': env.chmod(0o644)
+    if damage == 'private': env.chmod(0o600)
+    if damage == 'hardlink': os.link(env, tmp_path / 'second')
+    if damage == 'symlink':
+        env.rename(tmp_path / 'target'); env.symlink_to(tmp_path / 'target')
+    if damage == 'oversize': env.write_bytes(b'x' * 1_000_001)
+    if damage == 'changed':
+        calls = []
+        def drifting(fd):
+            info = metadata(original_fstat(fd)); calls.append(True)
+            if len(calls) > 1: info.st_ino += 1
+            return info
+        monkeypatch.setattr(m.os, 'fstat', drifting)
+    if damage:
+        with pytest.raises((m.PreleaseError, server.LaunchError, OSError)):
+            m._production_env_identity(b, env)
+    else:
+        identity, before = m._production_env_identity(b, env)
+        assert identity['mode'] == 0o640
+        assert identity['uid'] == 0 and identity['gid'] == 996
+        assert identity['sha256'] == hashlib.sha256(b'SYNTHETIC=only\n').hexdigest()
+        assert before.st_nlink == 1

@@ -79,6 +79,35 @@ def inspect(bootstrap, sha, source):
             'implementations':binding,'manifest':bootstrap._preparation_manifest(workspace)}
 
 
+def _production_env_identity(bootstrap, path):
+    """Read only the canonical production env under its distinct 0640 contract."""
+    server = bootstrap._predeploy_module(Path(__file__).parent.parent, 'trusted_release_server.py')
+    server.secure_path(path)
+    group_id = server.grp.getgrnam('health-app').gr_gid
+    before = path.lstat()
+    server.validate_production_env_metadata(before, group_id)
+    fields = ('st_uid', 'st_gid', 'st_mode', 'st_nlink', 'st_ino', 'st_dev',
+              'st_size', 'st_ctime_ns', 'st_mtime_ns')
+    fingerprint = lambda info: tuple(getattr(info, key) for key in fields)
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(fd, 'rb') as stream:
+        opened = os.fstat(stream.fileno())
+        server.validate_production_env_metadata(opened, group_id)
+        if fingerprint(before) != fingerprint(opened):
+            raise PreleaseError('prelease live environment identity changed')
+        raw = stream.read(1_000_001)
+        after = os.fstat(stream.fileno())
+        server.validate_production_env_metadata(after, group_id)
+    final = path.lstat()
+    server.validate_production_env_metadata(final, group_id)
+    if (len(raw) > 1_000_000 or fingerprint(before) != fingerprint(after)
+            or fingerprint(before) != fingerprint(final)):
+        raise PreleaseError('prelease live environment identity changed')
+    return {'uid': before.st_uid, 'gid': before.st_gid,
+            'mode': stat.S_IMODE(before.st_mode), 'inode': before.st_ino,
+            'device': before.st_dev, 'sha256': hashlib.sha256(raw).hexdigest()}, before
+
+
 def configuration(bootstrap, failed_sha, production_sha, live):
     if failed_sha!=FAILED or production_sha!=PRODUCTION:
         raise PreleaseError('prelease production revision differs')
@@ -96,9 +125,8 @@ def configuration(bootstrap, failed_sha, production_sha, live):
             bootstrap.secure(parent)
         if os.path.lexists(path):raise PreleaseError('prelease mutation evidence exists')
     path=Path('/opt/health-app/backend/.env')
-    bootstrap.secure(path);before=path.stat()
-    identity=bootstrap._recovery_file_identity(path)
-    after=path.stat()
+    identity,before=_production_env_identity(bootstrap,path)
+    after=path.lstat()
     started=workspace/'started.json';bootstrap.secure(started,private=True)
     began=min(started.stat().st_ctime_ns,started.stat().st_mtime_ns)
     if (max(before.st_ctime_ns,before.st_mtime_ns)>=began
