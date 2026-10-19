@@ -948,6 +948,22 @@ Python `-I -S -B` 执行，显式传入旧发布 SHA、操作 ID、`--accept-unk
 历史证明不依赖未来服务 PID、当前生产版本或易失 `/run` 归档。只有已完成退休证明中明确
 绑定的那个 UNKNOWN 操作可视为行政已处置。新部署、发包及最终审核仍分别通过全部既有闸。
 
+#### 无原 lease 的审核维护：仅登记已接受 UNKNOWN
+
+针对已明确授权的失败审核维护，可通过独立 `review_maintenance_acknowledgement.py`
+登记 `UNKNOWN_ACCEPTED_AUDIT_ONLY`。此入口不沿用上节需要原 lease 的退休流程。
+执行仍要求受审固定代码、精确主干 CI、canonical staging、原 launcher/build 锁、
+实际生产与源码证明、持续无 lease、执行进程静止、两组原始失败回执稳定。
+只对服务端配置唯一绑定的非管理员审核演示账号进行 PostgreSQL 只读计数和随机密钥
+HMAC 核对；相同快照不证明历史未写入，也不证明演示样例正确。
+
+默认仅检视；执行绑定检视摘要、明确风险接受与具体原操作。新增独立一次性审计意图和
+结果，原件原地保留，不复制配置或数据作备份，不改原 NEEDS_OPERATOR，不创建替代
+lease，不撤权、不轮换、不重新执行 reset。失败保留证据，禁止重放。
+结果必须包含 `reset_authorized=false` 与 `release_unblocked=false`；现有 reset、
+rotation 与发布历史消费者不得将它当作退休或成功凭据。该记录仅完成用户授权的
+行政确认，演示数据修复、发布和送审仍由各自 Gate 裁定。
+
 #### 行政收尾期间临时暂停一个已授权管理密钥
 
 `scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
