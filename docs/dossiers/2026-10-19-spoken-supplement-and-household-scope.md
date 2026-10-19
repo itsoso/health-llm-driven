@@ -1,7 +1,7 @@
 # 口语补剂查询与家居维护陈述修复
 
 Updated: 2026-10-19
-Status: implementation verified locally; safety review pending; deployment blocked
+Status: implementation verified locally; G4 GO for 400cb2443; deployment blocked
 Spec: `docs/specs/active/2026-10-19-spoken-supplement-and-household-scope.md`
 Workflow: quick_fix, safety overlay; no superpowers skills used.
 
@@ -23,11 +23,12 @@ Workflow: quick_fix, safety overlay; no superpowers skills used.
 - 相邻授权/longitudinal/current-input 回归：1801 passed / 12 skipped。日志 `/tmp/reva-supplement-household-regression.log`。
 - PostgreSQL 独立 UTF8 测试库：48 passed；初始临时库默认 SQL_ASCII 导致中文建表 fixture 错误，改建 UTF8 后通过，无应用改动掩盖错误。日志 `/tmp/reva-supplement-household-postgres.log`。
 - System Map / mobile-nav / doc-drift 与 `git diff --check` 通过；无结构生成物漂移。
-- 追加禁止模型跳过查询及计划/未服用排除用例，最终测试数与审查结论待下条更新。
+- 最终新增测试：SQLite 50 passed（8.98s），PostgreSQL 50 passed（25.20s），包含禁止模型跳过查询以及计划/未服用排除；日志 `/tmp/reva-supplement-household-tests.log` 与 `/tmp/reva-supplement-household-postgres-final.log`。
+- 独立只读 reviewer `safety_review` 对固定实现提交 `400cb2443` 给出 **GO**：核对完整语法、认证/日期/字段边界、真实摄入、未知任务保留、URL未读取、持久化及重放。Reviewer 未重跑测试，测试执行证据由主 agent 提供；GO 只覆盖该提交，不覆盖前置提交或发布准入。
 
 ## 发布与验收边界
 
 只读 SSH 核实生产 HEAD `1ba724dcb62ac389a72e41eecf40fea7aaca27e3`；health-backend active，API/database/redis/celery healthy。
 开工时 main ahead 2，过程中他任务继续提交；当前本任务之前还有 `23b6c1399`、`c027cd7b7`、`9d80d2d46`，远端 main 当时为 `f373e2bc1c89d3ec7d10e8a50ee6ae3bce22a3c4`。
 工作区包含其他任务改动，均保留。本次不替其他候选签发独立安全审查或完整 CI 证明；按 AGENTS §7 停止外部写入，待前置任务完成主干集成和发布准入。
-G4 独立审查待完成；G5 精确主干 CI/CI-mode/干净候选/发布回执未满足，未部署。此次无 Mobile 文件变化，无 OTA；模拟器及真实账户交互未验证。
+G4 独立审查通过；G5 精确主干 CI/CI-mode/干净候选/发布回执未满足，未推送、未部署。此次无 Mobile 文件变化，无 OTA；模拟器及真实账户交互未验证。

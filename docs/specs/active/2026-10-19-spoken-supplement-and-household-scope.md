@@ -1,6 +1,6 @@
 # 口语补剂查询与家居维护陈述的任务边界
 
-Status: implementing
+Status: implemented locally; independent safety GO; deployment pending
 Owner: Reva backend
 Updated: 2026-10-19
 Related PRD: `docs/prd/reva-personal-health-os-prd.md`
