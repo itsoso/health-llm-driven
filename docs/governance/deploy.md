@@ -964,6 +964,22 @@ lease，不撤权、不轮换、不重新执行 reset。失败保留证据，禁
 rotation 与发布历史消费者不得将它当作退休或成功凭据。该记录仅完成用户授权的
 行政确认，演示数据修复、发布和送审仍由各自 Gate 裁定。
 
+#### 279 审核简报的独立窄化修复
+
+用户已确认既有 loopback 5030 隧道用于 chatlog 并要求保留。仅专用审核
+acknowledgement 可接受代码中固定的 PID、启动时刻、UID、监听 socket 与同一 boot
+认证日志指纹；任何身份漂移、额外 SSH 或隧道子进程仍阻断。通用发布检查不变，
+不终止连接、不修改密钥或网络配置。
+
+`review_demo_briefing_repair.py` 与 `trusted_review_briefing_repair.py` 仅服务固定
+279 审核演示简报。要求同一受审 operator 的 UNKNOWN 审计确认先完成，再使用独立
+明确授权、新鲜 inspect 摘要和独立一次性 intent。仅向固定生产审核账号新增一条
+`app-store-review-demo-279` 会话及两条已固定字节摘要的演示消息；旧会话、消息和
+健康记录保持不变。目标 session key 已存在即拒绝，不重用、不删除、不复制旧数据。
+PostgreSQL SERIALIZABLE 事务、账号及既有行锁、快照比对、提交后只读核验必须通过。
+任何提交结果或回执不确定均保留 intent，禁止重试；不得把原维护标为成功或解除
+普通 reset、轮换及部署阻断。最终送审继续使用原始 live-demo 和实际 IPA 检查。
+
 #### 行政收尾期间临时暂停一个已授权管理密钥
 
 `scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
