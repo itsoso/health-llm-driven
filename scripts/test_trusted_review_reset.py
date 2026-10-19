@@ -1354,6 +1354,7 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         self.missing_env()
         prior = self.state / 'review-maintenance' / ('e' * 40)
         prior.mkdir(parents=True, mode=0o700)
+        prior.parent.chmod(0o700)
         with self.assertRaises(self.maintenance.MaintenanceError):
             self.maintenance_run()
         self.assertFalse(self.operation.exists())
