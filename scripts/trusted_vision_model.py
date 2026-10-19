@@ -690,18 +690,33 @@ def history_main(argv):
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--publisher-sha',required=True)
     args = parser.parse_args(argv)
+    phase, gate = 'operator_context', None
     try:
         if (os.geteuid() != 0 or sys.executable != '/usr/bin/python3.12'
                 or not sys.flags.isolated or not sys.flags.no_site or not sys.flags.dont_write_bytecode):
             raise VisionError('isolated system Python root operator required')
         checked_hex(args.publisher_sha,40)
+        phase = 'load_reviewed'
         source,helper,bootstrap,server,gate = load_reviewed(args.publisher_sha)
+        phase = 'verify_release'
         gate.verify_release(args.publisher_sha,args.publisher_sha)
+        phase = 'assert_vision_model_history'
         server.assert_vision_model_history()
         print(json.dumps({'state':'VISION_HISTORY_CLEAR','publisher_sha':args.publisher_sha,'model_requests':0}))
         return 0
-    except Exception:
-        print(json.dumps({'state':'VISION_HISTORY_BLOCKED','model_requests':0}))
+    except Exception as error:
+        result = {'state':'VISION_HISTORY_BLOCKED','model_requests':0,'phase':phase}
+        # Only the canonical gate's typed scheduler hint may cross this boundary.
+        # Never serialize exception text, headers, URLs, credentials or health data.
+        rate_type = getattr(gate, 'RateLimitError', None)
+        if (phase == 'verify_release' and isinstance(rate_type, type)
+                and isinstance(error, rate_type)
+                and error.code in {'github_rate_limited', 'github_access_denied_or_secondary_limit'}
+                and type(error.not_before) is int and 0 <= error.not_before <= 9999999999
+                and type(error.retry_after_seconds) is int and 0 <= error.retry_after_seconds <= 9999999999):
+            result.update(code=error.code, not_before=error.not_before,
+                          retry_after_seconds=error.retry_after_seconds)
+        print(json.dumps(result))
         return 1
 
 

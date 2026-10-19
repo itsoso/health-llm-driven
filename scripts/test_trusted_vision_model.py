@@ -457,3 +457,51 @@ def test_generic_history_function_uses_fixed_remote_staging_and_full_sha(tmp_pat
         result = subprocess.run(['/bin/bash','-e','-c',command],env={**env,'DEPLOY_SOURCE_SHA':sha},capture_output=True,text=True)
         assert result.returncode != 0
         assert not log.exists()
+
+
+@pytest.mark.parametrize('confirmed,code', [
+    (True, 'github_rate_limited'),
+    (False, 'github_access_denied_or_secondary_limit'),
+])
+def test_history_rate_limit_retains_safe_scheduler_hint(monkeypatch, capsys, confirmed, code):
+    import json
+    from types import SimpleNamespace
+    spec = importlib.util.spec_from_file_location('vision_test_gate', Path(__file__).with_name('trusted_release_gate.py'))
+    gate = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(gate)
+    monkeypatch.setattr(gate.time, 'time', lambda: 1000)
+    error = gate.RateLimitError({'X-RateLimit-Reset': '1500', 'Authorization': 'SECRET'}, confirmed=confirmed)
+    def reject(*args):
+        raise error
+    monkeypatch.setattr(gate, 'verify_release', reject)
+    server = SimpleNamespace(assert_vision_model_history=lambda: pytest.fail('failed gate must stop history'))
+    monkeypatch.setattr(vision, 'load_reviewed', lambda *args: (None, None, None, server, gate))
+    monkeypatch.setattr(vision.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(vision.sys, 'executable', '/usr/bin/python3.12')
+    monkeypatch.setattr(vision.sys, 'flags', SimpleNamespace(isolated=True, no_site=True, dont_write_bytecode=True))
+    assert vision.history_main(['--publisher-sha', 'b' * 40]) == 1
+    raw = capsys.readouterr().out
+    result = json.loads(raw)
+    assert result == {'state': 'VISION_HISTORY_BLOCKED', 'model_requests': 0,
+                      'phase': 'verify_release', 'code': code,
+                      'not_before': 1500, 'retry_after_seconds': 500}
+    assert 'SECRET' not in raw
+
+
+def test_history_unknown_error_never_serializes_message_or_fields(monkeypatch, capsys):
+    import json
+    from types import SimpleNamespace
+    error = RuntimeError('SECRET_URL_AND_HEALTH_DATA')
+    error.code = 'github_rate_limited'
+    error.not_before = 1500
+    error.retry_after_seconds = 500
+    def reject(*args):
+        raise error
+    monkeypatch.setattr(vision, 'load_reviewed', reject)
+    monkeypatch.setattr(vision.os, 'geteuid', lambda: 0)
+    monkeypatch.setattr(vision.sys, 'executable', '/usr/bin/python3.12')
+    monkeypatch.setattr(vision.sys, 'flags', SimpleNamespace(isolated=True, no_site=True, dont_write_bytecode=True))
+    assert vision.history_main(['--publisher-sha', 'b' * 40]) == 1
+    raw = capsys.readouterr().out
+    assert json.loads(raw) == {'state': 'VISION_HISTORY_BLOCKED', 'model_requests': 0, 'phase': 'load_reviewed'}
+    assert 'SECRET' not in raw
