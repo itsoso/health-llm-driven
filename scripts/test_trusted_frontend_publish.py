@@ -92,7 +92,7 @@ def execution_fixture(tmp_path, monkeypatch):
     return m,plan,helper,server,build,events
 
 
-@pytest.mark.parametrize('bad',['redirect','oversize','missing','error'])
+@pytest.mark.parametrize('bad',['redirect','oversize','missing','error','stale_privacy'])
 def test_public_readback_rejects_redirect_wrong_page_and_unbounded_body(monkeypatch,bad):
     from types import SimpleNamespace
     m=load()
@@ -103,7 +103,7 @@ def test_public_readback_rejects_redirect_wrong_page_and_unbounded_body(monkeypa
         def geturl(self): return 'https://health.executor.life/login' if bad=='redirect' else 'http://127.0.0.1:30001/privacy'
         def read(self,n):
             assert n==2_000_001
-            return b'x'*n if bad=='oversize' else ('wrong' if bad=='missing' else '可选足迹与分享').encode()
+            return b'x'*n if bad=='oversize' else ('wrong' if bad=='missing' else '可选足迹与分享' if bad=='stale_privacy' else '可选城市足迹与分享').encode()
     def open_request(*a,**kw):
         if bad=='error': raise OSError('network')
         return Response()
@@ -307,6 +307,7 @@ def test_raw_git_config_reader_does_not_normalize_line_endings(tmp_path):
 def test_complete_page_readback_accepts_csr_login_without_translated_text(monkeypatch):
     from types import SimpleNamespace
     m = load(); visited = []
+    monkeypatch.setattr(m.time, 'sleep', lambda _: None)
     class Response:
         status = 200
         def __init__(self, url):
@@ -317,7 +318,10 @@ def test_complete_page_readback_accepts_csr_login_without_translated_text(monkey
         def geturl(self): return self.url
         def read(self, bound):
             path = self.url.split('/', 3)[3]
-            return {'privacy': '可选足迹与分享', 'connect/health': '小巴健康 · 数据连接',
+            privacy_source = (Path(__file__).parents[1] / 'frontend/src/app/privacy/page.tsx').read_text()
+            import re
+            privacy_title = re.search(r"title: '(可选[^']*足迹与分享)'", privacy_source).group(1)
+            return {'privacy': privacy_title, 'connect/health': '小巴健康 · 数据连接',
                     'connect/kbase': '登录知识库 <meta name="referrer" content="strict-origin">',
                     'login': '<!DOCTYPE html><html><body><div id="root"></div></body></html>'}[path].encode()
     def request(req, **kwargs):

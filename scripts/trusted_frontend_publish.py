@@ -254,7 +254,10 @@ def _verify_pages(*, include_connection):
     context.load_verify_locations(cafile=cafile,capath=capath)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}),NoRedirect(),urllib.request.HTTPSHandler(context=context))
     for host in ('http://127.0.0.1:30001', 'https://health.executor.life'):
-        routes=[('/privacy','可选足迹与分享')]
+        # Full publication follows the current privacy page; retained-version
+        # availability checks keep the historical disclosure marker.
+        privacy_marker = '可选城市足迹与分享' if include_connection else '可选足迹与分享'
+        routes=[('/privacy',privacy_marker)]
         if include_connection:
             routes.extend([('/connect/health', '小巴健康 · 数据连接'),
                            ('/connect/kbase', '登录知识库'), ('/login', '<html')])
