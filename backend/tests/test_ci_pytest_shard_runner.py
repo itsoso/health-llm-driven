@@ -167,6 +167,24 @@ def test_c_shard_isolates_growing_composed_and_conversational_suites():
     assert all(deadline == 222 and attempts == 2 for _, _, _, deadline, attempts in processes)
 
 
+def test_agent_s_v_shard_partitions_growing_stream_suites_without_relaxing_deadlines():
+    from scripts.build_ci_pytest_matrix import load_catalog
+    from scripts.run_ci_pytest_worker import shard_processes
+
+    shard = next(item for item in load_catalog(SHARD_CATALOG) if item["label"] == "agent-s-v")
+    processes = shard_processes(shard, cwd=ROOT / "backend")
+    assert [name for name, *_ in processes] == [
+        "agent-s-v-stream", "agent-s-v-symptom", "agent-s-v-rest",
+    ]
+    paths = [path for _, group, *_ in processes for path in group]
+    expected = {str(path.relative_to(ROOT / "backend"))
+                for path in (ROOT / "backend/tests").glob("test_agent_[s-v]*.py")}
+    assert len(paths) == len(set(paths))
+    assert set(paths) == expected
+    assert all(group for _, group, *_ in processes)
+    assert all(deadline == 233 and attempts == 2 for _, _, _, deadline, attempts in processes)
+
+
 def test_build_pytest_command_keeps_the_shard_in_one_process():
     from scripts.run_ci_pytest_shard import build_pytest_command
 
