@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | in_progress |
-| 当前阶段 | 实现及本地验证；待独立安全审查 |
+| 当前阶段 | 本地实现、关联回归、PostgreSQL及独立安全审查通过；待统一发布 |
 | 范围 | 有症状和用药持续时间背景的明确日期范围记录查询 |
 
 ## 准入与根因
@@ -26,11 +26,17 @@
 - 范围 RED：6 failed / 20 passed；实现后26 passed。日志 `/tmp/reva-record-review-red.log`、`/tmp/reva-record-review-scope.log`。
 - 实际执行 RED（修正夹具后）：5 failed / 4 passed，证明历史 medication 适配器缺失、真实 Gateway 返回失败。日志 `/tmp/reva-record-review-runtime-red2.log`。
 - 首轮本地65 passed，包括已有药品页复盘、真实Pi/Gateway、跨账号及异常外键、窗口首尾、未服用状态、范围篡改、超限、普通及panel流与保存一致。日志 `/tmp/reva-record-review-green3.log`。
-- PostgreSQL 首轮83 passed（57.55秒），日志 `/tmp/reva-record-review-pg.log`；额外天数参数兼容 RED为2 failed / 6 passed，随后仅接受与服务端冻结窗口一致的整数 days。包含该变更的 PostgreSQL 和扩展回归进行中；测试仅使用合成账号与记录。
+- PostgreSQL 首轮83 passed（57.55秒），日志 `/tmp/reva-record-review-pg.log`；额外天数参数兼容 RED为2 failed / 6 passed，随后仅接受与服务端冻结窗口一致的整数 days。包含该变更的 PostgreSQL 最终91 passed（57.70秒），日志 `/tmp/reva-record-review-pg-final.log`；测试仅使用合成账号与记录。独立临时数据库关闭时 checkpoint 超过 pg_ctl 默认等待时间，随后日志确认正常 shut down，status 确认 no server running，没有强制终止或重启。
+- 授权摘要、Capability Policy 与新增范围回归3322 passed（58.23秒），日志 `/tmp/reva-record-review-capability.log`。
+- 读取完成证据、普通/panel合成、纵向查询与适配器、范围对抗、工具曝光、旧药品页、症状问答及医疗输出边界扩展回归1978 passed（623.42秒），日志 `/tmp/reva-record-review-regression2.log`，真实退出码0。首个扩展命令引用了不存在的测试文件，未收集测试，不计为通过；上述修正后运行才是验证证据。
 - System Map、差异空白、秘密扫描、Dossier一致性检查通过。
 
 ## 发布边界
 
 本任务基于本地276ed4ccaefc9e00b4a6c46b226f3d69d3fca91c，包含上一轮症状补充修复。共享工作树存在其他任务的文档和性能改动，只提交本任务文件。
 
-尚未 push、生产部署或模拟器验收。另一统一发布任务占用发布流程，需核对其当前精确候选、CI和回执后再纳入本修复，不抢占或重放已有操作。本次无 Mobile 改动，不需单独 OTA；本地测试不代表生产已生效。
+尚未 push、生产部署或模拟器验收。只读复核远端main仍为1ba724dcb62ac389a72e41eecf40fea7aaca27e3，另一个“优化 README”任务仍active并处理既有原生发布；其聊天状态和本地旧回执并不足以证明本修复上线。需核对其当前精确候选、CI和回执后再纳入本修复，不抢占或重放已有操作。本次无 Mobile 改动，不需单独 OTA；本地测试不代表生产已生效。
+
+## G4 独立安全审查
+
+本地实现提交41e8e67db3318ba8c721487e452afd9cb0c283fc。独立 reviewer `record_history_safety_review` 对固定提交只读审查给出 GO，重点核验整句授权、双 owner、实际历史日志、空数据/超限、普通/panel及部分查询的输出与持久化；旧药品页未回归。审查者独立SQLite合成测试91 passed（26.19秒），日志 `/tmp/reva-history-independent-review.log`。GO不替代精确CI、部署和上线验收。
