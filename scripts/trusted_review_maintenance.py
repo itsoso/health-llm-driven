@@ -95,10 +95,10 @@ def load_sources(operator_sha, target_sha):
     return source, target_bootstrap, server, reset, gate
 
 
-def attest_maintenance(gate, operator_sha, target_sha):
+def attest_maintenance(gate, operator_sha, target_sha, get_json=None):
     # Original release gate is unchanged: the current operator must satisfy it.
-    operator = gate.verify_release(operator_sha, operator_sha, observed_main=operator_sha)
-    get = gate._get_json
+    get = gate._get_json if get_json is None else get_json
+    operator = gate.verify_release(operator_sha, operator_sha, observed_main=operator_sha, _get_json=get)
     target = gate._receipt(gate._latest(get, target_sha), target_sha, target_sha)
     detail = gate._read(get, f"/actions/runs/{target['ci_run_id']}")
     if gate._receipt(detail, target_sha, target_sha) != target:
@@ -198,9 +198,13 @@ def assert_audit_history(bootstrap, server, reset):
                 raise MaintenanceError('original reset completion unproven')
 
 
-def run_maintenance(operator_sha, target_sha, operation_id):
+def run_maintenance(operator_sha, target_sha, operation_id, *, token_stdin=False):
     validate_ids(operator_sha, target_sha, operation_id)
     source, bootstrap, server, reset, gate = load_sources(operator_sha, target_sha)
+    get_json = None
+    if token_stdin:
+        token = gate._stdin_token()
+        get_json = lambda url: gate._get_json(url, token=token)
     lock = STATE / 'launcher.lock'
     server.secure_path(lock, private=True)
     fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
@@ -215,7 +219,7 @@ def run_maintenance(operator_sha, target_sha, operation_id):
         preparation = audit_root / target_sha
         if os.path.lexists(preparation):
             raise MaintenanceError('preparation already consumed; no retry')
-        ci = attest_maintenance(gate, operator_sha, target_sha)
+        ci = attest_maintenance(gate, operator_sha, target_sha, get_json)
         workspace_preflight(target_sha, source, bootstrap, server, reset)
         identity, digest, raw = production_identity(server)
         lines = [line for line in raw.splitlines() if not line.startswith(('DEPLOY_SERVER=', 'DEPLOY_PATH='))]
@@ -252,7 +256,7 @@ def run_maintenance(operator_sha, target_sha, operation_id):
             server._write_private(workspace / 'deployment.env', expected)
             same_environment()
             env = reset._validate_workspace(target_sha, source, bootstrap, server)
-            if attest_maintenance(gate, operator_sha, target_sha) != ci:
+            if attest_maintenance(gate, operator_sha, target_sha, get_json) != ci:
                 raise MaintenanceError('CI admission changed before reset')
             reset._assert_lock(server, lock, fd)
             same_environment()
@@ -287,8 +291,9 @@ def main():
         parser.add_argument('--operator-sha', required=True)
         parser.add_argument('--target-sha', required=True)
         parser.add_argument('--operation-id', required=True)
+        parser.add_argument('--token-stdin', action='store_true', help='Use bounded ephemeral read-only GitHub token from stdin; never persist or fall back')
         args = parser.parse_args()
-        print(json.dumps(run_maintenance(args.operator_sha, args.target_sha, args.operation_id), sort_keys=True))
+        print(json.dumps(run_maintenance(args.operator_sha, args.target_sha, args.operation_id, token_stdin=args.token_stdin), sort_keys=True))
         return 0
     except (Exception, KeyboardInterrupt):
         print('review maintenance failed; preserve original evidence, no retry', file=sys.stderr)

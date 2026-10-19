@@ -1369,3 +1369,29 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         put(path, {**data, 'unexpected': True})
         with self.assertRaises(self.maintenance.MaintenanceError):
             self.maintenance.assert_audit_history(self.bootstrap, self.server, self.reset)
+
+    def test_ephemeral_token_is_read_once_and_used_without_environment_fallback(self):
+        self.missing_env()
+        calls = []
+        gate = SimpleNamespace(_stdin_token=lambda: calls.append('stdin') or 'offline-token',
+                               _get_json=lambda url, *, token: calls.append((url, token)) or {})
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, gate))
+        def attest(gate, operator, target, get):
+            self.events.append('gate')
+            self.assertEqual(get('/offline'), {})
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', attest)
+        result = self.maintenance.run_maintenance('c' * 40, SHA, OP, token_stdin=True)
+        self.assertEqual(calls, ['stdin', ('/offline', 'offline-token'), ('/offline', 'offline-token')])
+        self.assertNotIn('offline-token', json.dumps(result))
+
+    def test_invalid_stdin_token_fails_before_intent_without_fallback(self):
+        self.missing_env()
+        def reject():
+            raise RuntimeError('invalid offline credential')
+        gate = SimpleNamespace(_stdin_token=reject)
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, gate))
+        with self.assertRaises(RuntimeError):
+            self.maintenance.run_maintenance('c' * 40, SHA, OP, token_stdin=True)
+        self.assertFalse(self.operation.exists())
+        self.assertNotIn('execute', self.events)

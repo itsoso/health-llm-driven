@@ -878,6 +878,7 @@ build 锁（后端-only 已证明不存在时继续复证缺失）。第一阶�
 由固定 target 的 `deploy.sh -R` 和原 lease 内 seeder 执行；原 reset 回执格式保持不变。
 先写原 reset 意图，再准备环境；专用审计成功后才写原 reset 成功。部分失败保留 NEEDS_OPERATOR 或不完整意图，由既有历史消费者阻断，需独立调查，不以新 ID 重发。
 此入口不授予 backend/OTA 发布权限，不放宽普通 reset、release gate 或轮换规则。
+可选 `--token-stdin` 仅消费既有只读 GitHub App 的短期令牌；复用有界解析，所有 CI 请求显式绑定同一内存令牌，错误不回退，不写服务器凭据或传给 deploy.sh。未指定则使用原凭据读取边界。
 
 
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
