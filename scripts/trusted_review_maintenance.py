@@ -162,6 +162,42 @@ def workspace_preflight(sha, source, bootstrap, server, reset):
     return workspace
 
 
+def assert_audit_history(bootstrap, server, reset):
+    root = STATE / 'review-maintenance'
+    if not os.path.lexists(root):
+        return
+    reset._private_directory(server, root)
+    entries = list(root.iterdir())
+    if len(entries) > 1000:
+        raise MaintenanceError('maintenance history exceeds bound')
+    keys = {'operator_sha', 'target_sha', 'operation_id', 'production_identity',
+            'production_sha256', 'environment_sha256', 'ci', 'state'}
+    for entry in entries:
+        if re.fullmatch('[0-9a-f]{40}', entry.name) is None:
+            raise MaintenanceError('unknown maintenance target')
+        reset._private_directory(server, entry)
+        if {p.name for p in entry.iterdir()} != {'started.json', 'completed.json'}:
+            raise MaintenanceError('maintenance termination unproven')
+        start = bootstrap._read_json(entry / 'started.json')
+        complete = bootstrap._read_json(entry / 'completed.json')
+        if not isinstance(start, dict) or set(start) != keys:
+            raise MaintenanceError('invalid maintenance audit schema')
+        validate_ids(start['operator_sha'], start['target_sha'], start['operation_id'])
+        if start['target_sha'] != entry.name or start['state'] != 'STARTED' or complete != {**start, 'state': 'SUCCEEDED'}:
+            raise MaintenanceError('maintenance completion unproven')
+        for key in ('production_sha256', 'environment_sha256'):
+            if not isinstance(start[key], str) or re.fullmatch('[0-9a-f]{64}', start[key]) is None:
+                raise MaintenanceError('invalid maintenance digest')
+        if not isinstance(start['production_identity'], list) or len(start['production_identity']) != 9 or any(type(v) is not int for v in start['production_identity']):
+            raise MaintenanceError('invalid production identity')
+        if not isinstance(start['ci'], dict) or set(start['ci']) != {'operator', 'target'}:
+            raise MaintenanceError('invalid CI evidence')
+        for name, state in (('started.json', 'STARTED'), ('completed.json', 'SUCCEEDED')):
+            marker = STATE / entry.name / 'review-resets' / start['operation_id'] / name
+            if bootstrap._read_json(marker) != reset._marker(entry.name, start['operation_id'], state):
+                raise MaintenanceError('original reset completion unproven')
+
+
 def run_maintenance(operator_sha, target_sha, operation_id):
     validate_ids(operator_sha, target_sha, operation_id)
     source, bootstrap, server, reset, gate = load_sources(operator_sha, target_sha)
@@ -173,8 +209,10 @@ def run_maintenance(operator_sha, target_sha, operation_id):
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         reset._assert_lock(server, lock, fd)
         reset._assert_previous_resets(bootstrap, server)
+        assert_audit_history(bootstrap, server, reset)
         workspace = STATE / target_sha
-        preparation = workspace / 'review-environment-preparation'
+        audit_root = STATE / 'review-maintenance'
+        preparation = audit_root / target_sha
         if os.path.lexists(preparation):
             raise MaintenanceError('preparation already consumed; no retry')
         ci = attest_maintenance(gate, operator_sha, target_sha)
@@ -189,14 +227,27 @@ def run_maintenance(operator_sha, target_sha, operation_id):
         proof = {'operator_sha': operator_sha, 'target_sha': target_sha,
                  'operation_id': operation_id, 'production_identity': list(identity),
                  'production_sha256': digest, 'environment_sha256': hashlib.sha256(expected).hexdigest(), 'ci': ci}
-        preparation.mkdir(mode=0o700)
+        if not os.path.lexists(root):
+            root.mkdir(mode=0o700)
+        reset._private_directory(server, root)
         server._sync_directory(workspace)
-        server._write_private(preparation / 'started.json', json.dumps({**proof, 'state': 'STARTED'}, sort_keys=True).encode())
+        operation.mkdir(mode=0o700)
+        reset._private_directory(server, operation)
+        server._sync_directory(root)
+        server._write_private(operation / 'started.json', json.dumps(reset._marker(target_sha, operation_id, 'STARTED'), sort_keys=True).encode())
         def same_environment():
             current_identity, current_digest, unused = production_identity(server)
             if (current_identity, current_digest) != (identity, digest):
                 raise MaintenanceError('production configuration changed')
         try:
+            if not os.path.lexists(audit_root):
+                audit_root.mkdir(mode=0o700)
+            reset._private_directory(server, audit_root)
+            server._sync_directory(STATE)
+            preparation.mkdir(mode=0o700)
+            reset._private_directory(server, preparation)
+            server._sync_directory(audit_root)
+            server._write_private(preparation / 'started.json', json.dumps({**proof, 'state': 'STARTED'}, sort_keys=True).encode())
             same_environment()
             server._write_private(workspace / 'deployment.env', expected)
             same_environment()
@@ -205,29 +256,21 @@ def run_maintenance(operator_sha, target_sha, operation_id):
                 raise MaintenanceError('CI admission changed before reset')
             reset._assert_lock(server, lock, fd)
             same_environment()
-            if not os.path.lexists(root):
-                root.mkdir(mode=0o700)
-            reset._private_directory(server, root)
-            server._sync_directory(workspace)
-            operation.mkdir(mode=0o700)
-            reset._private_directory(server, operation)
-            server._sync_directory(root)
-            server._write_private(operation / 'started.json', json.dumps(reset._marker(target_sha, operation_id, 'STARTED'), sort_keys=True).encode())
-            try:
-                subprocess.run(['/bin/bash', str(source / 'deploy.sh'), '-R'], cwd=source, env=env,
-                    stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    check=True, timeout=server.DEPLOY_TIMEOUT_SECONDS, start_new_session=True)
-            except BaseException:
-                server._write_private(operation / 'completed.json', json.dumps(reset._marker(target_sha, operation_id, 'NEEDS_OPERATOR'), sort_keys=True).encode())
-                raise
+            subprocess.run(['/bin/bash', str(source / 'deploy.sh'), '-R'], cwd=source, env=env,
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                check=True, timeout=server.DEPLOY_TIMEOUT_SECONDS, start_new_session=True)
             reset._assert_lock(server, lock, fd)
             same_environment()
-            server._write_private(operation / 'completed.json', json.dumps(reset._marker(target_sha, operation_id, 'SUCCEEDED'), sort_keys=True).encode())
             result = {**proof, 'state': 'SUCCEEDED'}
             server._write_private(preparation / 'completed.json', json.dumps(result, sort_keys=True).encode())
+            server._write_private(operation / 'completed.json', json.dumps(reset._marker(target_sha, operation_id, 'SUCCEEDED'), sort_keys=True).encode())
             return result
         except BaseException:
-            server._write_private(preparation / 'completed.json', json.dumps({**proof, 'state': 'NEEDS_OPERATOR'}, sort_keys=True).encode())
+            # The original reset marker blocks every existing reset/retirement
+            # consumer, even if preparation failed before its own audit existed.
+            server._write_private(operation / 'completed.json', json.dumps(reset._marker(target_sha, operation_id, 'NEEDS_OPERATOR'), sort_keys=True).encode())
+            if os.path.lexists(preparation) and not os.path.lexists(preparation / 'completed.json'):
+                server._write_private(preparation / 'completed.json', json.dumps({**proof, 'state': 'NEEDS_OPERATOR'}, sort_keys=True).encode())
             raise
     finally:
         os.close(fd)

@@ -1245,7 +1245,7 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         self.assertEqual((self.workspace / 'deployment.env').stat().st_mode & 0o777, 0o600)
         self.assertEqual((self.workspace / 'deployment.env').read_bytes(), b'SECRET=offline-fixture\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n')
         self.assertEqual(self.env_path.read_bytes(), self.production_env.encode())
-        proof = json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())
+        proof = json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())
         self.assertEqual(proof, result)
         self.assertNotIn('offline-fixture', json.dumps(result))
 
@@ -1268,7 +1268,7 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         self.patch(self.server, 'read_production_env', lambda: self.fail('credentials before CI'))
         with self.assertRaises(RuntimeError):
             self.maintenance_run()
-        self.assertFalse((self.workspace / 'review-environment-preparation').exists())
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
 
     def test_failed_reset_preserves_unknown_and_blocks_second_operation(self):
         self.missing_env()
@@ -1276,7 +1276,7 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         with self.assertRaises(subprocess.TimeoutExpired):
             self.maintenance_run()
         self.assertEqual(json.loads((self.operation / 'completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
-        proof = json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())
+        proof = json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())
         self.assertEqual(proof['state'], 'NEEDS_OPERATOR')
         with self.assertRaises(self.reset.ResetError):
             self.maintenance.run_maintenance('c' * 40, SHA, OTHER)
@@ -1295,14 +1295,14 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
             self.maintenance_run()
         self.assertNotIn('execute', self.events)
         self.assertFalse((self.workspace / 'deployment.env').exists())
-        self.assertEqual(json.loads((self.workspace / 'review-environment-preparation/completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
+        self.assertEqual(json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
 
     def test_changed_target_and_busy_lock_do_not_prepare_env(self):
         self.missing_env()
         self.head = 'e' * 40
         with self.assertRaises(self.reset.ResetError):
             self.maintenance_run()
-        self.assertFalse((self.workspace / 'review-environment-preparation').exists())
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
         self.head = SHA
         with self.lock.open('r+') as held:
             fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
@@ -1325,3 +1325,46 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
         (self.source / 'scripts/evil').symlink_to(self.env_path)
         with self.assertRaises(self.maintenance.MaintenanceError):
             self.maintenance.execution_inventory(self.source)
+
+    def test_success_remains_consumable_by_original_bootstrap(self):
+        self.missing_env()
+        self.maintenance_run()
+        proof = self.bootstrap._workspace_evidence(SHA)
+        self.assertEqual(proof['state'], 'SUCCEEDED')
+        self.assertIn(OP, proof['receipts']['review-resets'])
+
+    def test_post_env_ci_failure_blocks_original_reset_with_new_id(self):
+        self.missing_env()
+        calls = [0]
+        def second_ci_fails(*args):
+            calls[0] += 1
+            self.events.append('gate')
+            if calls[0] == 2:
+                raise RuntimeError('offline second CI rejected')
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', second_ci_fails)
+        with self.assertRaises(RuntimeError):
+            self.maintenance_run()
+        self.assertTrue((self.workspace / 'deployment.env').exists())
+        with self.assertRaises(self.reset.ResetError):
+            self.reset.reset_review(SHA, OTHER)
+        self.assertNotIn('execute', self.events)
+
+    def test_unknown_audit_for_another_target_blocks_before_preparation(self):
+        self.missing_env()
+        prior = self.state / 'review-maintenance' / ('e' * 40)
+        prior.mkdir(parents=True, mode=0o700)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertFalse(self.operation.exists())
+        self.assertNotIn('execute', self.events)
+
+    def test_completed_audit_schema_is_strict(self):
+        self.missing_env()
+        self.maintenance_run()
+        self.maintenance.assert_audit_history(self.bootstrap, self.server, self.reset)
+        path = self.state / 'review-maintenance' / SHA / 'started.json'
+        data = json.loads(path.read_bytes())
+        put(path, {**data, 'unexpected': True})
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance.assert_audit_history(self.bootstrap, self.server, self.reset)
