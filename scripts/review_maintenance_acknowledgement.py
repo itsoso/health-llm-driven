@@ -20,6 +20,9 @@ import sys
 STATE = Path('/var/lib/reva-release')
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C'}
 TERMINAL = 'UNKNOWN_ACCEPTED_AUDIT_ONLY'
+TARGET = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
+OPERATION = 'a71c3840b6f24bc79937d178cb838066'
+ORIGINAL_OPERATOR = '6d3374d77e69522406abd812c80571ce13ac439c'
 
 
 class AcknowledgementError(Exception):
@@ -74,6 +77,12 @@ def acknowledge(adapter, *, accept_unknown=False, evidence_sha256=None):
     return {'state': TERMINAL, 'original_outcome': 'UNKNOWN', 'evidence_sha256': fingerprint}
 
 
+def verify_operator_ci(gate, sha, token_stdin):
+    token = gate._stdin_token() if token_stdin else None
+    get_json = (lambda url: gate._get_json(url, token=token)) if token is not None else gate._get_json
+    gate.verify_release(sha, sha, observed_main=sha, _get_json=get_json)
+
+
 def context(sha, *, verify_ci=True, token_stdin=False):
     if (re.fullmatch('[a-f0-9]{40}', sha or '') is None or os.geteuid() != 0
             or sys.executable != '/usr/bin/python3.12' or not sys.flags.isolated
@@ -103,30 +112,68 @@ def context(sha, *, verify_ci=True, token_stdin=False):
         gate_path = source / 'scripts/trusted_release_gate.py'
         b.secure(gate_path)
         gate = load(gate_path, 'ack_release_gate')
-        token = gate._stdin_token() if token_stdin else None
-        get_json = (lambda url: gate._get_json(url, token=token)) if token is not None else gate._get_json
-        gate.verify_release(sha, sha, observed_main=sha, _get_json=get_json)
+        verify_operator_ci(gate, sha, token_stdin)
     elif token_stdin:
         raise AcknowledgementError('probe must not consume GitHub credentials')
     return source, b, server, retirement
 
 
+def validate_profile(old_sha, operation_id):
+    if (old_sha, operation_id) != (TARGET, OPERATION):
+        raise AcknowledgementError('only the explicitly accepted maintenance is supported')
+
+
 def validate_failed_pair(start, end, old_sha, operation_id):
+    validate_profile(old_sha, operation_id)
     keys = {'operator_sha', 'target_sha', 'operation_id', 'production_identity',
             'production_sha256', 'environment_sha256', 'ci', 'state'}
     if (not isinstance(start, dict) or set(start) != keys or start['state'] != 'STARTED'
             or start['target_sha'] != old_sha or start['operation_id'] != operation_id
-            or not isinstance(start['operator_sha'], str)
-            or re.fullmatch('[a-f0-9]{40}', start['operator_sha']) is None
+            or start['operator_sha'] != ORIGINAL_OPERATOR
             or end != {**start, 'state': 'NEEDS_OPERATOR'}):
         raise AcknowledgementError('exact failed maintenance pair required')
 
 
 def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
-    class Adapter(helpers.Adapter):
+    validate_profile(old_sha, operation_id)
+    class Adapter:
+        # Reuse only methods whose dependency closure is read-only. Do not
+        # instantiate either retirement Adapter or lease-based RecoveryProof.
+        _quiescent = helpers.Adapter._quiescent
+        _services = helpers.Adapter._services
+        inspect = helpers.Adapter.inspect
+
         def __init__(self):
-            super().__init__(source, b, server, sha, old_sha, operation_id, '', check)
+            self.source, self.b, self.server = source, b, server
+            self.sha, self.old_sha, self.operation_id = sha, old_sha, operation_id
+            self.check = check
             self.record = STATE / 'review-maintenance-acknowledgements' / old_sha
+            self.volatile = Path('/run/lock/health-app-release.review-retired-' + old_sha)
+            for filename in ('contained_release_retirement.py', 'recover_contained_services.py',
+                             'trusted_review_reset.py', 'contained_recovery_proof.py'):
+                b.secure(source / 'scripts' / filename)
+            self.c = load(source / 'scripts/contained_release_retirement.py', 'ack_file_readers')
+            self.r = load(source / 'scripts/recover_contained_services.py', 'ack_health_readers')
+            self.reset = load(source / 'scripts/trusted_review_reset.py', 'ack_snapshot_readers')
+            proof = load(source / 'scripts/contained_recovery_proof.py', 'ack_service_readers')
+            class SystemdReader:
+                def show(self, unit, prop):
+                    result = subprocess.run(['/usr/bin/systemctl', 'show', unit,
+                        '--property=' + prop, '--value'], env=ENV, stdin=subprocess.DEVNULL,
+                        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                        check=True, timeout=15)
+                    if len(result.stdout) > 65536:
+                        raise AcknowledgementError('systemd property exceeds bound')
+                    return result.stdout.strip()
+            class ServiceReader:
+                _no_jobs = proof.RecoveryProof._no_jobs
+                _pids = proof.RecoveryProof._pids
+                running_services_snapshot = proof.RecoveryProof.running_services_snapshot
+                def __init__(self):
+                    self.systemd = SystemdReader()
+                    self.proc = Path('/proc')
+                    self.cgroup = Path('/sys/fs/cgroup')
+            self.p = ServiceReader()
 
         def _lease(self):
             # Check canonical real location as well as its public alias. A
@@ -143,7 +190,7 @@ def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
             return {'state': 'ABSENT_NOT_AUTHORITY'}
 
         def _base(self):
-            base = super()._base()
+            base = helpers.Adapter._base(self)
             audit = STATE / 'review-maintenance' / old_sha
             inventory = b._inventory(audit, {'started.json', 'completed.json'})
             start = b._read_json(audit / 'started.json')
@@ -206,6 +253,7 @@ def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
 
 
 def account_child(sha, old_sha, operation_id):
+    validate_profile(old_sha, operation_id)
     source, b, server, helpers = context(sha, verify_ci=False)
     record = STATE / 'review-maintenance-acknowledgements' / old_sha
     b.secure(record)
@@ -265,6 +313,7 @@ def main():
                 or re.fullmatch('[a-f0-9]{32}', args.operation_id) is None
                 or (args.evidence_sha256 is not None and re.fullmatch('[a-f0-9]{64}', args.evidence_sha256) is None)):
             raise AcknowledgementError('exact acknowledgement identifiers required')
+        validate_profile(args.release_sha, args.operation_id)
         if args.account_probe:
             if args.accept_unknown_review_writes or args.evidence_sha256 or args.token_stdin:
                 raise AcknowledgementError('invalid probe arguments')

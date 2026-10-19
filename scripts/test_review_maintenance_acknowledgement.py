@@ -142,7 +142,7 @@ def test_no_existing_history_consumer_references_audit_namespace():
 
 
 def pair():
-    start = {'operator_sha': 'b' * 40, 'target_sha': 'a' * 40, 'operation_id': 'c' * 32,
+    start = {'operator_sha': load().ORIGINAL_OPERATOR, 'target_sha': load().TARGET, 'operation_id': load().OPERATION,
              'production_identity': [1] * 9, 'production_sha256': 'd' * 64,
              'environment_sha256': 'e' * 64, 'ci': {}, 'state': 'STARTED'}
     return start, {**start, 'state': 'NEEDS_OPERATOR'}
@@ -151,7 +151,7 @@ def pair():
 def test_exact_failed_maintenance_pair_is_accepted():
     m = load()
     start, end = pair()
-    m.validate_failed_pair(start, end, 'a' * 40, 'c' * 32)
+    m.validate_failed_pair(start, end, m.TARGET, m.OPERATION)
 
 
 @pytest.mark.parametrize('field,value', [('state', 'SUCCEEDED'), ('target_sha', 'f' * 40),
@@ -161,7 +161,7 @@ def test_inconsistent_failed_maintenance_pair_is_blocked(field, value):
     start, end = pair()
     end[field] = value
     with pytest.raises(m.AcknowledgementError):
-        m.validate_failed_pair(start, end, 'a' * 40, 'c' * 32)
+        m.validate_failed_pair(start, end, m.TARGET, m.OPERATION)
 
 
 def test_matching_wrong_operation_pair_still_blocked():
@@ -169,7 +169,7 @@ def test_matching_wrong_operation_pair_still_blocked():
     start, end = pair()
     start['operation_id'] = end['operation_id'] = 'f' * 32
     with pytest.raises(m.AcknowledgementError):
-        m.validate_failed_pair(start, end, 'a' * 40, 'c' * 32)
+        m.validate_failed_pair(start, end, m.TARGET, m.OPERATION)
 
 
 def test_probe_refuses_github_token_flag_before_context(monkeypatch):
@@ -181,3 +181,271 @@ def test_probe_refuses_github_token_flag_before_context(monkeypatch):
         pytest.fail('context or stdin must not be reached')
     monkeypatch.setattr(m, 'context', forbidden)
     assert m.main() == 1
+
+
+def test_real_adapter_constructor_never_requires_or_fabricates_lease(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    m = load()
+    root = Path(__file__).resolve().parents[1]
+    helpers = m.load(root / 'scripts/review_maintenance_retirement.py', 'real_ack_helpers')
+    seen = []
+    bootstrap = SimpleNamespace(STATE=tmp_path, secure=lambda path, **kwargs: seen.append(path))
+    adapter = m.make_adapter(root, bootstrap, object(), helpers, 'b' * 40, m.TARGET,
+                             m.OPERATION, lambda: None)
+    assert not hasattr(adapter, 'token')
+    assert not hasattr(adapter.p, 'token')
+    assert not hasattr(adapter.p, 'isolate')
+    assert not hasattr(adapter.p, 'stopped')
+    assert not hasattr(adapter.p.systemd, 'daemon_reload')
+    assert adapter.p.proc == Path('/proc')
+    assert adapter.p.cgroup == Path('/sys/fs/cgroup')
+    assert adapter.record.parent.name == 'review-maintenance-acknowledgements'
+    assert len(seen) >= 4
+    with pytest.raises(m.AcknowledgementError, match='revocation forbidden'):
+        adapter.isolate({})
+
+
+@pytest.mark.parametrize('old_sha,operation', [('f' * 40, load().OPERATION), (load().TARGET, 'f' * 32)])
+def test_profile_rejects_other_operations(old_sha, operation):
+    m = load()
+    with pytest.raises(m.AcknowledgementError, match='explicitly accepted'):
+        m.validate_profile(old_sha, operation)
+
+
+def test_real_adapter_child_receives_only_ephemeral_hmac_key(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+    m = load()
+    root = Path(__file__).resolve().parents[1]
+    helpers = m.load(root / 'scripts/review_maintenance_retirement.py', 'real_ack_probe_helpers')
+    bootstrap = SimpleNamespace(STATE=tmp_path, secure=lambda *args, **kwargs: None)
+    adapter = m.make_adapter(root, bootstrap, object(), helpers, 'b' * 40,
+                             m.TARGET, m.OPERATION, lambda: None)
+    monkeypatch.setattr(adapter, '_quiescent', lambda: None)
+    key = bytes(range(32))
+    seen = []
+    def run(argv, **kwargs):
+        seen.append(argv)
+        assert '--token-stdin' not in argv
+        assert kwargs['input'] == key
+        assert kwargs['env'] == m.ENV
+        return SimpleNamespace(stdout=b'{"synthetic":true}')
+    monkeypatch.setattr(m.subprocess, 'run', run)
+    assert adapter.inspect_account(key) == {'synthetic': True}
+    assert len(seen) == 1
+
+
+def test_ci_protected_token_read_once_not_persisted():
+    from types import SimpleNamespace
+    m = load()
+    events = []
+    def token():
+        events.append('stdin')
+        return 'synthetic-ephemeral'
+    def get_json(url, **kwargs):
+        assert kwargs == {'token': 'synthetic-ephemeral'}
+        events.append('request')
+        return {}
+    def verify(sha, workflow_sha, **kwargs):
+        assert sha == workflow_sha == 'b' * 40
+        assert kwargs['observed_main'] == sha
+        kwargs['_get_json']('/synthetic')
+        kwargs['_get_json']('/synthetic2')
+    m.verify_operator_ci(SimpleNamespace(_stdin_token=token, _get_json=get_json,
+                                        verify_release=verify), 'b' * 40, True)
+    assert events == ['stdin', 'request', 'request']
+
+
+def test_real_adapter_base_reuses_fixed_0640_production_reader(tmp_path, monkeypatch):
+    import hashlib
+    from types import SimpleNamespace
+    m = load()
+    root = Path(__file__).resolve().parents[1]
+    helpers = m.load(root / 'scripts/review_maintenance_retirement.py', 'real_ack_env_helpers')
+    maintenance = m.load(root / 'scripts/trusted_review_maintenance.py', 'real_ack_env')
+    server = m.load(root / 'scripts/trusted_release_server.py', 'real_ack_env_server')
+    production = tmp_path / 'production.env'
+    production.write_text('SYNTHETIC=value\n')
+    production.chmod(0o640)
+    maintenance.PRODUCTION_ENV = production
+    def read_production_env():
+        info = production.stat()
+        server.validate_production_env_metadata(SimpleNamespace(st_mode=info.st_mode,
+            st_uid=0, st_gid=996, st_nlink=1), 996)
+        return production.read_text()
+    env_server = SimpleNamespace(read_production_env=read_production_env)
+    identity, env_digest, _ = maintenance.production_identity(env_server)
+    workspace = tmp_path / m.TARGET
+    workspace.mkdir()
+    (workspace / 'deployment.env').write_text('SYNTHETIC=deployment\n')
+    start, _ = pair()
+    start['production_identity'] = list(identity)
+    start['production_sha256'] = env_digest
+    start['environment_sha256'] = hashlib.sha256((workspace / 'deployment.env').read_bytes()).hexdigest()
+    end = {**start, 'state': 'NEEDS_OPERATOR'}
+    bootstrap = SimpleNamespace(STATE=tmp_path, secure=lambda *args, **kwargs: None,
+        _inventory=lambda *args: {'synthetic': True},
+        _read_json=lambda path: start if path.name == 'started.json' else end)
+    adapter = m.make_adapter(root, bootstrap, env_server, helpers, 'b' * 40,
+                            m.TARGET, m.OPERATION, lambda: None)
+    monkeypatch.setattr(m, 'STATE', tmp_path)
+    monkeypatch.setattr(helpers.Adapter, '_base', lambda self: {'original': 'unchanged'})
+    original_load = m.load
+    monkeypatch.setattr(m, 'load', lambda path, name: maintenance if name == 'ack_environment_reader' else original_load(path, name))
+    assert adapter._base()['production_environment']['sha256'] == env_digest
+    production.chmod(0o600)
+    with pytest.raises(server.LaunchError, match='0640'):
+        adapter._base()
+
+
+def test_real_adapter_inspect_complete_synthetic_snapshot(tmp_path, monkeypatch):
+    """Run actual inspect/_base/lease/services composition over synthetic files.
+
+    Root ownership, OS process/SSH inventory and systemd I/O are simulated;
+    source readers, receipt schemas, directory inventories, policy binding,
+    environment identity, service stability and absent-lease checks are real.
+    """
+    import hashlib
+    import os
+    import stat
+    from types import SimpleNamespace
+    m = load()
+    root = Path(__file__).resolve().parents[1]
+    helpers = m.load(root / 'scripts/review_maintenance_retirement.py', 'full_ack_helpers')
+    b = m.load(root / 'scripts/bootstrap_trusted_release.py', 'full_ack_bootstrap')
+    server = m.load(root / 'scripts/trusted_release_server.py', 'full_ack_server')
+    maintenance = m.load(root / 'scripts/trusted_review_maintenance.py', 'full_ack_environment')
+    state = tmp_path / 'state'
+    state.mkdir(mode=0o700)
+    m.STATE = b.STATE = state
+    b.CONFIG = tmp_path / 'config'
+    b.CONFIG.mkdir(mode=0o700)
+    lib = tmp_path / 'library'
+    lib.mkdir(mode=0o700)
+    b.INSTALLED = lib / 'executor.py'
+    b.AUTHORIZED = tmp_path / 'authorized_keys'
+    b.BUSINESS_LEASE = tmp_path / 'absent-business-lease'
+    workspace = state / m.TARGET
+    workspace.mkdir(mode=0o700)
+    resets = workspace / 'review-resets'
+    resets.mkdir(mode=0o700)
+    operation = resets / m.OPERATION
+    operation.mkdir(mode=0o700)
+    audit_root = state / 'review-maintenance'
+    audit_root.mkdir(mode=0o700)
+    audit = audit_root / m.TARGET
+    audit.mkdir(mode=0o700)
+    def write(path, value):
+        path.write_text(json.dumps(value) if not isinstance(value, str) else value)
+        path.chmod(0o600)
+    write(workspace / 'started.json', {'sha': m.TARGET, 'state': 'STARTED'})
+    write(workspace / 'completed.json', {'sha': m.TARGET, 'state': 'SUCCEEDED'})
+    write(operation / 'started.json', {'sha': m.TARGET, 'operation_id': m.OPERATION, 'state': 'STARTED'})
+    write(operation / 'completed.json', {'sha': m.TARGET, 'operation_id': m.OPERATION, 'state': 'NEEDS_OPERATOR'})
+    write(workspace / 'deployment.env', 'SYNTHETIC=deployment\n')
+    write(state / 'launcher.lock', '')
+    write(workspace / 'build.lock', '')
+    canonical_digest = hashlib.sha256((root / 'scripts/trusted_release_server.py').read_bytes()).hexdigest()
+    b.INSTALLED.write_bytes((root / 'scripts/trusted_release_server.py').read_bytes())
+    b.INSTALLED.chmod(0o600)
+    write(b.CONFIG / 'authorized-release.json', {'sha': m.TARGET, 'executor_sha256': canonical_digest, 'expires_at': 0})
+    for name, text in {'cloud.pub': 'ssh-ed25519 synthetic-cloud', 'loopback.pub': 'ssh-ed25519 synthetic-loopback',
+                       'loopback.key': 'synthetic', 'loopback.conf': 'synthetic', 'known_hosts': 'synthetic'}.items():
+        write(b.CONFIG / name, text)
+    write(b.AUTHORIZED, 'fixed synthetic-cloud\nfixed synthetic-loopback\n')
+    production = tmp_path / 'production.env'
+    write(production, 'SYNTHETIC=value\n')
+    production.chmod(0o640)
+    maintenance.PRODUCTION_ENV = production
+
+    # Synthetic root ownership. Retain actual inode, nanosecond timestamps,
+    # modes and sizes so the real file-identity comparisons still execute.
+    original_lstat = Path.lstat
+    def lstat(path):
+        if path == Path('/var/lock'):
+            return SimpleNamespace(st_mode=stat.S_IFLNK | 0o777, st_uid=0, st_gid=0)
+        if path == Path('/run/lock'):
+            return SimpleNamespace(st_mode=stat.S_IFDIR | 0o1777, st_uid=0, st_gid=0)
+        info = original_lstat(path)
+        if path == root or root in path.parents or path == tmp_path or tmp_path in path.parents:
+            names = ('st_mode', 'st_ino', 'st_dev', 'st_nlink', 'st_size', 'st_atime', 'st_mtime',
+                     'st_ctime', 'st_atime_ns', 'st_mtime_ns', 'st_ctime_ns')
+            return SimpleNamespace(**{name: getattr(info, name) for name in names},
+                                   st_uid=0, st_gid=996 if path == production else 0)
+        return info
+    monkeypatch.setattr(Path, 'lstat', lstat)
+    original_readlink = os.readlink
+    monkeypatch.setattr(os, 'readlink', lambda path, **kwargs: '/run/lock' if Path(path) == Path('/var/lock') else original_readlink(path, **kwargs))
+    def secure(path, private=False):
+        info = path.lstat()
+        assert info.st_uid == 0 and not info.st_mode & 0o022
+        assert not stat.S_ISLNK(info.st_mode)
+        if private:
+            assert stat.S_IMODE(info.st_mode) == 0o600
+    b.secure = secure
+    def read_env():
+        server.validate_production_env_metadata(production.lstat(), 996)
+        return production.read_text()
+    server.read_production_env = read_env
+    identity, env_digest, _ = maintenance.production_identity(server)
+    start, _ = pair()
+    start.update(production_identity=list(identity), production_sha256=env_digest,
+                 environment_sha256=hashlib.sha256((workspace / 'deployment.env').read_bytes()).hexdigest())
+    write(audit / 'started.json', start)
+    write(audit / 'completed.json', {**start, 'state': 'NEEDS_OPERATOR'})
+    b.canonical_source = lambda sha: root if sha == m.TARGET else pytest.fail('wrong source')
+    b._retired_history = lambda: {}
+    b._assert_known_activity = lambda history, sha: None
+    b._archives = lambda sha: []
+    b.validate_install = lambda sha, expiry, key, now: None
+    b.key_lines = lambda expiry, *keys: ['fixed synthetic-cloud', 'fixed synthetic-loopback']
+    process_checks, lock_checks = [], []
+    b._recovery_process_proof = lambda: process_checks.append(True)
+    monkeypatch.setattr(helpers, 'assert_no_other_ssh_sessions', lambda: None)
+    adapter = m.make_adapter(root, b, server, helpers, 'b' * 40, m.TARGET, m.OPERATION,
+                             lambda: lock_checks.append(True))
+    revision_checks = []
+    monkeypatch.setattr(adapter.reset, '_revision_proof', lambda sha, source, bootstrap: revision_checks.append(sha))
+    monkeypatch.setattr(adapter.r, '_http_probes', lambda: None)
+    original_load = m.load
+    monkeypatch.setattr(m, 'load', lambda path, name: maintenance if name == 'ack_environment_reader' else original_load(path, name))
+    # Execute real service reader/stability loop with synthetic systemd/proc.
+    adapter.p.proc = tmp_path / 'proc'
+    adapter.p.cgroup = tmp_path / 'cgroup'
+    adapter.p.proc.mkdir()
+    adapter.p.cgroup.mkdir()
+    units = ['health-backend.socket', 'health-backend.service', 'celery-worker.service', 'celery-beat.service']
+    for index, unit in enumerate(units):
+        pid = str(100 + index)
+        process = adapter.p.proc / pid
+        process.mkdir()
+        (process / 'stat').write_text(pid + ' (synthetic) ' + ' '.join(['1'] * 20))
+        (process / 'environ').write_bytes(b'HEALTH_EVIDENCE_RUNTIME_ENABLED=false\0')
+        group = adapter.p.cgroup / unit
+        group.mkdir()
+        (group / 'cgroup.procs').write_text(pid + '\n')
+    def systemctl(argv, **kwargs):
+        if argv[1] == 'list-jobs':
+            return SimpleNamespace(stdout=b'')
+        assert argv[1] == 'show'
+        unit, prop = argv[2], argv[3].split('=', 1)[1]
+        values = {'ActiveState': 'active', 'SubState': 'listening' if unit.endswith('.socket') else 'running',
+                  'MainPID': str(100 + units.index(unit)), 'NRestarts': '0', 'ActiveEnterTimestampMonotonic': '1',
+                  'ControlGroup': '/' + unit, 'Result': 'success', 'RestartUSec': '5s'}
+        return SimpleNamespace(stdout=values[prop])
+    monkeypatch.setattr(m.subprocess, 'run', systemctl)
+    clock = [0]
+    monkeypatch.setattr(adapter.r, 'time', SimpleNamespace(monotonic=lambda: clock[0], sleep=lambda seconds: clock.__setitem__(0, clock[0] + seconds)))
+    result = adapter.inspect()
+    assert result['old_sha'] == m.TARGET and result['operation_id'] == m.OPERATION
+    assert result['original_outcome'] == 'UNKNOWN'
+    assert result['lease'] == {'state': 'ABSENT_NOT_AUTHORITY'}
+    assert result['original']['maintenance']['completed.json']['sha256']
+    assert len(result['services']) == 4
+    assert result['config']['authorized-release.json']['sha256']
+    assert revision_checks == [m.TARGET, m.TARGET]
+    assert process_checks and lock_checks
+    assert not adapter.record.exists()
+    # Both real receipt readers remain active on subsequent inspect.
+    write(operation / 'completed.json', {'sha': m.TARGET, 'operation_id': m.OPERATION, 'state': 'SUCCEEDED'})
+    with pytest.raises(helpers.ClosureError, match='unaccepted'):
+        adapter.inspect()
