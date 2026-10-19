@@ -77,7 +77,8 @@
         "autoIncrement": true
       },
       "ios": {
-        "autoIncrement": true
+        "autoIncrement": true,
+        "image": "macos-tahoe-26.5-xcode-26.6"
       },
       "channel": "production",
       "env": {
