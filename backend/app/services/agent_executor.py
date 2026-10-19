@@ -16918,7 +16918,7 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
         self._turn_food_photo_recognition = None
-        if images and self._is_exercise_photo_context(message):
+        if images and self._is_non_diet_photo_context(message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             if _is_diet_photo_auto_save_turn(extra_context, has_images=True):
                 # Current typed purpose overrides stale camera/draft metadata.
@@ -17189,7 +17189,7 @@ class AgentExecutor:
         )
         diet_photo_progress_turn = bool(
             images
-            and not self._is_exercise_photo_context(message)
+            and not self._is_non_diet_photo_context(message)
             and (
                 self._diet_photo_auto_save
                 or self._looks_like_food_photo_context(message)
@@ -22826,7 +22826,7 @@ class AgentExecutor:
             # force-tool grammar: complex creative prompts keep the general
             # toolset, but must still never become diet candidates first.
             return False
-        if (self._is_exercise_photo_context(message)
+        if (self._is_non_diet_photo_context(message)
                 and intent.domain not in {"supplement", "medication", "clinical_context"}
                 and not _looks_like_medical_report_image_context(message)):
             return not self._should_send_raw_images_to_primary_model(user_id)
@@ -24713,7 +24713,7 @@ class AgentExecutor:
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""
         structured_food = None
-        if not self._is_exercise_photo_context(user_message):
+        if not self._is_non_diet_photo_context(user_message):
             structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
         if structured_food:
             return structured_food
@@ -24772,7 +24772,7 @@ class AgentExecutor:
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         self._turn_food_photo_recognition = None
-        if self._is_exercise_photo_context(user_message):
+        if self._is_non_diet_photo_context(user_message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             return None
         if not images:
@@ -24988,7 +24988,7 @@ class AgentExecutor:
             self._turn_contextual_diet_write_blocked_reason = reason
             vision_result['contextual_capture_write_blocked_reason'] = reason
             return None
-        if self._is_exercise_photo_context(user_message):
+        if self._is_non_diet_photo_context(user_message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             return None
         user_id = self._current_user_id
@@ -25569,6 +25569,23 @@ class AgentExecutor:
         if 17 <= hour < 22:
             return "dinner"
         return "snack"
+
+    @classmethod
+    def _is_non_diet_photo_context(cls, user_message: str) -> bool:
+        """Explicit attachment purpose revokes diet authority, never grants a write.
+
+        A camera meal hint must not turn a skin/wound question into food
+        recognition, even when a vision provider hallucinates edible objects.
+        Mixed skin/food requests remain outside automatic meal capture.
+        """
+        if cls._is_exercise_photo_context(user_message):
+            return True
+        return bool(re.search(
+            r"皮肤|皮疹|伤口|磨破|擦伤|破皮|红疹|湿疹|荨麻疹|水疱|水泡|"
+            r"烫伤|晒伤|蚊虫叮咬|表带.*(?:过敏|红肿|痒)|"
+            r"\b(?:rash|wound|blister|abrasion|eczema)\b|skin\s+irritation",
+            user_message or "", re.I,
+        ))
 
     @staticmethod
     def _is_exercise_photo_context(user_message: str) -> bool:
