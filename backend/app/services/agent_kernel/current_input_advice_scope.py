@@ -40,6 +40,46 @@ _SYMPTOMS = frozenset({
     "咽痛", "肌肉酸痛", "关节痛",
 })
 
+# Closed symptom clauses, including bare follow-up answers to a symptom
+# question. Full consumption is essential: a symptom keyword cannot erase an
+# additional read/write, medication, third-party or quoted request.
+_GI_PAIN = r"(?:(?:胃|腹|肚子|上腹|下腹)(?:疼|痛)|疼|痛)"
+_GI_SYMPTOM = rf"(?:嗳气|打嗝|反酸|烧心|胃胀|腹胀|恶心|呕吐|腹泻|便秘|呕血|黑便|便血|{_GI_PAIN})"
+_GI_INTERVAL = r"(?:半|[一二两三四五六七八九十\d]{1,3})(?:个)?(?:小时|分钟)"
+_GI_AFTER_MEAL = rf"(?:(?:吃(?:完)?饭|进食){_GI_INTERVAL}后|(?:饭后|餐后)(?:{_GI_INTERVAL})?)"
+_GI_SYMPTOM_CLAUSE = rf"(?:我)?(?:{_GI_AFTER_MEAL})?(?:开始|有点|有|感觉)?{_GI_SYMPTOM}(?:的感觉)?"
+_GI_STOOL_CLAUSE = r"(?:我)?(?:大便|排便)(?:正常|不正常|黑色|带血)"
+_GI_DESCRIPTION_RE = re.compile(
+    rf"(?:{_GI_SYMPTOM_CLAUSE}|{_GI_STOOL_CLAUSE})"
+    rf"(?:[，,。；;、]?(?:{_GI_SYMPTOM_CLAUSE}|{_GI_STOOL_CLAUSE})){{0,7}}"
+    r"(?:[，,。]?(?:怎么办|怎么回事|需要就医吗))?[。？?]?"
+)
+
+_GI_ADVICE_INSTRUCTIONS = """
+本轮只依据用户当前输入的症状描述或症状补充，回应不适和必要的下一步，不把它解释成数据查询，也不要求查询日期。
+明确本轮未查询个人记录；不查询、不保存健康记录，不使用历史、缓存或背景档案补齐病史和用药。可检索通用医学知识。
+先回应当前描述；疼痛部位不明确时先问哪里疼，不凭饭后时间或嗳气直接诊断胃炎或溃疡，大便正常不能排除需要就医的原因。
+询问疼痛部位、程度、持续时间和是否加重，以及是否有呕血、黑便或便血等伴随表现。不能将未提及的症状说成没有。
+若用户已描述突然或剧烈腹痛、呕血、黑便或便血、胸痛、呼吸困难或晕倒，应优先提示立即寻求急救；未描述时给条件式警示，不能断言没有危险。
+疼痛持续、反复或明显加重应及时就医。只给有条件的非药物建议，不给药物或补剂开始、停用、继续、剂量、频次、时点或疗程指令；用药问题向医生或药师核对。
+""".strip()
+
+
+def is_current_input_gastrointestinal_advice(text: str) -> bool:
+    """Prove a bounded symptom-only turn, without personal tool authority."""
+    if not isinstance(text, str) or len(text) > 256 or any(ch in text for ch in "\r\n\t"):
+        return False
+    candidate = text.replace(" ", "").replace("\u3000", "")
+    if not (_GI_DESCRIPTION_RE.fullmatch(candidate)
+            and (re.search(_GI_SYMPTOM, candidate)
+                 or re.search(r"(?:大便|排便)(?:黑色|带血)", candidate))):
+        return False
+    # Existing explicit/self-observation write contracts take precedence.
+    # This proof must not mask a record goal or block its authorized tools.
+    from app.services.utterance_intent_classifier import classify_agent_utterance
+
+    return not classify_agent_utterance(text).is_write
+
 # Complete questions only: these describe an answer goal, never read authority.
 _HEALTH_ADVICE = r"(?:请)?(?:给|给出|提供)(?:我)?(?:一些|一点|些|点)?(?:健康|通用健康)(?:的)?建议"
 _BEDTIME = r"(?:我)?(?:现在|今晚|今天晚上)(?:是不是|是否)?(?:可以|能|该|应该)(?:去)?睡觉(?:了)?(?:吗)?"
@@ -118,7 +158,7 @@ def is_daily_planning_advice(text: str) -> bool:
 def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
     if (is_current_input_recovery_advice(text) or is_wearable_placement_question(text)
-            or is_daily_planning_advice(text)):
+            or is_daily_planning_advice(text) or is_current_input_gastrointestinal_advice(text)):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -139,6 +179,8 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_current_input_gastrointestinal_advice(text):
+        return _GI_ADVICE_INSTRUCTIONS
     if is_daily_planning_advice(text):
         return (CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS
                 + '\n本轮任务是饮食、运动和睡眠的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
@@ -213,6 +255,7 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     if is_daily_planning_advice(message):
         return "daily_planning_advice", _daily_planning_response(message)
     if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
+            or is_current_input_gastrointestinal_advice(message)
             or not is_current_input_advice(message)):
         return None
     candidate = message.replace(" ", "").replace("\u3000", "")

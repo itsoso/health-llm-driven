@@ -742,8 +742,11 @@ def _unsupported_advice_reasons(
 
 def requires_medical_evidence_boundary(text: str) -> bool:
     """Whether the turn must be buffered until medical provenance checks finish."""
+    from app.services.agent_kernel.current_input_advice_scope import is_current_input_gastrointestinal_advice
+
     normalized = _medical_assertion_matching_text(text)
-    return bool(_SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized)
+    return bool(is_current_input_gastrointestinal_advice(text)
+                or _SENSITIVE_MEDICAL_TOPIC.search(normalized) or _UNSCOPED_REGIMEN.search(normalized)
                 or _COURSE_DURATION_ACTION.search(normalized) or _FUTURE_DOSE_ACTION.search(normalized))
 
 
