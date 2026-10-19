@@ -554,3 +554,23 @@ def test_chatlog_fingerprint_requires_actual_exact_journal_event(tmp_path, monke
     else:
         with pytest.raises(m.AcknowledgementError):
             m.verify_chatlog_authentication(tmp_path)
+
+
+@pytest.mark.parametrize('filename,function', [('review_maintenance_acknowledgement.py', 'account_child'), ('trusted_review_briefing_repair.py', 'database_child')])
+def test_account_probe_loads_verified_dependencies_before_parsing_environment(filename, function):
+    """Exercise the real child prefix under -I/-S, without accounts or a DB."""
+    import ast
+    import subprocess
+    import sys
+    source = Path(__file__).with_name(filename).read_text()
+    tree = ast.parse(source)
+    fn = next(n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == function)
+    first = next(i for i, n in enumerate(fn.body) if isinstance(n, ast.Expr) and ast.unparse(n).startswith('reset._assert_isolated_search_path'))
+    last = next(i for i, n in enumerate(fn.body) if isinstance(n, ast.Assign) and any(isinstance(t, ast.Name) and t.id == 'environment' for t in n.targets))
+    prefix = '\n'.join(ast.unparse(n) for n in fn.body[first:last + 1])
+    # Resolve the project's test virtualenv rather than system interpreter path.
+    site = str(Path(sys.prefix) / 'lib' / ('python' + str(sys.version_info.major) + '.' + str(sys.version_info.minor)) / 'site-packages')
+    prefix = prefix.replace('/opt/health-app/backend/venv/lib/python3.12/site-packages', site)
+    script = "import sys\nfrom types import SimpleNamespace\nverified=[]\ndef parse(raw):\n from dotenv.parser import parse_stream\n assert verified == [True]\n return list(parse_stream(__import__('io').StringIO(raw)))\nreset=SimpleNamespace(_assert_isolated_search_path=lambda: None,_validate_production=lambda *a: verified.append(True),_parse_maintenance_environment=parse)\nserver=SimpleNamespace(read_production_env=lambda: 'SYNTHETIC=yes')\nold_sha=TARGET=target=b=None\n" + prefix + "\nassert environment[0].value == 'yes'"
+    result = subprocess.run([sys.executable, '-I', '-S', '-B', '-c', script], capture_output=True, text=True)
+    assert result.returncode == 0, result.stderr

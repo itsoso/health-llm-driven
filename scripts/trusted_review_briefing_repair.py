@@ -362,6 +362,8 @@ def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
     reset = readers.load(source / 'scripts/trusted_review_reset.py', 'briefing_reset_readers')
     reset._assert_isolated_search_path()
     reset._validate_production(TARGET, target, b, server)
+    # Production proof above validates this root-managed dependency tree.
+    sys.path.append('/opt/health-app/backend/venv/lib/python3.12/site-packages')
     raw_environment = server.read_production_env()
     environment = reset._parse_maintenance_environment(raw_environment)
     key = hmac.new(hashlib.sha256(raw_environment.encode()).digest(),
@@ -371,7 +373,6 @@ def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
     b.secure(fixture)
     if hashlib.sha256(fixture.read_bytes()).hexdigest() != core.FIXTURE_SHA256:
         raise BriefingError('frozen fixture changed')
-    sys.path.append('/opt/health-app/backend/venv/lib/python3.12/site-packages')
     os.environ.clear()
     os.environ.update(environment)
     os.chdir(target / 'backend')

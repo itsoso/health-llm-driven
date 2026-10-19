@@ -424,8 +424,9 @@ def account_child(sha, old_sha, operation_id):
     reset = helpers.load(source / 'scripts/trusted_review_reset.py', 'ack_reset_readers')
     reset._assert_isolated_search_path()
     reset._validate_production(old_sha, target, b, server)
-    environment = reset._parse_maintenance_environment(server.read_production_env())
+    # Production proof above validates this root-managed dependency tree.
     sys.path.append('/opt/health-app/backend/venv/lib/python3.12/site-packages')
+    environment = reset._parse_maintenance_environment(server.read_production_env())
     os.environ.clear()
     os.environ.update(environment)
     os.chdir(target / 'backend')
