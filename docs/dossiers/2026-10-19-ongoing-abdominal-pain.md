@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 创建日期 | 2026-10-19 |
-| 当前阶段 | 本地验证；独立安全审查待完成 |
+| 当前阶段 | 本地验证及安全审查通过；发布等待既有事务收口 |
 | 状态 | in_progress |
 | 范围 | 当前轮持续腹部疼痛的确定性症状记录 |
 
@@ -25,12 +25,19 @@
 - RED：新增 6 个正例均失败，解析结果为 None；日志 `/tmp/reva-ongoing-pain-red.log`。
 - 首轮 SQLite 聚焦测试 140 passed；日志 `/tmp/reva-ongoing-pain-green.log`。
 - 分类、工具选择、权限与写授权回归 3,118 passed；日志 `/tmp/reva-ongoing-pain-regression.log`。
-- PostgreSQL 首轮 128 passed / 12 failed：新增合成第二用户夹具遗漏必填 name，失败发生在 db.flush、未进入待验证业务链路。补齐夹具后使用独立临时合成库和非超级用户重跑；日志 `/tmp/reva-ongoing-pain-pg-final.log`，原失败日志保留。
+- PostgreSQL 首轮 128 passed / 12 failed：新增合成第二用户夹具遗漏必填 name，失败发生在 db.flush、未进入待验证业务链路。补齐夹具后使用独立临时合成库和非超级用户重跑，140 passed（105.60 秒）；日志 `/tmp/reva-ongoing-pain-pg-final.log`，原失败日志保留。覆盖合成 provider、真实 Pi/gateway、TestClient HTTP API、数据库持久化和验证回执；不代表生产账号或设备验收。
 - 模型字段净化与拒绝边界补充验证 27 passed；日志 `/tmp/reva-ongoing-pain-payload.log`。
 - System Map 与 `git diff --check` 通过。未改变地图生成器覆盖结构，无生成物差异。
+- tracked-files 秘密扫描与 Dossier 一致性检查通过。
+
+## 独立安全审查
+
+- 实现提交 `934511d3b1b2e6de56e8d811837358b88bc06129`，独立 reviewer `pain_safety_review` 裁决 GO，无阻断项；独立 SQLite 聚焦测试 140 passed，退出码 0。
+- 复核完整匹配和未知尾部拒绝、当前轮唯一授权来源、模型字段替换、认证用户绑定、旧记录保护，以及 proposal 到 Pi/gateway/API/receipt 的既有权限链路。
+- API 未给出发生时间时沿用既有当前时间默认值；“下午”仍保留在原文，没有转换成猜测的具体钟点。
 
 ## 发布边界
 
 - 开工基线 `55c56c2818935f6d065f65168ed7b0e681ae2444`；现有 CI `39211096323` 成功仅证明旧基线。
 - 同仓库统一发布回执仍标记 Web 失败事务 `e94f8c89521046fcae79cdb8fd54dc09` 未收口、业务租约受保护，处于 WEB_FINALIZATION_INSPECTION。未接管或重放该事务。
-- 本次独立安全审查、最终候选完整 CI / CI-mode、生产部署和模拟器验收尚未完成；未推送、部署或触发 OTA。本次没有 Mobile 改动。
+- 本次实现已本地提交，安全审查 GO。最终候选完整 CI / CI-mode、生产部署和模拟器验收尚未完成；未推送、部署或触发 OTA。本次没有 Mobile 改动。
