@@ -1364,3 +1364,13 @@ history checker 的精确字节、原工作区清单及唯一初始失败日志�
 生产固定 App 凭据缺失时仍为匿名额度，本机 GitHub CLI 授权不构成生产提额。
 发布协调者须在消费新发布前预留足够元数据查询额度，遵守冷却时间并避免并行校验
 耗尽同一服务器额度；不可注入管理员 PAT 或删除失败回执代替收口。
+
+
+#### 已安装隐私页文案误判的精确收尾
+
+`frontend_no_backup_finalization.py --operation-id e94f8c89521046fcae79cdb8fd54dc09`
+仅选择 `privacy-title-readback-v1`，保留旧 CSR profile 默认行为。绑定原6e发布源码摘要、
+已消费制品、原失败文件及租约身份；新 current-main 精确CI与独立G4通过后，从canonical staging
+先inspect再按证据摘要执行。重新核验内外网当前隐私标题和全部连接/登录页面安全条件、
+完整在线制品及后台进程/配置。原失败回执不改写，不重建、不重新切换、不重启、不备份。
+只有持久化验证与原租约释放完成才写独立finalization终态；部分执行仍阻断，禁止重放。

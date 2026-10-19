@@ -104,9 +104,9 @@ def lease_evidence(server, operation):
             'files': files}
 
 
-def inspect(sha, context):
+def inspect(sha, context, operation_id=None):
     source, publisher, helper, bootstrap, server, gate, build = context
-    binding = server.NO_BACKUP_FINALIZATION_BINDING
+    profile, binding = server.no_backup_finalization_profile(operation_id or server.NO_BACKUP_FINALIZATION_OPERATION)
     operation = STATE / 'frontend-publications' / binding['operation_id']
     original = server.no_backup_finalization_original(STATE, binding['operation_id'])
     server.assert_frontend_rebuild_history(STATE, pending_no_backup_finalization=binding['operation_id'])
@@ -142,7 +142,7 @@ def inspect(sha, context):
     if (server.no_backup_finalization_original(STATE, binding['operation_id']) != original
             or lease_evidence(server, operation) != lease):
         raise FinalizationError('original evidence changed')
-    return {'schema_version': 1, 'profile': 'csr-login-readback-v1', 'finalizer_sha': sha,
+    return {'schema_version': 1, 'profile': profile, 'finalizer_sha': sha,
             'original': original, 'lease': lease, 'process': process}
 
 
@@ -211,6 +211,7 @@ def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--finalizer-sha', required=True)
     parser.add_argument('--evidence-sha256')
+    parser.add_argument('--operation-id')
     args = parser.parse_args()
     try:
         if (os.geteuid() != 0 or sys.executable != '/usr/bin/python3.12' or not sys.flags.isolated
@@ -221,22 +222,24 @@ def main():
         os.umask(0o077)
         context = load(args.finalizer_sha)
         source, publisher, helper, bootstrap, server, gate, build = context
+        operation_id = args.operation_id or server.NO_BACKUP_FINALIZATION_OPERATION
+        _, binding = server.no_backup_finalization_profile(operation_id)
         gate.verify_release(args.finalizer_sha, args.finalizer_sha)
-        gate._latest(gate._get_json, server.NO_BACKUP_FINALIZATION_BINDING['publisher_sha'])
-        gate._latest(gate._get_json, server.NO_BACKUP_FINALIZATION_BINDING['production_sha'])
+        gate._latest(gate._get_json, binding['publisher_sha'])
+        gate._latest(gate._get_json, binding['production_sha'])
         server.secure_path(STATE / 'launcher.lock', private=True)
         with (STATE / 'launcher.lock').open('r+b') as stream:
             fcntl.flock(stream.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-            build_fd = bootstrap._acquire_existing_build_lock(server.NO_BACKUP_FINALIZATION_BINDING['production_sha'])
+            build_fd = bootstrap._acquire_existing_build_lock(binding['production_sha'])
             def check_locks():
                 helper._assert_lock(server, STATE / 'launcher.lock', stream.fileno())
-                if build_fd is None and os.path.lexists(STATE / server.NO_BACKUP_FINALIZATION_BINDING['production_sha'] / 'build.lock'):
+                if build_fd is None and os.path.lexists(STATE / binding['production_sha'] / 'build.lock'):
                     raise FinalizationError('original build lock appeared')
                 if build_fd is not None:
-                    helper._assert_lock(server, STATE / server.NO_BACKUP_FINALIZATION_BINDING['production_sha'] / 'build.lock', build_fd)
+                    helper._assert_lock(server, STATE / binding['production_sha'] / 'build.lock', build_fd)
             def inspect_locked():
                 check_locks()
-                result = inspect(args.finalizer_sha, context)
+                result = inspect(args.finalizer_sha, context, operation_id)
                 check_locks()
                 return result
             try:

@@ -825,6 +825,25 @@ NO_BACKUP_FINALIZATION_BINDING = {
     'operation_id': NO_BACKUP_FINALIZATION_OPERATION,
     'artifact_digest': '07eee86c85dce19e35318857cb372ea2a4adb921e458ac553a3f79328ac09550',
 }
+PRIVACY_FINALIZATION_OPERATION = 'e94f8c89521046fcae79cdb8fd54dc09'
+PRIVACY_FINALIZATION_BINDING = {
+    'publisher_sha': '6e2e52a591dde9a18d485373dcbf8fc1d9c07207',
+    'production_sha': '6e2e52a591dde9a18d485373dcbf8fc1d9c07207',
+    'frontend_tree': 'd281e5eea362a1f1fad09984e7a64798b66af340',
+    'operation_id': PRIVACY_FINALIZATION_OPERATION,
+    'artifact_digest': '3aca2e050a0530e27a1080c0049e0f2121f5c814d3d71c20e0731db3ee35824d',
+}
+
+PRIVACY_FINALIZATION_SOURCE_HASHES = {'deploy.sh': 'd01655afff653c26185c75b53ed7fd5f5280b867406f6374c510365ccba1009e', 'scripts/trusted_frontend_artifact.py': 'e4a7ed22df4a246bc55e5babb4a377663e9b61a7ca8840486d2189e517f10d1c', 'scripts/trusted_frontend_no_backup.py': '8ba60f0e28577d89f8b67203ab2509b563f21f61b9e0e0e3015ee79c790688f5', 'scripts/trusted_frontend_publish.py': 'b76c2ba1381764563db28c904d67ce844011a2386481213e52e73de27e085f48', 'scripts/trusted_frontend_rebuild.py': 'b68843dd71d79541bba3395cb32cae84d5d7f9cd771745d74f36adb163776d4d'}
+
+def no_backup_finalization_profile(operation_id):
+    if operation_id == NO_BACKUP_FINALIZATION_OPERATION:
+        return 'csr-login-readback-v1', dict(NO_BACKUP_FINALIZATION_BINDING)
+    if operation_id == PRIVACY_FINALIZATION_OPERATION:
+        return 'privacy-title-readback-v1', dict(PRIVACY_FINALIZATION_BINDING)
+    raise LaunchError('unknown no-backup finalization profile')
+
+
 NO_BACKUP_ORIGINAL_FILES = {'intent.json', 'before.json', 'build.log', 'install-started.json', 'failed.json'}
 
 
@@ -839,15 +858,32 @@ def _finalization_file_evidence(path):
     return {'sha256': hashlib.sha256(raw).hexdigest(), **{name: getattr(after, name) for name in fields}}
 
 
+def privacy_finalization_source_proof(state, binding):
+    source = Path(state) / 'bootstrap' / binding['publisher_sha'] / 'source'
+    for name, expected in PRIVACY_FINALIZATION_SOURCE_HASHES.items():
+        path = source / name
+        secure_path(path)
+        before = path.lstat()
+        with path.open('rb') as stream:
+            opened = os.fstat(stream.fileno())
+            raw = stream.read(1048577)
+            after = os.fstat(stream.fileno())
+        named = path.lstat()
+        fields = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode', 'st_nlink', 'st_size', 'st_mtime_ns', 'st_ctime_ns')
+        if (len(raw) > 1048576 or before.st_nlink != 1
+                or any(getattr(before, k) != getattr(value, k) for k in fields for value in (opened, after, named))
+                or hashlib.sha256(raw).hexdigest() != expected):
+            raise LaunchError('original privacy publication implementation differs')
+    return dict(PRIVACY_FINALIZATION_SOURCE_HASHES)
+
+
 def no_backup_finalization_original(state, operation_id):
-    if operation_id != NO_BACKUP_FINALIZATION_OPERATION:
-        raise LaunchError('unknown no-backup finalization profile')
+    _, binding = no_backup_finalization_profile(operation_id)
     operation = Path(state) / 'frontend-publications' / operation_id
     secure_path(operation, directory=True)
     if stat.S_IMODE(operation.lstat().st_mode) != 0o700 or {p.name for p in operation.iterdir()} != NO_BACKUP_ORIGINAL_FILES:
         raise LaunchError('original failed publication inventory differs')
     files = {name: _finalization_file_evidence(operation / name) for name in NO_BACKUP_ORIGINAL_FILES}
-    binding = NO_BACKUP_FINALIZATION_BINDING
     intent = {**binding, 'kind': 'frontend-publication', 'state': 'FRONTEND_STARTED',
               'artifact_digest': None, 'publication_policy': 'no-backup-v1'}
     if _json(_read_private(operation / 'intent.json')) != intent:
@@ -861,11 +897,15 @@ def no_backup_finalization_original(state, operation_id):
             or any(before.get(k) != binding[k] for k in ('publisher_sha', 'production_sha', 'frontend_tree', 'operation_id'))):
         raise LaunchError('original failure plan differs')
     _frontend_no_backup_provenance(state, operation, intent, before, binding)
-    return {'binding': binding, 'files': files}
+    result = {'binding': binding, 'files': files}
+    if operation_id == PRIVACY_FINALIZATION_OPERATION:
+        result['source_hashes'] = privacy_finalization_source_proof(state, binding)
+    return result
 
 
 def no_backup_finalization_completion(state, operation_id):
     original = no_backup_finalization_original(state, operation_id)
+    profile, binding = no_backup_finalization_profile(operation_id)
     root = Path(state) / 'frontend-publication-finalizations'
     audit = root / operation_id
     for path in (root, audit):
@@ -878,7 +918,7 @@ def no_backup_finalization_completion(state, operation_id):
     plan = _json(raw)
     if (not isinstance(plan, dict) or set(plan) != {'schema_version', 'profile', 'finalizer_sha', 'original', 'lease', 'process'}
             or type(plan['schema_version']) is not int or plan['schema_version'] != 1
-            or plan['profile'] != 'csr-login-readback-v1' or plan['original'] != original
+            or plan['profile'] != profile or plan['original'] != original
             or not isinstance(plan['finalizer_sha'], str) or re.fullmatch('[a-f0-9]{40}', plan['finalizer_sha']) is None
             or not isinstance(plan['process'], dict) or not isinstance(plan['lease'], dict)):
         raise LaunchError('finalization intent binding differs')
@@ -886,7 +926,7 @@ def no_backup_finalization_completion(state, operation_id):
     if verified != {'state': 'LIVE_VERIFIED', 'intent_sha256': hashlib.sha256(raw).hexdigest()}:
         raise LaunchError('finalization verification differs')
     complete = _json(_read_private(audit / 'completed.json'))
-    expected = {'state': 'FINALIZED_NO_BACKUP_PUBLICATION', **NO_BACKUP_FINALIZATION_BINDING,
+    expected = {'state': 'FINALIZED_NO_BACKUP_PUBLICATION', **binding,
                 'finalizer_sha': plan['finalizer_sha'], 'intent_sha256': hashlib.sha256(raw).hexdigest(),
                 'verified_sha256': _frontend_publication_file_digest(audit / 'verified.json')}
     if complete != expected:
@@ -911,8 +951,8 @@ def assert_frontend_publication_history(state=None, *, pending_stopped_publicati
     if (type(verify_backups) is not bool or (verify_backups and (len(_force_operations) != 1
             or not isinstance(_force_operations[0], str) or re.fullmatch(r'[0-9a-f]{32}', _force_operations[0]) is None))):
         raise LaunchError('explicit target operation required for backup recovery verification')
-    if pending_no_backup_finalization not in (None, NO_BACKUP_FINALIZATION_OPERATION):
-        raise LaunchError('unknown selected no-backup finalization')
+    if pending_no_backup_finalization is not None:
+        no_backup_finalization_profile(pending_no_backup_finalization)
     finalizations = Path(state or STATE) / 'frontend-publication-finalizations'
     if os.path.lexists(finalizations):
         secure_path(finalizations, directory=True)

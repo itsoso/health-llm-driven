@@ -173,3 +173,51 @@ def test_live_drift_before_release_preserves_lease(installed):
         f.finalize(plan, lambda: plan, s, b, lambda: None, drift)
     assert f.LEASE.exists()
     with pytest.raises(s.LaunchError): s.assert_frontend_publication_history(f.STATE)
+
+
+def test_privacy_profile_is_exact_and_preserves_legacy():
+    server = load('trusted_release_server')
+    legacy = server.no_backup_finalization_profile(server.NO_BACKUP_FINALIZATION_OPERATION)
+    assert legacy == ('csr-login-readback-v1', server.NO_BACKUP_FINALIZATION_BINDING)
+    profile, binding = server.no_backup_finalization_profile('e94f8c89521046fcae79cdb8fd54dc09')
+    assert profile == 'privacy-title-readback-v1'
+    assert binding['publisher_sha'] == binding['production_sha'] == '6e2e52a591dde9a18d485373dcbf8fc1d9c07207'
+    assert binding['artifact_digest'] == '3aca2e050a0530e27a1080c0049e0f2121f5c814d3d71c20e0731db3ee35824d'
+    with pytest.raises(server.LaunchError):
+        server.no_backup_finalization_profile('a' * 32)
+
+
+def test_privacy_completion_is_profile_bound(installed, monkeypatch):
+    f, s, plan, _, operation, *_ = installed
+    binding = plan['original']['binding']
+    monkeypatch.setattr(s, 'no_backup_finalization_profile', lambda op: ('privacy-title-readback-v1', binding))
+    plan['profile'] = 'privacy-title-readback-v1'
+    result = finish(installed)
+    assert result['state'] == 'FINALIZED_NO_BACKUP_PUBLICATION'
+    audit = f.STATE / 'frontend-publication-finalizations' / operation.name
+    intent = json.loads((audit / 'intent.json').read_text())
+    intent['profile'] = 'csr-login-readback-v1'
+    (audit / 'intent.json').write_text(json.dumps(intent))
+    with pytest.raises(s.LaunchError):
+        s.no_backup_finalization_completion(f.STATE, operation.name)
+
+
+@pytest.mark.parametrize('changed', [False, True])
+def test_privacy_original_implementation_hashes_fail_closed(tmp_path, monkeypatch, changed):
+    server = load('trusted_release_server')
+    monkeypatch.setattr(server, 'secure_path', lambda *args, **kwargs: None)
+    binding = server.PRIVACY_FINALIZATION_BINDING
+    source = tmp_path / 'bootstrap' / binding['publisher_sha'] / 'source'
+    hashes = {}
+    for name in server.PRIVACY_FINALIZATION_SOURCE_HASHES:
+        path = source / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b'original')
+        hashes[name] = hashlib.sha256(b'original').hexdigest()
+    monkeypatch.setattr(server, 'PRIVACY_FINALIZATION_SOURCE_HASHES', hashes)
+    if changed:
+        (source / 'scripts/trusted_frontend_publish.py').write_bytes(b'changed')
+        with pytest.raises(server.LaunchError):
+            server.privacy_finalization_source_proof(tmp_path, binding)
+    else:
+        assert server.privacy_finalization_source_proof(tmp_path, binding) == hashes
