@@ -2636,6 +2636,9 @@ def _health_read_segment_has_target(text: str) -> bool:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
+    from app.services.agent_kernel.read_task_scope import daily_supplement_question_day
+    if daily_supplement_question_day(text) is not None:
+        return False  # Whole utterance proof; principal and date bind separately.
     from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
     from app.services.agent_longitudinal_read import is_recent_workout_read
 

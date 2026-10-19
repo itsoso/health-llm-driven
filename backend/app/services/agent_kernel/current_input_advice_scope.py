@@ -155,10 +155,36 @@ def is_daily_planning_advice(text: str) -> bool:
     return bool(_DAILY_PLAN_RE.fullmatch(candidate) or _DAILY_QUESTION_RE.fullmatch(candidate))
 
 
+_HOUSEHOLD_MAINTENANCE = re.compile(
+    r"(?:https://[A-Za-z0-9.-]+/[A-Za-z0-9_/-]+[ \n]+)?"
+    r"(?:我)?(?:今天|今日|今晚|刚刚|刚才)(?:我)?(?:换|更换)了"
+    r"(?:我的)?(?:卧室|客厅|书房)?(?:的)?(?:壁挂式|壁挂)?"
+    r"(?:新风(?:机|系统)?|空气净化器)(?:的)?"
+    r"(?:[A-Za-z\u4e00-\u9fff]{1,12}品牌的)?(?:过滤网|滤网|滤芯)[。！!]?"
+)
+_HOUSEHOLD_MAINTENANCE_ANSWER = (
+    '收到，你说已经更换了设备滤网。可以核对滤网是否按设备说明安装到位，'
+    '后续维护时间以具体型号的说明书和实际使用情况为准。\n\n'
+    '这里只回应你当前提供的信息；未读取链接内容，未查询个人健康记录，'
+    '未保存为维护记录，也未设置提醒。你希望接下来了解安装检查，还是日常维护注意事项？'
+)
+
+
+def is_household_maintenance_update(text: str) -> bool:
+    """A fully consumed report, with at most one opaque, unfetched URL."""
+    if not isinstance(text, str) or len(text) > 512:
+        return False
+    # Preserve a URL/body boundary before normalizing horizontal body spacing.
+    candidate = re.sub(r'^(https://[A-Za-z0-9.-]+/[A-Za-z0-9_/-]+) +',
+                       r'\1\n', text.strip())
+    return bool(_HOUSEHOLD_MAINTENANCE.fullmatch(candidate.replace(' ', '').replace('\u3000', '')))
+
+
 def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
     if (is_current_input_recovery_advice(text) or is_wearable_placement_question(text)
-            or is_daily_planning_advice(text) or is_current_input_gastrointestinal_advice(text)):
+            or is_daily_planning_advice(text) or is_current_input_gastrointestinal_advice(text)
+            or is_household_maintenance_update(text)):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -179,6 +205,8 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_household_maintenance_update(text):
+        return '仅回应当前家居设备维护陈述；不读取链接或健康数据，不保存维护记录或设置提醒。'
     if is_current_input_gastrointestinal_advice(text):
         return _GI_ADVICE_INSTRUCTIONS
     if is_daily_planning_advice(text):
@@ -271,6 +299,8 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     Existing symptom-recovery remains on its existing model/medical pipeline.
     A bare general-health request is not silently changed into sleep advice.
     """
+    if is_household_maintenance_update(message):
+        return 'household_maintenance_acknowledgement', _HOUSEHOLD_MAINTENANCE_ANSWER
     if is_daily_planning_advice(message):
         return "daily_planning_advice", _daily_planning_response(message)
     if is_current_input_gastrointestinal_advice(message):

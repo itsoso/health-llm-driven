@@ -66,6 +66,27 @@ _EXPLICIT_TIMED_GARMIN_SYNC = re.compile(
     re.IGNORECASE,
 )
 
+_DAILY_SUPPLEMENT_QUESTION = re.compile(
+    r"(?:我|本人)?(?P<day>今天|今日|昨天|昨日|前天)(?:我|本人)?"
+    r"(?:吃|服用)(?:了|过)(?:什么(?:样的)?|哪些|啥)(?:补剂|营养补充剂)[？?。]?"
+)
+_DAILY_SUPPLEMENT_REFERENCE = re.compile(
+    r"(?:今天|今日|昨天|昨日|前天).*(?:吃|服用)(?:了|过)"
+    r"(?:什么(?:样的)?|哪些|啥)(?:补剂|营养补充剂)"
+)
+
+
+def daily_supplement_question_day(text: str) -> str | None:
+    """Whole spoken intake question; only self/omitted owner and one day."""
+    if not isinstance(text, str) or len(text) > 128:
+        return None
+    match = _DAILY_SUPPLEMENT_QUESTION.fullmatch(text.strip())
+    return match['day'] if match else None
+
+
+def has_daily_supplement_question_reference(text: str) -> bool:
+    return bool(_DAILY_SUPPLEMENT_REFERENCE.search(str(text or '')))
+
 
 def _active(text: str) -> str | None:
     # Reuse the pure quote-role projection rather than deleting operands. The
@@ -262,7 +283,8 @@ def owned_read_tool_names(scope: OwnedReadScope) -> frozenset[str]:
 def requires_owned_read_tool_scope(scope: OwnedReadScope) -> bool:
     return (len(scope.queries) > 1 or scope.composite_advice
             or "recent_workout_candidates_not_identified_event" in scope.limitations
-            or "subday_workout_timestamp_scope" in scope.limitations)
+            or "subday_workout_timestamp_scope" in scope.limitations
+            or "daily_supplement_recorded_intakes" in scope.limitations)
 
 
 def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
@@ -276,6 +298,12 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
+    day = daily_supplement_question_day(snapshot.envelope.text)
+    if day is not None:
+        window = resolve_calendar_query_window(day, snapshot.context.current_time, 'diet',
+                                               timezone_name=snapshot.context.timezone)
+        return OwnedReadScope(({'dimension': 'supplements', **window},),
+                              ('daily_supplement_recorded_intakes',))
     from app.services.agent_kernel.medication_review_scope import (
         is_medication_review_request, symptom_record_review_request,
         has_symptom_record_review_reference,

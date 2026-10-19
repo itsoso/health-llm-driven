@@ -806,6 +806,10 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     never model-authored authority. None means unsupported scope, not no request.
     """
     source_text = snapshot.envelope.text if text_override is None else text_override
+    from app.services.agent_kernel.read_task_scope import daily_supplement_question_day
+    supplement_day = daily_supplement_question_day(source_text)
+    if supplement_day is not None:
+        source_text = f'查询我的{supplement_day}补剂记录'
     source_text = project_recent_health_overview(source_text) or source_text
     from app.services.agent_kernel.health_semantics import active_health_read_authority_text
 
