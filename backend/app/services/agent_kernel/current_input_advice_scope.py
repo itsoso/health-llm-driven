@@ -225,6 +225,25 @@ CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE = (
 )
 
 
+_GI_ADVICE = (
+    "仅凭当前描述还不能确定原因；饭后出现不适或大便正常，都不足以确定病因或排除需要就医的情况。\n\n"
+    "请补充：疼痛部位在哪里、程度如何、持续多久、有没有加重？是否伴有呕吐、黑便或便血？\n\n"
+    "如果疼痛突然发生或很剧烈，或有呕血、黑便或便血、胸痛、呼吸困难、晕倒，请立即寻求急救，不要等待聊天回复。"
+    "疼痛持续、反复或加重时，请及时就医。\n\n"
+    "本轮未查询个人记录，也未保存症状记录。用药问题应向医生或药师核对。\n\n"
+    "通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)"
+)
+_GI_URGENT_ADVICE = (
+    "你描述中提到了可能需要紧急处理的表现，请立即寻求急救或前往急诊，不要等待线上判断。"
+    "如无法安全前往，请联系当地急救服务。\n\n"
+    "这不是病因诊断；大便的其他表现或饭后时间不能排除风险。就诊时告诉医护人员疼痛部位、程度、"
+    "开始时间，以及呕吐和排便变化。\n\n"
+    "本轮未查询个人记录，也未保存症状记录。用药问题应向接诊医生或药师核对。\n\n"
+    "通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)"
+)
+_GI_URGENT_RE = re.compile(r"呕血|黑便|便血|(?:大便|排便)(?:黑色|带血)")
+
+
 _DAILY_GUIDANCE = {
     "运动": "没有明显不适，且符合已有医嘱和自身能力时，可选一种熟悉的轻松活动，如散步或舒缓拉伸；感觉疲劳时可以休息，不必为完成安排额外加量。出现胸痛、明显呼吸困难或突然加重的不适时，停止活动并及时就医。",
     "饮食": "结合饥饿感和原有进餐节奏安排日常饮食，选择自己能耐受的食物，并遵守已知过敏限制和医生的饮食要求。已经吃过的餐次不用补吃；这里没有设定减重目标或调整摄入量。",
@@ -254,8 +273,13 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     """
     if is_daily_planning_advice(message):
         return "daily_planning_advice", _daily_planning_response(message)
+    if is_current_input_gastrointestinal_advice(message):
+        # Only fully parsed, non-negated current symptoms reach this branch.
+        # Never interpolate model/history/client context into reviewed prose.
+        candidate = message.replace(" ", "").replace("\u3000", "")
+        return "gastrointestinal_symptom_advice", (
+            _GI_URGENT_ADVICE if _GI_URGENT_RE.search(candidate) else _GI_ADVICE)
     if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
-            or is_current_input_gastrointestinal_advice(message)
             or not is_current_input_advice(message)):
         return None
     candidate = message.replace(" ", "").replace("\u3000", "")

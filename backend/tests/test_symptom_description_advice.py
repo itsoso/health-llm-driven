@@ -5,10 +5,8 @@ from app.services.agent_kernel.current_input_advice_scope import (
     current_input_advice_instructions, is_current_input_advice, local_advice_response,
 )
 from tests.test_agent_read_plan_binding import decide
-from tests.test_query_reliability_outcomes import _run_scripted
 
 DESCRIPTION = '有嗳气的感觉，大便正常，吃饭两个小时后开始疼'
-REPLY = '本轮未查询个人记录。仅凭当前描述不能确定原因。请问哪里疼、疼痛多重、持续多久？如突然剧痛、呕血或黑便，应立即就医。'
 
 
 @pytest.mark.parametrize('message', [
@@ -19,7 +17,7 @@ REPLY = '本轮未查询个人记录。仅凭当前描述不能确定原因。�
 ])
 def test_symptom_follow_up_is_current_input_advice(message):
     assert is_current_input_advice(message)
-    assert local_advice_response(message) is None, 'Keep medical assessment pipeline'
+    assert local_advice_response(message)[0] == 'gastrointestinal_symptom_advice'
     instructions = current_input_advice_instructions(message)
     assert '疼痛部位' in instructions
     assert '未查询个人记录' in instructions
@@ -54,35 +52,65 @@ def test_symptoms_never_authorize_personal_tools(tool, args):
     assert decision.reason.startswith('current_input_advice_')
 
 
-@pytest.mark.parametrize('tool,args', [
-    ('health_query', {'dimension': 'diet'}),
-    ('health_query_batch', {'queries': [{'dimension': 'sleep'}]}),
-])
-async def test_rejected_optional_read_does_not_replace_symptom_reply(
-    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, tool, args,
-):
-    # Force an unsolicited model tool call past schema filtering to exercise
-    # the real gateway, completion recovery, streaming and durable metadata.
-    monkeypatch.setattr('app.services.agent_input_tool_scope.scope_tools_for_current_input_advice',
-        lambda tools, message: [{'type': 'function', 'function': {
-            'name': tool, 'description': 'Synthetic forced read',
-            'parameters': {'type': 'object', 'additionalProperties': True}}}])
-    user, _ = auth_user_and_headers
-    executor, done, saved, public, dispatched = await _run_scripted(
-        db, user, monkeypatch, query=DESCRIPTION, first_tool=tool, first_args=args,
-        dispatch=lambda request: {}, reply=REPLY, turn_id=f'symptom-{tool}',
-        required_context_text='疼痛部位',
-    )
-    assert not dispatched
-    assert 'current_input_advice_read_not_needed' in executor._agent_kernel_capability_block_reasons
-    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
-    assert saved.content == public == REPLY
-    assert not done['write_receipts']
+@pytest.mark.parametrize('mode', ['enforce', 'shadow'])
+async def test_gateway_independently_rejects_forced_personal_read(mode):
+    from dataclasses import replace
+    from tests.test_agent_read_plan_binding import snapshot
+    from app.services.agent_kernel.tool_gateway import ToolGateway
+    from app.services.agent_kernel.types import ToolExecutionRequest
+    calls = []
+    async def dispatch(request):
+        calls.append(request)
+        return '{}'
+    gateway = ToolGateway(replace(snapshot(DESCRIPTION), policy_mode=mode))
+    result = await gateway.execute(ToolExecutionRequest(
+        tool_name='health_query', arguments={'dimension': 'diet'}), dispatch)
+    assert result.decision.reason == 'current_input_advice_read_not_needed'
+    assert result.decision.action == 'block'
+    assert not calls
 
 
 def test_symptom_turn_buffers_unreviewed_medical_output():
     from app.services.guidance_validator import requires_medical_evidence_boundary
     assert requires_medical_evidence_boundary(DESCRIPTION)
+
+
+@pytest.mark.parametrize('draft', [
+    '你这就是胃溃疡。', '考虑已经确诊为胃炎。',
+    '大便正常说明没有危险，不需要就医。', '可以排除消化道出血，放心在家休息。',
+    'The pain is definitely an ulcer; you do not need medical care.',
+])
+def test_unreviewed_diagnosis_or_reassurance_cannot_be_released(draft):
+    from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+    answer, verified = guard_current_input_answer(DESCRIPTION, draft)
+    assert not verified
+    assert draft not in answer
+
+
+@pytest.mark.parametrize('panel', [False, True])
+@pytest.mark.parametrize('emergency', [False, True])
+async def test_symptom_answer_never_invokes_model_or_health_context(
+    db, auth_user_and_headers, monkeypatch, panel, emergency,
+):
+    import json
+    from app.config import settings
+    from app.services.agent_executor import AgentExecutor
+    from tests.test_local_advice_response import forbid_heavy_work
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    forbid_heavy_work(executor, monkeypatch)
+    monkeypatch.setattr(settings, 'health_evidence_runtime_enabled', True)
+    message = '肚子疼，大便黑色，需要就医吗？' if emergency else DESCRIPTION
+    events = [e async for e in executor.run_stream(user.id, message,
+              extra_context=json.dumps({'multi_model': panel}))]
+    done = events[-1]['data']
+    assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
+    assert done['model_call_count'] == 0
+    assert done['advice_kind'] == 'gastrointestinal_symptom_advice'
+    answer = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
+    assert '未查询个人记录' in answer
+    assert ('立即' in answer and '急救' in answer) if emergency else '疼痛部位' in answer
+    assert not done['write_receipts']
 
 
 @pytest.mark.parametrize('panel', [False, True])
@@ -103,30 +131,8 @@ async def test_symptom_follow_up_after_failed_query_preserves_answer_and_replay(
     ])
     db.commit()
     executor = AgentExecutor(db)
-    calls = []
-    def forbidden(*args, **kwargs):
-        pytest.fail('Symptom advice must not read personal data or dispatch a tool')
-    monkeypatch.setattr('app.twin.builder.build_twin', forbidden)
-    monkeypatch.setattr('app.services.health_context_lite_service.build_lite_health_context', forbidden)
-    monkeypatch.setattr(executor, '_dispatch_tool_request', forbidden)
-    async def provider(messages, tools):
-        calls.append(True)
-        assert {t['function']['name'] for t in tools} <= {'knowledge_search'}
-        assert any('疼痛部位' in str(m.get('content', '')) for m in messages if m['role'] == 'system')
-        yield {'type': 'content', 'text': REPLY}
-        yield {'type': 'finish', 'finish_reason': 'stop'}
-    monkeypatch.setattr(executor, '_call_llm_stream', provider)
-    async def lead(messages, tools):
-        calls.append(True)
-        assert {t['function']['name'] for t in tools} <= {'knowledge_search'}
-        assert any('疼痛部位' in str(m.get('content', '')) for m in messages)
-        return {'content': REPLY, 'finish_reason': 'stop'}
-    class PanelProvider:
-        async def chat(self, **kwargs):
-            calls.append(True)
-            return {'content': REPLY, 'finish_reason': 'stop'}
-    monkeypatch.setattr(executor, '_call_llm', lead)
-    monkeypatch.setattr('app.services.llm.factory.create_provider_for_model_id', lambda *_: PanelProvider())
+    from tests.test_local_advice_response import forbid_heavy_work
+    forbid_heavy_work(executor, monkeypatch)
     async def send():
         return [e async for e in executor.run_stream(
             user.id, DESCRIPTION, conversation_id=conversation.id,
@@ -135,43 +141,22 @@ async def test_symptom_follow_up_after_failed_query_preserves_answer_and_replay(
     done = events[-1]['data']
     public = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
     assert done['completion_status'] == done['turn_outcome']['status'] == 'complete'
-    assert public == db.get(AgentMessage, done['message_id']).content == REPLY
+    assert public == db.get(AgentMessage, done['message_id']).content == local_advice_response(DESCRIPTION)[1]
     assert not done['write_receipts']
-    count = len(calls)
     replay = await send()
     assert replay[-1]['data']['message_id'] == done['message_id']
-    assert len(calls) == count
+    assert done['model_call_count'] == 0
+    assert ''.join(e['data']['content'] for e in replay if e.get('event') == 'token') == public
     assert db.query(AgentMessage).filter_by(conversation_id=conversation.id).count() == 4
 
 
-async def test_incomplete_symptom_answer_cannot_recover_rejected_read(
-    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
-):
-    user, _ = auth_user_and_headers
-    _, done, _, _, dispatched = await _run_scripted(
-        db, user, monkeypatch, query=DESCRIPTION, first_tool='health_query',
-        first_args={'dimension': 'diet'}, dispatch=lambda request: {},
-        reply=REPLY, turn_id='symptom-truncated', answer_finish_reason='length',
-    )
-    assert not dispatched
-    assert done['completion_status'] != 'complete'
+@pytest.mark.parametrize('message', [DESCRIPTION, '腹痛，黑便，怎么办？'])
+async def test_local_symptom_answer_preserves_owner_isolation(db, auth_user_and_headers, monkeypatch, message):
+    from tests.test_local_advice_response import test_local_advice_cannot_use_another_users_conversation
+    await test_local_advice_cannot_use_another_users_conversation(db, auth_user_and_headers, monkeypatch, message)
 
 
-async def test_unsafe_medical_draft_is_not_streamed_or_persisted(
-    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
-):
-    from app.models.agent_conversation import AgentMessage
-    from app.services.agent_executor import AgentExecutor
-    user, _ = auth_user_and_headers
-    executor = AgentExecutor(db)
-    async def provider(messages, tools):
-        yield {'type': 'content', 'text': '建议每天服用某药5mg。'}
-        yield {'type': 'finish', 'finish_reason': 'stop'}
-    monkeypatch.setattr(executor, '_call_llm_stream', provider)
-    events = [e async for e in executor.run_stream(user.id, DESCRIPTION, client_turn_id='symptom-unsafe')]
-    done = events[-1]['data']
-    public = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
-    assert done['turn_outcome']['status'] == 'blocked'
-    assert '5mg' not in public
-    assert '5mg' not in db.get(AgentMessage, done['message_id']).content
-    assert not done['write_receipts']
+@pytest.mark.parametrize('message', [DESCRIPTION, '腹痛，黑便，怎么办？'])
+async def test_local_symptom_answer_fails_loud_on_persistence_error(db, auth_user_and_headers, monkeypatch, message):
+    from tests.test_local_advice_response import test_failed_persistence_cannot_emit_success_or_answer
+    await test_failed_persistence_cannot_emit_success_or_answer(db, auth_user_and_headers, monkeypatch, message)
