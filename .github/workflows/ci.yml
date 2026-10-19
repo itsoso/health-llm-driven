@@ -443,6 +443,7 @@ jobs:
           scripts/test_mobile_local_qr_safety.py
           scripts/test_legacy_release_recovery.py
           scripts/test_predeploy_attestation_proof.py
+          scripts/test_prelease_vision_history_proof.py
           scripts/test_release_parallel.py
           scripts/test_trusted_eas_build.py
           scripts/test_release_acceptance.py

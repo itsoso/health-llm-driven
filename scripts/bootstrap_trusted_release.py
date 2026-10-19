@@ -1199,9 +1199,25 @@ def _legacy_clone_evidence(sha):
     return {"executor_sha256": digest, "manifest": _preparation_manifest(workspace)}
 
 
+def _prelease_vision_module():
+    return _predeploy_module(Path(__file__).resolve().parents[1], 'prelease_vision_history_proof.py')
+
+
+def _is_predeploy_workspace(workspace):
+    return workspace.get('profile') in {'predeploy-attestation-failure', 'prelease-vision-history-failure'}
+
+
+def _predeploy_workspace_production(workspace, old_sha, production_sha, source):
+    if workspace.get('profile') == 'prelease-vision-history-failure':
+        return _predeploy_production_proof(old_sha, production_sha, source, prelease_vision=True)
+    return _predeploy_production_proof(old_sha, production_sha, source)
+
+
 def _recoverable_clone_evidence(sha):
     source = canonical_source(sha)
     digest = hashlib.sha256((source / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+    if sha == '17f9c29f32123ada929fac9af61a17e6521094d8':
+        return _prelease_vision_module().inspect(sys.modules[__name__], sha, source)
     if digest in PREDEPLOY_ATTESTATION_IMPLEMENTATIONS:
         return _predeploy_attestation_evidence(sha, source, digest)
     phase_timeout = digest in PHASE_CLONE_TIMEOUT_EXECUTORS
@@ -1304,7 +1320,7 @@ def _predeploy_attestation_evidence(sha, source, digest):
 
 def _recovery_build_identity(sha, workspace):
     path = STATE / sha / "build.lock"
-    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure"}:
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure", "prelease-vision-history-failure"}:
         if os.path.lexists(path):
             raise BootstrapError("absent historical build lock appeared")
         return None
@@ -1312,7 +1328,7 @@ def _recovery_build_identity(sha, workspace):
 
 
 def _assert_recovery_build_lock(sha, fd, workspace):
-    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure"}:
+    if workspace.get("profile") in {"phase-clone-timeout", "phase-clone-completed-uncertain", "predeploy-attestation-failure", "prelease-vision-history-failure"}:
         if fd is not None or _recovery_build_identity(sha, workspace) is not None:
             raise BootstrapError("phase clone build lock must remain absent")
     elif fd is None:
@@ -1423,7 +1439,7 @@ def _predeploy_module(source, name):
     return value
 
 
-def _predeploy_production_proof(old_sha, production_sha, source):
+def _predeploy_production_proof(old_sha, production_sha, source, *, prelease_vision=False):
     """Read-only live proof; never execute the failed source or candidate env."""
     server = _predeploy_module(source, 'trusted_release_server.py')
     proof_module = _predeploy_module(source, 'contained_recovery_proof.py')
@@ -1433,15 +1449,20 @@ def _predeploy_production_proof(old_sha, production_sha, source):
     proof = proof_module.RecoveryProof(source, reader, server, old_sha,
                                        production_sha, 'no-predeployment-lease')
     live = server.read_production_env()
-    if not any(re.match(r'\s*(?:export\s+)?DECISION_', line, re.I) for line in live.splitlines()):
-        raise BootstrapError('unprovable random initial Laya environment')
-    normalized = server.invitation_only_config(live)
-    lines = [line for line in normalized.splitlines() if not line.startswith(('DEPLOY_SERVER=', 'DEPLOY_PATH='))]
-    expected = ('\n'.join(lines) + '\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n').encode()
-    candidate = STATE / old_sha / 'deployment.env'
-    secure(candidate, private=True)
-    if candidate.read_bytes() != expected:
-        raise BootstrapError('predeploy environment does not derive from live production')
+    configuration = None
+    if prelease_vision:
+        configuration = _prelease_vision_module().configuration(sys.modules[__name__], old_sha, production_sha, live)
+        expected = None
+    else:
+        if not any(re.match(r'\s*(?:export\s+)?DECISION_', line, re.I) for line in live.splitlines()):
+            raise BootstrapError('unprovable random initial Laya environment')
+        normalized = server.invitation_only_config(live)
+        lines = [line for line in normalized.splitlines() if not line.startswith(('DEPLOY_SERVER=', 'DEPLOY_PATH='))]
+        expected = ('\n'.join(lines) + '\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n').encode()
+        candidate = STATE / old_sha / 'deployment.env'
+        secure(candidate, private=True)
+        if candidate.read_bytes() != expected:
+            raise BootstrapError('predeploy environment does not derive from live production')
     # This read context supplies only the real terminal/transaction path; it
     # neither constructs a fake release stage nor permits mutation methods.
     layout = SimpleNamespace(transaction_root=proof.runtime_root / 'runtime-state-transaction')
@@ -1479,11 +1500,16 @@ def _predeploy_production_proof(old_sha, production_sha, source):
     if (proof.running_services_snapshot() != before or server.read_production_env() != live
             or _predeploy_unit_configuration(proof, transaction, canonical_source(production_sha), began) != units):
         raise BootstrapError('predeploy production changed across stability window')
+    if prelease_vision and _prelease_vision_module().configuration(sys.modules[__name__], old_sha, production_sha, live) != configuration:
+        raise BootstrapError('prelease configuration changed across stability window')
     secure(transaction._terminal_marker_path(), private=True)
-    return {'environment_sha256': hashlib.sha256(live.encode()).hexdigest(),
-            'candidate_environment_sha256': hashlib.sha256(expected).hexdigest(),
+    result = {'environment_sha256': hashlib.sha256(live.encode()).hexdigest(),
+            'candidate_environment_sha256': hashlib.sha256(expected).hexdigest() if expected is not None else None,
             'terminal': _recovery_file_identity(transaction._terminal_marker_path()),
             'services': before, 'units': units, 'health_http': 200}
+    if configuration is not None:
+        result['prelease_configuration'] = configuration
+    return result
 
 
 def _predeploy_unit_configuration(proof, transaction, old_source, began):
@@ -1586,9 +1612,9 @@ def _recovery_snapshot(old_sha, sha, production_sha, source):
             "locks": {"launcher": _recovery_file_identity(STATE / "launcher.lock"),
                       "build": _recovery_build_identity(old_sha, workspace)},
             "toolchain": toolchain}
-    if workspace.get('profile') == 'predeploy-attestation-failure':
+    if _is_predeploy_workspace(workspace):
         _predeploy_loopback_key_proof()
-        result['predeploy_production'] = _predeploy_production_proof(old_sha, production_sha, source)
+        result['predeploy_production'] = _predeploy_workspace_production(workspace, old_sha, production_sha, source)
     return result
 
 
@@ -1620,7 +1646,7 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         if old_sha in history or any(os.path.lexists(p) for p in _archives(old_sha)):
             raise BootstrapError("historical retirement already attempted")
         evidence = _recovery_snapshot(old_sha, sha, production_sha, source)
-        predeploy = evidence['workspace'].get('profile') == 'predeploy-attestation-failure'
+        predeploy = _is_predeploy_workspace(evidence['workspace'])
         terminal_state = 'CLOSED_PREDEPLOY_ATTESTATION_FAILURE' if predeploy else 'RECOVERED_PREPARATION_FAILURE'
         digest = _digest_json(evidence)
         _assert_original_lock(lock, fd)
@@ -1664,7 +1690,7 @@ def recover_preparation(old_sha, sha, production_sha, *, evidence_sha256=None):
         _assert_idle()
         _recovery_process_proof()
         _recovery_production_proof(production_sha, source)
-        if predeploy and _predeploy_production_proof(old_sha, production_sha, source) != evidence['predeploy_production']:
+        if predeploy and _predeploy_workspace_production(evidence['workspace'], old_sha, production_sha, source) != evidence['predeploy_production']:
             raise BootstrapError('predeploy production changed after revocation')
         _assert_original_lock(lock, fd)
         _assert_recovery_build_lock(old_sha, build_fd, evidence["workspace"])
@@ -1686,7 +1712,7 @@ def _recovered_preparation_evidence(sha, *, recovery_receipt=None):
     intent = _read_json(record / "intent.json")
     completed = _read_json(record / "completed.json")
     workspace = _recoverable_clone_evidence(sha)
-    predeploy = workspace.get('profile') == 'predeploy-attestation-failure'
+    predeploy = _is_predeploy_workspace(workspace)
     terminal_state = 'CLOSED_PREDEPLOY_ATTESTATION_FAILURE' if predeploy else 'RECOVERED_PREPARATION_FAILURE'
     expected_keys = {"old_sha", "recovery_sha", "production_sha", "workspace", "config",
                      "library", "authorized", "locks", "toolchain", "receipt_sha256", "evidence_sha256"}
