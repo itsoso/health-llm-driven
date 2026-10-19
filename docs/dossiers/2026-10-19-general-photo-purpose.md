@@ -1,5 +1,10 @@
 # 普通照片用途修复
 
+| 字段 | 值 |
+|---|---|
+| 状态 | building |
+| 当前阶段 | S5 本地验证完成，等待统一候选发布验证 |
+
 Updated: 2026-10-19
 Status: locally verified; G4 GO for 9a7bacf3c; deployment blocked
 Spec: `docs/specs/active/2026-10-19-general-photo-purpose.md`
@@ -11,9 +16,9 @@ Workflow: quick_fix, safety overlay; no superpowers skills used.
 Mobile 普通附件发送默认分析提示，明确拍照记餐才携带餐食上下文；后端产生截图中的餐食进度。
 本轮只读核实生产 HEAD 为 `1ba724dcb62ac389a72e41eecf40fea7aaca27e3`，不包含已提交的皮肤排除修复 `c7616c88e`，因此已有本地排除不能证明用户线上问题解决。
 
-## 准入与实现
+## G1 准入与实现
 
-G1: PASS，普通附件默认用途纠错，沿用 ExecutionEvent / WriteIntent；不新增数据类型、诊断能力或写授权。
+裁决：PASS。普通附件默认用途纠错，沿用 ExecutionEvent / WriteIntent；不新增数据类型、诊断能力或写授权。
 识别、进度、结构化食物入口和实际 capture 共用正向餐食用途检查。普通空/默认照片使用通用视觉或原图多模态，不生成餐食进度或饮食记录/草稿。
 明确餐食和明确记餐入口保留结构化识别、校准、权限、确认、幂等与回执。当前非餐食文本覆盖旧记餐上下文；报告和补剂继续独立预处理。
 普通照片即使模型提出饮食写入，也由每轮写入边界拒绝；图片与聊天消息仍正常保存。

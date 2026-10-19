@@ -1,5 +1,10 @@
 # 口语补剂查询与家居维护陈述修复
 
+| 字段 | 值 |
+|---|---|
+| 状态 | building |
+| 当前阶段 | S5 本地验证完成，等待统一候选发布验证 |
+
 Updated: 2026-10-19
 Status: implementation verified locally; G4 GO for 400cb2443; deployment blocked
 Spec: `docs/specs/active/2026-10-19-spoken-supplement-and-household-scope.md`
@@ -10,6 +15,10 @@ Workflow: quick_fix, safety overlay; no superpowers skills used.
 口语服用回顾不在完整的补剂读取语法内；疑问定语中的“的”被通用归属检查解释成未知主体，单日 supplements 又不能由旧 calendar fallback 完整绑定。
 普通设备维护陈述没有正向 answer scope 证明，模型若提议无权限的数据查询，查询失败会成为最终任务结果。
 另以合成反例复现假设补剂问句会落入 legacy 查询路径。
+
+## G1 需求准入
+
+裁决：PASS。按关联 Spec 已记录的 bugfix 准入，修复既有补剂摄入回顾及家居陈述边界；复用认证主体、业务日期与既有执行事件，不新增写授权、诊断或用药建议能力。
 
 ## 修复
 
