@@ -400,7 +400,7 @@ def test_real_adapter_inspect_complete_synthetic_snapshot(tmp_path, monkeypatch)
     b.key_lines = lambda expiry, *keys: ['fixed synthetic-cloud', 'fixed synthetic-loopback']
     process_checks, lock_checks = [], []
     b._recovery_process_proof = lambda: process_checks.append(True)
-    monkeypatch.setattr(helpers, 'assert_no_other_ssh_sessions', lambda: None)
+    monkeypatch.setattr(m, 'assert_acknowledgement_ssh_sessions', lambda: None)
     adapter = m.make_adapter(root, b, server, helpers, 'b' * 40, m.TARGET, m.OPERATION,
                              lambda: lock_checks.append(True))
     revision_checks = []
@@ -449,3 +449,108 @@ def test_real_adapter_inspect_complete_synthetic_snapshot(tmp_path, monkeypatch)
     write(operation / 'completed.json', {'sha': m.TARGET, 'operation_id': m.OPERATION, 'state': 'SUCCEEDED'})
     with pytest.raises(helpers.ClosureError, match='unaccepted'):
         adapter.inspect()
+
+
+def ssh_fixture(tmp_path, m):
+    proc = tmp_path / 'synthetic-proc'
+    proc.mkdir()
+    def add(pid, ppid, *, argv=b'ordinary\0', start='10', uid='0', tty='0'):
+        entry = proc / str(pid)
+        entry.mkdir()
+        fields = ['S', str(ppid), '1', '1', tty] + ['0'] * 14 + [start]
+        (entry / 'stat').write_text(str(pid) + ' (synthetic) ' + ' '.join(fields))
+        (entry / 'cmdline').write_bytes(argv)
+        (entry / 'status').write_text('Uid:\t' + '\t'.join([uid] * 4) + '\n')
+        (entry / 'fd').mkdir()
+        return entry
+    add(900, 1)
+    known = add(3202404, 1, argv=b'sshd: root@notty\0', start='2816083071')
+    (known / 'fd' / '5').symlink_to('socket:[8877]')
+    net = proc / 'net'
+    net.mkdir()
+    header = 'sl local_address rem_address st tx_queue rx_queue tr tm->when retrnsmt uid timeout inode\n'
+    (net / 'tcp').write_text(header + '0: 0100007F:13A6 00000000:0000 0A 0:0 00:0 0 0 0 8877\n')
+    (net / 'tcp6').write_text(header)
+    return proc, known, add
+
+
+def test_known_chatlog_session_is_only_specific_exception(tmp_path, monkeypatch):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    calls = []
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda p: calls.append(p))
+    m.assert_acknowledgement_ssh_sessions(proc)
+    assert len(calls) == 2
+    add(111, 1, argv=b'sshd: someone@notty\0')
+    with pytest.raises(m.AcknowledgementError, match='other SSH'):
+        m.assert_acknowledgement_ssh_sessions(proc)
+
+
+@pytest.mark.parametrize('change', ['pid_reuse', 'uid', 'tty', 'nonloopback', 'wrong_port', 'missing_socket', 'child'])
+def test_chatlog_exception_rejects_changed_identity_or_listener(tmp_path, monkeypatch, change):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda p: None)
+    if change == 'pid_reuse':
+        (known / 'stat').write_text((known / 'stat').read_text().replace('2816083071', '2816083072'))
+    elif change == 'uid':
+        (known / 'status').write_text('Uid:\t1000\t1000\t1000\t1000\n')
+    elif change == 'tty':
+        raw = (known / 'stat').read_text().split()
+        raw[6] = '1'
+        (known / 'stat').write_text(' '.join(raw))
+    elif change in {'nonloopback', 'wrong_port'}:
+        tcp = proc / 'net/tcp'
+        tcp.write_text(tcp.read_text().replace('0100007F:13A6', '00000000:13A6' if change == 'nonloopback' else '0100007F:13A7'))
+    elif change == 'missing_socket':
+        (known / 'fd/5').unlink()
+    elif change == 'child':
+        add(1000, 3202404)
+    with pytest.raises(m.AcknowledgementError):
+        m.assert_acknowledgement_ssh_sessions(proc)
+
+
+def test_chatlog_disappearance_is_not_excused(tmp_path, monkeypatch):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    def disappear(p):
+        (known / 'stat').unlink()
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', disappear)
+    with pytest.raises(FileNotFoundError):
+        m.assert_acknowledgement_ssh_sessions(proc)
+
+
+@pytest.mark.parametrize('change', [None, 'fingerprint', 'boot', 'pid', 'time', 'uid', 'duplicate', 'missing'])
+def test_chatlog_fingerprint_requires_actual_exact_journal_event(tmp_path, monkeypatch, change):
+    from types import SimpleNamespace
+    m = load()
+    boot_path = tmp_path / 'sys/kernel/random'
+    boot_path.mkdir(parents=True)
+    (boot_path / 'boot_id').write_text('12345678-1234-1234-1234-123456789012\n')
+    event = {'_PID': m.CHATLOG_PID, '_UID': '0', '_BOOT_ID': '12345678123412341234123456789012',
+             '__REALTIME_TIMESTAMP': m.CHATLOG_AUTH_TIME,
+             'MESSAGE': 'Accepted publickey for root from 192.0.2.1 port 1234 ssh2: ED25519 ' + m.CHATLOG_KEY}
+    if change == 'fingerprint':
+        event['MESSAGE'] += 'bad'
+    elif change == 'boot':
+        event['_BOOT_ID'] = 'f' * 32
+    elif change == 'pid':
+        event['_PID'] = '999'
+    elif change == 'time':
+        event['__REALTIME_TIMESTAMP'] = '1'
+    elif change == 'uid':
+        event['_UID'] = '1000'
+    rows = [] if change == 'missing' else [event, event] if change == 'duplicate' else [event]
+    def journal(argv, **kwargs):
+        assert argv[0] == '/usr/bin/journalctl'
+        assert '--boot' in argv and '_PID=' + m.CHATLOG_PID in argv
+        return SimpleNamespace(stdout=b'\n'.join(json.dumps(row).encode() for row in rows))
+    monkeypatch.setattr(m.subprocess, 'run', journal)
+    if change is None:
+        m.verify_chatlog_authentication(tmp_path)
+    else:
+        with pytest.raises(m.AcknowledgementError):
+            m.verify_chatlog_authentication(tmp_path)

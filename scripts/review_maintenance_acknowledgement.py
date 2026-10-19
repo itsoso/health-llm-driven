@@ -23,6 +23,10 @@ TERMINAL = 'UNKNOWN_ACCEPTED_AUDIT_ONLY'
 TARGET = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
 OPERATION = 'a71c3840b6f24bc79937d178cb838066'
 ORIGINAL_OPERATOR = '6d3374d77e69522406abd812c80571ce13ac439c'
+CHATLOG_PID = '3202404'
+CHATLOG_START = '2816083071'
+CHATLOG_KEY = 'SHA256:j52PPMj8cjEgvJqtcRpU/vyp7QXucSGUNemBmtVOdPY'
+CHATLOG_AUTH_TIME = '1792382497889802'
 
 
 class AcknowledgementError(Exception):
@@ -134,14 +138,158 @@ def validate_failed_pair(start, end, old_sha, operation_id):
         raise AcknowledgementError('exact failed maintenance pair required')
 
 
+def bounded_read(path, maximum=1_048_576):
+    with path.open('rb') as stream:
+        value = stream.read(maximum + 1)
+    if len(value) > maximum:
+        raise AcknowledgementError('SSH evidence exceeds bound')
+    return value
+
+
+def verify_chatlog_authentication(proc):
+    """Bind the explicitly accepted historical event to this kernel boot."""
+    boot = bounded_read(proc / 'sys/kernel/random/boot_id', 64).decode().strip().replace('-', '')
+    if re.fullmatch('[0-9a-f]{32}', boot) is None:
+        raise AcknowledgementError('kernel boot identity unavailable')
+    result = subprocess.run(['/usr/bin/journalctl', '--no-pager', '-o', 'json', '--boot',
+        '--since', '2026-10-19 04:01:30 UTC', '--until', '2026-10-19 04:01:45 UTC',
+        '_PID=' + CHATLOG_PID], env=ENV, stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=15)
+    if len(result.stdout) > 1_048_576:
+        raise AcknowledgementError('SSH authentication evidence exceeds bound')
+    accepted = []
+    for raw in result.stdout.splitlines():
+        event = json.loads(raw)
+        message = event.get('MESSAGE')
+        if not isinstance(message, str):
+            raise AcknowledgementError('SSH authentication event malformed')
+        if message.startswith('Accepted '):
+            if (event.get('_PID') != CHATLOG_PID or event.get('_UID') != '0'
+                    or event.get('_BOOT_ID') != boot
+                    or event.get('__REALTIME_TIMESTAMP') != CHATLOG_AUTH_TIME
+                    or re.fullmatch(r'Accepted publickey for root from [^\s]+ port [0-9]+ ssh2: ED25519 '
+                                    + re.escape(CHATLOG_KEY), message) is None):
+                raise AcknowledgementError('SSH authentication does not match accepted session')
+            accepted.append(event)
+    if len(accepted) != 1:
+        raise AcknowledgementError('unique accepted SSH authentication unavailable')
+
+
+def chatlog_snapshot(proc):
+    entry = proc / CHATLOG_PID
+    before = bounded_read(entry / 'stat')
+    fields = before.rsplit(b')', 1)[-1].split()
+    if len(fields) < 20 or fields[19].decode() != CHATLOG_START or fields[4] != b'0':
+        raise AcknowledgementError('accepted SSH process identity changed')
+    status = bounded_read(entry / 'status')
+    uid = [line.split()[1:] for line in status.splitlines() if line.startswith(b'Uid:')]
+    if uid != [[b'0'] * 4]:
+        raise AcknowledgementError('accepted SSH UID changed')
+    argv = bounded_read(entry / 'cmdline')
+    if not argv.startswith((b'sshd:', b'sshd-session:')):
+        raise AcknowledgementError('accepted process is not SSH')
+    descriptors = list((entry / 'fd').iterdir())
+    if len(descriptors) > 4096:
+        raise AcknowledgementError('SSH descriptor inventory exceeds bound')
+    sockets = set()
+    for descriptor in descriptors:
+        value = os.readlink(descriptor)
+        match = re.fullmatch(r'socket:\[([0-9]+)\]', value)
+        if match:
+            sockets.add(match[1])
+    listeners = []
+    for name, loopback in (('tcp', '0100007F:13A6'), ('tcp6', '00000000000000000000000001000000:13A6')):
+        rows = bounded_read(proc / 'net' / name, 4_194_304).decode().splitlines()
+        if not rows or 'local_address' not in rows[0]:
+            raise AcknowledgementError('TCP inventory unavailable')
+        for row in rows[1:]:
+            values = row.split()
+            if len(values) < 10:
+                raise AcknowledgementError('TCP inventory malformed')
+            if values[9] in sockets and values[3] == '0A':
+                if values[1] != loopback or values[7] != '0':
+                    raise AcknowledgementError('accepted SSH listener changed')
+                listeners.append((name, values[1], values[9]))
+    if not listeners:
+        raise AcknowledgementError('accepted loopback 5030 listener missing')
+    after = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+    identity = fields[1:5] + [fields[19]]
+    if len(after) < 20 or after[1:5] + [after[19]] != identity:
+        raise AcknowledgementError('accepted SSH process changed during observation')
+    return {'identity': identity, 'uid': uid, 'argv': argv, 'listeners': sorted(listeners)}
+
+
+def assert_acknowledgement_ssh_sessions(proc=Path('/proc')):
+    """Only this one-shot audit accepts the user-identified chatlog tunnel.
+
+    No session is terminated. The generic deployment/retirement checks retain
+    their original zero-other-SSH rule. Missing journal proof fails closed.
+    """
+    ancestors, pid = set(), os.getpid()
+    while pid > 1:
+        if pid in ancestors or len(ancestors) > 64:
+            raise AcknowledgementError('operator ancestry uncertain')
+        ancestors.add(pid)
+        fields = bounded_read(proc / str(pid) / 'stat').rsplit(b')', 1)[-1].split()
+        if len(fields) < 20:
+            raise AcknowledgementError('operator ancestry malformed')
+        pid = int(fields[1])
+    entries = list(proc.iterdir())
+    if len(entries) > 100000:
+        raise AcknowledgementError('SSH process inventory exceeds bound')
+    allowed = None
+    observed = {}
+    for entry in entries:
+        if not entry.name.isdigit() or int(entry.name) in ancestors:
+            continue
+        argv = bounded_read(entry / 'cmdline')
+        fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+        if len(fields) < 20:
+            raise AcknowledgementError('SSH process inventory malformed')
+        observed[entry.name] = (argv, fields[1:5] + [fields[19]])
+        if fields[1].decode() == CHATLOG_PID:
+            raise AcknowledgementError('accepted SSH tunnel has a child process')
+        if entry.name == CHATLOG_PID:
+            allowed = chatlog_snapshot(proc)
+            verify_chatlog_authentication(proc)
+        elif argv.startswith((b'sshd:', b'sshd-session:')):
+            raise AcknowledgementError('other SSH session must finish before acknowledgement')
+    after = {entry.name for entry in proc.iterdir() if entry.name.isdigit()}
+    if after != {entry.name for entry in entries if entry.name.isdigit()}:
+        raise AcknowledgementError('SSH process inventory changed')
+    for name, (argv, identity) in observed.items():
+        entry = proc / name
+        fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+        if (len(fields) < 20 or fields[1:5] + [fields[19]] != identity
+                or bounded_read(entry / 'cmdline') != argv):
+            raise AcknowledgementError('SSH process identity changed')
+    if allowed is not None:
+        if chatlog_snapshot(proc) != allowed:
+            raise AcknowledgementError('accepted SSH session changed')
+        verify_chatlog_authentication(proc)
+    return ({'exception_used': False} if allowed is None else {
+        'exception_used': True, 'pid': int(CHATLOG_PID), 'start_ticks': CHATLOG_START,
+        'uid': 0, 'tty_nr': 0, 'listener_port': 5030, 'loopback_only': True,
+        'authenticated_key': CHATLOG_KEY, 'authentication_event_timestamp': CHATLOG_AUTH_TIME,
+        'authority': 'ACKNOWLEDGEMENT_ONLY_USER_CONFIRMED_CHATLOG'})
+
+
 def make_adapter(source, b, server, helpers, sha, old_sha, operation_id, check):
     validate_profile(old_sha, operation_id)
     class Adapter:
         # Reuse only methods whose dependency closure is read-only. Do not
         # instantiate either retirement Adapter or lease-based RecoveryProof.
-        _quiescent = helpers.Adapter._quiescent
+        def _quiescent(self):
+            self.check()
+            self.b._recovery_process_proof()
+            self.ssh_observation = assert_acknowledgement_ssh_sessions()
+            self.b._recovery_process_proof()
+            self.check()
         _services = helpers.Adapter._services
-        inspect = helpers.Adapter.inspect
+        def inspect(self):
+            evidence = helpers.Adapter.inspect(self)
+            evidence['ssh_observation'] = self.ssh_observation
+            return evidence
 
         def __init__(self):
             self.source, self.b, self.server = source, b, server
