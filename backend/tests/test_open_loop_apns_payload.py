@@ -136,8 +136,8 @@ def test_open_loop_apns_payload_includes_history_id(db, captured_send_push_kwarg
     assert data["history_id"].isdigit() or data["history_id"] == ""
 
 
-def test_open_loop_empty_deeplink_passes_empty_string(db, captured_send_push_kwargs):
-    """没有 deeplink 的循环 (如 deploy_verify) 仍能推送, deep_link='' 不应崩."""
+def test_open_loop_empty_deeplink_opens_persisted_owned_notification(db, captured_send_push_kwargs):
+    """没有专属入口时，推送落到已保存的本人通知，旧客户端也能打开历史页。"""
     captured, mock_service = captured_send_push_kwargs
 
     db.add(_make_setting(user_id=1))
@@ -155,7 +155,13 @@ def test_open_loop_empty_deeplink_passes_empty_string(db, captured_send_push_kwa
         ok = _push_loop(db, user_id=1, loop=loop)
 
     assert ok is True
-    assert captured.get("data", {}).get("deep_link") == ""
+    from app.models.notification import NotificationLog
+
+    saved = db.query(NotificationLog).filter(NotificationLog.user_id == 1).one()
+    data = captured["data"]
+    assert data["deep_link"] == f"/notification-history?detailId={saved.id}"
+    assert "deeplink" not in data
+    assert "full_title" not in data and "full_content" not in data
 
 
 def test_open_loop_quiet_hours_blocks_high_score_push(db, captured_send_push_kwargs):
