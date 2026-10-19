@@ -1216,6 +1216,7 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
     def setUp(self):
         super().setUp()
         self.maintenance = load('trusted_review_maintenance')
+        self.patch(self.maintenance, 'preflight_nested_history', lambda *args: None)
         self.patch(self.maintenance, 'STATE', self.state)
         self.env_path = self.production / '.env'
         put(self.env_path, self.production_env.encode(), 0o640)
@@ -1234,6 +1235,18 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
 
     def missing_env(self):
         (self.workspace / 'deployment.env').unlink()
+
+    def test_nested_history_rejection_precedes_environment_and_intent_writes(self):
+        self.missing_env()
+        def reject(*args):
+            raise self.maintenance.MaintenanceError('nested history preflight rejected')
+        self.patch(self.maintenance, 'preflight_nested_history', reject)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertFalse(self.operation.exists())
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
+        self.assertNotIn('execute', self.events)
 
     def test_atomic_release_missing_env_is_prepared_then_reset_under_original_lock(self):
         self.missing_env()
@@ -1395,3 +1408,29 @@ class HistoricalMaintenanceFlowTests(ReviewResetTests):
             self.maintenance.run_maintenance('c' * 40, SHA, OP, token_stdin=True)
         self.assertFalse(self.operation.exists())
         self.assertNotIn('execute', self.events)
+
+
+class NestedHistoryPreflightTests(unittest.TestCase):
+    def test_exact_isolated_target_check_without_outer_token(self):
+        maintenance = load('trusted_review_maintenance')
+        with patch.object(maintenance.subprocess, 'run') as run:
+            maintenance.preflight_nested_history(Path('/canonical/source'), SHA)
+        args, options = run.call_args
+        self.assertEqual(args[0], ['/usr/bin/python3.12', '-I', '-S', '-B',
+            '/canonical/source/scripts/trusted_vision_model.py', '--check-history', '--publisher-sha', SHA])
+        self.assertEqual(options['env'], {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent'})
+        self.assertTrue(options['check'])
+        self.assertEqual(options['timeout'], 90)
+        for key in ('stdin', 'stdout', 'stderr'):
+            self.assertEqual(options[key], subprocess.DEVNULL)
+
+    def test_errors_are_sanitized_and_not_retried(self):
+        maintenance = load('trusted_review_maintenance')
+        for error in (OSError('secret'), subprocess.TimeoutExpired('secret', 90),
+                      subprocess.CalledProcessError(1, 'secret')):
+            with self.subTest(error=type(error).__name__):
+                with patch.object(maintenance.subprocess, 'run', side_effect=error) as run:
+                    with self.assertRaises(maintenance.MaintenanceError) as caught:
+                        maintenance.preflight_nested_history(Path('/canonical/source'), SHA)
+                self.assertNotIn('secret', str(caught.exception))
+                self.assertEqual(run.call_count, 1)

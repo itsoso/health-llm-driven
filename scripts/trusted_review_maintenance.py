@@ -110,6 +110,25 @@ def attest_maintenance(gate, operator_sha, target_sha, get_json=None):
     return {'operator': operator, 'target': target}
 
 
+def preflight_nested_history(source, target_sha):
+    """Exercise the unchanged child's admission before creating durable intent.
+
+    Deliberately use the child's isolated environment and credential source.
+    An outer ephemeral token does not prove the nested command can authenticate.
+    This read-only check does not replace either check inside deploy.sh.
+    """
+    try:
+        subprocess.run([
+            '/usr/bin/python3.12', '-I', '-S', '-B',
+            str(source / 'scripts/trusted_vision_model.py'),
+            '--check-history', '--publisher-sha', target_sha,
+        ], env={'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent'},
+            stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, check=True, timeout=90)
+    except (subprocess.SubprocessError, OSError):
+        raise MaintenanceError('nested history preflight rejected; no maintenance intent created') from None
+
+
 def production_identity(server):
     before = PRODUCTION_ENV.lstat()
     raw = server.read_production_env()
@@ -220,6 +239,7 @@ def run_maintenance(operator_sha, target_sha, operation_id, *, token_stdin=False
         if os.path.lexists(preparation):
             raise MaintenanceError('preparation already consumed; no retry')
         ci = attest_maintenance(gate, operator_sha, target_sha, get_json)
+        preflight_nested_history(source, target_sha)
         workspace_preflight(target_sha, source, bootstrap, server, reset)
         identity, digest, raw = production_identity(server)
         lines = [line for line in raw.splitlines() if not line.startswith(('DEPLOY_SERVER=', 'DEPLOY_PATH='))]
