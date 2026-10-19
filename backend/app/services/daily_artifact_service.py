@@ -191,6 +191,11 @@ def _top_action_view(item: dict[str, Any]) -> dict[str, Any]:
             },
         },
     }
+    # Use the owned plan action identity, never free-form title matching.
+    # OPEN only presents the form; saving a measurement remains explicit.
+    if (source.get("object_type") == "daily_plan_action"
+            and source.get("object_id") == "measurement.weight_waist_morning"):
+        view["actions"]["execute"] = {"method": "OPEN", "target": "/body-measurements"}
     runtime_context = item.get("runtime_context")
     if isinstance(runtime_context, dict) and runtime_context:
         view["runtime_context"] = runtime_context

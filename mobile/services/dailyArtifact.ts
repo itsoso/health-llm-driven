@@ -45,6 +45,10 @@ export interface DailyArtifactTopAction {
   claim_boundary?: string | null;
   runtime_context?: Record<string, unknown> | null;
   actions?: {
+    execute?: {
+      method?: 'OPEN';
+      target: string;
+    } | null;
     complete?: {
       method?: string | null;
       endpoint?: string | null;

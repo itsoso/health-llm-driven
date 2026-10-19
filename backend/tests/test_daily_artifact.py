@@ -3,6 +3,24 @@
 from datetime import date
 
 
+def test_measurement_action_opens_measurements_without_sending_chat():
+    from app.services.daily_artifact_service import _top_action_view
+
+    item = {"title": "晨起记录体重和腰围", "source": {
+        "object_type": "daily_plan_action",
+        "object_id": "measurement.weight_waist_morning",
+    }}
+    view = _top_action_view(item)
+    assert view["actions"]["execute"] == {
+        "method": "OPEN", "target": "/body-measurements",
+    }
+    # Opening the form must not complete a plan or invent a measurement.
+    assert view["actions"]["complete"]["enabled"] is False
+    for source in ({}, {"object_type": "health_protocol", "object_id": "measurement.weight_waist_morning"},
+                   {"object_type": "daily_plan_action", "object_id": "movement.walk_after_meal"}):
+        assert "execute" not in _top_action_view({**item, "source": source})["actions"]
+
+
 def test_daily_artifact_completion_contract_uses_the_owned_write_endpoint():
     from app.services.daily_artifact_service import _top_action_view
 

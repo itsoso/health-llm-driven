@@ -40,6 +40,15 @@ function artifact(overrides: Partial<DailyArtifact> = {}): DailyArtifact {
 }
 
 describe('dailyArtifactNavigation', () => {
+  it('opens the server measurement action without creating a chat prompt or writing a measurement', () => {
+    const measurement = action({
+      title: '晨起记录体重和腰围',
+      source: { object_type: 'daily_plan_action', object_id: 'measurement.weight_waist_morning' },
+      actions: { execute: { method: 'OPEN', target: '/body-measurements' } },
+    });
+    expect(buildDailyArtifactExecuteRoute(artifact({ top_action: measurement }), measurement)).toBe('/body-measurements');
+  });
+
   it('routes the ask action into Aheng chat even when backend still sends the legacy voice target', () => {
     const route = buildDailyArtifactAskRoute(artifact());
 
