@@ -41,6 +41,7 @@ RELEASE_TESTS = (
     "scripts/test_isolated_live_eval_policy.py",
     "scripts/test_partial_laya_retirement.py",
     "scripts/test_no_backup_laya_context_proof.py",
+    "scripts/test_no_backup_daily_journey_proof.py",
     "scripts/test_mobile_local_qr_script.py",
     "scripts/test_mobile_local_qr_safety.py",
     "scripts/test_admin_key_pause.py",

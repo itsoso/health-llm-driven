@@ -1300,6 +1300,27 @@ NEEDS_OPERATOR 与全部消费记录，不将原发布改为成功，不重试�
 
 Laya context profile 另绑定失败脚本、runtime 与原 installer 的精确摘要、原日志中 runtime/env 验证成功及唯一终止位置，并拒绝任何停服、事务 prepare 或安装迹象。原 Laya 导出源必须完整，已安装 generation、unit/env、安装回执与运行进程必须早于原租约且稳定；所有 pending 安装路径必须不存在。仅 GET 健康探测，不调用真实模型。后续部署使用单独封存的只读 verifier 复核现有安装，不恢复 env candidate/rollback 副本；原 installer 与 generation 的资产保持不变。收口后仍使用原租约证据复核；历史消费者仅验证保存的证据与 canonical 源，不扫描现行模型或历史备份。
 
+#### 行程配置预检失败的限定收口
+
+同一 `--retire-no-backup-preflight` 入口新增独立的
+`daily-journey-config-preflight-v1` profile，绑定失败候选
+`6a24b64596464f41eac852306da29bef6ff31da0` 与仍在运行的
+`25b85536e3722dc111c528b8a915062a3f971397`，并必须匹配五份失败代码
+摘要和唯一停写前日志顺序。它不以 SHA 或“现在检查通过”作为充分条件，不重放原发布。
+原迁移工具动态编译配置时继承 future annotations，导致 Pydantic 配置类型解析
+失败；后续工具以 `dont_inherit=True` 保留配置自身语义，并只输出脱敏异常类别、
+阶段和 helper 行号，绝不输出异常正文、SQL、连接串或局部变量。
+
+收口继续验证旧运行版本、COMMITTED 终态、原租约与启动时间、配置身份、服务
+代际和两次完整快照一致。独立 PostgreSQL 只读连接只读取角色、目录和迁移账本
+元数据，绑定数据库身份和账本摘要，要求目标迁移 pending、三个目标对象不存在、
+候选迁移目录/intent/完成回执均不存在。路径父链、日志或任何状态漂移均阻断。
+不读取个人健康记录、不执行 DDL、不停服、不改 env、不创建备份；已准备但未
+发布的独立 Web 制品保留原回执，不视为线上切换。
+
+关闭原失败仅恢复后续新候选的发布前提，保留原 NEEDS_OPERATOR。新候选仍需
+独立 G4、精确完整 CI、CI-mode、新授权及后端/Web/适用移动端的各自回执。
+
 ### 首次 Health / KBase 认证启用（独立无备份配置入口）
 
 `deploy.sh --activate-kbase-login` 是普通 env-only 冻结之外的明确、受审例外，

@@ -41,6 +41,11 @@ _laya_spec = importlib.util.spec_from_file_location('no_backup_laya_context',
     Path(__file__).with_name('no_backup_laya_context_proof.py'))
 _laya = importlib.util.module_from_spec(_laya_spec)
 _laya_spec.loader.exec_module(_laya)
+_journey_spec = importlib.util.spec_from_file_location('no_backup_daily_journey',
+    Path(__file__).with_name('no_backup_daily_journey_proof.py'))
+_journey = importlib.util.module_from_spec(_journey_spec)
+_journey_spec.loader.exec_module(_journey)
+
 LAYA_FAILURE_SUFFIX = (b'LAYA_BLOCKED:FileNotFoundError\n' +
     '\x1b[0;31m✗\x1b[0m Laya preparation failed; backend writers unchanged, release evidence retained\n'.encode())
 
@@ -240,13 +245,19 @@ class NoBackupPreflightProof(RecoveryProof):
             if binding != LAYA_FAILED_IMPLEMENTATIONS:
                 raise ProofError('failed Laya context implementation differs')
             profile, implementations = 'laya-context-missing-candidate', LAYA_FAILED_IMPLEMENTATIONS
+        elif binding == {key: _journey.IMPLEMENTATIONS[key] for key in FAILED_IMPLEMENTATIONS}:
+            binding = {key: self._file(failed / key)[1]['sha256'] for key in _journey.IMPLEMENTATIONS}
+            _journey.validate_implementations(binding)
+            profile, implementations = _journey.PROFILE, _journey.IMPLEMENTATIONS
         else:
             raise ProofError('failed implementation is not a reviewed independent profile')
         if profile == 'laya-context-missing-candidate':
             self._absent(self.bootstrap.STATE / self.failed_sha / 'deployment.env')
         result = {'workspace': self._workspace(failed), 'stage': self._stage(failed)}
         log, _ = self._file(self.bootstrap.STATE / self.failed_sha / 'deployment.log', 0o600)
-        (validate_failure_log if profile == 'pre-mutation-no-copy-v1' else validate_laya_failure_log)(log)
+        validator = (validate_failure_log if profile == 'pre-mutation-no-copy-v1' else
+                     _journey.validate_failure_log if profile == _journey.PROFILE else validate_laya_failure_log)
+        validator(log)
         transaction = self.runtime.ReleaseTransaction(self.runtime.production_layout(self.stage), self.systemd)
         if not self._closed:
             transaction._assert_release_lock(self.lease, self.token)
@@ -276,6 +287,8 @@ class NoBackupPreflightProof(RecoveryProof):
                 result['no_backup_preflight']['laya_context'] = _laya.inspect(self, failed, old, result['stage']['live_env'])
             except Exception:
                 raise ProofError('read-only Laya context proof failed') from None
+        if profile == _journey.PROFILE:
+            result['no_backup_preflight']['journey_context'] = _journey.inspect(self, failed)
         validate_snapshot(result)
         return result
 
@@ -322,8 +335,10 @@ def validate_snapshot(snapshot):
     marker = snapshot['no_backup_preflight']
     profile = marker.get('profile') if isinstance(marker, dict) else None
     implementations = (FAILED_IMPLEMENTATIONS if profile == 'pre-mutation-no-copy-v1' else
-                       LAYA_FAILED_IMPLEMENTATIONS if profile == 'laya-context-missing-candidate' else None)
-    additional = {'laya_context'} if profile == 'laya-context-missing-candidate' else set()
+                       LAYA_FAILED_IMPLEMENTATIONS if profile == 'laya-context-missing-candidate' else
+                       _journey.IMPLEMENTATIONS if profile == _journey.PROFILE else None)
+    additional = ({'laya_context'} if profile == 'laya-context-missing-candidate' else
+                  {'journey_context'} if profile == _journey.PROFILE else set())
     if (not isinstance(marker, dict) or set(marker) != additional | {'profile', 'failed_sha', 'production_sha',
             'original_stage', 'failed_implementations', 'chronology', 'started_at', 'historical_env_digest_available', 'laya_install_not_reached'}
             or implementations is None
@@ -352,7 +367,9 @@ def validate_snapshot(snapshot):
     _retained.VisionBaseView(None, overlay['raw_dropins'])
     _validate_stage_snapshot(snapshot['stage'], marker)
     _validate_identity(snapshot['terminal'])
-    if additional:
+    if profile == _journey.PROFILE:
+        _journey.validate(marker['journey_context'], marker['failed_sha'], marker['production_sha'])
+    if profile == 'laya-context-missing-candidate':
         try:
             _laya.validate(marker['laya_context'], marker['failed_sha'], marker['production_sha'],
                 chronology['lease_started_ns'], snapshot['stage']['live_env'])
@@ -397,3 +414,12 @@ def validate_archived_vision(bootstrap, source, snapshot):
             _laya.validate_history(bootstrap, Path(source), marker['laya_context'])
         except Exception:
             raise ProofError('historical canonical Laya evidence differs') from None
+
+    if marker.get('profile') == _journey.PROFILE:
+        validate_snapshot(snapshot)
+        failed = bootstrap.canonical_source(marker['failed_sha'])
+        binding = {}
+        for name in _journey.IMPLEMENTATIONS:
+            bootstrap.secure(failed / name)
+            binding[name] = hashlib.sha256((failed / name).read_bytes()).hexdigest()
+        _journey.validate_implementations(binding)

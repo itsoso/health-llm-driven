@@ -433,6 +433,7 @@ jobs:
           scripts/test_contained_release_retirement.py
           scripts/test_no_backup_preflight_proof.py
           scripts/test_no_backup_laya_context_proof.py
+          scripts/test_no_backup_daily_journey_proof.py
           scripts/test_lost_closure_receipt_acknowledgment.py
           scripts/test_rolled_back_release_operator.py
           scripts/test_rolled_back_release_retirement.py
@@ -594,6 +595,14 @@ jobs:
         env:
           DAILY_JOURNEY_RELEASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
         run: python -m pytest -q --noconftest --no-cov scripts/test_daily_journey_release_postgres.py
+
+      - name: Verify journey preflight closure catalog on isolated PostgreSQL
+        env:
+          PGPASSWORD: postgres
+          JOURNEY_CLOSURE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/journey_closure_test
+        run: |
+          createdb -h localhost -U postgres journey_closure_test
+          python -m pytest -q --noconftest --no-cov scripts/test_no_backup_daily_journey_proof.py -k postgresql
 
       - name: Verify Runtime migration upgrade and idempotency
         working-directory: backend
