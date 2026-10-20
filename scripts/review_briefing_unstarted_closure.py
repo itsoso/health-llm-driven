@@ -20,6 +20,13 @@ INTENT_SHA256 = '9f9f82331243256975834805784e51646c3e03725f00a95dd81630f7c6fa3dd
 ATTEMPT = 'after-1e676eaa-intent-only-v1'
 TERMINAL = 'CANONICAL_WRITE_NOT_ENTERED'
 AUTHORITY = {'reset':False, 'retry':False, 'release':False, 'rotation':False, 'new_attempt':False}
+SUCCESSOR_OPERATOR = '49a742fa22606eec0186c9f6034538e7e554a00d'
+SUCCESSOR_INTENT_SHA256 = 'b140be7864c78e729fc15a128680785ebfdc21748519df23589cda955dceb34d'
+SUCCESSOR_SOURCE_HASHES = {
+    'review_briefing_unstarted_closure.py':'d0aabfca82416bbf6cc19f22f49ad5f0bac10876b921b5eb5b62b96f197bd787',
+    'trusted_review_briefing_repair.py':'e837a2d7cc9d42d5251c917d356af06f40c39f8d19d17b9242c9319eea6269cf',
+    'review_demo_briefing_repair.py':'99fec38098c19cc5fbd8bb644a5a2b6cbaf24541ccacb49110ebcef2b42fffb9',
+}
 SOURCE_HASHES = {
     'trusted_review_briefing_repair.py':'4a1584a8cf4e39da97f8c6473f0701bf054444dcb6c78c7ab7de09d02fb333f5',
     'review_demo_briefing_repair.py':'99fec38098c19cc5fbd8bb644a5a2b6cbaf24541ccacb49110ebcef2b42fffb9',
@@ -153,12 +160,83 @@ def make_adapter(source,b,server,readers,ack,briefing,sha,check):
     return Adapter()
 
 
+def successor_history(b):
+    """Verify immutable write ordering and consume only the old file receipt."""
+    source=b.canonical_source(SUCCESSOR_OPERATOR)
+    for name,expected in SUCCESSOR_SOURCE_HASHES.items():
+        path=source/'scripts'/name;b.secure(path)
+        if hashlib.sha256(path.read_bytes()).hexdigest()!=expected:
+            raise ClosureError('fixed successor canonical sources changed')
+    path=source/'scripts/review_briefing_unstarted_closure.py'
+    spec=importlib.util.spec_from_file_location('fixed_successor_prior_closure',path)
+    old=importlib.util.module_from_spec(spec);spec.loader.exec_module(old)
+    return {'closure':old.closed_evidence(b,SUCCESSOR_OPERATOR),
+            'source_hashes':SUCCESSOR_SOURCE_HASHES.copy()}
+
+
+def successor_evidence(b):
+    root=successor_path(b)
+    inventory=b._inventory(root,{'intent.json'})
+    if inventory.get('intent.json',{}).get('sha256')!=SUCCESSOR_INTENT_SHA256:
+        raise ClosureError('fixed successor intent differs')
+    intent=b._read_json(root/'intent.json');history=successor_history(b)
+    if (intent.get('operator_sha')!=SUCCESSOR_OPERATOR
+            or intent.get('attempt_profile')!=ATTEMPT
+            or intent.get('accept_demo_briefing_repair') is not True
+            or intent.get('accept_successor_briefing_attempt') is not True
+            or intent.get('unstarted_closure')!=history['closure']
+            or intent.get('evidence_sha256')!=digest(intent.get('evidence'))):
+        raise ClosureError('fixed successor authority or history differs')
+    identities={}
+    for p in (root,root/'intent.json'):
+        s=p.lstat()
+        identities[p.name if p!=root else '.']={k:getattr(s,k) for k in
+            ('st_dev','st_ino','st_mode','st_uid','st_gid','st_nlink','st_size','st_mtime_ns','st_ctime_ns')}
+    if b._inventory(root,{'intent.json'})!=inventory:
+        raise ClosureError('successor changed during observation')
+    return {'inventory':inventory,'identities':identities,'history':history}
+
+
+def make_successor_adapter(source,b,server,readers,ack,briefing,sha,check):
+    profile(sha)
+    if sha==SUCCESSOR_OPERATOR:raise ClosureError('distinct successor audit operator required')
+    guard=ack.make_adapter(source,b,server,readers,sha,TARGET,briefing.OPERATION,check)
+    class Adapter:
+        record=b.STATE/'review-demo-briefing-successor-closures'/TARGET/ATTEMPT
+        def inspect(self):
+            check()
+            prior=successor_evidence(b)
+            production=guard.inspect()
+            reconciliation=briefing.acknowledgement_evidence(
+                b,readers,ack,SUCCESSOR_OPERATOR,allow_fixed_successor=True)
+            if successor_evidence(b)!=prior:
+                raise ClosureError('successor evidence changed')
+            check()
+            return {'scope':'fixed_successor_canonical_write_path_only',
+                    'operator_sha':sha,'target_sha':TARGET,'attempt_profile':ATTEMPT,
+                    'predecessor_operator_sha':SUCCESSOR_OPERATOR,'predecessor':prior,
+                    'production':production,'reconciliation':reconciliation}
+        def prepare(self):
+            for parent in (self.record.parent.parent,self.record.parent):
+                if not parent.exists():
+                    parent.mkdir(mode=0o700);readers.sync(parent.parent)
+                b.secure(parent)
+                if parent.stat().st_mode&0o077:raise ClosureError('private audit directory required')
+            self.record.mkdir(mode=0o700);readers.sync(self.record.parent)
+        def write(self,name,value):
+            if name not in ('intent.json','completed.json'):raise ClosureError('invalid audit record')
+            readers.write_json(self.record/name,value)
+    return Adapter()
+
+
 def main():
     try:
         parser=argparse.ArgumentParser(description=__doc__,allow_abbrev=False)
         parser.add_argument('--sha',required=True)
         parser.add_argument('--accept-briefing-unstarted-closure',action='store_true')
         parser.add_argument('--evidence-sha256')
+        parser.add_argument('--successor-audit',action='store_true')
+        parser.add_argument('--token-stdin',action='store_true')
         args=parser.parse_args();profile(args.sha)
         source=Path('/var/lib/reva-release/bootstrap')/args.sha/'source'
         if Path(__file__).absolute()!=source/'scripts/review_briefing_unstarted_closure.py':
@@ -176,7 +254,7 @@ def main():
                 raise ClosureError('unsafe canonical closure source')
         spec=importlib.util.spec_from_file_location('closure_briefing',source/'scripts/trusted_review_briefing_repair.py')
         briefing=importlib.util.module_from_spec(spec);spec.loader.exec_module(briefing)
-        source,b,server,readers,ack,core=briefing.context(args.sha)
+        source,b,server,readers,ack,core=briefing.context(args.sha,token_stdin=args.token_stdin)
         b.secure(Path(__file__))
         lock=b.STATE/'launcher.lock';b.secure(lock,private=True)
         fd=os.open(lock,os.O_RDWR|os.O_NOFOLLOW);build_fd=None
@@ -186,7 +264,8 @@ def main():
             if build_fd is None:raise ClosureError('existing build lock required')
             def check():
                 b._assert_original_lock(lock,fd);b._assert_original_lock(b.STATE/TARGET/'build.lock',build_fd)
-            a=make_adapter(source,b,server,readers,ack,briefing,args.sha,check)
+            factory=make_successor_adapter if args.successor_audit else make_adapter
+            a=factory(source,b,server,readers,ack,briefing,args.sha,check)
             result=close(a,accepted=args.accept_briefing_unstarted_closure,evidence_sha256=args.evidence_sha256)
         finally:
             if build_fd is not None:os.close(build_fd)

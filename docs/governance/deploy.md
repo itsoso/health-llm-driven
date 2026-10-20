@@ -1004,6 +1004,16 @@ reset、retry、release、rotation 和 new_attempt 权限全部为 false。
 
 #### 行政收尾期间临时暂停一个已授权管理密钥
 
+固定 `49a742fa` 的 `after-1e676eaa-intent-only-v1` 后继尝试可使用
+`review_briefing_unstarted_closure.py --successor-audit` 作独立审计收尾。
+它只接受固定 intent 摘要、原 canonical 源码字节及已完成的前序闭合链，
+要求目录仅含 intent、双锁、无执行进程和生产条件保持稳定。结果另存
+`review-demo-briefing-successor-closures`，原件不改。该结果仍是
+`CANONICAL_WRITE_NOT_ENTERED`，不证明所有历史数据未写，所有操作权限均为 false；
+不被现有部署、轮换或简报修复消费者视为成功。用户的“审计收尾”授权仅覆盖
+此审计写入，不重试失败 apply、不调用数据库、不调查或修改 chatlog。
+可经 `--token-stdin` 使用现有仓库只读凭据核验精确 CI，凭据不写入配置或回执。
+
 `scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
 部署入口，也不能解除原 closure 的 SSH/proc 闸。只从新受审、精确 CI 绿色的 canonical
 staging 以系统 Python `-I -S -B` 执行。首次 `pause` 默认只读取证；匹配摘要后才执行。

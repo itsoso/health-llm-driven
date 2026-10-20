@@ -108,3 +108,73 @@ def test_cli_rejects_noncanonical_before_loading_any_source(monkeypatch):
     m=load();monkeypatch.setattr(sys,'argv',['closure','--sha','d'*40])
     monkeypatch.setattr(m.importlib.util,'spec_from_file_location',lambda *a:pytest.fail('must reject before loading'))
     assert m.main()==1
+
+
+def successor_fixture(tmp_path, monkeypatch):
+    import hashlib, json
+    m,b,_,original,source,sha=closure_fixture(tmp_path,monkeypatch)
+    root=m.successor_path(b);root.mkdir(parents=True,mode=0o700)
+    chain={'fixed':'prior_closed'}
+    raw=json.dumps({'operator_sha':m.SUCCESSOR_OPERATOR,
+        'accept_demo_briefing_repair':True,'accept_successor_briefing_attempt':True,
+        'attempt_profile':m.ATTEMPT,'unstarted_closure':chain,
+        'evidence':{'synthetic':True},'evidence_sha256':m.digest({'synthetic':True})}).encode()
+    (root/'intent.json').write_bytes(raw);(root/'intent.json').chmod(0o600)
+    monkeypatch.setattr(m,'SUCCESSOR_INTENT_SHA256',hashlib.sha256(raw).hexdigest())
+    monkeypatch.setattr(m,'successor_history',lambda b:{'closure':chain,'source_hashes':{'fixed':'source'}})
+    readers=SimpleNamespace(sync=lambda p:None,write_json=lambda p,v:p.write_text(json.dumps(v)))
+    ack=SimpleNamespace(make_adapter=lambda *a:SimpleNamespace(inspect=lambda:{'production':'stable'}))
+    briefing=SimpleNamespace(OPERATION='a'*32,acknowledgement_evidence=lambda *a,**k:{'fixed':'receipt'})
+    a=m.make_successor_adapter(source,b,object(),readers,ack,briefing,sha,lambda:None)
+    return m,b,a,root
+
+
+def test_successor_audit_is_separate_and_does_not_authorize_retry(tmp_path,monkeypatch):
+    m,b,a,root=successor_fixture(tmp_path,monkeypatch)
+    before=(root/'intent.json').read_bytes()
+    evidence=m.close(a)
+    assert not a.record.exists()
+    result=m.close(a,accepted=True,evidence_sha256=evidence['evidence_sha256'])
+    assert result['state']=='CANONICAL_WRITE_NOT_ENTERED'
+    assert all(v is False for v in result['authority'].values())
+    assert a.record==b.STATE/'review-demo-briefing-successor-closures'/m.TARGET/m.ATTEMPT
+    assert (root/'intent.json').read_bytes()==before
+    assert {p.name for p in root.iterdir()}=={'intent.json'}
+    with pytest.raises(m.ClosureError):m.close(a)
+
+
+@pytest.mark.parametrize('fault',['marker','complete','intent','chain','drift'])
+def test_successor_audit_rejects_uncertain_state(tmp_path,monkeypatch,fault):
+    m,b,a,root=successor_fixture(tmp_path,monkeypatch)
+    observed=m.close(a)
+    if fault=='marker':(root/'database-started.json').write_text('{}')
+    elif fault=='complete':(root/'completed.json').write_text('{}')
+    elif fault=='intent':(root/'intent.json').write_text('{}')
+    elif fault=='chain':monkeypatch.setattr(m,'successor_history',lambda b:{'closure':{},'source_hashes':{}})
+    else:
+        original=a.inspect;calls=[]
+        def drift():
+            result=original();calls.append(1)
+            return result if len(calls)==1 else {**result,'changed':True}
+        a.inspect=drift
+    with pytest.raises((m.ClosureError,b.BootstrapError)):
+        m.close(a,accepted=True,evidence_sha256=observed['evidence_sha256'])
+    assert not (a.record/'completed.json').exists()
+
+
+@pytest.mark.parametrize('fault',['none','source','closure'])
+def test_successor_history_loads_only_pinned_file_consumer(tmp_path,monkeypatch,fault):
+    import hashlib
+    m=load();source=tmp_path/'source';(source/'scripts').mkdir(parents=True)
+    code="def closed_evidence(b, sha):\n    assert sha == '"+m.SUCCESSOR_OPERATOR+"'\n    return {'fixed':True}\n"
+    hashes={}
+    for name in m.SUCCESSOR_SOURCE_HASHES:
+        p=source/'scripts'/name;p.write_text(code if name=='review_briefing_unstarted_closure.py' else '# no execution\n')
+        hashes[name]=hashlib.sha256(p.read_bytes()).hexdigest()
+    monkeypatch.setattr(m,'SUCCESSOR_SOURCE_HASHES',hashes)
+    b=SimpleNamespace(canonical_source=lambda sha:source,secure=lambda p:None)
+    if fault=='source':(source/'scripts/trusted_review_briefing_repair.py').write_text('raise RuntimeError()')
+    elif fault=='closure':(source/'scripts/review_briefing_unstarted_closure.py').write_text('raise RuntimeError()')
+    if fault!='none':
+        with pytest.raises(m.ClosureError):m.successor_history(b)
+    else:assert m.successor_history(b)=={'closure':{'fixed':True},'source_hashes':hashes}
