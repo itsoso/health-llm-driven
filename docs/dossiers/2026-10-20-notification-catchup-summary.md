@@ -1,7 +1,7 @@
 # 锁屏集中提醒与家庭日报摘要
 
 Updated: 2026-10-20
-Status: implementation verified locally; G4 pending; not deployed
+Status: implementation verified locally; G4 GO for 346da2c83; deployment blocked
 Spec: `docs/specs/active/2026-10-20-notification-catchup-summary.md`
 Workflow: quick_fix + safety overlay；System Map 按路径查询；未使用 superpowers。
 
@@ -24,6 +24,7 @@ G1 PASS：修复提醒展示与投递汇总，沿用 ExecutionEvent 与现有 No
 - 独立 PostgreSQL UTF8 库最终 **25 passed**，含整组重叠认领、原单条并发、advisory lock、账户/日期隔离、未知投递、失败、重复 flush、安静时段顺延；日志 `/tmp/reva-lockscreen-postgres-final.log`。
 - 现有 Mobile 路由/历史/详情兼容及新汇总路由 **3 suites / 67 passed**；日志 `/tmp/reva-lockscreen-mobile-final.log`。无自动发送/服药写入；数据详情服务器按 owner 查询。
 - System Map / mobile-nav / doc-drift 与 `git diff --check` 通过，无结构生成物变化。
+- 独立只读 reviewer `notification_safety_review` 对固定实现 `346da2c83bafffd95bf8d23ee4e49671f2d43b51` 裁定 **GO**，独立复跑 **22 passed / 3 skipped**（跳过 PostgreSQL 专用项，并核对父流程 PG25 日志）。核对整组 CAS/部分回滚、原时段与载荷、失败/未知结果、隐私与 owner-bound 详情、关键告警隔离及家庭撤权。该裁决不替代发布准入。
 - 合成 fixture / mocked transport；没有真实模型、健康记录或 APNs 调用。没有模拟器/真机通知展示验收。
 
 ## 发布边界

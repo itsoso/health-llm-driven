@@ -1,6 +1,6 @@
 # 安静时段后的提醒汇总
 
-Status: implementing
+Status: implemented and verified locally; G4 GO; deployment blocked
 Updated: 2026-10-20
 Related PRD: `docs/prd/reva-personal-health-os-prd.md`
 
