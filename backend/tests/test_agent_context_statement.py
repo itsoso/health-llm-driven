@@ -385,3 +385,11 @@ async def test_transit_timeline_after_failed_meal_does_not_query_health(db, auth
 def test_transit_admission_rejects_foreign_quoted_invalid_or_sensitive_slots(message):
     from app.services.agent_context_statement import parse_context_statement
     assert parse_context_statement(message) is None
+
+@pytest.mark.parametrize('signal', ['抽搐', '窒息', '救命', '失明', '吞咽困难'])
+def test_transit_sensitive_slots_retain_shared_health_safety_routing(signal):
+    from app.services.agent_context_statement import parse_context_statement
+    from app.services.llm.task_routing import has_sensitive_health_language
+    assert has_sensitive_health_language(signal)
+    assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例站', signal)) is None
+    assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例机场', signal + '机场')) is None

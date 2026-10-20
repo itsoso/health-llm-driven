@@ -21,3 +21,9 @@
 - 日志 `/tmp/reva-transit-red.log`、`/tmp/reva-transit-green.log`、`/tmp/reva-transit-pg.log`。
 - System Map检查通过 `/tmp/reva-transit-map.log`。
 - G4待独立审核。完整CI和线上发布未完成；前序专用发布收尾仍失败保留。未进行任何生产操作、OTA或AppReview提交，不调查chatlog、不备份。
+
+## 独立审查修正
+
+首版5b8b06f22为G4 NO_GO：共享敏感词识别缺少抽搐、窒息、救命、失明、吞咽困难，可能误把这些词当成地点。新增来源/目的地两侧负例先RED 5 failed，随后补入共享路由敏感词源，不仅在地名处堆叠黑名单。完整句式只是有限路由规则，不证明地点真实或医学上安全。需新提交复审后才能获得代码GO。
+
+修正后context与共享task routing相邻验证300 passed，日志`/tmp/reva-transit-safety-green.log`。未调用真实模型，未触及生产。
