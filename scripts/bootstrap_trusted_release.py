@@ -896,6 +896,31 @@ def advance_review_maintenance(old_sha, sha, *, evidence_sha256=None, accepted=F
         os.close(fd)
 
 
+def _review_release_rotation_input():
+    """Bounded stdin envelope; neither secret is included in results or argv."""
+    def unique(pairs):
+        value = {}
+        for key, item in pairs:
+            if key in value:
+                raise BootstrapError("invalid protected release input")
+            value[key] = item
+        return value
+    try:
+        raw = sys.stdin.buffer.read(8193)
+        if len(raw) > 8192:
+            raise BootstrapError("invalid protected release input")
+        value = json.loads(raw, object_pairs_hook=unique)
+        if (not isinstance(value, dict) or set(value) != {'receipt', 'github_token'}
+                or not isinstance(value['receipt'], str)
+                or re.fullmatch('[a-f0-9]{64}', value['receipt']) is None
+                or not isinstance(value['github_token'], str)
+                or re.fullmatch('[A-Za-z0-9_.-]{1,4096}', value['github_token']) is None):
+            raise BootstrapError("invalid protected release input")
+        return value
+    except (ValueError, OSError, AttributeError):
+        raise BootstrapError("invalid protected release input") from None
+
+
 def _review_release_closure_module():
     path = Path(__file__).absolute().with_name("review_maintenance_release_closure.py")
     secure(path)
@@ -1035,10 +1060,14 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
+    if review_release_github_token is not None and (review_release_closure_receipt is None
+            or not isinstance(review_release_github_token, str)
+            or re.fullmatch('[A-Za-z0-9_.-]{1,4096}', review_release_github_token) is None):
+        raise BootstrapError("ephemeral token requires fixed release closure")
     if review_release_closure_receipt is not None and (review_advance_receipt is not None
             or recovery_receipt is not None or finalized_production_sha is not None or backend_ci):
         raise BootstrapError("release closure requires exclusive exact candidate authority")
@@ -1050,7 +1079,11 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if recovery_receipt is not None or finalized_production_sha is not None or backend_ci:
             raise BootstrapError("review advance requires exclusive exact candidate CI")
         _review_advance_module().profile(old_sha, sha)
-    if backend_ci:
+    if review_release_github_token is not None:
+        gate = _predeploy_module(source, 'trusted_release_gate.py')
+        gate.verify_release(sha, sha, observed_main=sha,
+            _get_json=lambda url: gate._get_json(url, token=review_release_github_token))
+    elif backend_ci:
         if recovery_receipt is not None or finalized_production_sha is not None:
             raise BootstrapError("backend CI admission cannot replace recovery or native closure gates")
         _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
@@ -2021,9 +2054,13 @@ def main():
                 accepted=args.accept_lost_closure_receipt)
         elif args.action == "rotate":
             receipt = None
+            github_token = None
             if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin)) > 1:
                 raise BootstrapError("exclusive protected receipt required")
-            if args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin or args.review_maintenance_release_closure_receipt_stdin:
+            if args.review_maintenance_release_closure_receipt_stdin:
+                protected = _review_release_rotation_input()
+                receipt, github_token = protected['receipt'], protected['github_token']
+            elif args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin:
                 raw = sys.stdin.buffer.read(66)
                 if re.fullmatch(rb"[0-9a-f]{64}\n?", raw) is None:
                     raise BootstrapError("exact protected recovery receipt required")
@@ -2032,6 +2069,7 @@ def main():
                             recovery_receipt=receipt if args.recovery_receipt_stdin else None,
                             review_advance_receipt=receipt if args.review_maintenance_advance_receipt_stdin else None,
                             review_release_closure_receipt=receipt if args.review_maintenance_release_closure_receipt_stdin else None,
+                            **({'review_release_github_token': github_token} if github_token is not None else {}),
                             finalized_production_sha=args.finalized_production_sha,
                             **({"backend_ci": True} if args.backend_ci else {}))
         elif args.action == "install":

@@ -1032,7 +1032,9 @@ reset、retry、release、rotation 和 new_attempt 权限全部为 false。
 `FIXED_MAINTENANCE_RETIRED_WITH_ACCEPTED_UNKNOWN`，其中 `demo_verified=false`、
 `reset_authorized=false`、`retry_authorized=false`。失败保留现场且禁止重放。
 仅 `rotate --review-maintenance-release-closure-receipt-stdin` 可消费与同一候选绑定的
-受保护一次性回执，禁止与其他收尾或宽化 CI 权限混用；退休记录使用独立字段
+受保护一次性回执。此入口 stdin 为有界、严格字段的 JSON（`receipt`、`github_token`），
+令牌限本仓库只读 App 短期凭据，仅在内存中用于现有精确 CI 校验，不写配置、argv 或回执。
+禁止与其他收尾或宽化 CI 权限混用；退休记录使用独立字段
 `review_maintenance_release_closure`，历史消费者复核静态原件链，不将旧服务 PID
 与未来生产 PID 比较。执行前后仍必须核对实际生产状态。新终态不等于部署成功，
 后续部署、OTA 及提审各自完成验证与回执。

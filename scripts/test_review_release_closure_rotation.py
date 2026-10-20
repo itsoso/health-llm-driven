@@ -110,3 +110,36 @@ def test_retired_history_revalidates_distinct_closure_chain(tmp_path,monkeypatch
     with pytest.raises((b.BootstrapError,m.AdvanceError)):
         b._retired_history()
     assert {p.name:p.read_bytes() for p in reset.iterdir()}==original
+
+
+def test_rotate_ephemeral_token_is_only_used_by_exact_gate_and_never_persisted(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    m,b,support,sha,receipt,reset,original,checks,record,intent,end=rotation_fixture(tmp_path,monkeypatch)
+    token='synthetic_ephemeral_read_token'
+    seen=[]
+    def get_json(url,*,token):
+        seen.append(('request',url,token));return {'synthetic':True}
+    def verify_release(candidate,workflow,*,observed_main,_get_json):
+        seen.append(('verify',candidate,workflow,observed_main))
+        assert _get_json('https://api.github.com/synthetic')=={'synthetic':True}
+    previous=b._predeploy_module
+    def module(source,name):
+        if name=='trusted_release_gate.py':
+            return SimpleNamespace(verify_release=verify_release,_get_json=get_json)
+        return previous(source,name)
+    monkeypatch.setattr(b,'_predeploy_module',module)
+    run=b._run
+    def checked_run(argv,*args,**kwargs):
+        assert not any('trusted_release_gate.py' in str(value) for value in argv)
+        assert token not in str(argv)
+        return run(argv,*args,**kwargs)
+    monkeypatch.setattr(b,'_run',checked_run)
+    result=b.rotate(m.TARGET,sha,0,support.PUBLIC,
+        review_release_closure_receipt=receipt,review_release_github_token=token)
+    assert result['state']=='INSTALLED'
+    assert seen==[('verify',sha,sha,sha),('request','https://api.github.com/synthetic',token)]
+    for root in (b.STATE,b.CONFIG):
+        for path in root.rglob('*'):
+            if path.is_file() and not path.is_symlink():
+                assert token.encode() not in path.read_bytes()
+    assert b._retired_history()[m.TARGET]['review_maintenance_release_closure']['new_sha']==sha
