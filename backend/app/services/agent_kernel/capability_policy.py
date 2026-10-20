@@ -2579,7 +2579,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.medical_narrative_read_scope import medical_narrative_read_scope_contract_payload
     from app.services.agent_kernel.post_record_recovery_scope import post_record_recovery_scope_contract_payload
     from app.services.agent_kernel.medication_review_scope import medication_review_scope_contract_payload
+    from app.services.agent_kernel.bmi_read_scope import bmi_read_scope_contract_payload
     return {
+        "bmi_read_scope": bmi_read_scope_contract_payload(),
         "post_record_recovery_scope": post_record_recovery_scope_contract_payload(),
         "medication_review_scope": medication_review_scope_contract_payload(),
         "medical_narrative_read_scope": medical_narrative_read_scope_contract_payload(),
@@ -2704,6 +2706,11 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request, bmi_query_authorized
+    if is_bmi_read_request(snapshot.envelope.text) or (tool_name == 'health_query' and args.get('dimension') == 'bmi'):
+        if tool_name == 'health_query' and bmi_query_authorized(snapshot, args):
+            return _decision('allow', 'owned_bmi_read', tool_name, {'dimension': 'bmi'})
+        return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
     from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
     imaging_scope = resolve_medical_narrative_read_scope(snapshot.envelope.text)
     if imaging_scope is not None:

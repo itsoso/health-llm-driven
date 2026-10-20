@@ -12316,6 +12316,7 @@ class AgentExecutor:
         self._turn_composed_read_executions = []
         self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
+        self._turn_bmi_result = None
         self._turn_focused_read_result = None
         self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
@@ -12482,6 +12483,7 @@ class AgentExecutor:
         self._turn_composed_read_executions = []
         self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
+        self._turn_bmi_result = None
         self._turn_focused_read_result = None
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
@@ -19652,9 +19654,28 @@ class AgentExecutor:
                                     proposed_calls = [symptom_call]
                                     deterministic_symptom_fallback_attempted = True
                                     self._record_model_fallback_reason("symptom_status_observation_preplanned")
+                            from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request
+                            bmi_turn = is_bmi_read_request(message)
+                            if (bmi_turn and round_idx == 0 and not proposed_calls
+                                    and not self._read_only_turn and not health_advice_buffered
+                                    and not images and not file_base64 and not self._current_turn_has_attachment
+                                    and any((tool.get('function') or {}).get('name') == 'health_query' for tool in round_tools)):
+                                proposed_calls = [{'id': 'owned-bmi-read', 'type': 'function', 'function': {
+                                    'name': 'health_query', 'arguments': json.dumps({'dimension': 'bmi'})}}]
                             server_preplanned_round = bool(proposed_calls)
                             if server_preplanned_round:
                                 finish_reason = "tool_calls"
+                            elif bmi_turn and self._turn_bmi_result is not None:
+                                from app.services.bmi_read import bmi_reply
+                                candidate = bmi_reply(self._turn_bmi_result)
+                                finish_reason = 'stop'
+                                server_preplanned_round = True
+                            elif bmi_turn and round_idx > 0:
+                                # A failed closed read cannot be repaired by a
+                                # model guessing measurements or broader tools.
+                                candidate = '本次 BMI 数据查询未完成，暂时无法计算。请稍后重试。'
+                                finish_reason = 'stop'
+                                server_preplanned_round = True
                             elif (garmin_scope is not None and self._turn_sync_attempted
                                     and self._turn_focused_read_result is not None):
                                 # Thin records cannot support free-form personal
@@ -20998,7 +21019,11 @@ class AgentExecutor:
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
             + plan_goals
-            + self._sync_goal_outcomes(),
+            + self._sync_goal_outcomes()
+            + ([{'goal_id': 'bmi', 'kind': 'answer',
+                 'status': 'verified' if self._turn_bmi_result.get('status') == 'complete' else 'waiting_for_user',
+                 'reason_code': 'bmi_calculated' if self._turn_bmi_result.get('status') == 'complete' else 'bmi_measurements_required'}]
+               if self._turn_bmi_result is not None else []),
             capability_block_reasons=[
                 reason
                 for reason in self._agent_kernel_capability_block_reasons
@@ -27342,6 +27367,18 @@ class AgentExecutor:
         supplied_args = dict(args)
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == 'bmi':
+            from app.services.agent_kernel.bmi_read_scope import bmi_query_authorized
+            from app.services.bmi_read import read_bmi
+            snapshot = self._ensure_agent_kernel_turn()
+            if (not bmi_query_authorized(snapshot, supplied_args)
+                    or type(self._current_user_id) is not int
+                    or self._current_user_id != snapshot.context.user_id
+                    or self._current_turn_user_message != snapshot.envelope.text):
+                return 'Error: BMI 查询范围与当前请求不一致。'
+            result = read_bmi(self.db, self._current_user_id, snapshot.context.current_time.date())
+            self._turn_bmi_result = result
+            return json.dumps(result, ensure_ascii=False)
         if dim == "medical_exam" and self._turn_selected_exam_id is not None:
             from app.services.health_read import read_selected_medical_exam
             return read_selected_medical_exam(

@@ -2636,6 +2636,9 @@ def _health_read_segment_has_target(text: str) -> bool:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
+    from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request
+    if is_bmi_read_request(text):
+        return False  # Whole-command subject proof; gateway binds read authority.
     from app.services.agent_kernel.read_task_scope import daily_supplement_question_day
     if daily_supplement_question_day(text) is not None:
         return False  # Whole utterance proof; principal and date bind separately.
