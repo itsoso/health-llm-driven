@@ -16,6 +16,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import time
 
 STATE = Path('/var/lib/reva-release')
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C'}
@@ -219,10 +220,53 @@ def verify_chatlog_authentication(proc, profile=None):
         raise AcknowledgementError('unique accepted SSH authentication unavailable')
 
 
+def dynamic_chatlog_authentication(proc, pid, start_ticks):
+    """Authenticate a reconnect by the fixed key, never by a reusable PID alone."""
+    boot = bounded_read(proc / 'sys/kernel/random/boot_id', 64).decode().strip().replace('-', '')
+    ticks = os.sysconf('SC_CLK_TCK')
+    if (re.fullmatch('[a-f0-9]{32}', boot) is None or not pid.isdigit()
+            or not start_ticks.isdigit() or type(ticks) is not int or ticks <= 0):
+        raise AcknowledgementError('reconnected SSH identity unavailable')
+    start_us = int(start_ticks) * 1_000_000 // ticks
+    observed_us = int(time.monotonic() * 1_000_000)
+    result = subprocess.run(['/usr/bin/journalctl', '--no-pager', '-o', 'json', '--boot',
+        '_PID=' + pid], env=ENV, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL, check=True, timeout=15)
+    if len(result.stdout) > 1_048_576:
+        raise AcknowledgementError('reconnected SSH authentication exceeds bound')
+    accepted = []
+    for raw in result.stdout.splitlines():
+        event = json.loads(raw)
+        message = event.get('MESSAGE')
+        if not isinstance(message, str):
+            raise AcknowledgementError('reconnected SSH event malformed')
+        if not message.startswith('Accepted '):
+            continue
+        monotonic, timestamp = event.get('__MONOTONIC_TIMESTAMP'), event.get('__REALTIME_TIMESTAMP')
+        if (event.get('_PID') != pid or event.get('_BOOT_ID') != boot
+                or not isinstance(monotonic, str) or not monotonic.isdigit()
+                or not isinstance(timestamp, str) or not timestamp.isdigit()):
+            raise AcknowledgementError('reconnected SSH event identity unavailable')
+        if int(monotonic) < start_us:
+            continue  # A previous incarnation of this PID cannot authenticate this one.
+        if (int(monotonic) > observed_us or event.get('_UID') != '0'
+                or re.fullmatch(r'Accepted publickey for root from [^\s]+ port [0-9]+ ssh2: ED25519 '
+                                + re.escape(CHATLOG_KEY), message) is None):
+            raise AcknowledgementError('reconnected SSH authentication differs')
+        accepted.append((timestamp, monotonic, boot))
+    if len(accepted) != 1:
+        raise AcknowledgementError('unique reconnected SSH authentication unavailable')
+    return accepted[0]
+
+
 def chatlog_snapshot(proc, profile=None):
     profile = CHATLOG_PROFILES[0] if profile is None else profile
     if profile not in CHATLOG_PROFILES:
         raise AcknowledgementError('unaccepted SSH profile')
+    return _chatlog_snapshot(proc, profile)
+
+
+def _chatlog_snapshot(proc, profile):
     accepted_pid, accepted_start, _, _, _ = profile
     entry = proc / accepted_pid
     before = bounded_read(entry / 'stat')
@@ -254,6 +298,10 @@ def chatlog_snapshot(proc, profile=None):
             values = row.split()
             if len(values) < 10:
                 raise AcknowledgementError('TCP inventory malformed')
+            if (profile not in CHATLOG_PROFILES and values[3] == '0A'
+                    and values[1].rsplit(':', 1)[-1] == '13A6'
+                    and (values[9] not in sockets or values[1] != loopback or values[7] != '0')):
+                raise AcknowledgementError('reconnected SSH listener is not unique')
             if values[9] in sockets and values[3] == '0A':
                 if values[1] != loopback or values[7] != '0':
                     raise AcknowledgementError('accepted SSH listener changed')
@@ -300,6 +348,7 @@ def _acknowledgement_ssh_observation(proc):
         raise AcknowledgementError('SSH process inventory exceeds bound')
     allowed = None
     selected = None
+    dynamic_auth = None
     profiles = {p[0]: p for p in CHATLOG_PROFILES}
     observed = {}
     for entry in entries:
@@ -332,7 +381,12 @@ def _acknowledgement_ssh_observation(proc):
             allowed = chatlog_snapshot(*args)
             verify_chatlog_authentication(*args)
         elif argv.startswith((b'sshd:', b'sshd-session:')):
-            raise AcknowledgementError('other SSH session must finish before acknowledgement')
+            if selected is not None:
+                raise AcknowledgementError('other SSH session must finish before acknowledgement')
+            start_ticks = fields[19].decode()
+            dynamic_auth = dynamic_chatlog_authentication(proc, entry.name, start_ticks)
+            selected = (entry.name, start_ticks, dynamic_auth[0], None, None)
+            allowed = _chatlog_snapshot(proc, selected)
     after = {entry.name for entry in proc.iterdir() if entry.name.isdigit()}
     before = {entry.name for entry in entries if entry.name.isdigit()}
     if after != before:
@@ -354,7 +408,14 @@ def _acknowledgement_ssh_observation(proc):
         if (len(fields) < 20 or fields[1:5] + [fields[19]] != identity
                 or current_argv != argv):
             raise AcknowledgementError('SSH process identity changed')
-    if allowed is not None:
+    if selected is not None and any(identity[0].decode() == selected[0]
+                                    for _, identity in observed.values()):
+        raise AcknowledgementError('accepted SSH tunnel has a child process')
+    if allowed is not None and dynamic_auth is not None:
+        if (_chatlog_snapshot(proc, selected) != allowed
+                or dynamic_chatlog_authentication(proc, selected[0], selected[1]) != dynamic_auth):
+            raise AcknowledgementError('reconnected SSH session changed')
+    elif allowed is not None:
         if chatlog_snapshot(*args) != allowed:
             raise AcknowledgementError('accepted SSH session changed')
         verify_chatlog_authentication(*args)
@@ -362,7 +423,9 @@ def _acknowledgement_ssh_observation(proc):
         'exception_used': True, 'pid': int(selected[0]), 'start_ticks': selected[1],
         'uid': 0, 'tty_nr': 0, 'listener_port': 5030, 'loopback_only': True,
         'authenticated_key': CHATLOG_KEY, 'authentication_event_timestamp': selected[2],
-        'authority': 'ACKNOWLEDGEMENT_ONLY_USER_CONFIRMED_CHATLOG'})
+        'authority': 'ACKNOWLEDGEMENT_ONLY_USER_CONFIRMED_CHATLOG',
+        **({'authentication_monotonic_us': dynamic_auth[1], 'authentication_boot_id': dynamic_auth[2]}
+           if dynamic_auth is not None else {})})
 
 
 

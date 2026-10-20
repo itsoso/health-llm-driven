@@ -741,3 +741,74 @@ def test_initial_unknown_pid_exit_discards_whole_snapshot(tmp_path, monkeypatch,
     else:
         with pytest.raises(m.AcknowledgementError):m.assert_acknowledgement_ssh_sessions(proc)
     assert len(attempts) == (3 if next_state == 'missing' else 2)
+
+
+def dynamic_chatlog_fixture(tmp_path, monkeypatch):
+    import shutil
+    from types import SimpleNamespace
+    m=load();proc,known,add=ssh_fixture(tmp_path,m);shutil.rmtree(known)
+    known=add(3676080,1,argv=b'sshd: root@notty\0',start='2827634832')
+    (known/'fd'/'5').symlink_to('socket:[8877]')
+    boot=proc/'sys/kernel/random';boot.mkdir(parents=True)
+    (boot/'boot_id').write_text('12345678-1234-1234-1234-123456789012\n')
+    event={'_PID':'3676080','_UID':'0','_BOOT_ID':'12345678123412341234123456789012',
+           '__REALTIME_TIMESTAMP':'1792498015481074','__MONOTONIC_TIMESTAMP':'28276348330000',
+           'MESSAGE':'Accepted publickey for root from 192.0.2.1 port 1234 ssh2: ED25519 '+m.CHATLOG_KEY}
+    rows=[event]
+    monkeypatch.setattr(m.os,'getpid',lambda:900)
+    monkeypatch.setattr(m.os,'sysconf',lambda name:100)
+    monkeypatch.setattr(m.time,'monotonic',lambda:28276349.0)
+    monkeypatch.setattr(m.subprocess,'run',lambda *args,**kwargs:SimpleNamespace(stdout=b'\n'.join(json.dumps(x).encode() for x in rows)))
+    return m,proc,known,add,event,rows
+
+
+def test_dynamic_reconnected_chatlog_is_bound_without_new_pid_whitelist(tmp_path,monkeypatch):
+    m,proc,known,add,event,rows=dynamic_chatlog_fixture(tmp_path,monkeypatch)
+    result=m.assert_acknowledgement_ssh_sessions(proc)
+    assert result['pid']==3676080 and result['start_ticks']=='2827634832'
+    assert result['authentication_event_timestamp']==event['__REALTIME_TIMESTAMP']
+    assert all(p[0]!='3676080' for p in m.CHATLOG_PROFILES)
+
+
+@pytest.mark.parametrize('change',['key','uid','boot','pid','root_name','missing','duplicate','prior_pid','future_event','missing_monotonic','child','tty','nonroot','port','public_listener','second_listener','other_ssh','replaced_event','changed_start'])
+def test_dynamic_chatlog_rejects_unproven_or_changed_session(tmp_path,monkeypatch,change):
+    m,proc,known,add,event,rows=dynamic_chatlog_fixture(tmp_path,monkeypatch)
+    if change=='key':event['MESSAGE']+='bad'
+    elif change=='uid':event['_UID']='1000'
+    elif change=='boot':event['_BOOT_ID']='f'*32
+    elif change=='pid':event['_PID']='1'
+    elif change=='root_name':event['MESSAGE']=event['MESSAGE'].replace('for root','for other')
+    elif change=='missing':rows.clear()
+    elif change=='duplicate':rows.append(dict(event))
+    elif change=='prior_pid':event['__MONOTONIC_TIMESTAMP']='1'
+    elif change=='future_event':event['__MONOTONIC_TIMESTAMP']='999999999999999'
+    elif change=='missing_monotonic':del event['__MONOTONIC_TIMESTAMP']
+    elif change=='child':add(700,3676080)
+    elif change=='tty':
+        text=(known/'stat').read_text().split();text[6]='1';(known/'stat').write_text(' '.join(text))
+    elif change=='nonroot':(known/'status').write_text('Uid:\t1000\t1000\t1000\t1000\n')
+    elif change in ('port','public_listener','second_listener'):
+        p=proc/'net/tcp';text=p.read_text()
+        if change=='port':text=text.replace('13A6','13A7')
+        elif change=='public_listener':text=text.replace('0100007F','00000000')
+        else:text+='1: 0100007F:13A6 00000000:0000 0A 0:0 00:0 0 0 0 9988\n'
+        p.write_text(text)
+    elif change=='other_ssh':add(111,1,argv=b'sshd: other@notty\0')
+    elif change in ('replaced_event','changed_start'):
+        original=m.dynamic_chatlog_authentication;calls=[]
+        def changed(*args):
+            value=original(*args);calls.append(value)
+            if len(calls)==1:
+                if change=='replaced_event':event['__REALTIME_TIMESTAMP']='1792498015481075'
+                else:(known/'stat').write_text((known/'stat').read_text().replace('2827634832','2827634833'))
+            return value
+        monkeypatch.setattr(m,'dynamic_chatlog_authentication',changed)
+    with pytest.raises(m.AcknowledgementError):m.assert_acknowledgement_ssh_sessions(proc)
+
+
+def test_prior_pid_authentication_is_not_counted_for_current_incarnation(tmp_path,monkeypatch):
+    m,proc,known,add,event,rows=dynamic_chatlog_fixture(tmp_path,monkeypatch)
+    rows.insert(0,{**event,'__MONOTONIC_TIMESTAMP':'1','__REALTIME_TIMESTAMP':'1'})
+    result=m.assert_acknowledgement_ssh_sessions(proc)
+    assert result['authentication_monotonic_us']==event['__MONOTONIC_TIMESTAMP']
+    assert result['authentication_boot_id']==event['_BOOT_ID']
