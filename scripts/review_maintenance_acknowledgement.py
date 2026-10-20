@@ -383,6 +383,12 @@ def _acknowledgement_ssh_observation(proc):
         elif argv.startswith((b'sshd:', b'sshd-session:')):
             if selected is not None:
                 raise AcknowledgementError('other SSH session must finish before acknowledgement')
+            # Reject unrelated users/TTY sessions before attempting reconnect
+            # authentication, independently of filesystem enumeration order.
+            # This shape is necessary, not sufficient: the fixed-key journal,
+            # root UID, process identity and sole loopback listener still follow.
+            if argv.rstrip(b'\0') not in (b'sshd: root@notty', b'sshd-session: root@notty'):
+                raise AcknowledgementError('other SSH session must finish before acknowledgement')
             start_ticks = fields[19].decode()
             dynamic_auth = dynamic_chatlog_authentication(proc, entry.name, start_ticks)
             selected = (entry.name, start_ticks, dynamic_auth[0], None, None)

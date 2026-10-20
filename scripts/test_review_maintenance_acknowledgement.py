@@ -692,11 +692,21 @@ def test_ordinary_exit_requires_fresh_complete_observation(tmp_path, monkeypatch
         assert len(attempts) == 2
 
 
+@pytest.mark.parametrize('known_first', [True, False])
 @pytest.mark.parametrize('fault', ['unread_pid', 'ssh_stat', 'chatlog_stat', 'chatlog_cmdline', 'ancestor', 'permission', 'cmdline_permission', 'new_ssh_after_transient'])
-def test_uncertain_or_ssh_process_is_never_skipped(tmp_path, monkeypatch, fault):
+def test_uncertain_or_ssh_process_is_never_skipped(tmp_path, monkeypatch, fault, known_first):
     m = load()
     proc, known, add = ssh_fixture(tmp_path, m)
     ordinary = add(800, 1, argv=b'sshd: other@notty\0' if fault == 'ssh_stat' else b'ordinary\0')
+    # Filesystem enumeration order is unspecified (APFS and ext4 differ).
+    # Exercise both paths without inventing a journal for an unrelated SSH user.
+    original_iterdir = Path.iterdir
+    def ordered(path):
+        entries = list(original_iterdir(path))
+        if path == proc:
+            entries.sort(key=lambda entry: (entry == known) != known_first)
+        return iter(entries)
+    monkeypatch.setattr(Path, 'iterdir', ordered)
     monkeypatch.setattr(m.os, 'getpid', lambda: 900)
     monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: None)
     original = m.bounded_read
@@ -812,3 +822,23 @@ def test_prior_pid_authentication_is_not_counted_for_current_incarnation(tmp_pat
     result=m.assert_acknowledgement_ssh_sessions(proc)
     assert result['authentication_monotonic_us']==event['__MONOTONIC_TIMESTAMP']
     assert result['authentication_boot_id']==event['_BOOT_ID']
+
+
+@pytest.mark.parametrize('argv', [b'sshd: other@notty\0', b'sshd: root@pts/1\0',
+    b'sshd: root@notty\0extra', b'sshd-session: other@notty\0'])
+def test_dynamic_chatlog_rejects_noncanonical_shape_before_authentication(tmp_path, monkeypatch, argv):
+    m, proc, known, add, event, rows = dynamic_chatlog_fixture(tmp_path, monkeypatch)
+    (known / 'cmdline').write_bytes(argv)
+    monkeypatch.setattr(m, 'dynamic_chatlog_authentication',
+                        lambda *args: pytest.fail('unrelated SSH must not request authentication'))
+    with pytest.raises(m.AcknowledgementError, match='other SSH'):
+        m.assert_acknowledgement_ssh_sessions(proc)
+
+
+@pytest.mark.parametrize('argv', [b'sshd: root@notty\0', b'sshd-session: root@notty\0'])
+def test_canonical_dynamic_shape_still_requires_real_identity_evidence(tmp_path, monkeypatch, argv):
+    m, proc, known, add, event, rows = dynamic_chatlog_fixture(tmp_path, monkeypatch)
+    (known / 'cmdline').write_bytes(argv)
+    (proc / 'sys/kernel/random/boot_id').unlink()
+    with pytest.raises(FileNotFoundError):
+        m.assert_acknowledgement_ssh_sessions(proc)
