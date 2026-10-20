@@ -692,7 +692,7 @@ def test_ordinary_exit_requires_fresh_complete_observation(tmp_path, monkeypatch
         assert len(attempts) == 2
 
 
-@pytest.mark.parametrize('fault', ['unread_pid', 'ssh_stat', 'chatlog_stat', 'permission', 'new_ssh_after_transient'])
+@pytest.mark.parametrize('fault', ['unread_pid', 'ssh_stat', 'chatlog_stat', 'chatlog_cmdline', 'ancestor', 'permission', 'cmdline_permission', 'new_ssh_after_transient'])
 def test_uncertain_or_ssh_process_is_never_skipped(tmp_path, monkeypatch, fault):
     m = load()
     proc, known, add = ssh_fixture(tmp_path, m)
@@ -706,12 +706,38 @@ def test_uncertain_or_ssh_process_is_never_skipped(tmp_path, monkeypatch, fault)
         if fault == 'unread_pid' and path == ordinary / 'cmdline':raise FileNotFoundError()
         if fault == 'ssh_stat' and path == ordinary / 'stat':raise FileNotFoundError()
         if fault == 'chatlog_stat' and path == known / 'stat':raise FileNotFoundError()
+        if fault == 'chatlog_cmdline' and path == known / 'cmdline':raise FileNotFoundError()
+        if fault == 'ancestor' and path == proc / '900/stat':raise FileNotFoundError()
+        if fault == 'cmdline_permission' and path == ordinary / 'cmdline':raise PermissionError()
         if fault == 'permission' and path == ordinary / 'stat':raise PermissionError()
         if fault == 'new_ssh_after_transient' and path == ordinary / 'stat' and len(attempts) == 1:
             (ordinary / 'cmdline').write_bytes(b'sshd: other@notty\0')
             raise FileNotFoundError()
         return original(path, *args)
     monkeypatch.setattr(m, 'bounded_read', read)
-    expected = m.AcknowledgementError if fault == 'new_ssh_after_transient' else PermissionError if fault == 'permission' else FileNotFoundError
+    expected = m.AcknowledgementError if fault in ('new_ssh_after_transient', 'unread_pid') else PermissionError if fault in ('permission', 'cmdline_permission') else FileNotFoundError
     with pytest.raises(expected):m.assert_acknowledgement_ssh_sessions(proc)
-    assert len(attempts) == (2 if fault == 'new_ssh_after_transient' else 1)
+    assert len(attempts) == (3 if fault == 'unread_pid' else 2 if fault == 'new_ssh_after_transient' else 1)
+
+
+@pytest.mark.parametrize('next_state', ['ordinary', 'ssh', 'missing'])
+def test_initial_unknown_pid_exit_discards_whole_snapshot(tmp_path, monkeypatch, next_state):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    unknown = add(800, 1)
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: None)
+    original = m.bounded_read
+    attempts = []
+    def read(path, *args):
+        if path == proc / '900/stat':attempts.append(True)
+        if path == unknown / 'cmdline':
+            if len(attempts) == 1 or next_state == 'missing':raise FileNotFoundError()
+            if next_state == 'ssh':return b'sshd: unknown@notty\0'
+        return original(path, *args)
+    monkeypatch.setattr(m, 'bounded_read', read)
+    if next_state == 'ordinary':
+        assert m.assert_acknowledgement_ssh_sessions(proc)['exception_used'] is True
+    else:
+        with pytest.raises(m.AcknowledgementError):m.assert_acknowledgement_ssh_sessions(proc)
+    assert len(attempts) == (3 if next_state == 'missing' else 2)

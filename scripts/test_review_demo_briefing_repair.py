@@ -20,7 +20,8 @@ class Adapter:
         self.evidence = dict(target_sha=module.TARGET, failed_operation=module.FAILED_OPERATION,
             fixture_sha256=module.FIXTURE_SHA256, acknowledgement_sha256='a' * 64,
             database_snapshot_sha256='b' * 64, production_evidence_sha256='e' * 64,
-            health_snapshot_sha256='f' * 64, demo_user_id=1, action=module.ACTION)
+            health_snapshot_sha256='f' * 64, demo_user_id=1, action=module.ACTION,
+            ordering_metadata_plan=module.empty_ordering_plan())
         self.applied = 0
         self.change = False
 
@@ -242,3 +243,82 @@ def test_postgres_row_lock_blocks_competing_mutation(pg):
         with pytest.raises(DBAPIError), engine.begin() as second:
             second.exec_driver_sql("SET LOCAL lock_timeout='50ms'")
             second.execute(text(f"UPDATE {schema}.agent_messages SET content='racing' WHERE id=1"))
+
+
+def test_ordering_plan_is_explicit_evidence(tmp_path):
+    m=load();a=Adapter(tmp_path,m)
+    a.evidence.pop('ordering_metadata_plan',None)
+    with pytest.raises(m.RepairError):m.validate_evidence(a.evidence)
+
+
+def test_postgres_bounded_demo_future_normalization_preserves_everything_else(pg):
+    from sqlalchemy import text
+    m,engine,schema=pg
+    fixture=Path(__file__).parents[1]/'backend/fixtures/demo_user_minimal.json'
+    with engine.begin() as c:
+        c.execute(text(f"UPDATE {schema}.agent_conversations SET updated_at=timezone('UTC',clock_timestamp())+interval '8 hours' WHERE user_id=1"))
+    with engine.begin() as c:
+        before=m._rows(c,'review@example.invalid',1)
+        other=c.execute(text(f'SELECT to_jsonb(c) FROM {schema}.agent_conversations c WHERE user_id=2')).scalar_one()
+    with engine.begin() as c:
+        c.exec_driver_sql("SET LOCAL TIME ZONE 'Asia/Shanghai'")
+        evidence=m.inspect_briefing_metadata(c,'review@example.invalid',1)
+    plan=evidence['ordering_metadata_plan']
+    assert len(plan['rows'])==1 and plan['rows'][0]['conversation_id']==1
+    assert plan['rows'][0]['original_updated_at']==before['conversations'][0]['updated_at']
+    with engine.begin() as c:
+        c.exec_driver_sql("SET LOCAL TIME ZONE 'Asia/Shanghai'")
+        result=m.create_briefing_rows(c,'review@example.invalid',1,evidence['database_snapshot_sha256'],fixture,ordering_metadata_plan=plan)
+    with engine.begin() as c:
+        after=m._rows(c,'review@example.invalid',1)
+        old=next(row for row in after['conversations'] if row['id']==1)
+        expected={**before['conversations'][0],'updated_at':old['updated_at']}
+        assert old==expected and old['updated_at']!=before['conversations'][0]['updated_at']
+        assert [x for x in after['messages'] if x['id']==1]==before['messages']
+        assert after['owner']==before['owner']
+        assert c.execute(text(f'SELECT to_jsonb(c) FROM {schema}.agent_conversations c WHERE user_id=2')).scalar_one()==other
+        assert c.execute(text(f"SELECT updated_at < timezone('UTC',clock_timestamp()) FROM {schema}.agent_conversations WHERE id=1")).scalar_one()
+        new=next(x for x in after['conversations'] if x['id']!=1)
+        assert new['updated_at']>old['updated_at']
+    with engine.begin() as c:
+        assert m.verify_created_briefing_rows(c,'review@example.invalid',1,result['after_sha256'],fixture)['state']=='VERIFIED_BRIEFING_ONLY'
+
+
+@pytest.mark.parametrize('case',['null','over_bound','multiple','wrong_column'])
+def test_postgres_metadata_plan_fails_closed_outside_exact_bound(pg,case):
+    from sqlalchemy import text
+    m,engine,schema=pg
+    with engine.begin() as c:
+        if case=='null':
+            c.execute(text(f'UPDATE {schema}.agent_conversations SET updated_at=NULL WHERE user_id=1'))
+        elif case=='over_bound':
+            c.execute(text(f"UPDATE {schema}.agent_conversations SET updated_at=timezone('UTC',clock_timestamp())+interval '25 hours' WHERE user_id=1"))
+        elif case=='multiple':
+            c.execute(text(f"UPDATE {schema}.agent_conversations SET updated_at=timezone('UTC',clock_timestamp())+interval '8 hours' WHERE user_id=1"))
+            c.execute(text(f"INSERT INTO {schema}.agent_conversations(user_id,title,session_key,created_at,updated_at) VALUES(1,'second','second',timezone('UTC',clock_timestamp()),timezone('UTC',clock_timestamp())+interval '1 hour')"))
+        else:
+            c.execute(text(f"ALTER TABLE {schema}.agent_conversations ALTER updated_at TYPE TIMESTAMPTZ USING updated_at AT TIME ZONE 'UTC'"))
+    with pytest.raises(m.RepairError),engine.begin() as c:
+        m.inspect_briefing_metadata(c,'review@example.invalid',1)
+
+
+@pytest.mark.parametrize('case',['omitted','other_id','old_time','after_snapshot_changed','rollback'])
+def test_postgres_metadata_plan_cannot_widen_or_partially_commit(pg,case):
+    from sqlalchemy import text
+    import copy
+    m,engine,schema=pg
+    fixture=Path(__file__).parents[1]/'backend/fixtures/demo_user_minimal.json'
+    with engine.begin() as c:
+        c.execute(text(f"UPDATE {schema}.agent_conversations SET updated_at=timezone('UTC',clock_timestamp())+interval '8 hours' WHERE user_id=1"))
+    with engine.begin() as c:evidence=m.inspect_briefing_metadata(c,'review@example.invalid',1)
+    plan=copy.deepcopy(evidence['ordering_metadata_plan'])
+    if case=='other_id':plan['rows'][0]['conversation_id']=2
+    elif case=='old_time':plan['rows'][0]['original_updated_at']='2020-01-01T00:00:00'
+    elif case=='omitted':plan=None
+    elif case=='after_snapshot_changed':
+        with engine.begin() as c:c.execute(text(f"UPDATE {schema}.agent_messages SET content='changed' WHERE id=1"))
+    with engine.begin() as c:before=m._rows(c,'review@example.invalid',1)
+    with pytest.raises((m.RepairError,RuntimeError)),engine.begin() as c:
+        m.create_briefing_rows(c,'review@example.invalid',1,evidence['database_snapshot_sha256'],fixture,ordering_metadata_plan=plan)
+        if case=='rollback':raise RuntimeError('synthetic transaction abort')
+    with engine.begin() as c:assert m._rows(c,'review@example.invalid',1)==before

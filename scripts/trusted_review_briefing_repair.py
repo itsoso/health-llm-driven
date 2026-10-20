@@ -153,7 +153,7 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
             database = self.child('inspect')
             if self.production() != (before, receipt):
                 raise BriefingError('production evidence changed during inspection')
-            if set(database) != {'demo_user_id', 'database_snapshot_sha256', 'health_snapshot_sha256'}:
+            if set(database) != {'demo_user_id', 'database_snapshot_sha256', 'health_snapshot_sha256', 'ordering_metadata_plan'}:
                 raise BriefingError('invalid database observation')
             value = {'target_sha': TARGET, 'failed_operation': OPERATION,
                      'fixture_sha256': core.FIXTURE_SHA256, 'action': core.ACTION,
@@ -281,10 +281,10 @@ def database_work(engine, core, readers, email, fixture, key, *, evidence=None):
         with engine.connect() as connection, connection.begin():
             connection.exec_driver_sql('SET TRANSACTION READ ONLY')
             uid = demo_identity(connection, email)
-            snapshot = core.inspect_briefing_rows(connection, email, uid)
+            snapshot = core.inspect_briefing_metadata(connection, email, uid)
             assert_insert_surface(connection)
             health = health_snapshot(connection, uid, key, readers)
-            return {'demo_user_id': uid, 'database_snapshot_sha256': snapshot, 'health_snapshot_sha256': health}
+            return {'demo_user_id': uid, **snapshot, 'health_snapshot_sha256': health}
     core.validate_evidence(evidence)
     uid = evidence['demo_user_id']
     with engine.connect() as connection:
@@ -297,7 +297,8 @@ def database_work(engine, core, readers, email, fixture, key, *, evidence=None):
             if health_snapshot(connection, uid, key, readers) != evidence['health_snapshot_sha256']:
                 raise BriefingError('demo health snapshot changed before repair')
             result = core.create_briefing_rows(connection, email, uid,
-                evidence['database_snapshot_sha256'], fixture)
+                evidence['database_snapshot_sha256'], fixture,
+                ordering_metadata_plan=evidence['ordering_metadata_plan'])
             if health_snapshot(connection, uid, key, readers) != evidence['health_snapshot_sha256']:
                 raise BriefingError('demo health rows changed within repair')
             transaction.commit()

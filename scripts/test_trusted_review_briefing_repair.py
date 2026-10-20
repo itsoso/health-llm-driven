@@ -33,7 +33,7 @@ def evidence(core):
             'fixture_sha256': core.FIXTURE_SHA256, 'action': core.ACTION,
             'acknowledgement_sha256': 'a' * 64, 'production_evidence_sha256': 'b' * 64,
             'database_snapshot_sha256': 'c' * 64, 'health_snapshot_sha256': 'd' * 64,
-            'demo_user_id': 44}
+            'demo_user_id': 44, 'ordering_metadata_plan':core.empty_ordering_plan()}
 
 
 class Transaction:
@@ -76,7 +76,8 @@ def database_stubs(monkeypatch, m, core, engine, *, health_values=None, readback
     counts = iter(health_values or ['d' * 64] * 3)
     monkeypatch.setattr(m, 'assert_insert_surface', lambda conn: engine.events.append('surface'))
     monkeypatch.setattr(m, 'health_snapshot', lambda *args: next(counts))
-    def create(conn, email, uid, before, fixture):
+    def create(conn, email, uid, before, fixture, *, ordering_metadata_plan):
+        assert ordering_metadata_plan==core.empty_ordering_plan()
         assert uid == 44 and before == 'c' * 64
         engine.events.append('insert')
         return {'state': 'VERIFIED_BRIEFING_ONLY', 'before_sha256': before, 'after_sha256': 'e' * 64}
@@ -215,7 +216,7 @@ def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monk
         assert len(kwargs['pass_fds']) == 3
         if mode == 'inspect':
             value = {'demo_user_id': 44, 'database_snapshot_sha256': 'c' * 64,
-                     'health_snapshot_sha256': 'd' * 64}
+                     'health_snapshot_sha256': 'd' * 64, 'ordering_metadata_plan':core.empty_ordering_plan()}
         else:
             value = {'state': 'VERIFIED_BRIEFING_ONLY', 'before_sha256': 'c' * 64, 'after_sha256': 'e' * 64}
         return SimpleNamespace(stdout=json.dumps(value).encode())

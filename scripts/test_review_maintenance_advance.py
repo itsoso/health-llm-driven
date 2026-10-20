@@ -177,7 +177,7 @@ def dependency_fixture(tmp_path,monkeypatch):
     evidence={'target_sha':m.TARGET,'failed_operation':m.OPERATION,'fixture_sha256':core.FIXTURE_SHA256,
               'acknowledgement_sha256':'a'*64,'database_snapshot_sha256':'b'*64,
               'production_evidence_sha256':'c'*64,'health_snapshot_sha256':'d'*64,
-              'demo_user_id':44,'action':core.ACTION}
+              'demo_user_id':44,'action':core.ACTION,'ordering_metadata_plan':core.empty_ordering_plan()}
     root=tmp_path/'review-demo-briefing-repairs'/m.TARGET
     intent={'operator_sha':sha,'accept_demo_briefing_repair':True,'evidence':evidence,'evidence_sha256':m.digest(evidence)}
     terminal={'state':'BRIEFING_REPAIRED_ONLY','evidence_sha256':m.digest(evidence),

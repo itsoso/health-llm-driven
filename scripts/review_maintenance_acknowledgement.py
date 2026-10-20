@@ -267,7 +267,7 @@ def chatlog_snapshot(proc, profile=None):
     return {'identity': identity, 'uid': uid, 'argv': argv, 'listeners': sorted(listeners)}
 
 
-class _TransientOrdinaryProcess(Exception):
+class _TransientProcessObservation(Exception):
     """Discard the entire observation; never skip an unverified process."""
 
 
@@ -275,7 +275,7 @@ def assert_acknowledgement_ssh_sessions(proc=Path('/proc')):
     for attempt in range(3):
         try:
             return _acknowledgement_ssh_observation(proc)
-        except _TransientOrdinaryProcess:
+        except _TransientProcessObservation:
             if attempt == 2:
                 raise AcknowledgementError('process inventory unstable after three complete observations') from None
 
@@ -305,13 +305,20 @@ def _acknowledgement_ssh_observation(proc):
     for entry in entries:
         if not entry.name.isdigit() or int(entry.name) in ancestors:
             continue
-        argv = bounded_read(entry / 'cmdline')
+        try:
+            argv = bounded_read(entry / 'cmdline')
+        except FileNotFoundError:
+            if entry.name in profiles:
+                raise
+            # No identity was proved: discard the entire observation rather
+            # than skipping this PID. A successful attempt still reads all PIDs.
+            raise _TransientProcessObservation() from None
         try:
             fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
         except FileNotFoundError:
             if entry.name in profiles or argv.startswith((b'sshd:', b'sshd-session:')):
                 raise
-            raise _TransientOrdinaryProcess() from None
+            raise _TransientProcessObservation() from None
         if len(fields) < 20:
             raise AcknowledgementError('SSH process inventory malformed')
         observed[entry.name] = (argv, fields[1:5] + [fields[19]])
@@ -333,7 +340,7 @@ def _acknowledgement_ssh_observation(proc):
         if not (after - before) and removed and all(
                 name in observed and name not in profiles
                 and not observed[name][0].startswith((b'sshd:', b'sshd-session:')) for name in removed):
-            raise _TransientOrdinaryProcess()
+            raise _TransientProcessObservation()
         raise AcknowledgementError('SSH process inventory changed')
     for name, (argv, identity) in observed.items():
         entry = proc / name
@@ -343,7 +350,7 @@ def _acknowledgement_ssh_observation(proc):
         except FileNotFoundError:
             if name in profiles or argv.startswith((b'sshd:', b'sshd-session:')):
                 raise
-            raise _TransientOrdinaryProcess() from None
+            raise _TransientProcessObservation() from None
         if (len(fields) < 20 or fields[1:5] + [fields[19]] != identity
                 or current_argv != argv):
             raise AcknowledgementError('SSH process identity changed')
