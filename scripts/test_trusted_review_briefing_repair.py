@@ -205,7 +205,7 @@ def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monk
         guards.append(guard)
         return guard
     monkeypatch.setattr(ack, 'make_adapter', make)
-    monkeypatch.setattr(m, 'acknowledgement_evidence', lambda *args: receipt)
+    monkeypatch.setattr(m, 'acknowledgement_evidence', lambda *args, **kwargs: receipt)
     subprocess_calls = []
     def run(argv, **kwargs):
         assert '--token-stdin' not in argv
@@ -455,3 +455,47 @@ def test_briefing_accepts_only_fixed_reconciliation(tmp_path, fault):
         assert m.acknowledgement_evidence(b,readers,ack,sha)['failed_ack'] == failed
     else:
         with pytest.raises(m.BriefingError):m.acknowledgement_evidence(b,readers,ack,sha)
+
+
+@pytest.mark.parametrize('fault', [None, 'digest', 'metadata', 'candidate', 'authority'])
+def test_fixed_216_successor_keeps_original_reconciliation(tmp_path, monkeypatch, fault):
+    import hashlib
+    from types import SimpleNamespace
+    m, core, ack = modules()
+    m.STATE = tmp_path
+    predecessor = '2162488aedb9337690a9acc51d5e8f9ac28f4aec'
+    sha = 'e' * 40 if fault != 'candidate' else m.TARGET
+    root = tmp_path / 'review-maintenance-ack-reconciliations' / m.TARGET
+    root.mkdir(parents=True)
+    old = {'closing_sha':ack.FAILED_ACK_OPERATOR,'old_sha':m.TARGET,'operation_id':m.OPERATION,'original_outcome':'UNKNOWN'}
+    failed = {'intent.json':{'sha256':ack.FAILED_ACK_INTENT}}
+    evidence = {**old,'closing_sha':predecessor,'failed_ack':failed}
+    intent = {'evidence':evidence,'evidence_sha256':ack.digest(evidence),'accept_unknown_review_writes':True,'original_outcome':'UNKNOWN'}
+    complete = {'evidence_sha256':ack.digest(evidence),'state':ack.RECONCILED,'original_outcome':'UNKNOWN',
+        'authority':{'reset':False,'retry':False,'rotation':False,'deployment':False},'reset_authorized':False,
+        'release_unblocked':False,'historical_no_write_proven':False,'account':{}}
+    if fault == 'authority':complete['authority']['deployment'] = True
+    anchors = {}; inventory = {}
+    for name, value in [('intent.json',intent),('completed.json',complete)]:
+        p = root / name;p.write_text(json.dumps(value));p.chmod(0o600)
+        st = p.lstat()
+        identity = {k:getattr(st,k) for k in ('st_uid','st_gid','st_mode','st_nlink','st_ino','st_dev','st_size','st_mtime_ns','st_ctime_ns')}
+        rawhash = hashlib.sha256(p.read_bytes()).hexdigest()
+        anchors[name] = {'identity':identity,'sha256':rawhash}
+        inventory[name] = {'sha256':rawhash}
+    if fault == 'digest':anchors['completed.json']['sha256'] = '0' * 64
+    if fault == 'metadata':anchors['completed.json']['identity']['st_ino'] += 1
+    monkeypatch.setattr(m,'RECONCILIATION_PREDECESSOR_FILES',anchors,raising=False)
+    monkeypatch.setattr(m,'RECONCILIATION_PREDECESSOR_EVIDENCE',ack.digest(evidence),raising=False)
+    ack.failed_ack_evidence = lambda b:(failed,old)
+    b = SimpleNamespace(_inventory=lambda *a:inventory,_read_json=lambda p:json.loads(p.read_text()))
+    readers = SimpleNamespace(validate_account_summary=lambda value:None)
+    before = {p.name:p.read_bytes() for p in root.iterdir()}
+    with pytest.raises(m.BriefingError):m.acknowledgement_evidence(b,readers,ack,sha)
+    if fault is None:
+        result=m.acknowledgement_evidence(b,readers,ack,sha,allow_fixed_successor=True)
+        assert result['succession']['predecessor_operator_sha']==predecessor
+        assert result['succession']['operator_sha']==sha
+    else:
+        with pytest.raises(m.BriefingError):m.acknowledgement_evidence(b,readers,ack,sha,allow_fixed_successor=True)
+    assert before=={p.name:p.read_bytes() for p in root.iterdir()}

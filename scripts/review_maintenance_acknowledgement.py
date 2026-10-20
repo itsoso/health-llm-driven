@@ -30,6 +30,10 @@ CHATLOG_PID = '3202404'
 CHATLOG_START = '2816083071'
 CHATLOG_KEY = 'SHA256:j52PPMj8cjEgvJqtcRpU/vyp7QXucSGUNemBmtVOdPY'
 CHATLOG_AUTH_TIME = '1792382497889802'
+CHATLOG_PROFILES = (
+    (CHATLOG_PID, CHATLOG_START, CHATLOG_AUTH_TIME, '2026-10-19 04:01:30 UTC', '2026-10-19 04:01:45 UTC'),
+    ('2367912', '2825295752', '1792474624683288', '2026-10-20 05:37:00 UTC', '2026-10-20 05:37:15 UTC'),
+)
 
 
 class AcknowledgementError(Exception):
@@ -182,14 +186,18 @@ def bounded_read(path, maximum=1_048_576):
     return value
 
 
-def verify_chatlog_authentication(proc):
+def verify_chatlog_authentication(proc, profile=None):
     """Bind the explicitly accepted historical event to this kernel boot."""
+    profile = CHATLOG_PROFILES[0] if profile is None else profile
+    if profile not in CHATLOG_PROFILES:
+        raise AcknowledgementError('unaccepted SSH profile')
+    accepted_pid, _, auth_time, since, until = profile
     boot = bounded_read(proc / 'sys/kernel/random/boot_id', 64).decode().strip().replace('-', '')
     if re.fullmatch('[0-9a-f]{32}', boot) is None:
         raise AcknowledgementError('kernel boot identity unavailable')
     result = subprocess.run(['/usr/bin/journalctl', '--no-pager', '-o', 'json', '--boot',
-        '--since', '2026-10-19 04:01:30 UTC', '--until', '2026-10-19 04:01:45 UTC',
-        '_PID=' + CHATLOG_PID], env=ENV, stdin=subprocess.DEVNULL,
+        '--since', since, '--until', until,
+        '_PID=' + accepted_pid], env=ENV, stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, check=True, timeout=15)
     if len(result.stdout) > 1_048_576:
         raise AcknowledgementError('SSH authentication evidence exceeds bound')
@@ -200,9 +208,9 @@ def verify_chatlog_authentication(proc):
         if not isinstance(message, str):
             raise AcknowledgementError('SSH authentication event malformed')
         if message.startswith('Accepted '):
-            if (event.get('_PID') != CHATLOG_PID or event.get('_UID') != '0'
+            if (event.get('_PID') != accepted_pid or event.get('_UID') != '0'
                     or event.get('_BOOT_ID') != boot
-                    or event.get('__REALTIME_TIMESTAMP') != CHATLOG_AUTH_TIME
+                    or event.get('__REALTIME_TIMESTAMP') != auth_time
                     or re.fullmatch(r'Accepted publickey for root from [^\s]+ port [0-9]+ ssh2: ED25519 '
                                     + re.escape(CHATLOG_KEY), message) is None):
                 raise AcknowledgementError('SSH authentication does not match accepted session')
@@ -211,11 +219,15 @@ def verify_chatlog_authentication(proc):
         raise AcknowledgementError('unique accepted SSH authentication unavailable')
 
 
-def chatlog_snapshot(proc):
-    entry = proc / CHATLOG_PID
+def chatlog_snapshot(proc, profile=None):
+    profile = CHATLOG_PROFILES[0] if profile is None else profile
+    if profile not in CHATLOG_PROFILES:
+        raise AcknowledgementError('unaccepted SSH profile')
+    accepted_pid, accepted_start, _, _, _ = profile
+    entry = proc / accepted_pid
     before = bounded_read(entry / 'stat')
     fields = before.rsplit(b')', 1)[-1].split()
-    if len(fields) < 20 or fields[19].decode() != CHATLOG_START or fields[4] != b'0':
+    if len(fields) < 20 or fields[19].decode() != accepted_start or fields[4] != b'0':
         raise AcknowledgementError('accepted SSH process identity changed')
     status = bounded_read(entry / 'status')
     uid = [line.split()[1:] for line in status.splitlines() if line.startswith(b'Uid:')]
@@ -255,7 +267,20 @@ def chatlog_snapshot(proc):
     return {'identity': identity, 'uid': uid, 'argv': argv, 'listeners': sorted(listeners)}
 
 
+class _TransientOrdinaryProcess(Exception):
+    """Discard the entire observation; never skip an unverified process."""
+
+
 def assert_acknowledgement_ssh_sessions(proc=Path('/proc')):
+    for attempt in range(3):
+        try:
+            return _acknowledgement_ssh_observation(proc)
+        except _TransientOrdinaryProcess:
+            if attempt == 2:
+                raise AcknowledgementError('process inventory unstable after three complete observations') from None
+
+
+def _acknowledgement_ssh_observation(proc):
     """Only this one-shot audit accepts the user-identified chatlog tunnel.
 
     No session is terminated. The generic deployment/retirement checks retain
@@ -274,39 +299,62 @@ def assert_acknowledgement_ssh_sessions(proc=Path('/proc')):
     if len(entries) > 100000:
         raise AcknowledgementError('SSH process inventory exceeds bound')
     allowed = None
+    selected = None
+    profiles = {p[0]: p for p in CHATLOG_PROFILES}
     observed = {}
     for entry in entries:
         if not entry.name.isdigit() or int(entry.name) in ancestors:
             continue
         argv = bounded_read(entry / 'cmdline')
-        fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+        try:
+            fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+        except FileNotFoundError:
+            if entry.name in profiles or argv.startswith((b'sshd:', b'sshd-session:')):
+                raise
+            raise _TransientOrdinaryProcess() from None
         if len(fields) < 20:
             raise AcknowledgementError('SSH process inventory malformed')
         observed[entry.name] = (argv, fields[1:5] + [fields[19]])
-        if fields[1].decode() == CHATLOG_PID:
+        if fields[1].decode() in profiles:
             raise AcknowledgementError('accepted SSH tunnel has a child process')
-        if entry.name == CHATLOG_PID:
-            allowed = chatlog_snapshot(proc)
-            verify_chatlog_authentication(proc)
+        if entry.name in profiles:
+            if selected is not None:
+                raise AcknowledgementError('multiple accepted SSH profiles present')
+            selected = profiles[entry.name]
+            args = (proc,) if selected == CHATLOG_PROFILES[0] else (proc, selected)
+            allowed = chatlog_snapshot(*args)
+            verify_chatlog_authentication(*args)
         elif argv.startswith((b'sshd:', b'sshd-session:')):
             raise AcknowledgementError('other SSH session must finish before acknowledgement')
     after = {entry.name for entry in proc.iterdir() if entry.name.isdigit()}
-    if after != {entry.name for entry in entries if entry.name.isdigit()}:
+    before = {entry.name for entry in entries if entry.name.isdigit()}
+    if after != before:
+        removed = before - after
+        if not (after - before) and removed and all(
+                name in observed and name not in profiles
+                and not observed[name][0].startswith((b'sshd:', b'sshd-session:')) for name in removed):
+            raise _TransientOrdinaryProcess()
         raise AcknowledgementError('SSH process inventory changed')
     for name, (argv, identity) in observed.items():
         entry = proc / name
-        fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+        try:
+            fields = bounded_read(entry / 'stat').rsplit(b')', 1)[-1].split()
+            current_argv = bounded_read(entry / 'cmdline')
+        except FileNotFoundError:
+            if name in profiles or argv.startswith((b'sshd:', b'sshd-session:')):
+                raise
+            raise _TransientOrdinaryProcess() from None
         if (len(fields) < 20 or fields[1:5] + [fields[19]] != identity
-                or bounded_read(entry / 'cmdline') != argv):
+                or current_argv != argv):
             raise AcknowledgementError('SSH process identity changed')
     if allowed is not None:
-        if chatlog_snapshot(proc) != allowed:
+        if chatlog_snapshot(*args) != allowed:
             raise AcknowledgementError('accepted SSH session changed')
-        verify_chatlog_authentication(proc)
+        verify_chatlog_authentication(*args)
     return ({'exception_used': False} if allowed is None else {
-        'exception_used': True, 'pid': int(CHATLOG_PID), 'start_ticks': CHATLOG_START,
+        'exception_used': True, 'pid': int(selected[0]), 'start_ticks': selected[1],
         'uid': 0, 'tty_nr': 0, 'listener_port': 5030, 'loopback_only': True,
-        'authenticated_key': CHATLOG_KEY, 'authentication_event_timestamp': CHATLOG_AUTH_TIME,
+        'authenticated_key': CHATLOG_KEY, 'authentication_event_timestamp': selected[2],
         'authority': 'ACKNOWLEDGEMENT_ONLY_USER_CONFIRMED_CHATLOG'})
 
 

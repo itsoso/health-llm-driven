@@ -66,7 +66,26 @@ def context(sha, *, verify_ci=True, token_stdin=False):
     return source, b, server, readers, ack, core
 
 
-def acknowledgement_evidence(b, readers, ack, sha):
+RECONCILIATION_PREDECESSOR = '2162488aedb9337690a9acc51d5e8f9ac28f4aec'
+RECONCILIATION_PREDECESSOR_EVIDENCE = '30a9e7379398c1a50e96ff098620c3820b17c69315bb9bdf5dc960b6b077e9cb'
+RECONCILIATION_PREDECESSOR_FILES = {'intent.json': {'identity': {'st_uid': 0, 'st_gid': 0, 'st_mode': 33152, 'st_nlink': 1, 'st_ino': 16661006, 'st_dev': 64513, 'st_size': 8464, 'st_mtime_ns': 1792469566602966751, 'st_ctime_ns': 1792469566602966751}, 'sha256': '01c7e87aea2f615e177fc778171a0db2c9b7582509bd872b9d7b25956e5b3a1d'}, 'completed.json': {'identity': {'st_uid': 0, 'st_gid': 0, 'st_mode': 33152, 'st_nlink': 1, 'st_ino': 16661007, 'st_dev': 64513, 'st_size': 2589, 'st_mtime_ns': 1792469735298761534, 'st_ctime_ns': 1792469735298761534}, 'sha256': 'e027e63f5d4dbdebc057dd9c31454f9d54f540c6ef59a1d7421a0f874bc65933'}}
+
+def fixed_reconciliation_succession(record, inventory, sha, evidence, ack):
+    if (re.fullmatch('[a-f0-9]{40}', sha or '') is None or sha in (TARGET, RECONCILIATION_PREDECESSOR)
+            or evidence.get('closing_sha') != RECONCILIATION_PREDECESSOR
+            or ack.digest(evidence) != RECONCILIATION_PREDECESSOR_EVIDENCE):
+        raise BriefingError('fixed predecessor and distinct canonical successor required')
+    for name, expected in RECONCILIATION_PREDECESSOR_FILES.items():
+        info = (record / name).lstat()
+        if ({field:getattr(info,field) for field in expected['identity']} != expected['identity']
+                or inventory.get(name, {}).get('sha256') != expected['sha256']):
+            raise BriefingError('immutable predecessor reconciliation changed')
+    return {'predecessor_operator_sha':RECONCILIATION_PREDECESSOR, 'operator_sha':sha,
+            'predecessor_evidence_sha256':RECONCILIATION_PREDECESSOR_EVIDENCE,
+            'predecessor_files':RECONCILIATION_PREDECESSOR_FILES}
+
+
+def acknowledgement_evidence(b, readers, ack, sha, *, allow_fixed_successor=False):
     record = STATE / 'review-maintenance-acknowledgements' / TARGET
     if os.path.lexists(STATE / 'review-maintenance-ack-reconciliations' / TARGET):
         failed_inventory, old_evidence = ack.failed_ack_evidence(b)
@@ -74,7 +93,10 @@ def acknowledgement_evidence(b, readers, ack, sha):
         inventory = b._inventory(record, {'intent.json', 'completed.json'})
         intent, complete = (b._read_json(record / name) for name in ('intent.json', 'completed.json'))
         evidence = intent.get('evidence', {})
-        expected = {**old_evidence, 'closing_sha': sha, 'failed_ack': failed_inventory}
+        succession = None
+        if allow_fixed_successor and evidence.get('closing_sha') == RECONCILIATION_PREDECESSOR and sha != RECONCILIATION_PREDECESSOR:
+            succession = fixed_reconciliation_succession(record, inventory, sha, evidence, ack)
+        expected = {**old_evidence, 'closing_sha': RECONCILIATION_PREDECESSOR if succession else sha, 'failed_ack': failed_inventory}
         if (evidence != expected or intent.get('accept_unknown_review_writes') is not True
                 or intent.get('original_outcome') != 'UNKNOWN'
                 or intent.get('evidence_sha256') != ack.digest(expected)
@@ -87,8 +109,11 @@ def acknowledgement_evidence(b, readers, ack, sha):
                 or complete.get('historical_no_write_proven') is not False):
             raise BriefingError('fixed same-operator reconciliation required')
         readers.validate_account_summary(complete.get('account'))
+        if b._inventory(record, {'intent.json', 'completed.json'}) != inventory:
+            raise BriefingError('reconciliation changed during observation')
         return {'inventory': inventory, 'failed_ack': failed_inventory,
-                'completed_sha256': inventory['completed.json']['sha256']}
+                'completed_sha256': inventory['completed.json']['sha256'],
+                **({'succession':succession} if succession else {})}
     inventory = b._inventory(record, {'intent.json', 'completed.json'})
     intent, complete = (b._read_json(record / name) for name in ('intent.json', 'completed.json'))
     evidence = intent.get('evidence', {})
@@ -120,7 +145,7 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
 
         def production(self):
             observed = guard.inspect()
-            receipt = acknowledgement_evidence(b, readers, ack, sha)
+            receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
             return observed, receipt
 
         def inspect(self):
@@ -151,6 +176,9 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
                 raise BriefingError('invalid repair output')
             guard.c._private_directory(b, self.record)
             if name == 'intent.json':
+                receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
+                if 'succession' in receipt:
+                    value = {**value, 'reconciliation_succession':receipt['succession']}
                 value = {**value, 'operator_sha': sha, 'accept_demo_briefing_repair': True,
                          'parent_binding': {**self.parent_identity,
                             'nonce_sha256': hashlib.sha256(self.parent_nonce.encode()).hexdigest()}}
@@ -366,7 +394,7 @@ def validate_apply_intent(intent, proof, sha, core, record):
 def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
     source, b, server, readers, ack, core = context(sha, verify_ci=False)
     proof = validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b)
-    acknowledgement_evidence(b, readers, ack, sha)
+    receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
     if os.path.lexists(b.BUSINESS_LEASE):
         raise BriefingError('business lease exists')
     evidence = None
@@ -375,6 +403,8 @@ def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
         b._inventory(record, {'intent.json'})
         intent = b._read_json(record / 'intent.json')
         evidence = validate_apply_intent(intent, proof, sha, core, record)
+        if intent.get('reconciliation_succession') != receipt.get('succession'):
+            raise BriefingError('repair intent predecessor binding differs')
         readers.write_json(record / 'database-started.json', {'state': 'DATABASE_ATTEMPT_STARTED',
                            'operator_sha': sha, 'evidence_sha256': intent['evidence_sha256']})
     elif mode != 'inspect':

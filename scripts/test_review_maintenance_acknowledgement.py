@@ -488,13 +488,20 @@ def test_known_chatlog_session_is_only_specific_exception(tmp_path, monkeypatch)
 
 
 @pytest.mark.parametrize('change', ['pid_reuse', 'uid', 'tty', 'nonloopback', 'wrong_port', 'missing_socket', 'child'])
-def test_chatlog_exception_rejects_changed_identity_or_listener(tmp_path, monkeypatch, change):
+@pytest.mark.parametrize('profile_index', [0, 1])
+def test_chatlog_exception_rejects_changed_identity_or_listener(tmp_path, monkeypatch, change, profile_index):
     m = load()
     proc, known, add = ssh_fixture(tmp_path, m)
+    profile = m.CHATLOG_PROFILES[profile_index]
+    if profile_index:
+        import shutil
+        shutil.rmtree(known)
+        known = add(int(profile[0]), 1, argv=b'sshd: root@notty\0', start=profile[1])
+        (known / 'fd/5').symlink_to('socket:[8877]')
     monkeypatch.setattr(m.os, 'getpid', lambda: 900)
-    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda p: None)
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: None)
     if change == 'pid_reuse':
-        (known / 'stat').write_text((known / 'stat').read_text().replace('2816083071', '2816083072'))
+        (known / 'stat').write_text((known / 'stat').read_text().replace(profile[1], str(int(profile[1])+1)))
     elif change == 'uid':
         (known / 'status').write_text('Uid:\t1000\t1000\t1000\t1000\n')
     elif change == 'tty':
@@ -507,7 +514,7 @@ def test_chatlog_exception_rejects_changed_identity_or_listener(tmp_path, monkey
     elif change == 'missing_socket':
         (known / 'fd/5').unlink()
     elif change == 'child':
-        add(1000, 3202404)
+        add(1000, int(profile[0]))
     with pytest.raises(m.AcknowledgementError):
         m.assert_acknowledgement_ssh_sessions(proc)
 
@@ -524,14 +531,16 @@ def test_chatlog_disappearance_is_not_excused(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize('change', [None, 'fingerprint', 'boot', 'pid', 'time', 'uid', 'duplicate', 'missing'])
-def test_chatlog_fingerprint_requires_actual_exact_journal_event(tmp_path, monkeypatch, change):
+@pytest.mark.parametrize('profile_index', [0, 1])
+def test_chatlog_fingerprint_requires_actual_exact_journal_event(tmp_path, monkeypatch, change, profile_index):
     from types import SimpleNamespace
     m = load()
+    profile=m.CHATLOG_PROFILES[profile_index]
     boot_path = tmp_path / 'sys/kernel/random'
     boot_path.mkdir(parents=True)
     (boot_path / 'boot_id').write_text('12345678-1234-1234-1234-123456789012\n')
-    event = {'_PID': m.CHATLOG_PID, '_UID': '0', '_BOOT_ID': '12345678123412341234123456789012',
-             '__REALTIME_TIMESTAMP': m.CHATLOG_AUTH_TIME,
+    event = {'_PID': profile[0], '_UID': '0', '_BOOT_ID': '12345678123412341234123456789012',
+             '__REALTIME_TIMESTAMP': profile[2],
              'MESSAGE': 'Accepted publickey for root from 192.0.2.1 port 1234 ssh2: ED25519 ' + m.CHATLOG_KEY}
     if change == 'fingerprint':
         event['MESSAGE'] += 'bad'
@@ -546,14 +555,14 @@ def test_chatlog_fingerprint_requires_actual_exact_journal_event(tmp_path, monke
     rows = [] if change == 'missing' else [event, event] if change == 'duplicate' else [event]
     def journal(argv, **kwargs):
         assert argv[0] == '/usr/bin/journalctl'
-        assert '--boot' in argv and '_PID=' + m.CHATLOG_PID in argv
+        assert '--boot' in argv and '_PID=' + profile[0] in argv
         return SimpleNamespace(stdout=b'\n'.join(json.dumps(row).encode() for row in rows))
     monkeypatch.setattr(m.subprocess, 'run', journal)
     if change is None:
-        m.verify_chatlog_authentication(tmp_path)
+        m.verify_chatlog_authentication(tmp_path,profile)
     else:
         with pytest.raises(m.AcknowledgementError):
-            m.verify_chatlog_authentication(tmp_path)
+            m.verify_chatlog_authentication(tmp_path,profile)
 
 
 @pytest.mark.parametrize('filename,function', [('review_maintenance_acknowledgement.py', 'account_child'), ('trusted_review_briefing_repair.py', 'database_child')])
@@ -637,3 +646,72 @@ def test_failed_ack_is_bound_to_exact_original(tmp_path, changed):
         assert m.failed_ack_evidence(b) == (inventory, evidence)
     else:
         with pytest.raises(m.AcknowledgementError):m.failed_ack_evidence(b)
+
+
+def test_exact_reconnected_chatlog_profile_is_accepted(tmp_path, monkeypatch):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    import shutil
+    shutil.rmtree(known)
+    known = add(2367912, 1, argv=b'sshd: root@notty\0', start='2825295752')
+    (known / 'fd' / '5').symlink_to('socket:[8877]')
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    calls = []
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: calls.append(args))
+    result = m.assert_acknowledgement_ssh_sessions(proc)
+    assert result['pid'] == 2367912
+    assert result['start_ticks'] == '2825295752'
+    assert result['authentication_event_timestamp'] == '1792474624683288'
+    assert len(calls) == 2
+    add(3202404, 1, argv=b'sshd: root@notty\0', start='2816083071')
+    with pytest.raises(m.AcknowledgementError):
+        m.assert_acknowledgement_ssh_sessions(proc)
+
+
+@pytest.mark.parametrize('unstable', [False, True])
+def test_ordinary_exit_requires_fresh_complete_observation(tmp_path, monkeypatch, unstable):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    ordinary = add(800, 1)
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: None)
+    original = m.bounded_read
+    attempts = []
+    def read(path, *args):
+        if path == proc / '900/stat':attempts.append(True)
+        if path == ordinary / 'stat' and (unstable or len(attempts) == 1):
+            raise FileNotFoundError('synthetic ordinary process exit')
+        return original(path, *args)
+    monkeypatch.setattr(m, 'bounded_read', read)
+    if unstable:
+        with pytest.raises(m.AcknowledgementError, match='three complete observations'):
+            m.assert_acknowledgement_ssh_sessions(proc)
+        assert len(attempts) == 3
+    else:
+        assert m.assert_acknowledgement_ssh_sessions(proc)['exception_used'] is True
+        assert len(attempts) == 2
+
+
+@pytest.mark.parametrize('fault', ['unread_pid', 'ssh_stat', 'chatlog_stat', 'permission', 'new_ssh_after_transient'])
+def test_uncertain_or_ssh_process_is_never_skipped(tmp_path, monkeypatch, fault):
+    m = load()
+    proc, known, add = ssh_fixture(tmp_path, m)
+    ordinary = add(800, 1, argv=b'sshd: other@notty\0' if fault == 'ssh_stat' else b'ordinary\0')
+    monkeypatch.setattr(m.os, 'getpid', lambda: 900)
+    monkeypatch.setattr(m, 'verify_chatlog_authentication', lambda *args: None)
+    original = m.bounded_read
+    attempts = []
+    def read(path, *args):
+        if path == proc / '900/stat':attempts.append(True)
+        if fault == 'unread_pid' and path == ordinary / 'cmdline':raise FileNotFoundError()
+        if fault == 'ssh_stat' and path == ordinary / 'stat':raise FileNotFoundError()
+        if fault == 'chatlog_stat' and path == known / 'stat':raise FileNotFoundError()
+        if fault == 'permission' and path == ordinary / 'stat':raise PermissionError()
+        if fault == 'new_ssh_after_transient' and path == ordinary / 'stat' and len(attempts) == 1:
+            (ordinary / 'cmdline').write_bytes(b'sshd: other@notty\0')
+            raise FileNotFoundError()
+        return original(path, *args)
+    monkeypatch.setattr(m, 'bounded_read', read)
+    expected = m.AcknowledgementError if fault == 'new_ssh_after_transient' else PermissionError if fault == 'permission' else FileNotFoundError
+    with pytest.raises(expected):m.assert_acknowledgement_ssh_sessions(proc)
+    assert len(attempts) == (2 if fault == 'new_ssh_after_transient' else 1)

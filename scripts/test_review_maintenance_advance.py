@@ -172,7 +172,7 @@ def dependency_fixture(tmp_path,monkeypatch):
     recon=tmp_path/'review-maintenance-ack-reconciliations'/m.TARGET
     recon.mkdir(parents=True)
     receipt={'completed_sha256':'a'*64}
-    briefing=SimpleNamespace(acknowledgement_evidence=lambda *a:receipt)
+    briefing=SimpleNamespace(acknowledgement_evidence=lambda *a, **kw:receipt)
     monkeypatch.setattr(m,'modules',lambda *a:(ack,readers,briefing,core))
     evidence={'target_sha':m.TARGET,'failed_operation':m.OPERATION,'fixture_sha256':core.FIXTURE_SHA256,
               'acknowledgement_sha256':'a'*64,'database_snapshot_sha256':'b'*64,
@@ -309,3 +309,17 @@ def test_actual_revoke_once_preserves_unrelated_authorization_and_blocks_retry(t
         assert events.count('health')==1
     assert b.AUTHORIZED.read_bytes()==expected
     with pytest.raises(m.AdvanceError):m.advance(adapter)
+
+
+def test_successor_advance_rejects_missing_or_changed_intent_binding(tmp_path,monkeypatch):
+    m,b,sha,root,terminal,put,reset=dependency_fixture(tmp_path,monkeypatch)
+    original=m.modules
+    ack,readers,briefing,core=original(b,Path('/source'))
+    receipt=briefing.acknowledgement_evidence()
+    receipt['succession']={'predecessor_operator_sha':'2162488aedb9337690a9acc51d5e8f9ac28f4aec','operator_sha':sha}
+    with pytest.raises(m.AdvanceError):m.dependencies(b,Path('/source'),sha)
+    intent=b._read_json(root/'intent.json')
+    put(root/'intent.json',{**intent,'reconciliation_succession':receipt['succession']})
+    assert m.dependencies(b,Path('/source'),sha)['reconciliation']['succession']==receipt['succession']
+    put(root/'intent.json',{**intent,'reconciliation_succession':{'operator_sha':'f'*40}})
+    with pytest.raises(m.AdvanceError):m.dependencies(b,Path('/source'),sha)

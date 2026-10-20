@@ -54,7 +54,7 @@ def dependencies(b, source, sha):
     ack, readers, briefing, core = modules(b, source)
     if not os.path.lexists(b.STATE / 'review-maintenance-ack-reconciliations' / TARGET):
         raise AdvanceError('completed fixed reconciliation required')
-    reconciled = briefing.acknowledgement_evidence(b, readers, ack, sha)
+    reconciled = briefing.acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
     root = b.STATE / 'review-demo-briefing-repairs' / TARGET
     inventory = b._inventory(root, {'intent.json', 'database-started.json', 'completed.json'})
     intent = b._read_json(root / 'intent.json')
@@ -63,7 +63,8 @@ def dependencies(b, source, sha):
     core.validate_evidence(evidence)
     expected = digest(evidence)
     result = end.get('result', {})
-    if (intent.get('operator_sha') != sha or intent.get('accept_demo_briefing_repair') is not True
+    if (intent.get('reconciliation_succession') != reconciled.get('succession')
+            or intent.get('operator_sha') != sha or intent.get('accept_demo_briefing_repair') is not True
             or intent.get('evidence_sha256') != expected
             or evidence['acknowledgement_sha256'] != reconciled['completed_sha256']
             or b._read_json(root / 'database-started.json') != {'state': 'DATABASE_ATTEMPT_STARTED',
