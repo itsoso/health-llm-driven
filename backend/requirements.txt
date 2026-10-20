@@ -25,7 +25,8 @@ alembic==1.12.1
 python-multipart==0.0.32
 defusedxml==0.7.1
 # 图片处理
-Pillow==12.3.0
+Pillow==13.0.0
+certifi==2026.10.19
 # 用户认证
 passlib[bcrypt]==1.7.4
 bcrypt==4.0.1
