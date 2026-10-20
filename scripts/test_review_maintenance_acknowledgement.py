@@ -842,3 +842,29 @@ def test_canonical_dynamic_shape_still_requires_real_identity_evidence(tmp_path,
     (proc / 'sys/kernel/random/boot_id').unlink()
     with pytest.raises(FileNotFoundError):
         m.assert_acknowledgement_ssh_sessions(proc)
+
+
+@pytest.mark.parametrize('daemon', [b'sshd:', b'sshd-session:'])
+@pytest.mark.parametrize('fault', [None, 'wrong_key', 'tty', 'child', 'nonloopback', 'embedded_nul', 'space'])
+def test_forward_only_root_title_keeps_full_identity_proof(tmp_path, monkeypatch, daemon, fault):
+    m, proc, known, add, event, rows = dynamic_chatlog_fixture(tmp_path, monkeypatch)
+    title = daemon + b' root'
+    if fault == 'embedded_nul':title += b'\0extra'
+    if fault == 'space':title += b' '
+    (known / 'cmdline').write_bytes(title + b'\0' * 11)
+    if fault == 'wrong_key':event['MESSAGE'] = event['MESSAGE'].replace(m.CHATLOG_KEY, 'SHA256:wrong')
+    if fault == 'tty':
+        fields = (known / 'stat').read_text().split()
+        fields[6] = '7'
+        (known / 'stat').write_text(' '.join(fields))
+    if fault == 'child':add(800, int(known.name))
+    if fault == 'nonloopback':
+        path = proc / 'net/tcp'
+        path.write_text(path.read_text().replace('0100007F:13A6', '00000000:13A6'))
+    if fault:
+        with pytest.raises(m.AcknowledgementError):m.assert_acknowledgement_ssh_sessions(proc)
+    else:
+        result = m.assert_acknowledgement_ssh_sessions(proc)
+        assert result['pid'] == 3676080 and result['start_ticks'] == '2827634832'
+        assert result['authentication_event_timestamp'] == event['__REALTIME_TIMESTAMP']
+        assert result['authentication_boot_id'] == event['_BOOT_ID']

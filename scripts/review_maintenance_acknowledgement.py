@@ -387,7 +387,12 @@ def _acknowledgement_ssh_observation(proc):
             # authentication, independently of filesystem enumeration order.
             # This shape is necessary, not sufficient: the fixed-key journal,
             # root UID, process identity and sole loopback listener still follow.
-            if argv.rstrip(b'\0') not in (b'sshd: root@notty', b'sshd-session: root@notty'):
+            # OpenSSH do_authenticated uses the username alone until a session
+            # is opened; a forwarding-only connection retains that exact title.
+            if argv.rstrip(b'\0') not in (
+                b'sshd: root@notty', b'sshd-session: root@notty',
+                b'sshd: root', b'sshd-session: root',
+            ):
                 raise AcknowledgementError('other SSH session must finish before acknowledgement')
             start_ticks = fields[19].decode()
             dynamic_auth = dynamic_chatlog_authentication(proc, entry.name, start_ticks)
