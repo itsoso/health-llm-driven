@@ -56,9 +56,25 @@ def dependencies(b, source, sha):
         raise AdvanceError('completed fixed reconciliation required')
     reconciled = briefing.acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
     root = b.STATE / 'review-demo-briefing-repairs' / TARGET
+    closure = None
+    closure_root = b.STATE / 'review-demo-briefing-unstarted-closures' / TARGET
+    successor_root = b.STATE / 'review-demo-briefing-successors' / TARGET
+    if os.path.lexists(closure_root):
+        closure_module = load(b, source, 'review_briefing_unstarted_closure')
+        closure = closure_module.closed_evidence(b, sha)
+        root = closure_module.successor_path(b)
+    elif os.path.lexists(successor_root):
+        raise AdvanceError('successor lacks complete fixed audit closure')
     inventory = b._inventory(root, {'intent.json', 'database-started.json', 'completed.json'})
     intent = b._read_json(root / 'intent.json')
     end = b._read_json(root / 'completed.json')
+    if closure is not None:
+        if (intent.get('attempt_profile') != closure_module.ATTEMPT
+                or intent.get('accept_successor_briefing_attempt') is not True
+                or intent.get('unstarted_closure') != closure):
+            raise AdvanceError('successor intent lacks explicit fixed closure chain')
+    elif any(k in intent for k in ('attempt_profile','unstarted_closure','accept_successor_briefing_attempt')):
+        raise AdvanceError('ordinary briefing cannot consume successor authority')
     evidence = intent.get('evidence')
     core.validate_evidence(evidence)
     expected = digest(evidence)
@@ -85,7 +101,8 @@ def dependencies(b, source, sha):
     ack.validate_failed_pair(b._read_json(maintenance / 'started.json'),
                              b._read_json(maintenance / 'completed.json'), TARGET, OPERATION)
     return {'original': original, 'maintenance': maintenance_inventory,
-            'reconciliation': reconciled, 'briefing': inventory}
+            'reconciliation': reconciled, 'briefing': inventory,
+            **({'unstarted_closure': closure} if closure is not None else {})}
 
 
 def make_adapter(b, source, server, sha, check):

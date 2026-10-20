@@ -967,9 +967,12 @@ rotation 与发布历史消费者不得将它当作退休或成功凭据。该�
 #### 279 审核简报的独立窄化修复
 
 用户已确认既有 loopback 5030 隧道用于 chatlog 并要求保留。仅专用审核
-acknowledgement 可接受代码中固定的 PID、启动时刻、UID、监听 socket 与同一 boot
-认证日志指纹；任何身份漂移、额外 SSH 或隧道子进程仍阻断。通用发布检查不变，
-不终止连接、不修改密钥或网络配置。
+acknowledgement 保留历史固定会话证明，并允许验证正常重连：仍绑定同一固定公钥，
+当前 boot、PID、启动时刻与该进程生命周期内唯一的 root 认证事件；要求无 TTY、
+无子进程且唯一的 5030 监听归属该进程并仅绑定 loopback。一次完整观察前后必须
+保持进程库存、身份、socket 和认证事件一致；观察期间重连、额外 SSH 或未知身份
+仍阻断。此证明仅适用于专用 acknowledgement，不授权重试失败操作。通用发布检查
+不变，不终止连接、不修改密钥或网络配置。
 
 `review_demo_briefing_repair.py` 与 `trusted_review_briefing_repair.py` 仅服务固定
 279 审核演示简报。要求同一受审 operator 的 UNKNOWN 审计确认先完成，再使用独立
@@ -979,6 +982,25 @@ acknowledgement 可接受代码中固定的 PID、启动时刻、UID、监听 so
 PostgreSQL SERIALIZABLE 事务、账号及既有行锁、快照比对、提交后只读核验必须通过。
 任何提交结果或回执不确定均保留 intent，禁止重试；不得把原维护标为成功或解除
 普通 reset、轮换及部署阻断。最终送审继续使用原始 live-demo 和实际 IPA 检查。
+
+#### 279 简报 intent-only 的专用审计收尾
+
+`review_briefing_unstarted_closure.py` 仅处理受审 `1e676eaa` 操作者留下的固定
+简报 intent。默认只读，执行需要明确的本次收尾授权和新鲜摘要。必须验证固定原件、
+完整目录仅含 intent、原 canonical 源码中数据库连接前持久化 marker 的顺序、
+原失败维护及 reconciliation 证据、无执行进程、原双锁及当前生产条件。
+任何 marker、完成回执、身份变化或无法证明的条件均拒绝。
+
+成功仅在独立 sibling 目录记录 `CANONICAL_WRITE_NOT_ENTERED`；它依赖 root 管理的
+审计证据未被外部删除或回退的信任边界，仅说明这一次 canonical 写路径未进入，
+不证明所有数据库内容没有变化。原 repair 目录与原 UNKNOWN 状态保持不变，
+reset、retry、release、rotation 和 new_attempt 权限全部为 false。
+
+如需继续修复，必须另行明确授权固定的新 attempt，使用当前受审精确 CI 候选、
+新鲜 inspect 摘要、独立目录及绑定该 attempt 的父子证明。不得重跑旧 apply、
+复制旧 parent proof、覆盖旧记录或仅凭审计收尾放行 advance。advance 必须验证
+旧 intent、专用审计收尾和新 attempt 的真实成功回执完整链。失败均保留证据，
+没有自动重试或自动解除发布阻断。
 
 #### 行政收尾期间临时暂停一个已授权管理密钥
 

@@ -74,3 +74,5 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 独立 G4 窄范围安全审查 GO，另行合成 29 项通过；仅覆盖本地候选。发布仍待最终候选完整 CI 与既有生产维护收尾；旧候选 CI/真实模型豁免不能替代新候选证据。App Store 279 未提交，专用演示验收失败项未解除。交付断点另见 unified-release Dossier。
 
 - 2026-10-20 交付续行：新鲜只读证据确认正常 chatlog 已再次重连，专用收尾仍硬编码旧 PID，造成重复阻断。仅 acknowledgement 路径增加固定公钥、boot/PID/start 与唯一认证事件绑定、无 TTY/子进程、唯一 loopback 5030 监听及前后完整快照证明；通用部署 SSH 检查不变。先 RED 新 PID，后相关 177 passed / 22 PostgreSQL cases skipped（未改 DB）；独立审查 GO、ack 模块独立 107 passed。该改动不授予已有 repair intent 重放权限，原操作仍待单独安全收尾。
+
+- 2026-10-20 收尾协议修复：新增固定 1e67 intent-only 的独立审计入口与固定 successor attempt；旧 intent/UNKNOWN 不变，审计不授予任何写入/发布权限。新 attempt 仍须显式授权与新鲜证据，父子证明及 advance 绑定完整链。六文件独立 G4 GO；合成 scope 224 passed /22 skipped，隔离 PostgreSQL 最终 246 passed /0 skipped，test_exit=0、stop_exit=0（`/tmp/reva-unstarted-successor-pg-result.json`）；独立 reviewer 217 passed /3 skipped。新测试已注册完整 CI，部署规范同步。现有演示账号窄化修复授权继续适用，但不能从审计回执自动推导授权。87fd 单独完整本地 CI 已通过 4411 项、0失败、49跳过；最终组合 SHA 仍须重新取得精确完整 CI。尚未执行新生产收尾/修复或发布。

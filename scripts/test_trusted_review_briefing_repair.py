@@ -185,7 +185,8 @@ def test_child_cli_cannot_receive_github_token_or_bypass_authorization(monkeypat
     assert m.main() == 1
 
 
-def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monkeypatch):
+@pytest.mark.parametrize('attempt_profile',['original','after-1e676eaa-intent-only-v1'])
+def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monkeypatch, attempt_profile):
     """Actual wrapper/ack construction and core state machine; OS/DB stubs only."""
     from types import SimpleNamespace
     m, core, ack = modules()
@@ -207,9 +208,14 @@ def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monk
         return guard
     monkeypatch.setattr(ack, 'make_adapter', make)
     monkeypatch.setattr(m, 'acknowledgement_evidence', lambda *args, **kwargs: receipt)
+    binding={'completed':'synthetic closure'}
+    monkeypatch.setattr(m,'attempt_binding',lambda *args:None if args[-1]=='original' else binding)
     subprocess_calls = []
     def run(argv, **kwargs):
         assert '--token-stdin' not in argv
+        if attempt_profile!='original':assert argv[argv.index('--attempt-profile')+1]==attempt_profile
+        proof=json.loads(m.os.read(kwargs['pass_fds'][0],4096))
+        assert proof.get('attempt_profile','original')==attempt_profile
         assert kwargs['env'] == m.ENV
         mode = argv[argv.index('--database-probe') + 1]
         subprocess_calls.append(mode)
@@ -222,10 +228,16 @@ def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monk
         return SimpleNamespace(stdout=json.dumps(value).encode())
     monkeypatch.setattr(m.subprocess, 'run', run)
     monkeypatch.setattr(m, 'parent_identity', lambda pid: {'pid': pid, 'start_ticks': '1234'})
-    adapter = m.make_adapter(root, b, object(), readers, ack, core, sha, lambda: None, launcher_fd=100, build_fd=101)
+    adapter = m.make_adapter(root, b, object(), readers, ack, core, sha, lambda: None, launcher_fd=100, build_fd=101, attempt_profile=attempt_profile)
     result = core.repair(adapter)
     assert result['state'] == 'INSPECTED_NOT_AUTHORIZED'
     assert not adapter.record.exists() and 'apply' not in subprocess_calls
+    if attempt_profile!='original':
+        with pytest.raises(m.BriefingError,match='separate explicit'):
+            core.repair(adapter,authorized=True,evidence_sha256=result['evidence_sha256'])
+        assert not adapter.record.exists()
+        adapter=m.make_adapter(root,b,object(),readers,ack,core,sha,lambda:None,launcher_fd=100,build_fd=101,
+                               attempt_profile=attempt_profile,successor_authorized=True)
     terminal = core.repair(adapter, authorized=True, evidence_sha256=result['evidence_sha256'])
     assert terminal['state'] == 'BRIEFING_REPAIRED_ONLY'
     assert terminal['release_unblocked'] is False
@@ -233,6 +245,10 @@ def test_real_adapter_readonly_inspection_and_authorized_one_shot(tmp_path, monk
     intent = json.loads((adapter.record / 'intent.json').read_text())
     assert intent['operator_sha'] == sha and intent['accept_demo_briefing_repair'] is True
     assert intent['evidence']['demo_user_id'] == 44
+    if attempt_profile!='original':
+        assert intent['unstarted_closure']==binding and intent['attempt_profile']==attempt_profile
+        assert intent['accept_successor_briefing_attempt'] is True
+        assert not m.record_path().exists()
     with pytest.raises(core.RepairError, match='no retry'):
         core.repair(adapter, authorized=True, evidence_sha256=result['evidence_sha256'])
     assert subprocess_calls.count('apply') == 1
@@ -354,8 +370,9 @@ def test_child_without_distinct_inherited_proof_fails(missing):
         m.validate_parent_proof(Path('/canonical'), 'a' * 40, 'apply', *missing, object())
 
 
-@pytest.mark.parametrize('change', [None, 'holder', 'start', 'exe', 'argv', 'uid', 'nonce', 'old_intent'])
-def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monkeypatch, change):
+@pytest.mark.parametrize('change', [None, 'holder', 'start', 'exe', 'argv', 'uid', 'nonce', 'old_intent', 'profile', 'missing_successor_authority'])
+@pytest.mark.parametrize('attempt_profile', ['original', 'after-1e676eaa-intent-only-v1'])
+def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monkeypatch, change, attempt_profile):
     import hashlib
     import os
     from types import SimpleNamespace
@@ -370,6 +387,7 @@ def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monke
     source = tmp_path / 'canonical'
     sha = 'a' * 40
     argv = ['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'scripts/trusted_review_briefing_repair.py'), '--sha', sha]
+    if attempt_profile != 'original':argv += ['--attempt-profile',attempt_profile,'--accept-successor-briefing-attempt','--accept-demo-briefing-repair']
     (parent / 'cmdline').write_bytes(b'\0'.join(item.encode() for item in argv) + b'\0')
     (parent / 'exe').symlink_to('/usr/bin/python3.12')
     launcher, build = tmp_path / 'launcher', tmp_path / 'build'
@@ -387,7 +405,12 @@ def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monke
         (proc / 'locks').write_text('\n'.join(lock_lines))
         proof = {'parent': {'pid': 900, 'start_ticks': '1234'}, 'nonce': 'c' * 64,
                  'sha': sha, 'mode': 'apply', 'evidence_sha256': core.digest(evidence(core))}
-        if change == 'start':
+        if attempt_profile != 'original':proof['attempt_profile']=attempt_profile
+        if change=='profile':proof['attempt_profile']='wrong-profile'
+        elif change=='missing_successor_authority':
+            changed_argv=[v for v in argv if v!='--accept-successor-briefing-attempt'] if attempt_profile!='original' else argv+['--attempt-profile',m.SUCCESSOR_ATTEMPT]
+            (parent/'cmdline').write_bytes(b'\0'.join(v.encode() for v in changed_argv)+b'\0')
+        elif change == 'start':
             proof['parent']['start_ticks'] = '9999'
         elif change == 'exe':
             (parent / 'exe').unlink()
@@ -412,9 +435,9 @@ def test_parent_proof_binds_real_parent_start_fds_and_lock_owner(tmp_path, monke
         b = SimpleNamespace(_assert_original_lock=lambda path, fd: None)
         if change not in (None, 'old_intent'):
             with pytest.raises(m.BriefingError):
-                m.validate_parent_proof(source, sha, 'apply', read_fd, lfd, bfd, b, proc)
+                m.validate_parent_proof(source, sha, 'apply', read_fd, lfd, bfd, b, proc, attempt_profile=attempt_profile)
         else:
-            verified = m.validate_parent_proof(source, sha, 'apply', read_fd, lfd, bfd, b, proc)
+            verified = m.validate_parent_proof(source, sha, 'apply', read_fd, lfd, bfd, b, proc, attempt_profile=attempt_profile)
             value = evidence(core)
             intent = {'operator_sha': sha, 'accept_demo_briefing_repair': True,
                 'evidence': value, 'evidence_sha256': core.digest(value),
@@ -500,3 +523,72 @@ def test_fixed_216_successor_keeps_original_reconciliation(tmp_path, monkeypatch
     else:
         with pytest.raises(m.BriefingError):m.acknowledgement_evidence(b,readers,ack,sha,allow_fixed_successor=True)
     assert before=={p.name:p.read_bytes() for p in root.iterdir()}
+
+
+@pytest.mark.parametrize('flags',[
+ ['--accept-successor-briefing-attempt'],
+ ['--attempt-profile','after-1e676eaa-intent-only-v1','--accept-demo-briefing-repair'],
+ ['--attempt-profile','after-1e676eaa-intent-only-v1','--accept-successor-briefing-attempt'],
+ ['--attempt-profile','after-1e676eaa-intent-only-v1','--evidence-sha256','a'*64],
+ ['--attempt-profile','after-1e676eaa-intent-only-v1','--accept-demo-briefing-repair','--evidence-sha256','a'*64],
+])
+def test_cli_cannot_infer_successor_write_authority_from_closure_or_one_flag(monkeypatch,flags):
+    import sys
+    m=load();monkeypatch.setattr(sys,'argv',['briefing','--sha','d'*40,*flags])
+    monkeypatch.setattr(m,'context',lambda *a,**k:pytest.fail('must reject before context or DB'))
+    assert m.main()==1
+
+
+def test_attempt_paths_are_fixed_and_never_reuse_original(tmp_path):
+    from types import SimpleNamespace
+    m=load();m.STATE=tmp_path;b=SimpleNamespace(STATE=tmp_path)
+    assert m.attempt_record(b,'original')==tmp_path/'review-demo-briefing-repairs'/m.TARGET
+    assert m.attempt_record(b,m.SUCCESSOR_ATTEMPT)==tmp_path/'review-demo-briefing-successors'/m.TARGET/m.SUCCESSOR_ATTEMPT
+    with pytest.raises(m.BriefingError):m.attempt_record(b,'../../other')
+
+
+def test_successor_binding_requires_real_same_operator_complete_closure(tmp_path,monkeypatch):
+    from types import SimpleNamespace
+    m=load();calls=[]
+    closure=SimpleNamespace(closed_evidence=lambda b,sha:calls.append(sha) or {'synthetic':sha})
+    b=SimpleNamespace(secure=lambda p:calls.append(p.name))
+    monkeypatch.setattr(m,'load',lambda path,name:closure)
+    assert m.attempt_binding(Path('/source'),b,'d'*40,'original') is None and calls==[]
+    assert m.attempt_binding(Path('/source'),b,'d'*40,m.SUCCESSOR_ATTEMPT)=={'synthetic':'d'*40}
+    assert calls==['review_briefing_unstarted_closure.py','d'*40]
+
+
+@pytest.mark.parametrize('fault',[None,'closure','authority','profile','old_intent'])
+def test_successor_child_binds_new_path_before_durable_database_marker(tmp_path,monkeypatch,fault):
+    import hashlib
+    from types import SimpleNamespace
+    m,core,ack=modules();m.STATE=tmp_path;sha='d'*40
+    source=tmp_path/'source';binding={'closed':'fixed'}
+    proof={'parent':{'pid':900,'start_ticks':'1234'},'nonce':'a'*64,'sha':sha,'mode':'apply',
+           'evidence_sha256':core.digest(evidence(core)),'attempt_profile':m.SUCCESSOR_ATTEMPT}
+    record=tmp_path/'review-demo-briefing-successors'/m.TARGET/m.SUCCESSOR_ATTEMPT
+    record.mkdir(parents=True)
+    original=m.record_path();original.mkdir(parents=True);(original/'intent.json').write_text('original preserved')
+    value={'operator_sha':sha,'accept_demo_briefing_repair':True,'evidence':evidence(core),
+           'evidence_sha256':proof['evidence_sha256'],'attempt_profile':m.SUCCESSOR_ATTEMPT,
+           'accept_successor_briefing_attempt':True,'unstarted_closure':binding,
+           'parent_binding':{**proof['parent'],'nonce_sha256':hashlib.sha256(proof['nonce'].encode()).hexdigest()}}
+    if fault=='closure':value['unstarted_closure']={}
+    elif fault=='authority':value['accept_successor_briefing_attempt']=False
+    elif fault=='profile':value['attempt_profile']='original'
+    elif fault=='old_intent':value['parent_binding']['nonce_sha256']='b'*64
+    (record/'intent.json').write_text(json.dumps(value))
+    def inventory(path,names):assert set(p.name for p in path.iterdir())==names;return {}
+    b=SimpleNamespace(STATE=tmp_path,BUSINESS_LEASE=tmp_path/'lease',_inventory=inventory,
+        _read_json=lambda p:json.loads(p.read_text()),canonical_source=lambda sha:source)
+    def stop():raise RuntimeError('synthetic stop before any database connection')
+    readers=SimpleNamespace(write_json=lambda p,v:p.write_text(json.dumps(v)),load=lambda *a:SimpleNamespace(_assert_isolated_search_path=stop))
+    monkeypatch.setattr(m,'context',lambda *a,**k:(source,b,object(),readers,ack,core))
+    monkeypatch.setattr(m,'attempt_binding',lambda *a:binding)
+    monkeypatch.setattr(m,'validate_parent_proof',lambda *a,**k:proof)
+    monkeypatch.setattr(m,'acknowledgement_evidence',lambda *a,**k:{})
+    with pytest.raises(RuntimeError if fault is None else m.BriefingError):
+        m.database_child(sha,'apply',3,4,5,attempt_profile=m.SUCCESSOR_ATTEMPT)
+    assert (record/'database-started.json').exists() is (fault is None)
+    assert (original/'intent.json').read_text()=='original preserved'
+    assert not (original/'database-started.json').exists()

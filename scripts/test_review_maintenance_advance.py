@@ -323,3 +323,47 @@ def test_successor_advance_rejects_missing_or_changed_intent_binding(tmp_path,mo
     assert m.dependencies(b,Path('/source'),sha)['reconciliation']['succession']==receipt['succession']
     put(root/'intent.json',{**intent,'reconciliation_succession':{'operator_sha':'f'*40}})
     with pytest.raises(m.AdvanceError):m.dependencies(b,Path('/source'),sha)
+
+
+@pytest.mark.parametrize('fault',[None,'no_closure','wrong_closure','wrong_profile','no_authority','no_completed','original_marker_appears'])
+def test_successor_advance_requires_full_fixed_chain(tmp_path,monkeypatch,fault):
+    import json,hashlib
+    m,b,sha,old,terminal,put,reset=dependency_fixture(tmp_path,monkeypatch)
+    # Save the genuine successful synthetic terminal for the new independent path.
+    old_intent=json.loads((old/'intent.json').read_text())
+    started=json.loads((old/'database-started.json').read_text())
+    spec=importlib.util.spec_from_file_location('chain_closure',Path(__file__).with_name('review_briefing_unstarted_closure.py'))
+    closure=importlib.util.module_from_spec(spec);spec.loader.exec_module(closure)
+    old_intent['operator_sha']=closure.PREDECESSOR
+    put(old/'intent.json',old_intent);(old/'completed.json').unlink();(old/'database-started.json').unlink()
+    monkeypatch.setattr(closure,'INTENT_SHA256',hashlib.sha256((old/'intent.json').read_bytes()).hexdigest())
+    prior=closure.predecessor(b)
+    ce={'operator_sha':sha,'target_sha':m.TARGET,'predecessor_operator_sha':closure.PREDECESSOR,
+        'predecessor':prior,'write_ordering_source_hashes':closure.SOURCE_HASHES,
+        'scope':'fixed_briefing_canonical_write_path_only','production':{},'reconciliation':{}}
+    cr=closure.record_path(b)
+    put(cr/'intent.json',{'evidence':ce,'evidence_sha256':closure.digest(ce),'accept_briefing_unstarted_closure':True})
+    put(cr/'completed.json',{'state':closure.TERMINAL,'operator_sha':sha,'evidence_sha256':closure.digest(ce),
+                             'original_outcome':'UNKNOWN','authority':closure.AUTHORITY})
+    binding=closure.closed_evidence(b,sha)
+    successor=closure.successor_path(b)
+    put(successor/'intent.json',{**old_intent,'operator_sha':sha,'attempt_profile':closure.ATTEMPT,
+                                'accept_successor_briefing_attempt':True,'unstarted_closure':binding})
+    put(successor/'database-started.json',started);put(successor/'completed.json',terminal)
+    monkeypatch.setattr(m,'load',lambda b,source,name:closure)
+    if fault=='no_closure':(cr/'completed.json').unlink()
+    elif fault=='original_marker_appears':put(old/'database-started.json',started)
+    elif fault=='no_completed':(successor/'completed.json').unlink()
+    elif fault in ('wrong_closure','wrong_profile','no_authority'):
+        value=json.loads((successor/'intent.json').read_text())
+        if fault=='wrong_closure':value['unstarted_closure']={}
+        elif fault=='wrong_profile':value['attempt_profile']='other'
+        else:value['accept_successor_briefing_attempt']=False
+        put(successor/'intent.json',value)
+    if fault is None:
+        result=m.dependencies(b,Path('/source'),sha)
+        assert result['unstarted_closure']==binding and result['briefing']['completed.json']['sha256']
+        assert closure.predecessor(b)==prior
+    else:
+        with pytest.raises((m.AdvanceError,b.BootstrapError,closure.ClosureError)):
+            m.dependencies(b,Path('/source'),sha)

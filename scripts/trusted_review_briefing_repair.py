@@ -135,10 +135,32 @@ def record_path():
     return STATE / 'review-demo-briefing-repairs' / TARGET
 
 
-def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_fd=None, build_fd=None):
+SUCCESSOR_ATTEMPT = 'after-1e676eaa-intent-only-v1'
+
+
+def attempt_binding(source, b, sha, attempt_profile):
+    if attempt_profile == 'original':
+        return None
+    if attempt_profile != SUCCESSOR_ATTEMPT:
+        raise BriefingError('unknown fixed attempt profile')
+    path = source / 'scripts/review_briefing_unstarted_closure.py'
+    b.secure(path)
+    closure = load(path, 'briefing_unstarted_closure')
+    return closure.closed_evidence(b, sha)
+
+
+def attempt_record(b, attempt_profile):
+    if attempt_profile == 'original':
+        return record_path()
+    if attempt_profile != SUCCESSOR_ATTEMPT:
+        raise BriefingError('unknown fixed attempt profile')
+    return b.STATE / 'review-demo-briefing-successors' / TARGET / SUCCESSOR_ATTEMPT
+
+
+def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_fd=None, build_fd=None, attempt_profile="original", successor_authorized=False):
     guard = ack.make_adapter(source, b, server, readers, sha, TARGET, OPERATION, check)
     class Adapter:
-        record = record_path()
+        record = attempt_record(b, attempt_profile)
         def __init__(self):
             self.parent_nonce = secrets.token_hex(32)
             self.parent_identity = parent_identity(os.getpid())
@@ -146,6 +168,9 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
         def production(self):
             observed = guard.inspect()
             receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
+            binding = attempt_binding(source, b, sha, attempt_profile)
+            if binding is not None:
+                receipt = {**receipt, 'unstarted_closure': binding}
             return observed, receipt
 
         def inspect(self):
@@ -164,6 +189,13 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
             return value
 
         def prepare_record(self):
+            if attempt_profile != 'original' and successor_authorized is not True:
+                raise BriefingError('separate explicit successor write authority required')
+            if attempt_profile != 'original' and not self.record.parent.parent.exists():
+                self.record.parent.parent.mkdir(mode=0o700)
+                readers.sync(self.record.parent.parent.parent)
+            if attempt_profile != 'original':
+                guard.c._private_directory(b, self.record.parent.parent)
             if not self.record.parent.exists():
                 self.record.parent.mkdir(mode=0o700)
                 readers.sync(self.record.parent.parent)
@@ -177,6 +209,10 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
             guard.c._private_directory(b, self.record)
             if name == 'intent.json':
                 receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
+                binding = attempt_binding(source, b, sha, attempt_profile)
+                if binding is not None:
+                    value = {**value, 'attempt_profile': attempt_profile, 'unstarted_closure': binding,
+                             'accept_successor_briefing_attempt': True}
                 if 'succession' in receipt:
                     value = {**value, 'reconciliation_succession':receipt['succession']}
                 value = {**value, 'operator_sha': sha, 'accept_demo_briefing_repair': True,
@@ -185,6 +221,8 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
             readers.write_json(self.record / name, value)
 
         def child(self, mode):
+            if mode == 'apply' and attempt_profile != 'original' and successor_authorized is not True:
+                raise BriefingError('separate explicit successor write authority required')
             guard._quiescent()
             if launcher_fd is None or build_fd is None:
                 raise BriefingError('both original parent lock descriptors required')
@@ -193,6 +231,8 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
                 expected = b._read_json(self.record / 'intent.json')['evidence_sha256']
             proof = {'parent': self.parent_identity, 'nonce': self.parent_nonce,
                      'sha': sha, 'mode': mode, 'evidence_sha256': expected}
+            if attempt_profile != 'original':
+                proof['attempt_profile'] = attempt_profile
             raw = json.dumps(proof, sort_keys=True).encode()
             if len(raw) > 4096:
                 raise BriefingError('parent proof exceeds bound')
@@ -205,7 +245,8 @@ def make_adapter(source, b, server, readers, ack, core, sha, check, *, launcher_
                 result = subprocess.run(['/usr/bin/python3.12', '-I', '-S', '-B',
                     str(source / 'scripts/trusted_review_briefing_repair.py'), '--sha', sha,
                     '--database-probe', mode, '--parent-proof-fd', str(read_fd),
-                    '--publisher-lock-fd', str(launcher_fd), '--build-lock-fd', str(build_fd)],
+                    '--publisher-lock-fd', str(launcher_fd), '--build-lock-fd', str(build_fd),
+                    *(['--attempt-profile', attempt_profile] if attempt_profile != 'original' else [])],
                     env=ENV, stdin=subprocess.DEVNULL, pass_fds=(read_fd, launcher_fd, build_fd),
                     stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, timeout=180, check=True)
             finally:
@@ -323,7 +364,7 @@ def parent_identity(pid, proc=Path('/proc')):
     return {'pid': pid, 'start_ticks': fields[19].decode()}
 
 
-def validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b, proc=Path('/proc')):
+def validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b, proc=Path('/proc'), *, attempt_profile='original'):
     fds = (proof_fd, launcher_fd, build_fd)
     if any(type(fd) is not int or fd < 3 for fd in fds) or len(set(fds)) != 3:
         raise BriefingError('distinct inherited parent proof descriptors required')
@@ -334,7 +375,13 @@ def validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b,
     if not raw or len(raw) > 4096 or os.read(proof_fd, 1):
         raise BriefingError('bounded one-shot parent proof required')
     proof = json.loads(raw)
-    if (not isinstance(proof, dict) or set(proof) != {'parent', 'nonce', 'sha', 'mode', 'evidence_sha256'}
+    expected_keys = {'parent', 'nonce', 'sha', 'mode', 'evidence_sha256'}
+    if attempt_profile != 'original':
+        if attempt_profile != SUCCESSOR_ATTEMPT:
+            raise BriefingError('unknown parent attempt profile')
+        expected_keys.add('attempt_profile')
+    if (not isinstance(proof, dict) or set(proof) != expected_keys
+            or (attempt_profile != 'original' and proof.get('attempt_profile') != attempt_profile)
             or proof['sha'] != sha or proof['mode'] != mode
             or not isinstance(proof['nonce'], str) or re.fullmatch('[a-f0-9]{64}', proof['nonce']) is None
             or (mode == 'apply' and re.fullmatch('[a-f0-9]{64}', proof['evidence_sha256'] or '') is None)
@@ -356,6 +403,15 @@ def validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b,
     if (len(argv_raw) > 16384 or argv[:5] != expected or b'--database-probe' in argv
             or argv.count(b'--sha') != 1 or argv[argv.index(b'--sha') + 1:argv.index(b'--sha') + 2] != [sha.encode()]):
         raise BriefingError('parent is not the canonical CI-gated operator')
+    if attempt_profile != 'original':
+        if mode == 'apply' and (argv.count(b'--accept-successor-briefing-attempt') != 1
+                                or argv.count(b'--accept-demo-briefing-repair') != 1):
+            raise BriefingError('successor parent lacks separate explicit authority')
+        if (argv.count(b'--attempt-profile') != 1
+                or argv[argv.index(b'--attempt-profile') + 1:argv.index(b'--attempt-profile') + 2] != [attempt_profile.encode()]):
+            raise BriefingError('parent attempt profile differs')
+    elif b'--attempt-profile' in argv:
+        raise BriefingError('original child cannot consume successor parent authority')
     locks = (proc / 'locks').read_text()
     if len(locks) > 1048576:
         raise BriefingError('publisher lock inventory exceeds bound')
@@ -392,18 +448,27 @@ def validate_apply_intent(intent, proof, sha, core, record):
     return evidence
 
 
-def database_child(sha, mode, proof_fd, launcher_fd, build_fd):
+def database_child(sha, mode, proof_fd, launcher_fd, build_fd, *, attempt_profile="original"):
     source, b, server, readers, ack, core = context(sha, verify_ci=False)
-    proof = validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b)
+    proof = validate_parent_proof(source, sha, mode, proof_fd, launcher_fd, build_fd, b,
+                                  **({'attempt_profile': attempt_profile} if attempt_profile != 'original' else {}))
+    binding = attempt_binding(source, b, sha, attempt_profile)
     receipt = acknowledgement_evidence(b, readers, ack, sha, allow_fixed_successor=True)
     if os.path.lexists(b.BUSINESS_LEASE):
         raise BriefingError('business lease exists')
     evidence = None
     if mode == 'apply':
-        record = record_path()
+        record = attempt_record(b, attempt_profile)
         b._inventory(record, {'intent.json'})
         intent = b._read_json(record / 'intent.json')
         evidence = validate_apply_intent(intent, proof, sha, core, record)
+        if binding is not None:
+            if (intent.get('attempt_profile') != attempt_profile
+                    or intent.get('unstarted_closure') != binding
+                    or intent.get('accept_successor_briefing_attempt') is not True):
+                raise BriefingError('fresh separate successor authorization required')
+        elif any(k in intent for k in ('attempt_profile','unstarted_closure','accept_successor_briefing_attempt')):
+            raise BriefingError('original attempt cannot consume successor evidence')
         if intent.get('reconciliation_succession') != receipt.get('succession'):
             raise BriefingError('repair intent predecessor binding differs')
         readers.write_json(record / 'database-started.json', {'state': 'DATABASE_ATTEMPT_STARTED',
@@ -451,18 +516,26 @@ def main():
         parser.add_argument('--token-stdin', action='store_true')
         parser.add_argument('--accept-demo-briefing-repair', action='store_true')
         parser.add_argument('--evidence-sha256')
+        parser.add_argument('--attempt-profile', choices=(SUCCESSOR_ATTEMPT,), default='original')
+        parser.add_argument('--accept-successor-briefing-attempt', action='store_true')
         parser.add_argument('--parent-proof-fd', type=int, help=argparse.SUPPRESS)
         parser.add_argument('--publisher-lock-fd', type=int, help=argparse.SUPPRESS)
         parser.add_argument('--build-lock-fd', type=int, help=argparse.SUPPRESS)
         parser.add_argument('--database-probe', choices=('inspect', 'apply'), help=argparse.SUPPRESS)
         args = parser.parse_args()
         if args.database_probe:
-            if args.token_stdin or args.accept_demo_briefing_repair or args.evidence_sha256:
+            if args.token_stdin or args.accept_demo_briefing_repair or args.accept_successor_briefing_attempt or args.evidence_sha256:
                 raise BriefingError('database child must not consume external authorization or credentials')
-            result = database_child(args.sha, args.database_probe, args.parent_proof_fd, args.publisher_lock_fd, args.build_lock_fd)
+            result = database_child(args.sha, args.database_probe, args.parent_proof_fd, args.publisher_lock_fd, args.build_lock_fd, attempt_profile=args.attempt_profile)
         else:
             if any(fd is not None for fd in (args.parent_proof_fd, args.publisher_lock_fd, args.build_lock_fd)):
                 raise BriefingError('inherited proof arguments only valid in child')
+            if args.attempt_profile == 'original':
+                if args.accept_successor_briefing_attempt:
+                    raise BriefingError('successor authority cannot be used for original attempt')
+            elif (args.accept_demo_briefing_repair or args.accept_successor_briefing_attempt or args.evidence_sha256):
+                if not (args.accept_demo_briefing_repair and args.accept_successor_briefing_attempt and args.evidence_sha256):
+                    raise BriefingError('separate successor authority and fresh digest required')
             source, b, server, readers, ack, core = context(args.sha, token_stdin=args.token_stdin)
             lock = STATE / 'launcher.lock'
             b.secure(lock, private=True)
@@ -479,7 +552,7 @@ def main():
                         raise BriefingError('build lock presence changed')
                     if build_fd is not None:
                         b._assert_original_lock(build, build_fd)
-                adapter = make_adapter(source, b, server, readers, ack, core, args.sha, check, launcher_fd=fd, build_fd=build_fd)
+                adapter = make_adapter(source, b, server, readers, ack, core, args.sha, check, launcher_fd=fd, build_fd=build_fd, attempt_profile=args.attempt_profile, successor_authorized=args.accept_successor_briefing_attempt)
                 result = core.repair(adapter, authorized=args.accept_demo_briefing_repair,
                                      evidence_sha256=args.evidence_sha256)
             finally:
