@@ -234,6 +234,38 @@ def expected_native_rejection(output):
     return value == {'phase': 'native_source', 'reason': 'native_source_incompatible', 'state': 'BLOCKED'}
 
 
+def report_preflight_failure(output):
+    """Expose only fixed publisher codes; captured streams can contain secrets.
+
+    This is diagnostic only. It must never expand expected_native_rejection or
+    turn a failed subprocess into a passing startup check.
+    """
+    allowed = {
+        'publisher_context': {
+            'publisher_execution_context_invalid', 'publisher_path_untrusted',
+            'publisher_cached_or_shared_source', 'publisher_code_mismatch',
+            'publisher_cli_version_mismatch', 'publisher_contract_mismatch',
+            'publisher_context_unavailable',
+        },
+        'native_source': {
+            'runtime_source_revision_mismatch', 'runtime_source_dirty',
+            'native_source_incompatible', 'native_runtime_binding_mismatch',
+            'native_source_unavailable',
+        },
+    }
+    result = {'state': 'BLOCKED', 'reason': 'unrecognized_preflight_failure'}
+    try:
+        value = json.loads(output)
+    except (TypeError, ValueError):
+        value = None
+    if isinstance(value, dict) and value.get('state') == 'BLOCKED':
+        phase, reason = value.get('phase'), value.get('reason')
+        if (isinstance(phase, str) and isinstance(reason, str)
+                and reason in allowed.get(phase, ())):
+            result.update(phase=phase, reason=reason)
+    print(json.dumps(result, sort_keys=True), file=sys.stderr)
+
+
 def run_fidelity_phase(phase):
     import re
     if sys.platform != 'linux' or os.environ.get('GITHUB_ACTIONS') != 'true':
@@ -258,6 +290,8 @@ def run_fidelity_phase(phase):
         # A native release is not an OTA candidate. Prove the actual publisher
         # rejects it; never turn an unknown context/runtime error into a pass.
         if phase != 'smoke' or exc.stdout != '' or not expected_native_rejection(exc.stderr):
+            if phase == 'smoke':
+                report_preflight_failure(exc.stderr)
             raise
         print(exc.stderr, end='', file=sys.stderr)
         print('TEST_NATIVE_RELEASE_REQUIRED: OTA remains blocked; no release authorization.')
@@ -336,3 +370,31 @@ def test_smoke_recognizes_actual_publisher_cli_stderr(monkeypatch, capsys):
     output = capsys.readouterr()
     assert output.out == ''
     assert expected_native_rejection(output.err)
+
+
+@pytest.mark.parametrize('stderr,expected', [
+    (json.dumps({'state': 'BLOCKED', 'phase': 'publisher_context',
+                 'reason': 'publisher_path_untrusted', 'private': 'SECRET'}),
+     'publisher_path_untrusted'),
+    (json.dumps({'state': 'BLOCKED', 'phase': 'native_source',
+                 'reason': 'native_runtime_binding_mismatch'}),
+     'native_runtime_binding_mismatch'),
+    ('SECRET', 'unrecognized_preflight_failure'),
+    (json.dumps({'state': 'BLOCKED', 'phase': 'SECRET', 'reason': 'SECRET'}),
+     'unrecognized_preflight_failure'),
+])
+def test_smoke_failure_emits_only_closed_diagnostic_and_still_fails(monkeypatch, capsys, stderr, expected):
+    monkeypatch.setattr(sys, 'platform', 'linux')
+    for name, value in {'GITHUB_ACTIONS': 'true', 'GITHUB_REPOSITORY': 'itsoso/health-llm-driven',
+                        'GITHUB_SHA': SHA, 'GITHUB_REF': 'refs/heads/main'}.items():
+        monkeypatch.setenv(name, value)
+    failure = subprocess.CalledProcessError(1, ['preflight'], output='SECRET', stderr=stderr)
+    def failed(*args, **kwargs):
+        raise failure
+    monkeypatch.setattr(subprocess, 'run', failed)
+    with pytest.raises(subprocess.CalledProcessError) as raised:
+        run_fidelity_phase('smoke')
+    assert raised.value is failure
+    output = capsys.readouterr()
+    assert expected in output.err
+    assert 'SECRET' not in output.out + output.err
