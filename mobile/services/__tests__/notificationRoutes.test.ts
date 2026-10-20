@@ -67,6 +67,16 @@ describe('resolveNotificationRoute', () => {
 
 
 describe('medication reminder landing', () => {
+  it('opens the owned catch-up summary without inventing one medication occurrence', () => {
+    const route = resolveNotificationRoute({
+      reminder_type: 'medication_summary',
+      deep_link: '/notification-history?detailId=81',
+      rule_id: 'medication_reminder.slot.7.2026-10-20.07:30',
+    });
+    expect(route).toBe('/notification-history?detailId=81');
+    expect(route).not.toContain('prompt=');
+    expect(route).not.toContain('context=');
+  });
   it.each([
     { reminder_type: 'medication', screen: 'home' },
     { kind: 'medication_reminder', screen: 'home' },

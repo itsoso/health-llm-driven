@@ -244,6 +244,39 @@ def _advice_candidate_from_push(
     )
 
 
+def _delayed_medication_group_key(log):
+    """Only canonical, routine slots may share a catch-up delivery.
+
+    This never infers intake or changes scheduled occurrences. Unknown legacy
+    payloads and safety alerts continue through their existing individual path.
+    """
+    from datetime import date
+    from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+    data = log.data or {}
+    if (log.notification_type != 'reminder' or not isinstance(data, dict)
+            or data.get('reminder_type') != 'medication'
+            or data.get('severity', 'info') != 'info'
+            or not log.scheduled_at):
+        return None
+    day, time, zone = (data.get(k) for k in ('scheduled_date', 'scheduled_time', 'scheduled_timezone'))
+    if not (isinstance(day, str) and re.fullmatch(r'\d{4}-\d{2}-\d{2}', day)
+            and isinstance(time, str) and re.fullmatch(r'(?:[01]\d|2[0-3]):[0-5]\d', time)
+            and isinstance(zone, str) and len(zone) <= 80):
+        return None
+    try:
+        date.fromisoformat(day)
+        ZoneInfo(zone)
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+    ids = data.get('medication_ids')
+    if (not isinstance(ids, list) or not ids or len(ids) > 100
+            or any(type(i) is not int or i <= 0 for i in ids)
+            or data.get('rule_id') != f'medication_reminder.slot.{log.user_id}.{day}.{time}'):
+        return None
+    return log.user_id, day, zone, log.scheduled_at
+
+
 class PushService:
     """
     推送服务主类
@@ -691,7 +724,7 @@ class PushService:
         # These originals are an authenticated in-app detail source, never
         # transport metadata. Keep existing routing/occurrence fields unchanged.
         channel_data = {key: value for key, value in data.items()
-                        if key not in {"full_title", "full_content"}}
+                        if key not in {"full_title", "full_content", "coalesced_log_ids", "coalesced_into", "coalesced_original"}}
 
         # 逐渠道发送 — 收集各通道结果, 最后更新同一行汇总 log。
         channels_log: list[dict] = []
@@ -1062,7 +1095,7 @@ class PushService:
                 NotificationLog.status == NotificationStatus.DELAYED.value,
                 NotificationLog.scheduled_at <= now,
             )
-            .order_by(NotificationLog.scheduled_at.asc())
+            .order_by(NotificationLog.scheduled_at.asc(), NotificationLog.id.asc())
             .limit(batch_limit)
             .all()
         )
@@ -1072,41 +1105,75 @@ class PushService:
         failed = 0
         deduped = 0
         redelayed = 0
-        for log in delayed_logs:
-            # Both workers may have selected this delayed row. Only the atomic
-            # winner can send; an uncertain committed claim remains pending.
+        groups = {}
+        for candidate in delayed_logs:
+            key = _delayed_medication_group_key(candidate) or ('single', candidate.id)
+            groups.setdefault(key, []).append(candidate)
+        for group in groups.values():
+            # Claim the complete snapshot atomically. Overlapping workers must
+            # roll back a partial claim, never send a subset twice.
+            ids = [row.id for row in group]
             claimed = self.db.query(NotificationLog).filter(
-                NotificationLog.id == log.id,
+                NotificationLog.id.in_(ids),
+                NotificationLog.user_id == group[0].user_id,
                 NotificationLog.status == NotificationStatus.DELAYED.value,
                 NotificationLog.scheduled_at <= now,
             ).update({NotificationLog.status: NotificationStatus.PENDING.value}, synchronize_session=False)
-            self.db.commit()
-            if not claimed:
+            if claimed != len(group):
+                self.db.rollback()
                 continue
-            self.db.refresh(log)
-            flushed += 1
-            # 缺失时传 None 交给 _resolve_severity: health_alert 旧行不能被当 "info" 静默丢掉。
-            severity = (log.data or {}).get("severity")
+            self.db.commit()
+            for row in group:
+                self.db.refresh(row)
+            flushed += len(group)
+            active = []
             try:
-                existing = self._find_dedup_log(
-                    user_id=log.user_id,
-                    notification_type=log.notification_type,
-                    title=log.title,
-                    rule_id=(log.data or {}).get("rule_id"),
-                    window_start=now - timedelta(hours=24),
-                    statuses=[
-                        NotificationStatus.SENT.value,
-                        NotificationStatus.FAILED.value,
-                    ],
-                    exclude_log_id=log.id,
-                )
-                if existing:
-                    log.status = NotificationStatus.FAILED.value
-                    log.error_message = "dedup"
-                    self.db.commit()
-                    deduped += 1
+                for row in group:
+                    existing = self._find_dedup_log(
+                        user_id=row.user_id, notification_type=row.notification_type,
+                        title=row.title, rule_id=(row.data or {}).get('rule_id'),
+                        window_start=now - timedelta(hours=24),
+                        statuses=[NotificationStatus.SENT.value, NotificationStatus.FAILED.value],
+                        exclude_log_id=row.id,
+                    )
+                    if existing:
+                        row.status = NotificationStatus.FAILED.value
+                        row.error_message = 'dedup'
+                        deduped += 1
+                    else:
+                        active.append(row)
+                self.db.commit()
+                if not active:
                     continue
-
+                log = active[0]
+                originals = {row.id: (row.title, row.content, dict(row.data or {})) for row in active}
+                if len(active) > 1:
+                    times = sorted({row.data['scheduled_time'] for row in active})
+                    log.title = '用药提醒汇总'
+                    log.content = f'有 {len(times)} 个时段的用药提醒延后送达，请打开 App 核对计划和记录。'
+                    log.data = {
+                        'reminder_type': 'medication_summary',
+                        'rule_id': originals[log.id][2]['rule_id'],
+                        'deep_link': f'/notification-history?detailId={log.id}',
+                        'coalesced_log_ids': [row.id for row in active],
+                        'coalesced_original': {
+                            'title': originals[log.id][0],
+                            'content': originals[log.id][1],
+                            'data': originals[log.id][2],
+                        },
+                        'full_title': log.title,
+                        'full_content': (
+                            f"原计划日期：{originals[log.id][2]['scheduled_date']}\n"
+                            f"时区：{originals[log.id][2]['scheduled_timezone']}\n"
+                            + '\n'.join(f'• {time}' for time in times)
+                            + '\n以上提醒因安静时段延后送达，不代表漏服。请先核对用药计划和服用记录。'
+                        ),
+                    }
+                    for row in active[1:]:
+                        row.data = {**row.data, 'coalesced_into': log.id}
+                    self.db.commit()
+                # Legacy health alerts keep their original severity resolution.
+                severity = (log.data or {}).get('severity')
                 result = await self.send_notification(
                     user_id=log.user_id,
                     notification_type=log.notification_type,
@@ -1120,37 +1187,35 @@ class PushService:
                     _replay_log_id=log.id,
                 )
 
-                if result.get("success"):
-                    log.status = NotificationStatus.SENT.value
-                    log.sent_at = now
-                    succeeded += 1
-                elif result.get("reason") == "delayed_for_quiet_hours":
-                    # 顺延期间 row 仍是 delayed + 未来 scheduled_at → 照常参与发送时去重 (防堆积)。
-                    log.status = NotificationStatus.DELAYED.value
-                    log.scheduled_at = datetime.fromisoformat(result["scheduled_at"])
-                    redelayed += 1
-                    logger.info(
-                        "[flush_delayed_pushes] log_id=%s 回放仍在静默窗, 顺延到 %s",
-                        log.id,
-                        result["scheduled_at"],
-                    )
-                else:
-                    log.status = NotificationStatus.FAILED.value
-                    log.error_message = result.get("reason", "flush 失败")
-                    failed += 1
-                log.channels = result.get("_channels_log")
-                if result.get("_log_error"):
-                    log.error_message = result.get("_log_error")
+                for row in active:
+                    if result.get('success'):
+                        row.status = NotificationStatus.SENT.value
+                        row.sent_at = now
+                        succeeded += 1
+                    elif result.get('reason') == 'delayed_for_quiet_hours':
+                        row.status = NotificationStatus.DELAYED.value
+                        row.scheduled_at = datetime.fromisoformat(result['scheduled_at'])
+                        row.title, row.content, row.data = originals[row.id]
+                        redelayed += 1
+                    else:
+                        row.status = NotificationStatus.FAILED.value
+                        row.error_message = result.get('reason', 'flush 失败')
+                        failed += 1
+                    row.channels = result.get('_channels_log')
+                    if result.get('_log_error'):
+                        row.error_message = result['_log_error']
                 self.db.commit()
             except Exception as e:  # noqa: BLE001
                 logger.error(
-                    f"[flush_delayed_pushes] log_id={log.id} 失败: {e}",
-                    exc_info=False,
+                    '[flush_delayed_pushes] group delivery failed error_type=%s', type(e).__name__,
                 )
-                log.status = NotificationStatus.FAILED.value
-                log.error_message = str(e)[:500]
+                self.db.rollback()
+                for row in group:
+                    if row.status == NotificationStatus.PENDING.value:
+                        row.status = NotificationStatus.FAILED.value
+                        row.error_message = 'flush_delivery_failed'
+                        failed += 1
                 self.db.commit()
-                failed += 1
 
         if flushed > 0:
             logger.info(

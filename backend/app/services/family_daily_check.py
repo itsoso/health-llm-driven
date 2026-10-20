@@ -70,8 +70,8 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
 
     member_reports = []
     admin_alerts = []
-    # 推送版管理员告警(§5:不带复查项目名等敏感标识;指标类告警两边同文)
-    admin_push_alerts = []
+    overdue_count = 0
+    alerted_members = set()
 
     for m in members:
         user = db.query(User).filter(User.id == m.user_id).first()
@@ -79,6 +79,7 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
             continue
 
         name = m.nickname or user.name
+        previous_alert_count = len(admin_alerts)
         report = {
             "user_id": m.user_id,
             "name": name,
@@ -103,19 +104,16 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
                     alert = f"血氧 {latest.spo2_avg}% 偏低"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
-                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.resting_heart_rate and latest.resting_heart_rate > 90:
                     alert = f"静息心率 {latest.resting_heart_rate} 偏高"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
-                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.sleep_score and latest.sleep_score < 50:
                     alert = f"睡眠评分仅 {latest.sleep_score}"
                     report["alerts"].append(alert)
                     admin_alerts.append(f"{name}: {alert}")
-                    admin_push_alerts.append(f"{name}: {alert}")
 
                 if latest.hrv and latest.hrv_status == "low":
                     alert = f"HRV {latest.hrv:.0f}ms 偏低"
@@ -165,8 +163,7 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
                 alert = f"{_REVIEW_OVERDUE_PREFIX} {days} 天: {r.item_name}"
                 report["alerts"].append(alert)
                 admin_alerts.append(f"{name}: {alert}")
-                # 推送版不带复查项目名(项目名可泄露诊断,如"胃镜复查")
-                admin_push_alerts.append(f"{name}: 有复查项目过期 {days} 天")
+                overdue_count += 1
 
             for r in upcoming:
                 days = (r.next_due_date - today).days
@@ -203,13 +200,19 @@ def run_family_daily_check(db: Session, owner_user_id: int) -> Dict[str, Any]:
         except Exception:
             pass
 
+        if len(admin_alerts) > previous_alert_count:
+            alerted_members.add(m.user_id)
         member_reports.append(report)
 
     # 生成管理员汇总(admin_summary 供应用内 API 查看;admin_push_summary 供锁屏推送,
     # 不带复查项目名等敏感标识,§5 推送隐私)
     if admin_alerts:
         admin_summary = f"⚠️ 今日家庭健康提醒（{len(admin_alerts)} 项需关注）:\n" + "\n".join(f"• {a}" for a in admin_alerts)
-        admin_push_summary = f"⚠️ 今日家庭健康提醒（{len(admin_push_alerts)} 项需关注）:\n" + "\n".join(f"• {a}" for a in admin_push_alerts)
+        admin_push_summary = (
+            f"今日家庭有 {len(admin_alerts)} 项需关注，涉及 {len(alerted_members)} 位成员。"
+            + (f"其中 {overdue_count} 项复查已逾期。" if overdue_count else "")
+            + "打开 App 查看详情。"
+        )
     else:
         admin_summary = "✅ 今日家庭成员健康状况良好，无异常。"
         admin_push_summary = admin_summary
@@ -269,7 +272,8 @@ async def send_family_daily_brief(db: Session, owner_user_id: int):
             user_id=owner_user_id,
             notification_type="family_daily_brief",
             title="家庭健康日报",
-            content=report.get("admin_push_summary", report["admin_summary"])[:200],
+            content=report.get("admin_push_summary") or "家庭健康日报已生成，打开 App 查看详情。",
+            data={"deep_link": "/family"},
         )
         logger.info(f"家庭日报已推送给管理员 user_id={owner_user_id}")
 
