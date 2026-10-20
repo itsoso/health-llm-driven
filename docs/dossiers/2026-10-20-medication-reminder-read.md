@@ -45,3 +45,13 @@ Workflow: quick_fix + safety-gate；System Map 按路径查询未索引，已运
 ### 2026-10-20 · 红灯状态下的修复推送授权
 
 用户随后明确授权：“允许在 CI 红灯时推送这批受审修复，继续完整 CI 排障”。授权覆盖本批已审查的修复及 CI 排障推送，不豁免生产发布门禁或旧维护 UNKNOWN 的收尾。按同一候选执行完整 CI，保留已有失败记录；不重复触发已存在的完整运行。
+
+### 完整 CI 排障证据
+
+- 已推送 `85e1985172c36ea9ef50c2157fb92c508101986e`，自动完整 CI `39357366631`；保留该运行的失败状态，没有取消或重复 dispatch。
+- `backend-quality` 依赖审计报告 aiohttp 3.14.3 的三条漏洞。升级 3.14.4 并重新生成哈希锁；其必要依赖 yarl 由 1.24.5 升至 1.25.1，强制保留旧 yarl 的解析明确失败，其他包版本未变化。新锁静态 pip-audit 退出 0 / No known vulnerabilities found。Mac 标准 pip-audit 的临时 ensurepip 子进程 SIGABRT，完整安装审计仍由 Linux CI 验证，不将静态扫描冒充安装验证。
+- `ota-runner-startup` 返回 `native_source_unavailable`。现有 fetch depth 256 截断固定原生基线历史（候选到基线 320 个提交）；新增 270 个合成提交测试复现浅克隆，改为 canonical origin 精确 SHA 的完整历史 fetch。未改变发布权限、原生兼容规则、失败码接纳或凭据前置门禁。
+- `release-invariants` 精确覆盖检查发现 `test_delayed_medication_summary.py` 未进入 d 分组；向 d-rest 添加 delayed 模式，保留覆盖相等与无重复断言。
+- RED：依赖版本与真实 Git fetch 测试 2 failed，目录覆盖测试 1 failed；修复后相关发布/依赖/目录检查 **286 passed**，System Map 与 diff check 通过。日志 `/tmp/reva-oct20-ci-repairs-{red,green2}.log`、`/tmp/reva-oct20-ci-catalog-red.log`、`/tmp/reva-oct20-dependency-audit-static.log`。
+- 同次 CI 的 Mobile、前端、Mac、文档、类型漂移、PostgreSQL 检查通过；旧 Mobile cleanup 超时本轮未复现，没有放宽测试超时。
+- 已读统一发布会话 `01a120c7-1ba0-75c3-9487-447bd5bfa28f` 的用户 heartbeat `01a13e2f-d3c4-72d2-8f3e-5298c9620577`，原文明确“不备份、不真实模型评测、不查真实健康记录”；后续“全部发布”未撤销。按 deploy.md 只允许为本次完整目标 SHA 设置真实评测 waived，不设置 confirmed，也不豁免离线安全或生产门禁。

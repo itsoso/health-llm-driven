@@ -124,7 +124,8 @@ jobs:
           /usr/bin/git -c init.templateDir= init -b main /opt/reva-release/source
           cd /opt/reva-release/source
           /usr/bin/git remote add origin https://github.com/itsoso/health-llm-driven.git
-          /usr/bin/git -c core.hooksPath=/dev/null fetch --depth=256 origin "$1"
+          # Native ancestry admission needs history back to the fixed baseline.
+          /usr/bin/git -c core.hooksPath=/dev/null fetch --no-tags origin "$1"
           test "$(/usr/bin/git rev-parse FETCH_HEAD)" = "$1"
           /usr/bin/git -c core.hooksPath=/dev/null checkout -B main "$1"
           test -z "$(/usr/bin/git status --porcelain --untracked-files=all)"

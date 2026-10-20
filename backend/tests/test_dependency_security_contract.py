@@ -14,7 +14,7 @@ def test_production_dependencies_pin_patched_security_versions():
         "python-multipart==0.0.32",
         "pillow==12.3.0",
         "cryptography==50.0.0",
-        "aiohttp==3.14.3",
+        "aiohttp==3.14.4",
         "h2==4.4.1",
         "pyjwt==2.15.0",
         "urllib3==2.8.0",

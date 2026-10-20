@@ -98,6 +98,39 @@ def test_materialization_requires_fresh_namespace_before_touching_opt():
     assert body.index(guard) < body.index('seal_bootstrap_directory')
 
 
+def test_materialization_retains_native_baseline_beyond_256_commits(tmp_path):
+    import shlex
+
+    origin = tmp_path / 'origin'
+    checkout = tmp_path / 'checkout'
+    for directory in (origin, checkout):
+        subprocess.run(['/usr/bin/git', 'init', '-q', str(directory)], check=True)
+    # A local synthetic history exercises the real workflow fetch arguments.
+    # No network, credentials, production records or native compatibility bypass.
+    history = ''.join(
+        f'commit refs/heads/main\nmark :{i}\n'
+        f'committer Fixture <fixture@example.invalid> {1700000000 + i} +0000\n'
+        f'data 1\nx\n' + (f'from :{i - 1}\n' if i > 1 else '') + '\n'
+        for i in range(1, 271)
+    )
+    subprocess.run(['/usr/bin/git', '-C', str(origin), 'fast-import', '--quiet'],
+                   input=history, text=True, check=True)
+    def git(directory, *args):
+        return subprocess.run(['/usr/bin/git', '-C', str(directory), *args],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    target = git(origin, 'rev-parse', 'main')
+    baseline = git(origin, 'rev-parse', 'main~269')
+    git(checkout, 'remote', 'add', 'origin', origin.as_uri())
+    commands = [line.strip() for line in fidelity_command('materialize').splitlines()
+                if line.strip().startswith('/usr/bin/git ') and ' fetch ' in line]
+    assert len(commands) == 1
+    args = [target if value == '$1' else value for value in shlex.split(commands[0])]
+    subprocess.run(args, cwd=checkout, capture_output=True, text=True, check=True)
+    assert git(checkout, 'rev-parse', 'FETCH_HEAD') == target
+    assert git(checkout, 'rev-parse', '--is-shallow-repository') == 'false'
+    git(checkout, 'merge-base', '--is-ancestor', baseline, target)
+
+
 @pytest.mark.parametrize('existing', ['directory', 'dangling_symlink'])
 def test_fidelity_fresh_namespace_guard_rejects_collisions(tmp_path, existing):
     namespace = tmp_path / 'release'
