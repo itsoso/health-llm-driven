@@ -55,3 +55,5 @@ Workflow: quick_fix + safety-gate；System Map 按路径查询未索引，已运
 - RED：依赖版本与真实 Git fetch 测试 2 failed，目录覆盖测试 1 failed；修复后相关发布/依赖/目录检查 **286 passed**，System Map 与 diff check 通过。日志 `/tmp/reva-oct20-ci-repairs-{red,green2}.log`、`/tmp/reva-oct20-ci-catalog-red.log`、`/tmp/reva-oct20-dependency-audit-static.log`。
 - 同次 CI 的 Mobile、前端、Mac、文档、类型漂移、PostgreSQL 检查通过；旧 Mobile cleanup 超时本轮未复现，没有放宽测试超时。
 - 已读统一发布会话 `01a120c7-1ba0-75c3-9487-447bd5bfa28f` 的用户 heartbeat `01a13e2f-d3c4-72d2-8f3e-5298c9620577`，原文明确“不备份、不真实模型评测、不查真实健康记录”；后续“全部发布”未撤销。按 deploy.md 只允许为本次完整目标 SHA 设置真实评测 waived，不设置 confirmed，也不豁免离线安全或生产门禁。
+- 首轮 CI 修复审查 `ci_repairs_safety_review` 对 `89c6253f5` 判 NO-GO：遗漏同步分组 runner 的精确路径断言（83 passed / 1 failed）。已补入 delayed 模式并保留严格断言；分组/发布契约 **41 passed**。审查另独立验证 OTA/release gate **411 passed**，aiohttp/yarl 全部哈希与官方 PyPI 集合一致。NO-GO 原记录保留，修复交给新的 reviewer。
+- 新 aiohttp 3.14.4 / yarl 1.25.1 从隔离目录加载，Withings token 持久化适配测试 **19 passed**；没有外部设备或真实凭据请求。日志 `/tmp/reva-oct20-http-adapters-green.log`。旧候选本地 CI-mode 与远端相同，在目录覆盖项失败（602 passed / 1 failed），不作成功证据；修复候选须新跑。
