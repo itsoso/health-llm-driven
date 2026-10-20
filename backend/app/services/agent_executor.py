@@ -31,7 +31,7 @@ from app.config import settings
 from app.services.agent_context_statement import ContextStatement
 from app.services.notification.detail import (
     NOTIFICATION_REVIEW_PROMPT, selected_notification_id,
-    read_notification_detail, notification_review_context,
+    read_notification_detail, notification_review_context, notification_review_safe_explanation,
 )
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
@@ -20587,6 +20587,7 @@ class AgentExecutor:
             medical_boundary.flagged
             and not composed_boundary.flagged
             and final_finish_reason == "stop"
+            and self._turn_notification_detail is None
         ):
             repaired_text, repair_elapsed_ms = (
                 await self._repair_incidental_medical_boundary(
@@ -20621,6 +20622,23 @@ class AgentExecutor:
             medical_boundary.violations = list(dict.fromkeys(
                 [*medical_boundary.violations, *composed_boundary.violations],
             ))
+        if self._turn_notification_detail is not None and (
+            medical_boundary.flagged or final_finish_reason != "stop"
+        ):
+            # The owned historical text selects a fixed glossary, never advice.
+            # Preserve provider completion and boundary flags: a useful partial
+            # explanation does not establish the original medical conclusion.
+            safe_review = enforce_medical_evidence_boundaries(
+                notification_review_safe_explanation(self._turn_notification_detail),
+                model_generated=False,
+            )
+            medical_boundary.text = safe_review.text
+            medical_boundary.flagged = True
+            medical_boundary.violations = list(dict.fromkeys([
+                *medical_boundary.violations, *safe_review.violations,
+                "notification_review_explanation_incomplete",
+            ]))
+            self._record_model_fallback_reason("notification_review_safe_explanation")
         if medical_boundary.flagged:
             logger.warning(
                 "[agent_executor] medical boundary sanitized response violations=%s",
