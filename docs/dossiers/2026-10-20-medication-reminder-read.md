@@ -25,7 +25,18 @@ Workflow: quick_fix + safety-gate；System Map 按路径查询未索引，已运
 
 - RED：新增测试 **7 failed / 28 passed**，复现截图的查询拒绝及宽泛分析工具暴露，日志 `/tmp/reva-reminder-scope-red.log`。
 - 第一轮实现 **2 failed / 182 passed**：执行入口通用 helper 会在账户/文本变化时重建快照，导致局部身份检查失效；已把提醒只读核验移到该 helper 前，保留原错误日志 `/tmp/reva-reminder-scope-green1.log`。
-- 第二轮 **189 passed**，含真实 gateway → scoped adapter → completion → 保存回复。日志 `/tmp/reva-reminder-scope-green2.log`。更宽回归、PostgreSQL、独立审查待完成。
+- 第二轮 **189 passed**，含真实 gateway → scoped adapter → completion → 保存回复。日志 `/tmp/reva-reminder-scope-green2.log`。
+- 独立 PostgreSQL UTF8 测试库 **86 passed**（37.99s，退出 0），未处理线程异常按失败；日志 `/tmp/reva-reminder-scope-postgres.log`。测试库已正常停止，未触及生产库。
+- Mobile 路由/通知历史/详情 **3 suites / 68 passed**；日志 `/tmp/reva-reminder-scope-mobile.log`。固定 prompt 与后端测试一致，无自动发送字段。
+- 最终宽回归 **7518 passed / 1 skipped**（476.90s，退出 0），覆盖授权、gateway、写入范围、只读续查、完成投影与用药详情；日志 `/tmp/reva-reminder-scope-regression.log`。该结果是本地相关回归，不替代精确主干完整 CI/CI-mode。
+- System Map / mobile-nav / doc-drift 与任务 diff 检查通过；Dossier 一致性检查通过。
+
+## G4 · 独立安全审查
+
+- 裁决: GO
+- reviewer `reminder_read_safety_review` 审查固定实现 `8aa8eb8eff9ec12939d5a7827a3b4f0d9d0cc785`，独立复跑新增 **42 passed**，核对 PostgreSQL 86 结果。
+- 覆盖精确解析、模型额外参数、账户/时区/时段隔离、冻结快照、双 owner join、只读权限、完成投影与 continuation；未发现阻断项。
+- 仅为此修复的源代码裁决，不代替完整 CI、生产或真实模型验收。
 
 ## 发布边界
 
