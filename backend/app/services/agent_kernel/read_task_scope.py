@@ -268,6 +268,7 @@ class OwnedReadScope:
     weather_city: str | None = None
     composite_advice: bool = False
     workout_selection: RecentWorkoutSelection | None = None
+    medication_reminder_time: str | None = None
 
     def query(self, dimension: str) -> dict[str, str | int] | None:
         return next(
@@ -297,6 +298,18 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     """
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
+        return None
+    from app.services.agent_kernel.medication_review_scope import (
+        medication_reminder_read_request, has_medication_reminder_read_reference,
+    )
+    reminder = medication_reminder_read_request(snapshot.envelope.text, snapshot.context.timezone)
+    if reminder is not None:
+        day, time, zone = reminder
+        return OwnedReadScope(({'dimension': 'medication', 'start_date': day,
+                                'end_date': day, 'timezone': zone},),
+                              ('medication_reminder_slot',), composite_advice=True,
+                              medication_reminder_time=time)
+    if has_medication_reminder_read_reference(snapshot.envelope.text):
         return None
     day = daily_supplement_question_day(snapshot.envelope.text)
     if day is not None:

@@ -27348,6 +27348,29 @@ class AgentExecutor:
                 self.db, self._current_user_id, self._turn_selected_exam_id,
                 reference_date=self._agent_kernel_reference_now().date(),
             )
+        if dim == 'medication':
+            from app.services.agent_kernel.medication_review_scope import has_medication_reminder_read_reference
+            snapshot = self._agent_kernel_snapshot
+            if (has_medication_reminder_read_reference(self._current_turn_user_message)
+                    or (snapshot is not None and has_medication_reminder_read_reference(snapshot.envelope.text))):
+                if (snapshot is None or type(self._current_user_id) is not int
+                        or snapshot.context.user_id != self._current_user_id
+                        or snapshot.envelope.user_id != self._current_user_id
+                        or snapshot.envelope.text != self._current_turn_user_message):
+                    return 'Error: 用药提醒查询范围与当前请求不一致。'
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                from app.services.agent_query_window import parse_query_window
+                from app.services.medication_review_read import read_medication_reminder_slot
+                scope = resolve_owned_read_scope(snapshot)
+                expected = scope.query('medication') if scope is not None else None
+                if (expected is None or supplied_args != expected
+                        or self._current_user_id != snapshot.context.user_id
+                        or type(self._current_user_id) is not int
+                        or scope.medication_reminder_time is None):
+                    return 'Error: 用药提醒查询范围与当前请求不一致。'
+                return json.dumps(read_medication_reminder_slot(
+                    self.db, self._current_user_id, parse_query_window(expected),
+                    scope.medication_reminder_time), ensure_ascii=False, default=str)
         medical_scope, garmin_scope = self._focused_read_scopes()
         if dim == 'medical_exam' and medical_scope is not None:
             from app.services.health_read import read_owned_imaging_reports

@@ -143,6 +143,8 @@ def _verified_evidence(bounds, verified, limitations):
             "record_count": len(records), "records": records,
         })
         if dimension == 'medication':
+            if payload.get('source_scope') == 'owned_medication_reminder_slot':
+                queries[-1]['reminder_time'] = payload['reminder_time']
             # Definitions are not intake records. Keep separate in synthesis.
             queries[-1]['active_medications'] = [
                 {key: row.get(key) for key in ('id', 'name', 'dosage', 'frequency', 'reminder_times', 'category', 'purpose')}
@@ -931,6 +933,12 @@ def _validate(bound: dict, payload) -> str | None:
 def _facts(dimension: str, payload: dict) -> str:
     """Reuse the daily summary's finite numeric projection, omit raw text fields."""
     label, rows = _LABELS[dimension], payload["records"]
+    if dimension == 'medication' and payload.get('source_scope') == 'owned_medication_reminder_slot':
+        active_count = format_display_number(len(payload['active_medications']))
+        count = format_display_number(len(rows))
+        return (f"用药提醒 {payload['reminder_time']}：当前保存计划匹配{active_count}项；该日期该时段有{count}条执行记录。"
+                '当前计划不证明通知发送时的历史计划；无打卡不等于未服用。'
+                '本次未记录服药，未修改计划或剂量。')
     if dimension == 'medication' and payload.get('source_scope') == 'owned_medication_intake_logs':
         counts = {status: format_display_number(sum(row['status'] == status for row in rows))
                   for status in ('taken', 'skipped', 'delayed')}
@@ -1210,6 +1218,13 @@ def evaluate_composed_read_completion(
             ):
                 continue
             reason = _validate(bounds[dimension], payload)
+            if reason is None and dimension == 'medication' and scope.medication_reminder_time is not None:
+                time = scope.medication_reminder_time
+                if (payload.get('source_scope') != 'owned_medication_reminder_slot'
+                        or payload.get('reminder_time') != time
+                        or any(row.get('taken_time') != time for row in payload['records'])
+                        or any(m.get('reminder_times') != [time] for m in payload['active_medications'])):
+                    reason = 'query_result_scope_conflict'
             if reason is None and dimension == 'medication' and 'symptom_record_review' in scope.limitations:
                 if (payload.get('source_scope') != 'owned_medication_intake_logs'
                         or payload.get('active_medications') != []

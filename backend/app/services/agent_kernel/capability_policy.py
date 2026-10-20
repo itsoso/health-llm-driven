@@ -2844,6 +2844,9 @@ def decide_tool_capability(
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
     owned_scope = resolve_owned_read_scope(snapshot)
+    from app.services.agent_kernel.medication_review_scope import has_medication_reminder_read_reference
+    if owned_scope is None and has_medication_reminder_read_reference(snapshot.envelope.text):
+        return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
     from app.services.agent_kernel.read_task_scope import has_daily_supplement_question_reference
     if owned_scope is None and has_daily_supplement_question_reference(snapshot.envelope.text):
         return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
@@ -3122,6 +3125,7 @@ def decide_tool_capability(
             plan = args.get("plan", args)
             if (scope.workout_selection is not None or 'post_record_recovery_material_unverified' in scope.limitations
                     or 'medication_review_today_only' in scope.limitations or 'symptom_record_review' in scope.limitations
+                    or 'medication_reminder_slot' in scope.limitations
                     or 'daily_supplement_recorded_intakes' in scope.limitations):
                 raw_proposals = [args] if tool_name == 'health_query' else plan.get('queries') if isinstance(plan, dict) else None
                 allowed_fields = {'dimension', 'start_date', 'end_date', 'timezone'}

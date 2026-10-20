@@ -1,6 +1,37 @@
 """Closed medication-page and symptom-context record reviews; no writes."""
 
 import re
+from datetime import date
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+
+_REMINDER_PROMPT = re.compile(
+    r'请帮我查看(?P<day>\d{4}-\d{2}-\d{2})(?P<time>(?:[01]\d|2[0-3]):[0-5]\d)'
+    r'（(?P<zone>[^（）]{1,80})）的用药提醒[，,]先查询核实药品、计划时间和记录状态[，,]不要记录服药。'
+)
+
+
+def medication_reminder_read_request(text: str, timezone: str):
+    """The existing mobile draft, only after send, grants one owned read slot."""
+    if not isinstance(text, str) or len(text) > 512 or any(ord(c) < 32 for c in text):
+        return None
+    match = _REMINDER_PROMPT.fullmatch(text.replace(' ', '').replace('　', ''))
+    if match is None:
+        return None
+    zone = 'Asia/Shanghai' if match['zone'] == '北京时间' else match['zone']
+    try:
+        day = date.fromisoformat(match['day']).isoformat()
+        ZoneInfo(zone)
+    except (ValueError, ZoneInfoNotFoundError):
+        return None
+    if zone != timezone:
+        return None
+    return day, match['time'], zone
+
+
+def has_medication_reminder_read_reference(text: str) -> bool:
+    # Restrictive only: incomplete, quoted or edited drafts cannot widen reads.
+    text = str(text or '')
+    return '用药提醒' in text and any(word in text for word in ('查看', '核实', '记录状态', '不要记录服药'))
 
 _PROMPT = re.compile(
     r"请基于我的在用药品列表[，,]帮我整理今天的用药执行情况、"
