@@ -16812,9 +16812,11 @@ class AgentExecutor:
                     and "classifier:context_statement" in self._agent_kernel_snapshot.intent.evidence)
                 else None
             )
-            if context_statement is not None and context_statement.allows_local_reply and context_reply_is_standalone(
+            if context_statement is not None and context_statement.allows_local_reply and (
+                context_statement.kind == "transit_timeline" or context_reply_is_standalone(
                 self.db, user_id=user_id,
                 conversation_id=conversation_id,
+                )
             ):
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id, message=display_message,

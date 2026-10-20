@@ -336,3 +336,52 @@ async def test_failed_persistence_never_emits_a_success_reply(db, auth_user_and_
         async for event in executor.run_stream(user_id=user.id, message="落地成都"):
             events.append(event)
     assert not any(e.get("event") in {"token", "done"} for e in events)
+
+# Synthetic stations, clocks and destinations; no real journey or account data.
+_TRAVEL_TIMELINE = '赶上了7:10从示例站出发去示例机场T2的8号地铁 7:00从家里出发 7:07到达地铁口 冲下来才能赶上 6:40起床洗了个澡'
+
+
+def test_completed_transit_timeline_is_nonwriting_context():
+    from app.services.agent_context_statement import parse_context_statement
+    parsed = parse_context_statement(_TRAVEL_TIMELINE)
+    assert parsed is not None and parsed.allows_local_reply
+    intent = classify_agent_utterance(_TRAVEL_TIMELINE)
+    assert (intent.primary, intent.domain, intent.operation) == ('chat', 'context', 'none')
+    assert not intent.is_write
+    assert '7:10' in parsed.reply
+    assert '已记录' not in parsed.reply
+
+
+@pytest.mark.parametrize('suffix', ['，帮我查睡眠', '，胸痛喘不上气', '，记录行程', '，提醒我吃药', '？'])
+def test_transit_timeline_does_not_swallow_requests_or_symptoms(suffix):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(_TRAVEL_TIMELINE + suffix) is None
+
+
+@pytest.mark.asyncio
+async def test_transit_timeline_after_failed_meal_does_not_query_health(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title='Synthetic transit context')
+    svc.save_message(conv.id, 'user', '下午吃了两个苹果')
+    svc.save_message(conv.id, 'assistant', '这次没有写入：营养估算未完成。')
+    executor = AgentExecutor(db)
+    _no_heavy_work(executor, monkeypatch)
+    events = [e async for e in executor.run_stream(user_id=user.id, message=_TRAVEL_TIMELINE, conversation_id=conv.id)]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['route'] == 'context_statement'
+    assert done['model_call_count'] == 0
+    assert not done.get('write_receipts')
+
+@pytest.mark.parametrize('message', [
+    '朋友' + _TRAVEL_TIMELINE,
+    '他说：' + _TRAVEL_TIMELINE,
+    '“' + _TRAVEL_TIMELINE + '”',
+    '如果' + _TRAVEL_TIMELINE,
+    _TRAVEL_TIMELINE.replace('7:10', '25:10'),
+    _TRAVEL_TIMELINE.replace('示例站', '胸痛站'),
+    _TRAVEL_TIMELINE.replace('示例站', '请停药站'),
+])
+def test_transit_admission_rejects_foreign_quoted_invalid_or_sensitive_slots(message):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(message) is None
