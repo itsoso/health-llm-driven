@@ -49,3 +49,4 @@ Workflow: quick_fix + safety overlay；System Map 按路径查询；未使用 su
 - 诊断 RED **4 failed**；最终相关回归 **236 passed**（7 个既有警告）。首轮测试因未指定测试库而连接本机 PostgreSQL 5432 失败，已明确指定 SQLite 后重跑；这些纯脚本/文档测试不主张生产数据库验证。日志 `/tmp/reva-oct20-ota-diag-red.log`、`/tmp/reva-oct20-ota-diag-green.log`、`/tmp/reva-oct20-ota-diag-green2.log`。
 - 修正本 Dossier 的 front-matter 与 G1 段：先复现 2 项格式错误，再确认检查返回空列表。System Map 校验及任务文件 diff 检查通过。
 - 代码核对确认：既有无 lease 审核维护的 audit-only acknowledgement 不能满足 `bootstrap_trusted_release._review_reset_evidence`，不能用于解除普通轮换或部署阻断。未执行旧失败操作、密钥变更、收尾或生产写入；专用 advance 路径尚未实现和批准。
+- 独立 reviewer `ota_diagnostic_safety_review` 对固定提交 `70c89d5f68f1404243a4e35f17368396e6e23353` 裁定 GO；独立运行 startup/publisher **218 passed**，补充 11 项异常输入检查通过。仅覆盖脱敏诊断与文档修复，不证明原 OTA 失败解决或发布门禁通过。
