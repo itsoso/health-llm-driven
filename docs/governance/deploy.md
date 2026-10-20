@@ -1014,6 +1014,29 @@ reset、retry、release、rotation 和 new_attempt 权限全部为 false。
 此审计写入，不重试失败 apply、不调用数据库、不调查或修改 chatlog。
 可经 `--token-stdin` 使用现有仓库只读凭据核验精确 CI，凭据不写入配置或回执。
 
+#### 固定审核维护与后端发布解耦
+
+`bootstrap_trusted_release.py close-review-maintenance-for-release` 通过独立
+`review_maintenance_release_closure.py` 处理固定 `1ba724dc` 的已接受 UNKNOWN
+维护，不要求为了部署再次写入审核演示数据。必须显式传入
+`--accept-unknown-review-writes` 与 `--accept-fixed-maintenance-advance-without-demo`，
+绑定当前受审精确绿色主干、canonical 源、原双锁、新鲜检视摘要、健康生产条件与
+完整固定历史链。历史各自使用原 operator 验证，不能改称当前候选的回执。
+
+该链仅证明两次固定简报 canonical 路径未进入数据库，不能证明原 reset 未写入，
+也不声称数据库无活动事务。原 UNKNOWN、intent 和所有失败记录原地保留。
+新协议不调用数据库、不重试 reset、不修复演示数据、不触碰 chatlog。
+普通 reset、普通 advance 与 App Store 演示账号验收要求保持不变。
+
+新 intent 必须先于精确撤销旧 managed 授权行及旧 loopback 私钥；成功后独立记录
+`FIXED_MAINTENANCE_RETIRED_WITH_ACCEPTED_UNKNOWN`，其中 `demo_verified=false`、
+`reset_authorized=false`、`retry_authorized=false`。失败保留现场且禁止重放。
+仅 `rotate --review-maintenance-release-closure-receipt-stdin` 可消费与同一候选绑定的
+受保护一次性回执，禁止与其他收尾或宽化 CI 权限混用；退休记录使用独立字段
+`review_maintenance_release_closure`，历史消费者复核静态原件链，不将旧服务 PID
+与未来生产 PID 比较。执行前后仍必须核对实际生产状态。新终态不等于部署成功，
+后续部署、OTA 及提审各自完成验证与回执。
+
 `scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
 部署入口，也不能解除原 closure 的 SSH/proc 闸。只从新受审、精确 CI 绿色的 canonical
 staging 以系统 Python `-I -S -B` 执行。首次 `pause` 默认只读取证；匹配摘要后才执行。

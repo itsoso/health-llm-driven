@@ -725,7 +725,7 @@ def _retired_history():
             continue
         _inventory(entry, {"intent.json", "completed.json"})
         intent = _read_json(entry / "intent.json")
-        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused", "finalized_native_advance", "review_maintenance_advance", "retirement_policy", "public_keys"} not in (
+        if (not isinstance(intent, dict) or set(intent) - {"cloud_key_reused", "finalized_native_advance", "review_maintenance_advance", "review_maintenance_release_closure", "retirement_policy", "public_keys"} not in (
                 {"old_sha", "new_sha", "installation", "workspace"},
                 {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt"})
                 or ("cloud_key_reused" in intent and intent["cloud_key_reused"] is not True)
@@ -767,13 +767,15 @@ def _retired_history():
                     _persistent_cloud_successor(entry.name, public)
         elif _installation_evidence(entry.name, *_archives(entry.name), history_only=True) != intent["installation"]:
             raise BootstrapError("retired installation evidence changed")
-        if "review_maintenance_advance" in intent:
-            if "recovery_receipt" in intent or "finalized_native_advance" in intent:
+        if "review_maintenance_advance" in intent or "review_maintenance_release_closure" in intent:
+            if ("recovery_receipt" in intent or "finalized_native_advance" in intent
+                    or ("review_maintenance_advance" in intent and "review_maintenance_release_closure" in intent)):
                 raise BootstrapError("review advance cannot mix closure authorities")
-            module = _review_advance_module()
+            field = "review_maintenance_release_closure" if "review_maintenance_release_closure" in intent else "review_maintenance_advance"
+            module = _review_release_closure_module() if field == "review_maintenance_release_closure" else _review_advance_module()
             module.profile(entry.name, intent["new_sha"])
             _, evidence, installation = module.saved(sys.modules[__name__], canonical_source(intent["new_sha"]),
-                intent["new_sha"], proof=intent["review_maintenance_advance"])
+                intent["new_sha"], proof=intent[field])
             observed = module.workspace(evidence)
             if installation != intent["installation"]:
                 raise BootstrapError("review advance retired installation differs")
@@ -894,6 +896,51 @@ def advance_review_maintenance(old_sha, sha, *, evidence_sha256=None, accepted=F
         os.close(fd)
 
 
+def _review_release_closure_module():
+    path = Path(__file__).absolute().with_name("review_maintenance_release_closure.py")
+    secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise BootstrapError("cached review advance forbidden")
+    spec = importlib.util.spec_from_file_location("reviewed_maintenance_release_closure", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.dont_write_bytecode = True
+    spec.loader.exec_module(module)
+    return module
+
+
+def close_review_maintenance_for_release(old_sha, sha, *, evidence_sha256=None, accepted=False, accept_unknown=False, token_stdin=False):
+    module = _review_release_closure_module()
+    module.profile(old_sha, sha)
+    source, server = reviewed_source(sha)
+    gate = _predeploy_module(source, 'trusted_release_gate.py')
+    token = gate._stdin_token() if token_stdin else None
+    get_json = (lambda url: gate._get_json(url, token=token)) if token is not None else gate._get_json
+    gate.verify_release(sha, sha, observed_main=sha, _get_json=get_json)
+    lock = STATE / "launcher.lock"
+    secure(lock, private=True)
+    fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+    build_fd = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(old_sha)
+        if build_fd is None:
+            raise BootstrapError("original review build lock required")
+        def check():
+            _assert_original_lock(lock, fd)
+            _assert_original_lock(STATE / old_sha / "build.lock", build_fd)
+        check()
+        history = _retired_history()
+        _assert_fresh_sha(sha, history)
+        _assert_known_activity(history, old_sha)
+        adapter = module.make_adapter(sys.modules[__name__], source, server, sha, check)
+        return module.advance(adapter, accepted=accepted, accept_unknown=accept_unknown,
+                              without_demo=accepted, evidence_sha256=evidence_sha256)
+    finally:
+        if build_fd is not None:
+            os.close(build_fd)
+        os.close(fd)
+
+
 def _finalized_advance_module():
     path = Path(__file__).absolute().with_name("native_finalized_advance.py")
     secure(path)
@@ -988,11 +1035,17 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
+    if review_release_closure_receipt is not None and (review_advance_receipt is not None
+            or recovery_receipt is not None or finalized_production_sha is not None or backend_ci):
+        raise BootstrapError("release closure requires exclusive exact candidate authority")
     source, server = reviewed_source(sha)
+    review_module = _review_release_closure_module() if review_release_closure_receipt is not None else None
+    if review_module is not None:
+        review_module.profile(old_sha, sha)
     if review_advance_receipt is not None:
         if recovery_receipt is not None or finalized_production_sha is not None or backend_ci:
             raise BootstrapError("review advance requires exclusive exact candidate CI")
@@ -1039,9 +1092,10 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
         review_advance = None
         review_evidence = None
-        if review_advance_receipt is not None:
-            review_advance, review_evidence, bound_installation = _review_advance_module().saved(
-                sys.modules[__name__], source, sha, receipt=review_advance_receipt)
+        if review_advance_receipt is not None or review_release_closure_receipt is not None:
+            review_module = review_module or _review_advance_module()
+            review_advance, review_evidence, bound_installation = review_module.saved(
+                sys.modules[__name__], source, sha, receipt=review_release_closure_receipt if review_release_closure_receipt is not None else review_advance_receipt)
             if bound_installation != installation:
                 raise BootstrapError("review advance installation changed")
         advanced = finalized_production_sha is not None
@@ -1049,8 +1103,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
             raise BootstrapError("finalized advance requires the original native closure receipt")
         def inspect_workspace():
             if review_advance is not None:
-                _, current, _ = _review_advance_module().saved(sys.modules[__name__], source, sha, proof=review_advance)
-                return _review_advance_module().workspace(current)
+                _, current, _ = review_module.saved(sys.modules[__name__], source, sha, proof=review_advance)
+                return review_module.workspace(current)
             if advanced:
                 return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt, historical=True)
             return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
@@ -1062,7 +1116,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
             advance = _finalized_advance_module().inspect(sys.modules[__name__], source, old_sha, finalized_production_sha)
         def check_advance():
             if review_advance is not None:
-                _review_advance_module().verify_live(sys.modules[__name__], source, server, sha,
+                review_module.verify_live(sys.modules[__name__], source, server, sha,
                                                      check_locks, review_evidence)
             if advanced and _finalized_advance_module().inspect(
                     sys.modules[__name__], source, old_sha, finalized_production_sha) != advance:
@@ -1120,7 +1174,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if advanced:
             intent["finalized_native_advance"] = advance
         if review_advance is not None:
-            intent["review_maintenance_advance"] = review_advance
+            intent["review_maintenance_release_closure" if review_release_closure_receipt is not None else "review_maintenance_advance"] = review_advance
         check_locks()
         _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         check_locks()
@@ -1912,6 +1966,7 @@ def main():
         rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         rotation.add_argument("--review-maintenance-advance-receipt-stdin", action="store_true")
+        rotation.add_argument("--review-maintenance-release-closure-receipt-stdin", action="store_true")
         rotation.add_argument("--finalized-production-sha", help="fixed reviewed native-closure production advance only")
         remove = commands.add_parser("revoke", allow_abbrev=False)
         remove.add_argument("--sha", required=True)
@@ -1930,6 +1985,13 @@ def main():
         review_advance.add_argument('--sha', required=True)
         review_advance.add_argument('--evidence-sha256')
         review_advance.add_argument('--accept-fixed-review-maintenance-advance', action='store_true')
+        release_closure = commands.add_parser('close-review-maintenance-for-release', allow_abbrev=False)
+        release_closure.add_argument('--retire-sha', required=True)
+        release_closure.add_argument('--sha', required=True)
+        release_closure.add_argument('--evidence-sha256')
+        release_closure.add_argument('--accept-fixed-maintenance-advance-without-demo', action='store_true')
+        release_closure.add_argument('--token-stdin', action='store_true')
+        release_closure.add_argument('--accept-unknown-review-writes', action='store_true')
         sealing = commands.add_parser('seal-frontend-history', allow_abbrev=False)
         sealing.add_argument('--sha', required=True)
         sealing.add_argument('--active-operation')
@@ -1943,6 +2005,10 @@ def main():
                 raise BootstrapError('exact original checkpoint digest required')
             result = frontend_history_seal(args.sha, active_operation=args.active_operation,
                                            inspect=args.inspect, checkpoint_sha256=args.checkpoint_sha256)
+        elif args.action == 'close-review-maintenance-for-release':
+            result = close_review_maintenance_for_release(args.retire_sha, args.sha,
+                evidence_sha256=args.evidence_sha256, accepted=args.accept_fixed_maintenance_advance_without_demo,
+                accept_unknown=args.accept_unknown_review_writes, token_stdin=args.token_stdin)
         elif args.action == 'advance-review-maintenance':
             result = advance_review_maintenance(args.retire_sha, args.sha,
                 evidence_sha256=args.evidence_sha256, accepted=args.accept_fixed_review_maintenance_advance)
@@ -1955,9 +2021,9 @@ def main():
                 accepted=args.accept_lost_closure_receipt)
         elif args.action == "rotate":
             receipt = None
-            if args.recovery_receipt_stdin and args.review_maintenance_advance_receipt_stdin:
+            if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin)) > 1:
                 raise BootstrapError("exclusive protected receipt required")
-            if args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin:
+            if args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin or args.review_maintenance_release_closure_receipt_stdin:
                 raw = sys.stdin.buffer.read(66)
                 if re.fullmatch(rb"[0-9a-f]{64}\n?", raw) is None:
                     raise BootstrapError("exact protected recovery receipt required")
@@ -1965,6 +2031,7 @@ def main():
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
                             recovery_receipt=receipt if args.recovery_receipt_stdin else None,
                             review_advance_receipt=receipt if args.review_maintenance_advance_receipt_stdin else None,
+                            review_release_closure_receipt=receipt if args.review_maintenance_release_closure_receipt_stdin else None,
                             finalized_production_sha=args.finalized_production_sha,
                             **({"backend_ci": True} if args.backend_ci else {}))
         elif args.action == "install":

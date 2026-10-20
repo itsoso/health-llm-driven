@@ -428,6 +428,9 @@ jobs:
           scripts/test_review_maintenance_retirement.py
           scripts/test_review_maintenance_acknowledgement.py
           scripts/test_review_maintenance_advance.py
+          scripts/test_review_maintenance_release_closure.py
+          scripts/test_review_release_closure_bootstrap.py
+          scripts/test_review_release_closure_rotation.py
           scripts/test_review_demo_briefing_repair.py
           scripts/test_review_briefing_unstarted_closure.py
           scripts/test_trusted_review_briefing_repair.py
