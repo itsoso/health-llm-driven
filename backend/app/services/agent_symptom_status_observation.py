@@ -50,6 +50,13 @@ _ONGOING_ABDOMINAL_PAIN = re.compile(
     r"(?:隐隐约约|隐隐|轻微)?(?:肚子痛|肚子疼|腹痛|胃痛|胃疼)[。.]?"
 )
 
+# Preserve the literal location, including the reported speech-recognition
+# wording "做后脑勺疼"; do not silently turn it into a left-sided symptom.
+_POSTERIOR_HEAD_PAIN = re.compile(
+    rf"(?:(?:请记录|记录下来|记录一下|帮我记录一下|帮我记录){_SEP}?)?"
+    r"(?:我(?:的)?)?(?:现在|目前)?(?:左(?:侧)?|右(?:侧)?|做)?后脑勺(?:疼|痛)[。.]?"
+)
+
 
 def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
     """Return an exact payload only for a complete self request or observation.
@@ -63,6 +70,8 @@ def parse_symptom_status_observation(message: object) -> dict[str, str] | None:
     if any(unicodedata.category(char).startswith("C") for char in message):
         return None
     normalized = message.replace(" ", "").replace("\u3000", "")
+    if _POSTERIOR_HEAD_PAIN.fullmatch(normalized) is not None:
+        return {"body_part": "head", "description": message}
     if _ONGOING_ABDOMINAL_PAIN.fullmatch(normalized) is not None:
         return {"body_part": "digestive", "description": message}
     if (

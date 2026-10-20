@@ -32,10 +32,15 @@ class AgentOutputQualityResult:
 
 def needs_input_clarification(message: str) -> bool:
     normalized = "".join(str(message or "").split())
-    return 0 < len(normalized) <= 1
+    return 0 < len(normalized) <= 1 or normalized in {"现在好了", "现在好了。"}
 
 
-def clarification_reply() -> str:
+def clarification_reply(message: str = "") -> str:
+    if "".join(str(message or "").split()) in {"现在好了", "现在好了。"}:
+        return (
+            "你说的是哪种症状或哪件事现在好了？"
+            "如果要记录症状好转，请补充症状名称；本轮尚未修改健康记录。"
+        )
     return "我还不确定你想查询、分析还是记录什么。请再补充一句完整需求。"
 
 

@@ -121,6 +121,9 @@ def test_status_count_is_preserved_as_text_not_rhinitis_quantification():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_behavior", ["symptom_tool", "no_tool", "wrong_tool"])
 @pytest.mark.parametrize("message,expected_write,read_only", [
+    ("后脑勺疼", True, False),
+    ("做后脑勺疼", True, False),
+    ("后脑勺疼", False, True),
     (ONGOING_PAIN_REQUEST, True, False),
     (ONGOING_PAIN_REQUEST, False, True),
     ("妈妈" + ONGOING_PAIN_REQUEST, False, False),
@@ -237,7 +240,10 @@ async def test_stream_persists_exact_status_without_illness_mutation(
         return
     assert len(rows) == 1
     assert rows[0].description == message
-    assert rows[0].body_part == ("digestive" if message == ONGOING_PAIN_REQUEST else "general")
+    assert rows[0].body_part == (
+        "head" if message in {"后脑勺疼", "做后脑勺疼"}
+        else "digestive" if message == ONGOING_PAIN_REQUEST else "general"
+    )
     assert rows[0].severity is None
     assert rows[0].notes is None
     assert len(posted) == 1
@@ -301,4 +307,19 @@ def test_leading_meal_command_is_not_reclassified_by_later_symptom():
 @pytest.mark.parametrize('text', ['拉肚子怎么办', '腹泻吃什么', '我妈妈拉肚子怎么办', '他说腹泻吃什么'])
 def test_digestive_advice_never_authorizes_observation(text):
     assert not classify_agent_utterance(text).is_write
+    assert parse(text) is None
+
+@pytest.mark.parametrize('text', [
+    '后脑勺疼', '左后脑勺疼', '做后脑勺疼', '我现在后脑勺疼。',
+    '我的后脑勺疼', '右侧后脑勺痛', '记录一下，我的后脑勺疼。',
+])
+def test_current_posterior_head_pain_preserves_literal_user_description(text):
+    from app.services.agent_executor import _extract_clear_symptom_record, _apply_authorized_symptom_payload
+    expected = {'body_part': 'head', 'description': text}
+    assert parse(text) == expected
+    assert _extract_clear_symptom_record(text) == expected
+    assert _apply_authorized_symptom_payload({'record_type': 'symptom', 'data': {'severity': 9, 'diagnosis': 'inferred'}}, expected) == {'record_type': 'symptom', 'data': expected}
+
+@pytest.mark.parametrize('text', ['妈妈后脑勺疼', '明天后脑勺疼', '后脑勺不疼', '后脑勺疼怎么办', '后脑勺疼？', '他说后脑勺疼', '后脑勺疼，别记录', '后脑勺疼，替我停药', '现在好了'])
+def test_posterior_head_pain_does_not_infer_owner_actions_or_resolution(text):
     assert parse(text) is None

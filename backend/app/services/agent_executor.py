@@ -16151,7 +16151,7 @@ class AgentExecutor:
             reason_code = "health_fact_confirmation_required"
             route = "health_fact_draft"
         else:
-            text = clarification_reply()
+            text = clarification_reply(message)
             reason_code = "input_too_short"
             route = "clarification"
         outcome = {
