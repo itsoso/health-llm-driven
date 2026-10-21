@@ -31,7 +31,7 @@ def build(m, *, identifier=None, sha=None):
         "app": {"id": m.PROJECT},
         "updateChannel": {"name": "production"},
         "runtime": {"version": m.RUNTIME},
-        "fingerprint": {"hash": "11aca32700f896b9e3f46e8587dc052de72090dd"},
+        "fingerprint": {"hash": "cfb1606da3744f6df32d89364535e307d3f2ed70"},
         "isForIosSimulator": False,
     }
 
@@ -72,11 +72,7 @@ def update(m):
 
 
 def reviewed_cohort(m):
-    other = build(m, identifier="c25970ce-a54b-4241-8310-b27a9af9d18c",
-                  sha="0fd447cbd07e4fc3e8c47fff52769f1b34f9a293")
-    other["fingerprint"]["hash"] = "f672b986f213e7592eb627cc8114638fa166fdae"
-    return [build(m), other]
-
+    return [build(m)]
 
 def test_native_fingerprint_cohort_must_be_exact_reviewed_builds():
     m = load()
@@ -640,7 +636,7 @@ def test_preflight_uses_real_native_contract_and_still_blocks_changed_package(mo
     assert m.cli() == 1
     assert json.loads(capsys.readouterr().err)['reason'] == 'native_source_incompatible'
     assert ('merge-base', '--is-ancestor', m.NATIVE_SHA, 'c'*40) in calls
-    assert contract.NATIVE_SHA == m.NATIVE_SHA == '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e'
+    assert contract.NATIVE_SHA == m.NATIVE_SHA == '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
 
 
 def test_preflight_failure_blocks_publish_before_credential_lookup(monkeypatch):
@@ -1218,21 +1214,18 @@ def test_prepare_cli_export_failure_is_not_passed_and_retains_safe_diagnostic(mo
     assert f.vendor_calls == 0 and 'claim-ota' not in f.events
 
 
-def test_reviewed_276_277_exact_cohort_accepts_equivalent_fingerprints():
-    m=load()
-    base=build(m);base['fingerprint']['hash']='11aca32700f896b9e3f46e8587dc052de72090dd'
-    other=build(m,identifier='c25970ce-a54b-4241-8310-b27a9af9d18c',sha='0fd447cbd07e4fc3e8c47fff52769f1b34f9a293')
-    other['fingerprint']['hash']='f672b986f213e7592eb627cc8114638fa166fdae'
-    assert m.validate_builds(base,[base,other])==base['fingerprint']['hash']
-    for damaged in ([base], [other], [base,other,build(m,identifier='55555555-5555-4555-8555-555555555555')]):
-        with pytest.raises(m.PublishError): m.validate_builds(base,damaged)
-    other['gitCommitHash']='e'*40
-    with pytest.raises(m.PublishError): m.validate_builds(base,[base,other])
+def test_old_runtime_build_is_not_in_new_279_cohort():
+    m = load()
+    old = build(m, identifier='09719eb6-2887-4100-9ccb-6533fd9d71ed',
+                sha='7fe06d8b34750b6bd56db8d5ec45d1aee705b02e')
+    old['runtime']['version'] = '1.3.5'
+    for cohort in ([old], [build(m), old]):
+        with pytest.raises(m.PublishError): m.validate_builds(build(m), cohort)
 
 
 def test_fixed_cohort_evidence_matches_implementation():
     m=load()
-    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-14-ota-native-equivalence.json').read_text())
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-21-ota-runtime136-baseline.json').read_text())
     assert {b['id']:(b['git_sha'],b['fingerprint']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
 
 
@@ -1241,9 +1234,9 @@ def test_fixed_equivalent_cohort_fails_before_claim(tmp_path,damage):
     m=load();f=Fake(m,tmp_path);original=f.eas
     cohort=reviewed_cohort(m)
     if damage=='extra_same_fingerprint':cohort.append(build(m,identifier='55555555-5555-4555-8555-555555555555'))
-    elif damage=='swapped_hash':cohort[1]['fingerprint']=cohort[0]['fingerprint']
-    elif damage=='known_id_wrong_sha':cohort[1]['gitCommitHash']='e'*40
-    elif damage=='ipad_profile':cohort[1]['buildProfile']='ipad-adhoc'
+    elif damage=='swapped_hash':cohort[0]['fingerprint']={'hash': 'f672b986f213e7592eb627cc8114638fa166fdae'}
+    elif damage=='known_id_wrong_sha':cohort[0]['gitCommitHash']='e'*40
+    elif damage=='ipad_profile':cohort[0]['buildProfile']='ipad-adhoc'
     def eas(args,tag):
         if tag=='cohort':return cohort
         value=original(args,tag)

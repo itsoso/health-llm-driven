@@ -76,83 +76,43 @@ def test_local_publishers_do_not_execute_repo_helpers_or_vendor():
         assert 'trusted-ota.yml' in result.stderr
 
 
-def test_native_baseline_matches_delivered_testflight_276():
+def test_native_baseline_matches_delivered_testflight_279():
     m = module()
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location('ota_publisher', root / 'scripts/trusted_ota_publish.py')
     publisher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(publisher)
-    expected = ('1.3.5', '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e', '09719eb6-2887-4100-9ccb-6533fd9d71ed')
+    expected = ('1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3', '399eb452-402e-47cd-a0e3-18dff2d1ca51')
     for contract in (m, publisher):
         assert (contract.RUNTIME, contract.NATIVE_SHA, contract.NATIVE_BUILD) == expected
     assert json.loads(source_bytes(m.NATIVE_SHA, 'mobile/app.json'))['expo']['version'] == m.RUNTIME
 
 
-def test_fixed_native_equivalence_source_hashes_and_environment(tmp_path, monkeypatch):
-    m = module()
-    root = tmp_path
-    paths = ['mobile/app.config.ts', 'mobile/eas.json', 'mobile/plugins/withIosSupportedOrientations.js',
-             'mobile/plugins/__tests__/withIosSupportedOrientations.test.js', 'mobile/jest.config.js']
-    materialize_sources(root, REVIEWED_EQUIVALENT_SHA, paths)
-    m.validate_runtime_changes(paths, root=root)
-    for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
-        monkeypatch.setenv(variable, '1')
-        with pytest.raises(ValueError): m.validate_runtime_changes(paths, root=root)
-        monkeypatch.delenv(variable)
-
-
-def test_fixed_native_equivalence_rejects_changed_known_file(tmp_path):
-    m = module()
-    path = tmp_path/'mobile/eas.json'; path.parent.mkdir(); path.write_text('{}')
-    with pytest.raises(ValueError): m.validate_runtime_changes(['mobile/eas.json'], root=tmp_path)
-
-
-def test_fixed_native_equivalence_rejects_symlink(tmp_path):
+def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tmp_path, monkeypatch):
     m = module()
     root = Path(__file__).resolve().parents[1]
-    (tmp_path/'mobile').mkdir()
-    (tmp_path/'mobile/eas.json').symlink_to(root/'mobile/eas.json')
-    with pytest.raises(ValueError): m.validate_runtime_changes(['mobile/eas.json'], root=tmp_path)
+    relative = 'mobile/package-lock.json'
+    target = tmp_path / relative
+    target.parent.mkdir()
+    target.write_bytes((root / relative).read_bytes())
+    m.validate_runtime_changes([relative], root=tmp_path)
+    for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
+        monkeypatch.setenv(variable, '1')
+        with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+        monkeypatch.delenv(variable)
+    target.write_bytes(target.read_bytes() + b' ')
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+    target.unlink()
+    target.symlink_to(root / relative)
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
 
 
-def test_fixed_equivalence_real_git_source_contract(tmp_path, monkeypatch):
-    import subprocess
+def test_current_baseline_evidence_has_no_old_native_exceptions():
     m = module()
-    repository = Path(__file__).resolve().parents[1]
-    def git(*args):
-        return subprocess.check_output(['git', '-C', str(tmp_path), *args], text=True).strip()
-    git('init', '-q')
-    git('config', 'user.name', 'Synthetic Test')
-    git('config', 'user.email', 'synthetic@example.invalid')
-    native = '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e'
-    for relative in ('mobile/app.json', *m.REVIEWED_NATIVE_SOURCE):
-        target = tmp_path/relative; target.parent.mkdir(parents=True, exist_ok=True)
-        previous = subprocess.run(['git','-C',str(repository),'show',native+':'+relative],capture_output=True)
-        if previous.returncode == 0: target.write_bytes(previous.stdout)
-    git('add', 'mobile'); git('commit', '-qm', 'baseline')
-    monkeypatch.setattr(m, 'NATIVE_SHA', git('rev-parse', 'HEAD'))
-    for relative in m.REVIEWED_NATIVE_SOURCE:
-        (tmp_path/relative).parent.mkdir(parents=True, exist_ok=True)
-        (tmp_path/relative).write_bytes(source_bytes(REVIEWED_EQUIVALENT_SHA, relative))
-    git('add', 'mobile'); git('commit', '-qm', 'reviewed equivalent production config')
-    sha=git('rev-parse','HEAD')
-    m.validate_source(tmp_path, sha)
-    altered=tmp_path/'mobile/plugins/withIosSupportedOrientations.js'
-    altered.write_text(altered.read_text()+'\n// changed native source\n')
-    git('add','mobile');git('commit','-qm','unreviewed')
-    with pytest.raises(ValueError): m.validate_source(tmp_path,git('rev-parse','HEAD'))
-
-
-def test_fixed_equivalence_evidence_matches_reviewed_source():
-    import hashlib
-    m=module();root=Path(__file__).resolve().parents[1]
-    evidence=json.loads((root/'docs/reviews/2026-10-14-ota-native-equivalence.json').read_text())
-    assert evidence['candidate_source_exceptions']==m.REVIEWED_NATIVE_SOURCE
-    assert evidence['source_count']==287 and evidence['equal_source_count']==285
-    assert evidence['production_config_equal'] is True
-    assert evidence['observed_production_supports_tablet'] is False
-    for relative, expected in m.REVIEWED_NATIVE_SOURCE.items():
-        assert hashlib.sha256(source_bytes(REVIEWED_EQUIVALENT_SHA, relative)).hexdigest()==expected
+    root = Path(__file__).resolve().parents[1]
+    evidence = json.loads((root/'docs/reviews/2026-10-21-ota-runtime136-baseline.json').read_text())
+    assert evidence['candidate_source_exceptions'] == m.REVIEWED_NATIVE_SOURCE
+    assert set(m.REVIEWED_NATIVE_SOURCE) == {'mobile/package-lock.json'}
 
 
 @pytest.mark.parametrize('relative', [
@@ -166,9 +126,9 @@ def test_gps_native_candidate_is_rejected_by_delivered_ota_contract(tmp_path, re
         m.validate_runtime_changes([relative], root=tmp_path)
 
 
-def test_gps_runtime_manifest_is_rejected_by_delivered_ota_contract():
+def test_old_runtime_manifest_is_rejected_by_279_contract():
     m = module()
-    gps_runtime = json.loads(source_bytes(GPS_NATIVE_SHA, 'mobile/app.json'))['expo']['version']
+    gps_runtime = '1.3.5'
     assert gps_runtime != m.RUNTIME
     proof = {'launch': m.digest(b'bundle'), 'assets': []}
     ident = 'a1234567-1234-1234-1234-123456789abc'
@@ -177,3 +137,12 @@ def test_gps_runtime_manifest_is_rejected_by_delivered_ota_contract():
                'extra': {'eas': {'projectId': m.PROJECT}}}
     with pytest.raises(ValueError):
         m.validate_manifest(payload, ident, proof)
+
+
+def test_279_migration_contract_and_current_source_admission():
+    m = module()
+    assert (m.RUNTIME, m.NATIVE_SHA, m.NATIVE_BUILD) == (
+        '1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3',
+        '399eb452-402e-47cd-a0e3-18dff2d1ca51')
+    m.validate_source(Path(__file__).resolve().parents[1],
+                      subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())

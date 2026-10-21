@@ -487,6 +487,16 @@ iPad/其他原生开关及非 production 环境。证据见
 [`固定原生等价证据`](../reviews/2026-10-14-ota-native-equivalence.json)。此为源码/配置等价审定，
 不宣称 IPA 二进制逐字一致；候选仍须独立安全审查、完整 CI、实时 cohort 和远端环境复验。
 
+2026-10-21 新基线迁移：当前发布契约绑定 runtime 1.3.6、已完成的 production iOS STORE
+279（`399eb452-402e-47cd-a0e3-18dff2d1ca51`），原生源码
+`1ba724dcb62ac389a72e41eecf40fea7aaca27e3`。旧 276/277 等价例外仅作历史证据，
+不迁移到新契约；新 runtime 下任何额外构建、来源或指纹变化继续阻断。
+唯一源码例外为已审计的 package-lock 精确摘要，差异仅为 follow-redirects 与
+launch-editor 的 Node/开发工具更新；不允许任意 lockfile 或原生依赖变化。
+证据见 [`1.3.6 基线`](../reviews/2026-10-21-ota-runtime136-baseline.json)。
+此次迁移不解除 279 的送审 OTA 冻结，不代表已发布。正式操作仍须实时核对完整 cohort、
+同 SHA 完整 CI、后端部署与 trusted validate/publish；旧 runtime1.3.5 不接收1.3.6更新。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
