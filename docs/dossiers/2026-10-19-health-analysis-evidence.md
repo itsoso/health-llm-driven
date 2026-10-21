@@ -7,7 +7,7 @@
 | 基线 | 已 fetch 的 origin/main：`1ba724dcb62ac389a72e41eecf40fea7aaca27e3` |
 | 工作区 | 独立 managed worktree，保留共享 checkout 的全部未提交改动 |
 | Router | implementation + safety；Health Harness controller |
-| 状态 | 2026-10-21 已授权提交并合并 main；当前正在验证最新主干集成 |
+| 状态 | 2026-10-21 主干集成代码已提交，本地复验与独立安全复审通过；不包含部署 |
 | Trace | `docs/_generated/harness-runs/ca5eda47be8d.jsonl`，本机忽略文件 |
 
 ## 问题与准入
@@ -54,4 +54,8 @@
 - 当前输入咨询的快速回答、工具筛选和完成检查区分已验证的分析续接，避免把已授权的历史分析改写成无记录咨询。独立咨询继续不读取个人记录；新增饭后疼痛补充的实际 Pi 三轮验证。
 - 合并回归先复现日期续接缺失和咨询路由截断，修复后 353 passed；日志 `/tmp/health-merge-green-final.log`。原有裸症状写入断言同步为咨询断言，显式记录及既有精确状态入口仍保留。
 - 真实 LLM 合成回归闸通过，orchestrator 5/5，均分 0.9；日志 `/tmp/health-merge-live-final.log`。初始测试环境缺少有效合成 Fernet key 和 TokenPlan 配置，已修复测试配置后重跑，未修改生产配置。
-- PostgreSQL 复验、固定提交安全复审与最终远端提交核验在本次集成收口时追加。此次授权不包含部署。
+- 固定集成提交 `6725081828ef49430066d0bfefe1c2fb5449bb3c` 的 PostgreSQL 复验 109 passed；日志 `/tmp/health-merge-postgres-final.log`。首轮临时库名缺少 test 被 fixture 安全保护拒绝，改为独立测试库后重新执行，未接触生产数据库。
+- 新鲜同步单元回归 1,221 passed、387 deselected；五个修改模块覆盖率 85%，80% 闸通过。日志 `/tmp/health-merge-unit-coverage.log`；这些数据不代表全仓测试覆盖率。
+- 独立 reviewer 对固定集成提交裁决 GO，并独立验证 275 passed、23 deselected；日志 `/tmp/health-merge-independent-safety.log`。当前输入咨询与有界续接的工具及输出限制均保留，原始消息不授予权限。
+- 固定集成提交再次通过真实模型合成闸：orchestrator 5/5，均分 0.92，其余不变量、核心语料、轨迹及 golden 项通过；日志 `/tmp/health-merge-live-candidate.log`。后续提交仅更新本证据文档，运行时代码与该固定提交保持一致。
+- 远端目标仍为 main，推送前再次核对其基线及候选祖先关系；最终远端提交和该 revision 的 CI 状态单独报告。此次授权不包含部署。
