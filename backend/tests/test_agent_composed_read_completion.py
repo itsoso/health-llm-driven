@@ -527,9 +527,11 @@ def test_absent_or_unverified_diet_does_not_imply_existing_records(executions):
 
 
 def test_compact_synthesis_layout_preserves_every_evidence_boundary():
-    from types import SimpleNamespace
     from app.services.agent_composed_read_completion import read_scope_synthesis_instructions
-    scope = SimpleNamespace(queries=[{"dimension":"diet", "days":31}, {"dimension":"sleep", "days":31}])
+    scope = OwnedReadScope((
+        {"dimension": "diet", "days": 31},
+        {"dimension": "sleep", "days": 31},
+    ))
     original = read_scope_synthesis_instructions(scope)
     compact = read_scope_synthesis_instructions(scope, include_layout=False)
     old_layout = ("回答先给能由本轮记录支持的结论，再按已查领域各用一两句说明，最多三条下一步，可以没有下一步。"

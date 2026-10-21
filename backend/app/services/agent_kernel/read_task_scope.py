@@ -323,6 +323,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         return OwnedReadScope(
             tuple(dict(query) for query in continuation["queries"]),
             tuple(continuation["limitations"]),
+            composite_advice="symptom_analysis_current_input" in continuation["limitations"],
         )
     from app.services.agent_longitudinal_read import (
         resolve_longitudinal_read_queries, longitudinal_read_limitations,
@@ -337,7 +338,8 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if longitudinal is not None:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot),
                               weather_city=running_analysis_weather_city(snapshot.envelope.text),
-                              composite_advice=project_running_analysis_read(snapshot.envelope.text) is not None)
+                              composite_advice=(project_running_analysis_read(snapshot.envelope.text) is not None
+                                                or "symptom_analysis_current_input" in longitudinal_read_limitations(snapshot)))
     text = _active(snapshot.envelope.text)
     if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
         return None

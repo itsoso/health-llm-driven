@@ -13388,6 +13388,13 @@ class AgentExecutor:
             or classify_clinician_turn(message).kind != "none"
         ):
             return None
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
+        clinical_scope = resolve_owned_read_scope(snapshot)
+        if clinical_scope is not None and "symptom_analysis_current_input" in clinical_scope.limitations:
+            # Symptom clarifications need the original user history and safety
+            # reasoning. The compact lifestyle view drops that clinical context.
+            return None
         from app.services.agent_longitudinal_read import project_running_analysis_read
 
         if project_running_analysis_read(snapshot.envelope.text) is not None:
@@ -13552,13 +13559,25 @@ class AgentExecutor:
         return '\n\n'.join(part for part in (self._trusted_sync_summary(), facts) if part)
 
     def _bind_read_task_reference(self, user_id: int, conversation_id: int) -> None:
-        from app.services.agent_read_task_continuation import load_read_task_reference
+        from app.services.agent_read_task_continuation import load_read_task_reference, resolve_read_task_continuation
+        from app.services.agent_symptom_analysis import is_symptom_analysis_followup
         snapshot = self._ensure_agent_kernel_turn()
         reference = load_read_task_reference(self.db, user_id, conversation_id, snapshot)
         if reference is not None:
-            self._agent_kernel_snapshot = replace(snapshot, actionable_references=(
+            snapshot = replace(snapshot, actionable_references=(
                 *snapshot.actionable_references, reference,
             ))
+            task = resolve_read_task_continuation(snapshot)
+            if (task is not None and "symptom_analysis_current_input" in task["limitations"]
+                    and is_symptom_analysis_followup(snapshot.envelope.text)):
+                intent = replace(snapshot.intent, primary="advice", domain="symptom", operation="analyze",
+                                 is_write=False, requires_reliable_tool_model=True,
+                                 evidence=(*snapshot.intent.evidence, "continuation:symptom_analysis"))
+                snapshot = replace(snapshot, intent=intent, goal=compile_goal_spec(
+                    envelope=snapshot.envelope, context=snapshot.context, intent=intent,
+                    actionable_references=snapshot.actionable_references,
+                ))
+            self._agent_kernel_snapshot = snapshot
             self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason='owned_read_task_continuation')
         self._bind_diet_portion_reference(user_id, conversation_id)
 
@@ -17604,6 +17623,15 @@ class AgentExecutor:
 
         if not self._has_isolated_report_scope():
             self._bind_read_task_reference(user_id, conv.id)
+
+        resolved_intent = self._ensure_agent_kernel_turn().intent
+        if "continuation:symptom_analysis" in resolved_intent.evidence:
+            completion_intent = replace(
+                completion_intent, primary=resolved_intent.primary, domain=resolved_intent.domain,
+                operation=resolved_intent.operation, is_write=resolved_intent.is_write,
+                reason="symptom_analysis_continuation",
+            )
+            record_write_requested = False
 
         if (health_evidence_turn is None and not self._has_isolated_report_scope()
                 and not read_only_tools and not images and not file_base64):
@@ -27625,7 +27653,7 @@ class AgentExecutor:
             isinstance(q, dict) and any(key in q for key in ("start_date", "end_date", "timezone"))
             for q in queries
         ):
-            if not 1 <= len(queries) <= 6 or args.get("compare") is not None:
+            if not 1 <= len(queries) <= 7 or args.get("compare") is not None:
                 return "Error: 日历批查询参数无效，请分别读取所需日期。"
             results = []
             for query in queries:

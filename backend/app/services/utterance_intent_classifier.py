@@ -683,6 +683,16 @@ def classify_agent_utterance(
     if has_negated_write:
         return _intent(raw, normalized, "chat", domain, "none", 0.78, "negated_write", scope)
 
+    if _has_explicit_symptom_observation(normalized, domain, has_question):
+        # Symptom words supply evidence for discussion, not record authority.
+        # Explicit writes and the closed status-observation contract have already
+        # been handled above. Keep follow-up details on the synthesis path.
+        return _intent(
+            raw, normalized, "advice", domain, "analyze", 0.86,
+            "symptom_narration_without_write_request", scope,
+            requires_reliable_tool_model=True,
+        )
+
     if (
         domain == "diet"
         and _has_any(normalized, WRITE_COMMAND_ACTIONS)
@@ -700,7 +710,6 @@ def classify_agent_utterance(
         has_write_command
         or _has_any(normalized, DECLARATIVE_OBSERVATION_ACTIONS)
         or _has_explicit_observation_write(normalized, domain)
-        or _has_explicit_symptom_observation(normalized, domain, has_question)
         or _has_explicit_event_write(normalized)
         or direct_remember_fact_values(normalized) is not None
         or direct_supplement_group_values(normalized) is not None
@@ -2945,7 +2954,7 @@ def _has_explicit_symptom_observation(
     domain: str,
     has_question: bool,
 ) -> bool:
-    """Recognize a declarative symptom without turning a symptom question into a write."""
+    """Recognize symptom narration; this signal grants no write authority."""
     if domain != "symptom" or has_question:
         return False
     return _has_symptom_signal(text)

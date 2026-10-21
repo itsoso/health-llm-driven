@@ -3072,7 +3072,7 @@ def decide_tool_capability(
         guarding_longitudinal_domain = isinstance(read_proposals, list) and any(
             isinstance(proposal, dict)
             and normalize_health_query_args(proposal).get("dimension")
-            in {"diet", "sleep", "spo2", "workout", "supplements"}
+            in {"diet", "sleep", "spo2", "workout", "supplements", "conversation"}
             for proposal in read_proposals
         )
         if (guarding_longitudinal_domain
@@ -3130,7 +3130,7 @@ def decide_tool_capability(
                 return _decision("block", "health_query_subject_not_current_user", tool_name, args)
             proposals = ([normalize_health_query_args(args)] if tool_name == "health_query"
                          else plan.get("queries"))
-            if not isinstance(proposals, list) or not 1 <= len(proposals) <= 6:
+            if not isinstance(proposals, list) or not 1 <= len(proposals) <= 7:
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
             if tool_name == "health_query_batch":
                 if any(not isinstance(proposal, dict) for proposal in proposals):

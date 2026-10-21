@@ -10,7 +10,7 @@ from app.services.agent_kernel.types import ActionableReference
 from app.services.agent_query_window import parse_query_window
 
 _VERSION = "owned-read-task.v2"
-_DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements", "spo2"})
+_DIMENSIONS = frozenset({"diet", "sleep", "workout", "supplements", "spo2", "medication", "conversation"})
 _LIMITATIONS = frozenset(
     {
         "scope_diet_sleep_only",
@@ -18,6 +18,7 @@ _LIMITATIONS = frozenset(
         "default_recent_7_days",
         "mood_not_queried",
         "work_not_queried",
+        "symptom_analysis_current_input",
     }
 )
 _FOLLOWUP = re.compile(
@@ -36,7 +37,9 @@ _PRESENTATION_FOLLOWUP = re.compile(
 def is_read_task_followup(text: str) -> bool:
     # Quoted/conditional/cancelled/compound input must never inherit authority.
     normalized = text.strip()
-    return bool(_FOLLOWUP.fullmatch(normalized) or _PRESENTATION_FOLLOWUP.fullmatch(normalized))
+    from app.services.agent_symptom_analysis import is_symptom_analysis_followup
+    return bool(_FOLLOWUP.fullmatch(normalized) or _PRESENTATION_FOLLOWUP.fullmatch(normalized)
+                or is_symptom_analysis_followup(normalized))
 
 
 def _validated_task(raw, now: datetime) -> dict | None:
@@ -63,7 +66,7 @@ def _validated_task(raw, now: datetime) -> dict | None:
         if not isinstance(raw.get("sync_status"), bool):
             return None
         queries = raw.get("queries")
-        max_queries = 4 if raw["version"] == _VERSION else 2
+        max_queries = len(_DIMENSIONS) if raw["version"] == _VERSION else 2
         if not isinstance(queries, list) or not 0 <= len(queries) <= max_queries:
             return None
         sync_window = raw.get("sync_window")
@@ -154,7 +157,12 @@ def resolve_read_task_continuation(snapshot) -> dict | None:
     ]
     if len(refs) != 1 or not str(refs[0].source_message_id or "").isdigit():
         return None
-    return _validated_task(refs[0].data, snapshot.context.current_time)
+    task = _validated_task(refs[0].data, snapshot.context.current_time)
+    from app.services.agent_symptom_analysis import is_symptom_analysis_followup
+    if (task is not None and is_symptom_analysis_followup(snapshot.envelope.text)
+            and "symptom_analysis_current_input" not in task["limitations"]):
+        return None
+    return task
 
 
 def load_read_task_reference(

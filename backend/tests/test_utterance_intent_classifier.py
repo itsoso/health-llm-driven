@@ -555,13 +555,13 @@ def test_non_intake_supplement_statement_keeps_supplement_domain(message):
     assert intent.is_write is False
 
 
-def test_clear_symptom_statement_is_write_intent():
+def test_clear_symptom_statement_is_analysis_without_write_request():
     intent = classify_agent_utterance("还是有腰疼的症状。")
 
-    assert intent.primary == "write"
+    assert intent.primary == "advice"
     assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
 
 
 @pytest.mark.parametrize(
@@ -895,7 +895,7 @@ def test_punctuated_clinician_basis_mutations_fail_closed(message):
     ("message", "expected"),
     (
         ("记录午餐吃了牛肉面", ("write", "diet", "create", True, False)),
-        ("今天腰痛6分", ("write", "symptom", "create", True, False)),
+        ("今天腰痛6分", ("advice", "symptom", "analyze", False, True)),
         (
             "记录服药二甲双胍一片",
             ("write", "medication", "create", True, False),
@@ -1596,13 +1596,13 @@ def test_direct_user_medication_mutation_remains_authorized():
     assert intent.requires_reliable_tool_model is True
 
 
-def test_current_symptom_with_severity_remains_a_symptom_write():
+def test_current_symptom_severity_does_not_supply_write_authority():
     intent = classify_agent_utterance("今天腰痛 6 分")
 
-    assert intent.primary == "write"
+    assert intent.primary == "advice"
     assert intent.domain == "symptom"
-    assert intent.operation == "create"
-    assert intent.is_write is True
+    assert intent.operation == "analyze"
+    assert intent.is_write is False
 
 
 def test_natural_sneeze_recording_is_symptom_write_intent():
