@@ -30,8 +30,9 @@ def test_mixed_analysis_binds_medication_with_same_calendar_window(text):
     assert scope is not None
     assert {q["dimension"] for q in scope.queries} == {"diet", "supplements", "medication"}
     for query in scope.queries:
-        assert query == {"dimension": query["dimension"], "days": 10,
+        assert {k: v for k, v in query.items() if k != "days"} == {"dimension": query["dimension"],
                          "start_date": "2031-04-05", "end_date": "2031-04-14", "timezone": "Asia/Taipei"}
+        assert query.get("days", 10) == 10
         result = decide_tool_capability(state, ToolExecutionRequest("health_query", dict(query)))
         assert result.action == "allow", result.reason
         assert result.normalized_args == query
@@ -182,14 +183,16 @@ def test_medication_history_has_owned_logs_including_inactive_medicine(db, auth_
     assert [r["id"] for r in result["records"]] == [own_log.id]
     assert result["records"][0]["medication_name"] == "Synthetic stopped"
     assert result["records"][0]["actual_dosage"] == "1 tablet"
-    assert {m["id"] for m in result["active_medications"]} == {active.id}
+    assert result["active_medications"] == []
+    assert result["source_scope"] == "owned_medication_intake_logs"
     assert "Other owner" not in str(result)
 
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("include_original_inputs", [False, True])
+@pytest.mark.parametrize("last_followup", ["下午仍然隐隐肚子痛", "有嗳气的感觉 大便正常 吃饭三个小时后开始疼"])
 async def test_real_pi_mixed_read_then_location_followup_keeps_evidence_and_no_writes(
-    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, include_original_inputs,
+    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, include_original_inputs, last_followup,
 ):
     import json
     from app.models.agent_conversation import AgentConversation, AgentMessage
@@ -205,7 +208,7 @@ async def test_real_pi_mixed_read_then_location_followup_keeps_evidence_and_no_w
     executor = AgentExecutor(db)
     calls, dispatched = [], []
     questions = ["我腹痛还没好。基于过去十天的饮食、补剂、用药记录分析原因。",
-                 "疼痛在肚脐周边 下腹部", "下午仍然隐隐肚子痛"]
+                 "疼痛在肚脐周边 下腹部", last_followup]
     expected = {"diet", "supplements", "medication"}
     if include_original_inputs:
         questions[0] = "基于过去8天的饮食运动 睡眠 补剂 药物 以及输入的所有内容 做推断 为啥我又开始肚子疼？"

@@ -101,6 +101,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                             "spo2",
                             "spo2_sleep_correlation",
                             "weight",
+                            "bmi",
                             "blood_pressure",
                             "supplements",
                             "water",

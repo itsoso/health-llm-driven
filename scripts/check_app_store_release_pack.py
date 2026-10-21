@@ -1032,6 +1032,8 @@ def main() -> int:
         help="JSON evidence from the physical-iPhone acceptance run. Overrides APP_STORE_REAL_DEVICE_EVIDENCE.",
     )
     parser.add_argument("--simulator-evidence", help="Candidate-bound simulator results and explicit risk acceptance JSON.")
+    parser.add_argument("--ipa", type=Path, help="Actual Store IPA; mandatory for final submission.")
+    parser.add_argument("--native-build-receipt", type=Path, help="Observed native build receipt binding IPA digest to EAS and source.")
     parser.add_argument("--accept-simulator-risk", action="store_true",
                         help="Release owner explicitly accepts the enumerated unverified checks; does not waive failures.")
     parser.add_argument("--reviewed-conversation-evidence", type=Path,
@@ -1221,6 +1223,20 @@ def main() -> int:
     build_id = args.build_id or os.environ.get(APP_STORE_BUILD_ID_ENV, "").strip()
     eas_build_id = args.eas_build_id or os.environ.get(APP_STORE_EAS_BUILD_ID_ENV, "").strip()
     git_commit_hash = args.git_commit_hash or os.environ.get(APP_STORE_GIT_COMMIT_HASH_ENV, "").strip()
+    if args.final_submit:
+        artifact_evidence = args.simulator_evidence or args.real_device_evidence or os.environ.get('APP_STORE_REAL_DEVICE_EVIDENCE')
+        if not args.ipa or not args.native_build_receipt or not artifact_evidence:
+            failures.append('final submit requires actual --ipa, --native-build-receipt and candidate acceptance evidence')
+        else:
+            # Works both when invoked as a script and imported by tooling tests.
+            from importlib.util import module_from_spec, spec_from_file_location
+            spec = spec_from_file_location('store_ipa_capabilities', ROOT / 'scripts/check_store_ipa_capabilities.py')
+            artifact_checker = module_from_spec(spec)
+            spec.loader.exec_module(artifact_checker)
+            failures.extend(artifact_checker.validate_store_artifact(
+                args.ipa, args.native_build_receipt, Path(artifact_evidence), root=ROOT,
+                build_id=build_id, eas_build_id=eas_build_id, source_sha=git_commit_hash,
+            ))
     screenshot_dir = args.screenshot_dir or os.environ.get("APP_STORE_SCREENSHOT_DIR")
     if args.final_submit and not screenshot_dir:
         failures.append("final submit requires APP_STORE_SCREENSHOT_DIR or --screenshot-dir")

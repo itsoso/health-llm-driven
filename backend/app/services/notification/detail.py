@@ -76,3 +76,33 @@ def notification_review_context(detail: dict) -> str:
         '若本轮内容被截断，说明范围，不能补造全文。\n'
         + json.dumps(evidence, ensure_ascii=False)
     )
+
+
+def notification_review_safe_explanation(detail: dict) -> str:
+    """Fixed vocabulary only; saved prose selects terms, never supplies advice."""
+    text = str(detail.get('title') or '')[:1000] + '\n' + str(detail.get('content') or '')[:16000]
+    terms = (
+        (r'HRV|心率变异', 'HRV（心率变异性）描述相邻心跳间隔的变化，不能单独用于判断疾病或恢复程度。'),
+        (r'静息心率', '静息心率指安静休息状态下的心跳频率；测量条件和个人基线会影响比较。'),
+        (r'血氧|SpO2', '血氧饱和度是血液携氧状态的一个指标；佩戴、运动和测量设备可能影响读数。'),
+        (r'睡眠', '睡眠时长和睡眠分期描述不同方面；设备估计与实际睡眠体验可能存在差异。'),
+        (r'血压', '血压包含收缩压和舒张压；测量姿势、设备和测量时机影响读数。'),
+    )
+    definitions = [definition for pattern, definition in terms if re.search(pattern, text, re.I)]
+    parts = [
+        '本轮仅提供术语说明，尚未完成对原推送结论的解读。',
+        '这是一条已保存的历史推送，原始指标尚未重新核验，不能据此判断你现在的健康状态。'
+        '保存时间不是指标采样时间，也不能证明实际送达或已读。',
+    ]
+    if definitions:
+        parts.append('文中出现的术语：\n' + '\n'.join('• ' + item for item in definitions))
+    else:
+        parts.append('这条推送未匹配到可提供固定释义的指标，不能据此补造数值或个体结论。')
+    parts.append('需要核实：原始指标的采样时间、单位、设备和测量条件；'
+                 '比较基线是否来自相同条件；原结论是否有充分依据，以及是否适用于当前情况。'
+                 '原文中的建议不作为本轮执行方案。')
+    if detail.get('content_source') != 'saved_full_text':
+        parts.append('当前保存的文字可能只是摘要，全文完整性未知。')
+    if len(str(detail.get('content') or '')) > 16000:
+        parts.append('本轮仅查看了保存正文的前一部分，未覆盖全文。')
+    return '\n\n'.join(parts)

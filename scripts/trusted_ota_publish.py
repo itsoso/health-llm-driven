@@ -24,9 +24,9 @@ NODE = Path("/opt/hostedtoolcache/node/22.13.0/x64/bin/node")
 EAS = SOURCE / "scripts/release-tools/node_modules/eas-cli/bin/run"
 EXPO = SOURCE / "mobile/node_modules/expo/bin/cli"
 PROJECT = "911ea84f-bc7e-4a12-90cf-33966b6f7398"
-RUNTIME = "1.3.5"
-NATIVE_SHA = "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e"
-NATIVE_BUILD = "09719eb6-2887-4100-9ccb-6533fd9d71ed"
+RUNTIME = "1.3.6"
+NATIVE_SHA = "1ba724dcb62ac389a72e41eecf40fea7aaca27e3"
+NATIVE_BUILD = "399eb452-402e-47cd-a0e3-18dff2d1ca51"
 BUNDLE = "life.executor.health"
 API_URL = "https://health.executor.life/api"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -146,10 +146,8 @@ def identifier(value):
 # Closed set, not a fingerprint allowlist. Exact build/source identities must
 # accompany both fingerprints; any future production build requires new review.
 REVIEWED_NATIVE_COHORT = {
-    "09719eb6-2887-4100-9ccb-6533fd9d71ed": (
-        "7fe06d8b34750b6bd56db8d5ec45d1aee705b02e", "11aca32700f896b9e3f46e8587dc052de72090dd"),
-    "c25970ce-a54b-4241-8310-b27a9af9d18c": (
-        "0fd447cbd07e4fc3e8c47fff52769f1b34f9a293", "f672b986f213e7592eb627cc8114638fa166fdae"),
+    "399eb452-402e-47cd-a0e3-18dff2d1ca51": (
+        "1ba724dcb62ac389a72e41eecf40fea7aaca27e3", "cfb1606da3744f6df32d89364535e307d3f2ed70"),
 }
 
 

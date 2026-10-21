@@ -67,6 +67,16 @@ describe('resolveNotificationRoute', () => {
 
 
 describe('medication reminder landing', () => {
+  it('opens the owned catch-up summary without inventing one medication occurrence', () => {
+    const route = resolveNotificationRoute({
+      reminder_type: 'medication_summary',
+      deep_link: '/notification-history?detailId=81',
+      rule_id: 'medication_reminder.slot.7.2026-10-20.07:30',
+    });
+    expect(route).toBe('/notification-history?detailId=81');
+    expect(route).not.toContain('prompt=');
+    expect(route).not.toContain('context=');
+  });
   it.each([
     { reminder_type: 'medication', screen: 'home' },
     { kind: 'medication_reminder', screen: 'home' },
@@ -85,6 +95,16 @@ describe('medication reminder landing', () => {
 
 
 describe('precise medication reminder target', () => {
+  it('generates the exact readonly slot query understood by the backend', () => {
+    const route = resolveNotificationRoute({
+      reminder_type: 'medication', scheduled_date: '2026-10-20',
+      scheduled_time: '09:00', scheduled_timezone: 'Asia/Shanghai',
+    })!;
+    const params = new URLSearchParams(route.split('?')[1]);
+    expect(params.get('prompt')).toBe('请帮我查看 2026-10-20 09:00 （北京时间） 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。');
+    expect(params.has('context')).toBe(false);
+    expect(params.has('autoSend')).toBe(false);
+  });
   it('carries remote occurrence without private display fields', () => {
     const route = resolveNotificationRoute({ reminder_type: 'medication', medication_id: 7, scheduled_date: '2026-10-16', scheduled_time: '18:00', scheduled_timezone: 'Asia/Shanghai', medication_name: 'secret', dosage: 'secret', deep_link: '/medications' })!;
     const params = new URLSearchParams(route.split('?')[1]);

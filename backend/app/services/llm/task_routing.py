@@ -79,6 +79,7 @@ _HIGH_STAKES_DOMAINS = frozenset(
     {"medication", "supplement", "symptom", "clinical_context"}
 )
 _ACUTE_QUERY_SAFETY_MARKERS = (
+    "抽搐", "窒息", "救命", "失明", "吞咽困难",
     "胸闷", "心悸", "心慌", "气短", "气促", "喘不上气", "喘不过气",
     "呼吸费力", "憋气", "意识模糊", "单侧无力", "言语不清", "口唇发绀",
 )

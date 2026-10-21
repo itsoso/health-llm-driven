@@ -2579,7 +2579,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.medical_narrative_read_scope import medical_narrative_read_scope_contract_payload
     from app.services.agent_kernel.post_record_recovery_scope import post_record_recovery_scope_contract_payload
     from app.services.agent_kernel.medication_review_scope import medication_review_scope_contract_payload
+    from app.services.agent_kernel.bmi_read_scope import bmi_read_scope_contract_payload
     return {
+        "bmi_read_scope": bmi_read_scope_contract_payload(),
         "post_record_recovery_scope": post_record_recovery_scope_contract_payload(),
         "medication_review_scope": medication_review_scope_contract_payload(),
         "medical_narrative_read_scope": medical_narrative_read_scope_contract_payload(),
@@ -2704,6 +2706,11 @@ def decide_tool_capability(
             args,
             receipt_required=True,
         )
+    from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request, bmi_query_authorized
+    if is_bmi_read_request(snapshot.envelope.text) or (tool_name == 'health_query' and args.get('dimension') == 'bmi'):
+        if tool_name == 'health_query' and bmi_query_authorized(snapshot, args):
+            return _decision('allow', 'owned_bmi_read', tool_name, {'dimension': 'bmi'})
+        return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
     from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
     imaging_scope = resolve_medical_narrative_read_scope(snapshot.envelope.text)
     if imaging_scope is not None:
@@ -2836,14 +2843,23 @@ def decide_tool_capability(
         owned_read_tool_names, requires_owned_read_tool_scope, resolve_owned_read_scope,
     )
     from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
-    if is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
+    owned_scope = resolve_owned_read_scope(snapshot)
+    if owned_scope is None and is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
         # A whole current-input advice goal needs no personal records. This is
         # a restrictive boundary, including broad specialists and shadow mode.
         optional_read = (tool_name in READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS
                          or (tool_name == "health_manage" and args.get("operation") == "list"))
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
-    owned_scope = resolve_owned_read_scope(snapshot)
+    from app.services.agent_kernel.medication_review_scope import has_medication_reminder_read_reference
+    if owned_scope is None and has_medication_reminder_read_reference(snapshot.envelope.text):
+        return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+    from app.services.agent_kernel.read_task_scope import has_daily_supplement_question_reference
+    if owned_scope is None and has_daily_supplement_question_reference(snapshot.envelope.text):
+        return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+    from app.services.agent_kernel.medication_review_scope import has_symptom_record_review_reference
+    if owned_scope is None and has_symptom_record_review_reference(snapshot.envelope.text):
+        return _decision('block', 'longitudinal_read_scope_unresolved', tool_name, args)
     from app.services.agent_kernel.medication_review_scope import has_medication_review_reference
     if owned_scope is None and has_medication_review_reference(snapshot.envelope.text):
         return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
@@ -3076,7 +3092,7 @@ def decide_tool_capability(
             for proposal in read_proposals
         )
         if (guarding_longitudinal_domain
-                and not (owned_scope is not None and 'post_record_recovery_material_unverified' in owned_scope.limitations)
+                and not (owned_scope is not None and set(owned_scope.limitations) & {'post_record_recovery_material_unverified', 'symptom_record_review'})
                 and longitudinal_read_restrictions_unresolved(snapshot)):
             # Preserve the existing ownership denial when both checks fail;
             # ownership can change the rejection reason, never grant scope.
@@ -3115,14 +3131,25 @@ def decide_tool_capability(
         if scope is not None:
             plan = args.get("plan", args)
             if (scope.workout_selection is not None or 'post_record_recovery_material_unverified' in scope.limitations
-                    or 'medication_review_today_only' in scope.limitations):
+                    or 'medication_review_today_only' in scope.limitations or 'symptom_record_review' in scope.limitations
+                    or 'medication_reminder_slot' in scope.limitations
+                    or 'daily_supplement_recorded_intakes' in scope.limitations):
                 raw_proposals = [args] if tool_name == 'health_query' else plan.get('queries') if isinstance(plan, dict) else None
+                allowed_fields = {'dimension', 'start_date', 'end_date', 'timezone'}
+                if 'symptom_record_review' in scope.limitations:
+                    allowed_fields.add('days')
                 if (not isinstance(raw_proposals, list)
-                        or any(not isinstance(p, dict) or set(p) - {'dimension', 'start_date', 'end_date', 'timezone'}
+                        or any(not isinstance(p, dict) or set(p) - allowed_fields
                                for p in raw_proposals)
                         or (tool_name == 'health_query_batch' and (
                             set(args) not in ({'queries'}, {'plan'}) or set(plan) != {'queries'}))):
                     return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+                if 'symptom_record_review' in scope.limitations:
+                    window = scope.queries[0]
+                    expected_days = (date.fromisoformat(window['end_date']) - date.fromisoformat(window['start_date'])).days + 1
+                    if any('days' in p and (type(p['days']) is not int or p['days'] != expected_days)
+                           for p in raw_proposals):
+                        return _decision('block', 'health_query_calendar_window_conflict', tool_name, args)
             if not isinstance(plan, dict):
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
             if any(key in candidate for candidate in (args, plan)

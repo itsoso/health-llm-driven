@@ -336,3 +336,111 @@ async def test_failed_persistence_never_emits_a_success_reply(db, auth_user_and_
         async for event in executor.run_stream(user_id=user.id, message="落地成都"):
             events.append(event)
     assert not any(e.get("event") in {"token", "done"} for e in events)
+
+# Synthetic stations, clocks and destinations; no real journey or account data.
+_TRAVEL_TIMELINE = '赶上了7:10从示例站出发去示例机场T2的8号地铁 7:00从家里出发 7:07到达地铁口 冲下来才能赶上 6:40起床洗了个澡'
+
+
+def test_completed_transit_timeline_is_nonwriting_context():
+    from app.services.agent_context_statement import parse_context_statement
+    parsed = parse_context_statement(_TRAVEL_TIMELINE)
+    assert parsed is not None and parsed.allows_local_reply
+    intent = classify_agent_utterance(_TRAVEL_TIMELINE)
+    assert (intent.primary, intent.domain, intent.operation) == ('chat', 'context', 'none')
+    assert not intent.is_write
+    assert '7:10' in parsed.reply
+    assert '已记录' not in parsed.reply
+
+
+@pytest.mark.parametrize('suffix', ['，帮我查睡眠', '，胸痛喘不上气', '，记录行程', '，提醒我吃药', '？'])
+def test_transit_timeline_does_not_swallow_requests_or_symptoms(suffix):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(_TRAVEL_TIMELINE + suffix) is None
+
+
+@pytest.mark.asyncio
+async def test_transit_timeline_after_failed_meal_does_not_query_health(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title='Synthetic transit context')
+    svc.save_message(conv.id, 'user', '下午吃了两个苹果')
+    svc.save_message(conv.id, 'assistant', '这次没有写入：营养估算未完成。')
+    executor = AgentExecutor(db)
+    _no_heavy_work(executor, monkeypatch)
+    events = [e async for e in executor.run_stream(user_id=user.id, message=_TRAVEL_TIMELINE, conversation_id=conv.id)]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['route'] == 'context_statement'
+    assert done['model_call_count'] == 0
+    assert not done.get('write_receipts')
+
+@pytest.mark.parametrize('message', [
+    '朋友' + _TRAVEL_TIMELINE,
+    '他说：' + _TRAVEL_TIMELINE,
+    '“' + _TRAVEL_TIMELINE + '”',
+    '如果' + _TRAVEL_TIMELINE,
+    _TRAVEL_TIMELINE.replace('7:10', '25:10'),
+    _TRAVEL_TIMELINE.replace('示例站', '胸痛站'),
+    _TRAVEL_TIMELINE.replace('示例站', '请停药站'),
+])
+def test_transit_admission_rejects_foreign_quoted_invalid_or_sensitive_slots(message):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(message) is None
+
+@pytest.mark.parametrize('signal', ['抽搐', '窒息', '救命', '失明', '吞咽困难'])
+def test_transit_sensitive_slots_retain_shared_health_safety_routing(signal):
+    from app.services.agent_context_statement import parse_context_statement
+    from app.services.llm.task_routing import has_sensitive_health_language
+    assert has_sensitive_health_language(signal)
+    assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例站', signal)) is None
+    assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例机场', signal + '机场')) is None
+
+
+@pytest.mark.parametrize('message', [
+    '10:00 落地北京 10:20 打上车',
+    '10：00落地北京，10：20上车了。',
+    '我10:00到达上海，10:20坐上车',
+])
+def test_arrival_and_boarding_timeline_is_context_not_health_query(message):
+    from app.services.agent_context_statement import parse_context_statement
+    statement = parse_context_statement(message)
+    assert statement is not None and statement.allows_local_reply
+    intent = classify_agent_utterance(message)
+    assert (intent.primary, intent.domain, intent.operation) == ('chat', 'context', 'none')
+    assert not intent.is_write
+    assert '10:00' in statement.reply and '10:20' in statement.reply
+    assert '已记录' not in statement.reply
+
+
+@pytest.mark.parametrize('message', [
+    '10:00落地北京10:20打上车，胸痛',
+    '10:00落地北京10:20打上车，帮我查睡眠',
+    '记录10:00落地北京10:20打上车',
+    '明天10:00落地北京10:20打上车',
+    '朋友10:00落地北京10:20打上车',
+    '如果10:00落地北京10:20打上车',
+    '“10:00落地北京10:20打上车”',
+    '25:00落地北京10:20打上车',
+    '10:00落地胸痛10:20打上车',
+    '10:00落地未知城市10:20打上车',
+    '10:00落地北京10:20打上车？',
+])
+def test_arrival_boarding_does_not_swallow_other_intent(message):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(message) is None
+
+
+@pytest.mark.asyncio
+async def test_arrival_boarding_after_symptom_does_not_query_or_write(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title='Synthetic arrival context')
+    svc.save_message(conv.id, 'user', '记录连续打了三个喷嚏')
+    svc.save_message(conv.id, 'assistant', '已记录。若需要可以补充严重程度。')
+    executor = AgentExecutor(db)
+    _no_heavy_work(executor, monkeypatch)
+    events = [e async for e in executor.run_stream(user_id=user.id,
+        message='10:00 落地北京 10:20 打上车', conversation_id=conv.id)]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['route'] == 'context_statement'
+    assert done['model_call_count'] == 0
+    assert not done.get('write_receipts')

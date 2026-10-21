@@ -19,6 +19,7 @@ _LIMITATIONS = frozenset(
         "mood_not_queried",
         "work_not_queried",
         "symptom_analysis_current_input",
+        "symptom_record_review",
     }
 )
 _FOLLOWUP = re.compile(

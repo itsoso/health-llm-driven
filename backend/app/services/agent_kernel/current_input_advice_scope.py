@@ -40,6 +40,46 @@ _SYMPTOMS = frozenset({
     "咽痛", "肌肉酸痛", "关节痛",
 })
 
+# Closed symptom clauses, including bare follow-up answers to a symptom
+# question. Full consumption is essential: a symptom keyword cannot erase an
+# additional read/write, medication, third-party or quoted request.
+_GI_PAIN = r"(?:(?:胃|腹|肚子|上腹|下腹)(?:疼|痛)|疼|痛)"
+_GI_SYMPTOM = rf"(?:嗳气|打嗝|反酸|烧心|胃胀|腹胀|恶心|呕吐|腹泻|便秘|呕血|黑便|便血|{_GI_PAIN})"
+_GI_INTERVAL = r"(?:半|[一二两三四五六七八九十\d]{1,3})(?:个)?(?:小时|分钟)"
+_GI_AFTER_MEAL = rf"(?:(?:吃(?:完)?饭|进食){_GI_INTERVAL}后|(?:饭后|餐后)(?:{_GI_INTERVAL})?)"
+_GI_SYMPTOM_CLAUSE = rf"(?:我)?(?:{_GI_AFTER_MEAL})?(?:开始|有点|有|感觉)?{_GI_SYMPTOM}(?:的感觉)?"
+_GI_STOOL_CLAUSE = r"(?:我)?(?:大便|排便)(?:正常|不正常|黑色|带血)"
+_GI_DESCRIPTION_RE = re.compile(
+    rf"(?:{_GI_SYMPTOM_CLAUSE}|{_GI_STOOL_CLAUSE})"
+    rf"(?:[，,。；;、]?(?:{_GI_SYMPTOM_CLAUSE}|{_GI_STOOL_CLAUSE})){{0,7}}"
+    r"(?:[，,。]?(?:怎么办|怎么回事|需要就医吗))?[。？?]?"
+)
+
+_GI_ADVICE_INSTRUCTIONS = """
+本轮只依据用户当前输入的症状描述或症状补充，回应不适和必要的下一步，不把它解释成数据查询，也不要求查询日期。
+明确本轮未查询个人记录；不查询、不保存健康记录，不使用历史、缓存或背景档案补齐病史和用药。可检索通用医学知识。
+先回应当前描述；疼痛部位不明确时先问哪里疼，不凭饭后时间或嗳气直接诊断胃炎或溃疡，大便正常不能排除需要就医的原因。
+询问疼痛部位、程度、持续时间和是否加重，以及是否有呕血、黑便或便血等伴随表现。不能将未提及的症状说成没有。
+若用户已描述突然或剧烈腹痛、呕血、黑便或便血、胸痛、呼吸困难或晕倒，应优先提示立即寻求急救；未描述时给条件式警示，不能断言没有危险。
+疼痛持续、反复或明显加重应及时就医。只给有条件的非药物建议，不给药物或补剂开始、停用、继续、剂量、频次、时点或疗程指令；用药问题向医生或药师核对。
+""".strip()
+
+
+def is_current_input_gastrointestinal_advice(text: str) -> bool:
+    """Prove a bounded symptom-only turn, without personal tool authority."""
+    if not isinstance(text, str) or len(text) > 256 or any(ch in text for ch in "\r\n\t"):
+        return False
+    candidate = text.replace(" ", "").replace("\u3000", "")
+    if not (_GI_DESCRIPTION_RE.fullmatch(candidate)
+            and (re.search(_GI_SYMPTOM, candidate)
+                 or re.search(r"(?:大便|排便)(?:黑色|带血)", candidate))):
+        return False
+    # Existing explicit/self-observation write contracts take precedence.
+    # This proof must not mask a record goal or block its authorized tools.
+    from app.services.utterance_intent_classifier import classify_agent_utterance
+
+    return not classify_agent_utterance(text).is_write
+
 # Complete questions only: these describe an answer goal, never read authority.
 _HEALTH_ADVICE = r"(?:请)?(?:给|给出|提供)(?:我)?(?:一些|一点|些|点)?(?:健康|通用健康)(?:的)?建议"
 _BEDTIME = r"(?:我)?(?:现在|今晚|今天晚上)(?:是不是|是否)?(?:可以|能|该|应该)(?:去)?睡觉(?:了)?(?:吗)?"
@@ -115,10 +155,36 @@ def is_daily_planning_advice(text: str) -> bool:
     return bool(_DAILY_PLAN_RE.fullmatch(candidate) or _DAILY_QUESTION_RE.fullmatch(candidate))
 
 
+_HOUSEHOLD_MAINTENANCE = re.compile(
+    r"(?:https://[A-Za-z0-9.-]+/[A-Za-z0-9_/-]+[ \n]+)?"
+    r"(?:我)?(?:今天|今日|今晚|刚刚|刚才)(?:我)?(?:换|更换)了"
+    r"(?:我的)?(?:卧室|客厅|书房)?(?:的)?(?:壁挂式|壁挂)?"
+    r"(?:新风(?:机|系统)?|空气净化器)(?:的)?"
+    r"(?:[A-Za-z\u4e00-\u9fff]{1,12}品牌的)?(?:过滤网|滤网|滤芯)[。！!]?"
+)
+_HOUSEHOLD_MAINTENANCE_ANSWER = (
+    '收到，你说已经更换了设备滤网。可以核对滤网是否按设备说明安装到位，'
+    '后续维护时间以具体型号的说明书和实际使用情况为准。\n\n'
+    '这里只回应你当前提供的信息；未读取链接内容，未查询个人健康记录，'
+    '未保存为维护记录，也未设置提醒。你希望接下来了解安装检查，还是日常维护注意事项？'
+)
+
+
+def is_household_maintenance_update(text: str) -> bool:
+    """A fully consumed report, with at most one opaque, unfetched URL."""
+    if not isinstance(text, str) or len(text) > 512:
+        return False
+    # Preserve a URL/body boundary before normalizing horizontal body spacing.
+    candidate = re.sub(r'^(https://[A-Za-z0-9.-]+/[A-Za-z0-9_/-]+) +',
+                       r'\1\n', text.strip())
+    return bool(_HOUSEHOLD_MAINTENANCE.fullmatch(candidate.replace(' ', '').replace('\u3000', '')))
+
+
 def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
     if (is_current_input_recovery_advice(text) or is_wearable_placement_question(text)
-            or is_daily_planning_advice(text)):
+            or is_daily_planning_advice(text) or is_current_input_gastrointestinal_advice(text)
+            or is_household_maintenance_update(text)):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -139,6 +205,10 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_household_maintenance_update(text):
+        return '仅回应当前家居设备维护陈述；不读取链接或健康数据，不保存维护记录或设置提醒。'
+    if is_current_input_gastrointestinal_advice(text):
+        return _GI_ADVICE_INSTRUCTIONS
     if is_daily_planning_advice(text):
         return (CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS
                 + '\n本轮任务是饮食、运动和睡眠的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
@@ -183,6 +253,25 @@ CURRENT_INPUT_UNVERIFIED_ANSWER_NOTICE = (
 )
 
 
+_GI_ADVICE = (
+    "仅凭当前描述还不能确定原因；饭后出现不适或大便正常，都不足以确定病因或排除需要就医的情况。\n\n"
+    "请补充：疼痛部位在哪里、程度如何、持续多久、有没有加重？是否伴有呕吐、黑便或便血？\n\n"
+    "如果疼痛突然发生或很剧烈，或有呕血、黑便或便血、胸痛、呼吸困难、晕倒，请立即寻求急救，不要等待聊天回复。"
+    "疼痛持续、反复或加重时，请及时就医。\n\n"
+    "本轮未查询个人记录，也未保存症状记录。用药问题应向医生或药师核对。\n\n"
+    "通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)"
+)
+_GI_URGENT_ADVICE = (
+    "你描述中提到了可能需要紧急处理的表现，请立即寻求急救或前往急诊，不要等待线上判断。"
+    "如无法安全前往，请联系当地急救服务。\n\n"
+    "这不是病因诊断；大便的其他表现或饭后时间不能排除风险。就诊时告诉医护人员疼痛部位、程度、"
+    "开始时间，以及呕吐和排便变化。\n\n"
+    "本轮未查询个人记录，也未保存症状记录。用药问题应向接诊医生或药师核对。\n\n"
+    "通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)"
+)
+_GI_URGENT_RE = re.compile(r"呕血|黑便|便血|(?:大便|排便)(?:黑色|带血)")
+
+
 _DAILY_GUIDANCE = {
     "运动": "没有明显不适，且符合已有医嘱和自身能力时，可选一种熟悉的轻松活动，如散步或舒缓拉伸；感觉疲劳时可以休息，不必为完成安排额外加量。出现胸痛、明显呼吸困难或突然加重的不适时，停止活动并及时就医。",
     "饮食": "结合饥饿感和原有进餐节奏安排日常饮食，选择自己能耐受的食物，并遵守已知过敏限制和医生的饮食要求。已经吃过的餐次不用补吃；这里没有设定减重目标或调整摄入量。",
@@ -210,8 +299,16 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     Existing symptom-recovery remains on its existing model/medical pipeline.
     A bare general-health request is not silently changed into sleep advice.
     """
+    if is_household_maintenance_update(message):
+        return 'household_maintenance_acknowledgement', _HOUSEHOLD_MAINTENANCE_ANSWER
     if is_daily_planning_advice(message):
         return "daily_planning_advice", _daily_planning_response(message)
+    if is_current_input_gastrointestinal_advice(message):
+        # Only fully parsed, non-negated current symptoms reach this branch.
+        # Never interpolate model/history/client context into reviewed prose.
+        candidate = message.replace(" ", "").replace("\u3000", "")
+        return "gastrointestinal_symptom_advice", (
+            _GI_URGENT_ADVICE if _GI_URGENT_RE.search(candidate) else _GI_ADVICE)
     if (is_current_input_recovery_advice(message) or is_wearable_placement_question(message)
             or not is_current_input_advice(message)):
         return None

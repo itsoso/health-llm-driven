@@ -1194,3 +1194,243 @@ print('ISOLATED_FIXTURE_OK')
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class HistoricalReviewMaintenanceTests(unittest.TestCase):
+    def test_historical_target_requires_stable_successful_ci(self):
+        maintenance = load('trusted_review_maintenance')
+        gate = SimpleNamespace(
+            verify_release=lambda sha, workflow, **kw: {'ci_run_id': 1},
+            _get_json=lambda url: None,
+            _latest=lambda get, sha: {'sha': sha},
+            _receipt=lambda run, sha, workflow: {'ci_run_id': 2, 'sha': sha},
+            _read=lambda get, path: {'sha': SHA},
+            _main_sha=lambda get: 'c' * 40,
+        )
+        result = maintenance.attest_maintenance(gate, 'c' * 40, SHA)
+        self.assertEqual(result['target']['sha'], SHA)
+
+
+class HistoricalMaintenanceFlowTests(ReviewResetTests):
+    """Offline filesystem/locking checks for explicit historical maintenance."""
+    def setUp(self):
+        super().setUp()
+        self.maintenance = load('trusted_review_maintenance')
+        self.patch(self.maintenance, 'preflight_nested_history', lambda *args: None)
+        self.patch(self.maintenance, 'STATE', self.state)
+        self.env_path = self.production / '.env'
+        put(self.env_path, self.production_env.encode(), 0o640)
+        self.patch(self.maintenance, 'PRODUCTION_ENV', self.env_path)
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, None))
+        self.ci = {'operator': {'ci_run_id': 1}, 'target': {'ci_run_id': 2}}
+        def attest(*args):
+            self.events.append('gate')
+            if self.gate_error:
+                raise self.gate_error
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', attest)
+
+    def maintenance_run(self):
+        return self.maintenance.run_maintenance('c' * 40, SHA, OP)
+
+    def missing_env(self):
+        (self.workspace / 'deployment.env').unlink()
+
+    def test_nested_history_rejection_precedes_environment_and_intent_writes(self):
+        self.missing_env()
+        def reject(*args):
+            raise self.maintenance.MaintenanceError('nested history preflight rejected')
+        self.patch(self.maintenance, 'preflight_nested_history', reject)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertFalse(self.operation.exists())
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
+        self.assertNotIn('execute', self.events)
+
+    def test_atomic_release_missing_env_is_prepared_then_reset_under_original_lock(self):
+        self.missing_env()
+        inode = self.lock.stat().st_ino
+        result = self.maintenance_run()
+        self.assertEqual(result['state'], 'SUCCEEDED')
+        self.assertEqual(self.lock.stat().st_ino, inode)
+        self.assertEqual(self.events.count('execute'), 1)
+        self.assertEqual((self.workspace / 'deployment.env').stat().st_mode & 0o777, 0o600)
+        self.assertEqual((self.workspace / 'deployment.env').read_bytes(), b'SECRET=offline-fixture\nDEPLOY_SERVER=health\nDEPLOY_PATH=/opt/health-app\n')
+        self.assertEqual(self.env_path.read_bytes(), self.production_env.encode())
+        proof = json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())
+        self.assertEqual(proof, result)
+        self.assertNotIn('offline-fixture', json.dumps(result))
+
+    def test_existing_env_and_consumed_preparation_are_not_overwritten(self):
+        before = (self.workspace / 'deployment.env').read_bytes()
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertEqual(before, (self.workspace / 'deployment.env').read_bytes())
+        self.missing_env()
+        self.maintenance_run()
+        before = (self.workspace / 'deployment.env').read_bytes()
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertEqual(self.events.count('execute'), 1)
+        self.assertEqual(before, (self.workspace / 'deployment.env').read_bytes())
+
+    def test_missing_env_and_failed_ci_never_read_credentials_or_create_intent(self):
+        self.missing_env()
+        self.gate_error = RuntimeError('offline gate failure')
+        self.patch(self.server, 'read_production_env', lambda: self.fail('credentials before CI'))
+        with self.assertRaises(RuntimeError):
+            self.maintenance_run()
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
+
+    def test_failed_reset_preserves_unknown_and_blocks_second_operation(self):
+        self.missing_env()
+        self.command_error = subprocess.TimeoutExpired('offline', 1)
+        with self.assertRaises(subprocess.TimeoutExpired):
+            self.maintenance_run()
+        self.assertEqual(json.loads((self.operation / 'completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
+        proof = json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())
+        self.assertEqual(proof['state'], 'NEEDS_OPERATOR')
+        with self.assertRaises(self.reset.ResetError):
+            self.maintenance.run_maintenance('c' * 40, SHA, OTHER)
+        self.assertEqual(self.events.count('execute'), 1)
+
+    def test_configuration_drift_after_intent_leaves_failed_evidence_without_reset(self):
+        self.missing_env()
+        original = self.maintenance.production_identity
+        calls = [0]
+        def drift(server):
+            calls[0] += 1
+            identity, digest, raw = original(server)
+            return identity, ('0' * 64 if calls[0] > 1 else digest), raw
+        self.patch(self.maintenance, 'production_identity', drift)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertNotIn('execute', self.events)
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+        self.assertEqual(json.loads((self.state / 'review-maintenance' / SHA / 'completed.json').read_bytes())['state'], 'NEEDS_OPERATOR')
+
+    def test_changed_target_and_busy_lock_do_not_prepare_env(self):
+        self.missing_env()
+        self.head = 'e' * 40
+        with self.assertRaises(self.reset.ResetError):
+            self.maintenance_run()
+        self.assertFalse((self.state / 'review-maintenance' / SHA).exists())
+        self.head = SHA
+        with self.lock.open('r+') as held:
+            fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            with self.assertRaises(BlockingIOError):
+                self.maintenance_run()
+        self.assertFalse((self.workspace / 'deployment.env').exists())
+
+    def test_both_sha_values_are_exact_and_distinct(self):
+        for operator, target, operation in ((SHA, SHA, OP), ('c' * 39, SHA, OP), ('c' * 40, SHA, '../x')):
+            with self.subTest(operator=operator), self.assertRaises(self.maintenance.MaintenanceError):
+                self.maintenance.run_maintenance(operator, target, operation)
+
+    def test_execution_inventory_detects_changed_or_extra_executable(self):
+        before = self.maintenance.execution_inventory(self.source)
+        put(self.source / 'scripts/trusted_review_maintenance.py', b'new reviewed operator')
+        self.assertEqual(before, self.maintenance.execution_inventory(self.source))
+        put(self.source / 'scripts/unexpected.py', b'unreviewed')
+        self.assertNotEqual(before, self.maintenance.execution_inventory(self.source))
+        (self.source / 'scripts/unexpected.py').unlink()
+        (self.source / 'scripts/evil').symlink_to(self.env_path)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance.execution_inventory(self.source)
+
+    def test_success_remains_consumable_by_original_bootstrap(self):
+        self.missing_env()
+        self.maintenance_run()
+        proof = self.bootstrap._workspace_evidence(SHA)
+        self.assertEqual(proof['state'], 'SUCCEEDED')
+        self.assertIn(OP, proof['receipts']['review-resets'])
+
+    def test_post_env_ci_failure_blocks_original_reset_with_new_id(self):
+        self.missing_env()
+        calls = [0]
+        def second_ci_fails(*args):
+            calls[0] += 1
+            self.events.append('gate')
+            if calls[0] == 2:
+                raise RuntimeError('offline second CI rejected')
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', second_ci_fails)
+        with self.assertRaises(RuntimeError):
+            self.maintenance_run()
+        self.assertTrue((self.workspace / 'deployment.env').exists())
+        with self.assertRaises(self.reset.ResetError):
+            self.reset.reset_review(SHA, OTHER)
+        self.assertNotIn('execute', self.events)
+
+    def test_unknown_audit_for_another_target_blocks_before_preparation(self):
+        self.missing_env()
+        prior = self.state / 'review-maintenance' / ('e' * 40)
+        prior.mkdir(parents=True, mode=0o700)
+        prior.parent.chmod(0o700)
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance_run()
+        self.assertFalse(self.operation.exists())
+        self.assertNotIn('execute', self.events)
+
+    def test_completed_audit_schema_is_strict(self):
+        self.missing_env()
+        self.maintenance_run()
+        self.maintenance.assert_audit_history(self.bootstrap, self.server, self.reset)
+        path = self.state / 'review-maintenance' / SHA / 'started.json'
+        data = json.loads(path.read_bytes())
+        put(path, {**data, 'unexpected': True})
+        with self.assertRaises(self.maintenance.MaintenanceError):
+            self.maintenance.assert_audit_history(self.bootstrap, self.server, self.reset)
+
+    def test_ephemeral_token_is_read_once_and_used_without_environment_fallback(self):
+        self.missing_env()
+        calls = []
+        gate = SimpleNamespace(_stdin_token=lambda: calls.append('stdin') or 'offline-token',
+                               _get_json=lambda url, *, token: calls.append((url, token)) or {})
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, gate))
+        def attest(gate, operator, target, get):
+            self.events.append('gate')
+            self.assertEqual(get('/offline'), {})
+            return self.ci
+        self.patch(self.maintenance, 'attest_maintenance', attest)
+        result = self.maintenance.run_maintenance('c' * 40, SHA, OP, token_stdin=True)
+        self.assertEqual(calls, ['stdin', ('/offline', 'offline-token'), ('/offline', 'offline-token')])
+        self.assertNotIn('offline-token', json.dumps(result))
+
+    def test_invalid_stdin_token_fails_before_intent_without_fallback(self):
+        self.missing_env()
+        def reject():
+            raise RuntimeError('invalid offline credential')
+        gate = SimpleNamespace(_stdin_token=reject)
+        self.patch(self.maintenance, 'load_sources', lambda *args: (self.source, self.bootstrap, self.server, self.reset, gate))
+        with self.assertRaises(RuntimeError):
+            self.maintenance.run_maintenance('c' * 40, SHA, OP, token_stdin=True)
+        self.assertFalse(self.operation.exists())
+        self.assertNotIn('execute', self.events)
+
+
+class NestedHistoryPreflightTests(unittest.TestCase):
+    def test_exact_isolated_target_check_without_outer_token(self):
+        maintenance = load('trusted_review_maintenance')
+        with patch.object(maintenance.subprocess, 'run') as run:
+            maintenance.preflight_nested_history(Path('/canonical/source'), SHA)
+        args, options = run.call_args
+        self.assertEqual(args[0], ['/usr/bin/python3.12', '-I', '-S', '-B',
+            '/canonical/source/scripts/trusted_vision_model.py', '--check-history', '--publisher-sha', SHA])
+        self.assertEqual(options['env'], {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent'})
+        self.assertTrue(options['check'])
+        self.assertEqual(options['timeout'], 90)
+        for key in ('stdin', 'stdout', 'stderr'):
+            self.assertEqual(options[key], subprocess.DEVNULL)
+
+    def test_errors_are_sanitized_and_not_retried(self):
+        maintenance = load('trusted_review_maintenance')
+        for error in (OSError('secret'), subprocess.TimeoutExpired('secret', 90),
+                      subprocess.CalledProcessError(1, 'secret')):
+            with self.subTest(error=type(error).__name__):
+                with patch.object(maintenance.subprocess, 'run', side_effect=error) as run:
+                    with self.assertRaises(maintenance.MaintenanceError) as caught:
+                        maintenance.preflight_nested_history(Path('/canonical/source'), SHA)
+                self.assertNotIn('secret', str(caught.exception))
+                self.assertEqual(run.call_count, 1)

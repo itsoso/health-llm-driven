@@ -1,0 +1,42 @@
+# 普通照片用途修复
+
+| 字段 | 值 |
+|---|---|
+| 状态 | building |
+| 当前阶段 | S5 本地验证完成，等待统一候选发布验证 |
+
+Updated: 2026-10-19
+Status: locally verified; G4 GO for 9a7bacf3c; deployment blocked
+Spec: `docs/specs/active/2026-10-19-general-photo-purpose.md`
+Workflow: quick_fix, safety overlay; no superpowers skills used.
+
+## 故障与根因
+
+普通照片会先尝试结构化食物识别；空说明或默认分析提示还可走高置信度隐式记餐。单独增加皮肤关键词不能消除默认食物假设。
+Mobile 普通附件发送默认分析提示，明确拍照记餐才携带餐食上下文；后端产生截图中的餐食进度。
+本轮只读核实生产 HEAD 为 `1ba724dcb62ac389a72e41eecf40fea7aaca27e3`，不包含已提交的皮肤排除修复 `c7616c88e`，因此已有本地排除不能证明用户线上问题解决。
+
+## G1 准入与实现
+
+裁决：PASS。普通附件默认用途纠错，沿用 ExecutionEvent / WriteIntent；不新增数据类型、诊断能力或写授权。
+识别、进度、结构化食物入口和实际 capture 共用正向餐食用途检查。普通空/默认照片使用通用视觉或原图多模态，不生成餐食进度或饮食记录/草稿。
+明确餐食和明确记餐入口保留结构化识别、校准、权限、确认、幂等与回执。当前非餐食文本覆盖旧记餐上下文；报告和补剂继续独立预处理。
+普通照片即使模型提出饮食写入，也由每轮写入边界拒绝；图片与聊天消息仍正常保存。
+
+## 验证证据
+
+- RED: 新增测试首轮 13 failed / 9 passed，复现默认食物调用及误捕获路径；日志 `/tmp/reva-general-photo-red.log`。
+- 中间回归 16 failed / 257 passed / 1 skipped 保留。修正取消原因回传，并将旧空说明餐食 fixture 明确绑定记餐入口；未知体重附件不再要求食物上下文。
+- GREEN: 普通照片新测试及食物识别、capture policy/service、图片生命周期、补剂图片回归 **371 passed / 1 skipped**；日志 `/tmp/reva-general-photo-regression.log`。
+- System Map、mobile-nav、doc-drift 和 `git diff --check` 通过；没有结构生成物变化。
+- PostgreSQL 独立 UTF8 库严格验证 **49 passed / 1 deselected**（91.40s，退出 0）；日志 `/tmp/reva-general-photo-postgres-final.log`。未处理线程异常设置为测试错误，最终只有既有依赖弃用警告。
+- PG 首轮显示 50 passed，但 SQLite 专用 `test_sqlite_capture_session_lock_serializes_same_source_message` 错误复用同一 Session 跨线程，发出 `PytestUnhandledThreadExceptionWarning`；原日志保留，不作为干净并发验证。最终 PG 范围排除这一个方言专用测试；它已在本轮 SQLite 完整回归中通过。未修改生产代码或吞掉异常以制造通过。
+- 固定实现提交 `9a7bacf3c48947fee7716a84e98d50fc378d80ff` 独立 reviewer `photo_safety_review` 裁定 **GO**，并独立复跑新增测试 **27 passed**。确认每轮重置、旧记餐元数据撤销、真实 capture 与写适配器阻断；明确餐食、补剂、报告和取消/归属边界保留。仅覆盖该提交，不代表发布准入。
+- 图片和模型回复均为合成 fixture。未发送用户照片给模型，未读取生产健康记录；没有真实模型质量、生产用户或模拟器验收证据。
+
+## 发布边界
+
+仅修改本任务文件，保留共享工作区其他改动。开工时本地主干 ahead 5；最新只读远端 main 已推进到 `9d80d2d46f826ed023291a0d010be8d2e2acf3be`。
+G4 GO；G5 精确候选完整 CI/CI-mode、既有发布阻断收口与发布准入未完成。未推送、未部署，不能宣称用户线上已修复。
+新鲜只读 CI 核验：远端 `9d80d2d46` 的完整 CI `39275331153` 为 failure；balanced-11 的 `agent-s-v` 两次 233 秒 timeout（第二次虽已打印 979 passed / 10 skipped，进程仍退出 124），汇总与 backend-release-ready 因此失败。日志 `/tmp/reva-main-9d80-ci-failed.log`；不将用例输出替代工作流成功，不重发既有操作或擅改测试超时。按 AGENTS §7 主干非绿停止外部写入。
+本任务只有后端改动，无需 Mobile OTA；未备份、未重放既有失败发布或维护操作。

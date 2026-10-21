@@ -133,6 +133,7 @@ async def test_uncertain_photo_emits_durable_confirmation_before_reply(db, tmp_p
 def test_early_confirmation_card_requires_current_persisted_pending_draft(db, tmp_path, monkeypatch, boundary):
     from datetime import timedelta
     executor, user = _food_photo_executor(db,tmp_path,monkeypatch)
+    executor._diet_photo_auto_save = True  # Explicit meal-camera entry.
     recognition = _food_result()
     recognition['foods'][0]['confidence'] = 0.4
     result = executor._capture_contextual_meal_photo('',recognition,image_index=0)
@@ -569,6 +570,7 @@ async def test_order_vision_records_explicit_portions_but_confirms_unknown_intak
     from app.services.ai.food_recognition import food_recognition_service
 
     executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._diet_photo_auto_save = not message  # Empty caption only in explicit meal-camera mode.
     recognized = {"success": True, "foods": [{
         "name": "鱼堡", "quantity": quantity, "confidence": 0.95,
         "source": "order_estimate", "nutrition_basis": "order_estimate",
@@ -582,7 +584,11 @@ async def test_order_vision_records_explicit_portions_but_confirms_unknown_intak
     records = db.query(DietRecord).filter(DietRecord.user_id == user.id).all()
     assert len(records) == expected_records
     assert db.query(DietPhotoDraft).filter(DietPhotoDraft.user_id == user.id).count() == expected_drafts
-    assert "还缺少实际食用重量" not in context
+    if message == '记录体重71kg':
+        assert context is None
+        food_recognition_service.recognize_food_from_base64.assert_not_awaited()
+    else:
+        assert "还缺少实际食用重量" not in context
     if records:
         assert "鱼堡 1个" in records[0].food_items
         assert records[0].meal_type == "dinner"
@@ -960,11 +966,11 @@ async def test_photo_saved_receipt_supports_exact_portion_followup(
         assert db.get(DietRecord, capture.record.id).calories == pytest.approx(66)
 
 
-def test_agent_auto_captures_empty_high_confidence_lunch_photo_with_receipt(
+def test_agent_meal_entry_captures_empty_high_confidence_lunch_photo_with_receipt(
     db, tmp_path, monkeypatch
 ):
     executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
-
+    executor._diet_photo_auto_save = True
     result = executor._capture_contextual_meal_photo("", _food_result(), image_index=0)
 
     assert result is not None
@@ -1023,6 +1029,7 @@ def test_agent_creates_owner_bound_confirmation_card_outside_meal_window(
     db, tmp_path, monkeypatch
 ):
     executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._diet_photo_auto_save = True
     executor._agent_kernel_reference_now = lambda: datetime(2026, 7, 20, 3, 30, tzinfo=timezone.utc)
 
     result = executor._capture_contextual_meal_photo("", _food_result(), image_index=0)
@@ -1161,6 +1168,7 @@ async def test_agent_pending_photo_draft_closes_model_diet_write_adapters(
     db, tmp_path, monkeypatch
 ):
     executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._diet_photo_auto_save = True
     executor._agent_kernel_reference_now = lambda: datetime(
         2026, 7, 20, 3, 30, tzinfo=timezone.utc,
     )
@@ -1677,6 +1685,7 @@ def test_agent_auto_capture_failure_surfaces_the_recoverable_confirmation_card(
     db, tmp_path, monkeypatch
 ):
     executor, _user = _food_photo_executor(db, tmp_path, monkeypatch)
+    executor._diet_photo_auto_save = True
     real_commit = db.commit
     commits = 0
 
@@ -1761,7 +1770,7 @@ async def test_structured_food_vision_calibrates_before_building_agent_context(
 
 
 @pytest.mark.asyncio
-async def test_generic_vision_fallback_does_not_repeat_structured_recognition(
+async def test_generic_vision_never_starts_structured_recognition(
     db, monkeypatch
 ):
     executor = AgentExecutor(db)
@@ -1791,7 +1800,7 @@ async def test_generic_vision_fallback_does_not_repeat_structured_recognition(
     )
 
     assert result is None
-    assert calls == 1
+    assert calls == 0
 
 
 def test_commercial_multimodal_food_photos_still_use_structured_preprocessing(
@@ -1801,10 +1810,12 @@ def test_commercial_multimodal_food_photos_still_use_structured_preprocessing(
     monkeypatch.setattr(executor, "_should_send_raw_images_to_primary_model", lambda _user_id: True)
 
     assert executor._should_preprocess_attached_images(1, "记录这张午餐照片") is True
-    assert executor._should_preprocess_attached_images(1, "请分析这些图片") is True
-    assert executor._should_preprocess_attached_images(1, "帮我记一下") is True
+    assert executor._should_preprocess_attached_images(1, "请分析这些图片") is False
+    assert executor._should_preprocess_attached_images(1, "帮我记一下") is False
     assert executor._should_preprocess_attached_images(1, "拍照记餐") is True
     assert executor._should_preprocess_attached_images(1, "看看这张风景照片") is False
+    executor._diet_photo_auto_save = True
+    assert executor._should_preprocess_attached_images(1, "请分析这些图片") is True
 
 
 def test_explicit_aigc_photo_request_never_enters_food_preprocessing(db, monkeypatch):
@@ -1838,8 +1849,9 @@ def test_meal_capture_skips_only_redundant_optional_route(message, auto_save, ha
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('stale_meal_context', [False, True])
+@pytest.mark.parametrize('message', ['记录青山湖骑行', '手腕因为佩戴Garmin手表磨破了皮肤怎么办？', '帮我看下这张皮疹照片'])
 async def test_riding_photo_stream_never_recognizes_or_records_a_meal(
-    db, tmp_path, monkeypatch, stale_meal_context,
+    db, tmp_path, monkeypatch, stale_meal_context, message,
 ):
     from app.services.ai.food_recognition import food_recognition_service
     executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
@@ -1853,7 +1865,7 @@ async def test_riding_photo_stream_never_recognizes_or_records_a_meal(
     monkeypatch.setattr(executor, '_call_llm_stream', _stream_from(llm))
     context = json.dumps({'source': 'mobile_chat_meal_photo', 'intent': 'diet_photo_record',
                           'instruction': 'STALE_MEAL_INSTRUCTION', 'capture_session_id': 'old-meal'}) if stale_meal_context else None
-    events = [e async for e in executor.run_stream(user_id=user.id, message='记录青山湖骑行',
+    events = [e async for e in executor.run_stream(user_id=user.id, message=message,
                user_auth_token='synthetic-token', images=[{'base64': VALID_PNG_BASE64, 'type': 'png'}],
                extra_context=context, client_turn_id='riding-photo-no-meal')]
     recognition.assert_not_awaited()
@@ -1871,10 +1883,11 @@ async def test_riding_photo_stream_never_recognizes_or_records_a_meal(
     send.assert_not_awaited()
 
 @pytest.mark.asyncio
-async def test_riding_photo_food_capture_defense_ignores_food_vision_false_positive(db, tmp_path, monkeypatch):
+@pytest.mark.parametrize('message', ['记录青山湖骑行', '手腕因为佩戴Garmin手表磨破了皮肤怎么办？', '看看皮疹，旁边有晚餐'])
+async def test_riding_photo_food_capture_defense_ignores_food_vision_false_positive(db, tmp_path, monkeypatch, message):
     executor, _ = _food_photo_executor(db, tmp_path, monkeypatch)
     result = _food_result()
-    assert executor._capture_contextual_meal_photos('记录青山湖骑行', result, image_indexes=[0]) is None
+    assert executor._capture_contextual_meal_photos(message, result, image_indexes=[0]) is None
     assert db.query(DietRecord).count() == db.query(DietPhotoDraft).count() == db.query(DietPhotoAsset).count() == 0
 
 @pytest.mark.asyncio
@@ -1963,3 +1976,25 @@ async def test_food_stream_guards_block_actual_record_and_draft(db,tmp_path,monk
     sources=(db.query(AgentMessage).join(AgentConversation)
         .filter(AgentConversation.user_id==user.id,AgentMessage.role=='user').all())
     assert all('diet_photo_recognition' not in (source.meta or {}) for source in sources)
+
+
+@pytest.mark.parametrize('message', ['记录这餐', '鸡皮和鱼皮各吃了一点', '记录早餐：开水泡燕麦', '记录这餐，米饭用水泡软了', '记录这餐：鸡腿用水泡软了', '猪脚用水泡了一晚', '骑行后记录午餐', '分析早餐营养'])
+def test_food_subjects_do_not_match_skin_photo_exclusion(message):
+    assert not AgentExecutor._is_non_diet_photo_context(message)
+
+@pytest.mark.parametrize('message', ['手腕因为佩戴Garmin手表磨破了皮肤怎么办？', '看看伤口', '脚上起了水泡', '照片中皮疹如何处理', 'watch strap skin irritation', 'a blister on my wrist'])
+@pytest.mark.asyncio
+async def test_skin_photo_general_vision_skips_structured_food(db, monkeypatch, message):
+    executor = AgentExecutor(db)
+    food = AsyncMock(return_value='hallucinated food')
+    monkeypatch.setattr(executor, '_analyze_food_images_with_structured_vision', food)
+    monkeypatch.setattr(settings, 'llm_vision_base_url', '')
+    assert await executor._analyze_image_with_vision(message, [{'base64': 'synthetic', 'type': 'jpeg'}]) is None
+    food.assert_not_awaited()
+
+
+def test_non_diet_photo_rejection_does_not_invent_exercise_purpose():
+    from app.services.agent_executor import _contextual_diet_write_rejection
+    result = _contextual_diet_write_rejection('non_diet_photo_intent', action='写入')
+    assert '运动' not in str(result)
+    assert '饮食' in str(result)

@@ -63,3 +63,18 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 前置 GPS 原生包为 1.3.6 (289)，仅在旧本地候选构建未上传；本次详情代码不在该旧包中。不能把该 IPA 或旧运行时 OTA 当成本次功能交付。
 - 模拟器仍未获得解锁回复；没有 UI 点击/视觉验收结论。外部条件未解除前保留本地可审查候选，不声称已上线。
 - 独立 G4 复审对 `36cb449772811ade3e764982bf3fc4d6f0aa8363` 裁决代码 GO：旧客户端 P2 已关闭，未发现新增阻断；检查增量源码、测试及真实 Agent 探针，没有宣称自行重跑整套测试。发布仍未获 GO，必须继续完成模拟器、精确远端 CI、原生运行时与实际分发证据。后续仅 Dossier 记录提交，不改变该受审功能字节。
+
+## 2026-10-20 历史解读被整体拦截的回归修正
+
+- 用户截图：标准历史推送解读问题只收到医疗建议 hold。合成 `run_stream` RED 复现 2 项失败：最终医疗边界移除整篇含无依据建议的模型回答后，该只读路径没有独立可展示的安全解释。截图未包含原始模型回答，不能据此断言某条具体规则误判。
+- 修正：只对已通过本人 ID 查询并绑定标准解读问题的通知，在最终医疗拦截或模型未正常结束时，生成固定指标术语、历史局限和核实问题；不拼接通知原文、数值或建议。正常安全回答不变，全局医疗边界不放宽。保留原 provider finish_reason、边界标记和未完成状态，不冒充完整结论解读。
+- 异常路径不再额外请求模型修复；这减少一次潜在模型调用，不等同真实请求性能基线或线上延迟验收。
+- 新鲜证据：RED `/tmp/notification-detail-red.log`；隔离 PostgreSQL 29 passed，结果 `/tmp/reva-notification-review-pg-result.json` 的 test_exit/stop_exit 均 0；邻近边界/状态测试 45 passed；父流程 CI=true 合成集成 101 passed（`/tmp/reva-notification-review-integrated.log`）。包括危险 stop/length、纯截断、流输出与持久化一致、注入不回显、正常安全回答、本人隔离及无通知写回。
+- System Map check 与 git diff --check 通过。未调用真实模型、未读取真实健康记录、未修改 Mobile；本次不产生 OTA 内容。
+- 独立 G4 窄范围安全审查 GO，另行合成 29 项通过；仅覆盖本地候选。发布仍待最终候选完整 CI 与既有生产维护收尾；旧候选 CI/真实模型豁免不能替代新候选证据。App Store 279 未提交，专用演示验收失败项未解除。交付断点另见 unified-release Dossier。
+
+- 2026-10-20 交付续行：新鲜只读证据确认正常 chatlog 已再次重连，专用收尾仍硬编码旧 PID，造成重复阻断。仅 acknowledgement 路径增加固定公钥、boot/PID/start 与唯一认证事件绑定、无 TTY/子进程、唯一 loopback 5030 监听及前后完整快照证明；通用部署 SSH 检查不变。先 RED 新 PID，后相关 177 passed / 22 PostgreSQL cases skipped（未改 DB）；独立审查 GO、ack 模块独立 107 passed。该改动不授予已有 repair intent 重放权限，原操作仍待单独安全收尾。
+
+- 2026-10-20 收尾协议修复：新增固定 1e67 intent-only 的独立审计入口与固定 successor attempt；旧 intent/UNKNOWN 不变，审计不授予任何写入/发布权限。新 attempt 仍须显式授权与新鲜证据，父子证明及 advance 绑定完整链。六文件独立 G4 GO；合成 scope 224 passed /22 skipped，隔离 PostgreSQL 最终 246 passed /0 skipped，test_exit=0、stop_exit=0（`/tmp/reva-unstarted-successor-pg-result.json`）；独立 reviewer 217 passed /3 skipped。新测试已注册完整 CI，部署规范同步。现有演示账号窄化修复授权继续适用，但不能从审计回执自动推导授权。87fd 单独完整本地 CI 已通过 4411 项、0失败、49跳过；最终组合 SHA 仍须重新取得精确完整 CI。尚未执行新生产收尾/修复或发布。
+- 2026-10-20 Linux CI 差异修复：ae4a 的 GitHub 39431517707 在 SSH 合成进程测试失败；原因是 proc 枚举顺序不确定，无关用户 SSH 可能先于已知 chatlog 被送入动态身份认证。新增精确 root@notty 形状前置拒绝，密钥/journal/UID/监听验证仍全部保留。双序 RED 1失败1通过，ack+advance GREEN 151通过；合法形状缺失身份材料仍拒绝。本机复现不代替 Linux 精确候选 CI，生产未变。
+- 2026-10-20 生产只读检查进一步定位：e451 精确 GitHub CI 39433678616 全绿、本地4493项0失败49跳过，已暂存，未部署。closure-inspect 在 SSH 标题前置拒绝；独立只读诊断确认原证据未变，唯一 known-key/root/no-TTY/childless/loopback5030 chatlog 是精确 root-only 标题（10字节、无内部NUL、仅尾NUL填充），不是 @notty。原操作不重放；按真实转发连接形式补最小兼容，固定密钥/boot/PID/start/journal/socket/双观察证明全部保留。

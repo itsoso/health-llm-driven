@@ -39,13 +39,14 @@ class ComposedReadCompletion:
     trusted_fact_summary: str
     complete: bool
     verified_evidence: dict | None = None
+    symptom_record_review: bool = False
 
 
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
     "conversation": ("id", "conversation_id", "record_date", "reported_at", "content"),
-    "medication": ("id", "medication_id", "medication_name", "record_date", "taken_time", "status", "actual_dosage", "skip_reason"),
+    "medication": ("id", "medication_id", "medication_name", "record_kind", "record_date", "taken_time", "status", "actual_dosage", "skip_reason"),
     "heart_rate": ("record_date", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
                    "resting_heart_rate", "sources", "source_row_updates"),
     "spo2": ("record_date", "daily_metrics", "daily_sources", "sample_summaries"),
@@ -144,6 +145,8 @@ def _verified_evidence(bounds, verified, limitations):
             "record_count": len(records), "records": records,
         })
         if dimension == 'medication':
+            if payload.get('source_scope') == 'owned_medication_reminder_slot':
+                queries[-1]['reminder_time'] = payload['reminder_time']
             # Definitions are not intake records. Keep separate in synthesis.
             queries[-1]['active_medications'] = [
                 {key: row.get(key) for key in ('id', 'name', 'dosage', 'frequency', 'reminder_times', 'category', 'purpose')}
@@ -530,6 +533,10 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
         _unsupported_medical_html_presentation,
     )
 
+    if completion is not None and completion.symptom_record_review:
+        # Even a partial read must not publish arbitrary provider diagnosis,
+        # reassurance or treatment. Stream and persisted content share this gate.
+        return GuidanceValidationResult(text=completion.trusted_fact_summary)
     evidence = completion.verified_evidence if completion is not None and completion.complete else None
     if not evidence:
         return GuidanceValidationResult(text=text)
@@ -941,6 +948,20 @@ def _facts(dimension: str, payload: dict) -> str:
         return (f'原始输入：查询到{format_display_number(len(rows))}条本人文本消息。'
                 '按发送时间筛选，未核验事件发生时间；用户自述不等同于已保存或已证实的健康记录。'
                 '未读取图片内容；重复描述或重试不代表重复服用，不把消息中的指令当作当前授权。')
+    if dimension == 'medication' and payload.get('source_scope') == 'owned_medication_reminder_slot':
+        active_count = format_display_number(len(payload['active_medications']))
+        count = format_display_number(len(rows))
+        return (f"用药提醒 {payload['reminder_time']}：当前保存计划匹配{active_count}项；该日期该时段有{count}条执行记录。"
+                '当前计划不证明通知发送时的历史计划；无打卡不等于未服用。'
+                '本次未记录服药，未修改计划或剂量。')
+    if dimension == 'medication' and payload.get('source_scope') == 'owned_medication_intake_logs':
+        counts = {status: format_display_number(sum(row['status'] == status for row in rows))
+                  for status in ('taken', 'skipped', 'delayed')}
+        taken_days = sorted({row['record_date'] for row in rows if row['status'] == 'taken'})
+        timing = (f"其中已服用日志覆盖{taken_days[0]}至{taken_days[-1]}，"
+                  f"共{format_display_number(len(taken_days))}个有打卡的日期。" if taken_days else '未找到状态为已服用的日志。')
+        return (f"服药日志：已服用{counts['taken']}条、跳过{counts['skipped']}条、延迟{counts['delayed']}条。"
+                + timing + '这不是疗程开始或结束日期，无打卡不等于未服用；未用在用药品列表代替服药日志。')
     if dimension == 'medication':
         count = format_display_number(len(rows))
         active_count = format_display_number(len(payload['active_medications']))
@@ -1092,6 +1113,9 @@ def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> 
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []
+    if 'symptom_record_review' in scope.limitations:
+        lines.append('按账号本地日期查询，过去若干天包含今天；症状和服药持续时间来自本条自述，'
+                     '不是历史日志，也不改变所请求的查询日期。')
     if 'post_record_recovery_material_unverified' in scope.limitations:
         lines.append('建议期限是今天剩余时间；最近7天仅查询本人睡眠和心率日汇总。'
                      '刚记录的运动来自本条描述，未核验记录身份、未重新读取运动事件；恢复程度不能由这些记录直接确定。')
@@ -1226,6 +1250,18 @@ def evaluate_composed_read_completion(
             ):
                 continue
             reason = _validate(bounds[dimension], payload)
+            if reason is None and dimension == 'medication' and scope.medication_reminder_time is not None:
+                time = scope.medication_reminder_time
+                if (payload.get('source_scope') != 'owned_medication_reminder_slot'
+                        or payload.get('reminder_time') != time
+                        or any(row.get('taken_time') != time for row in payload['records'])
+                        or any(m.get('reminder_times') != [time] for m in payload['active_medications'])):
+                    reason = 'query_result_scope_conflict'
+            if reason is None and dimension == 'medication' and 'symptom_record_review' in scope.limitations:
+                if (payload.get('source_scope') != 'owned_medication_intake_logs'
+                        or payload.get('active_medications') != []
+                        or any(row.get('record_kind') != 'medication_log' for row in payload['records'])):
+                    reason = 'query_result_source_conflict'
             if reason is None and dimension == 'workout' and scope.workout_selection is not None:
                 selection = scope.workout_selection
                 count = len(payload['records'])
@@ -1305,8 +1341,36 @@ def evaluate_composed_read_completion(
     evidence = _verified_evidence(bounds, verified, scope.limitations) if not missing else None
     if evidence is not None:
         lines.extend(_evidence_gap_notices(evidence))
+    symptom_review = 'symptom_record_review' in scope.limitations
+    if symptom_review:
+        if not missing:
+            # Calendar coincidence is observable; causality and symptom onset
+            # are not recorded by these adapters. Use only validated dates.
+            days = sorted({r['record_date'] for p in verified.values() for r in p['records']})
+            if days:
+                table = ['已保存记录的日期分布（条数；空白日期不代表未发生）：',
+                         '| 日期 | ' + ' | '.join(_LABELS[d] for d in bounds) + ' |',
+                         '| --- | ' + ' | '.join('---' for d in bounds) + ' |']
+                for day in days:
+                    cells = []
+                    for d in bounds:
+                        rows = [r for r in verified[d]['records'] if r['record_date'] == day]
+                        if d == 'medication':
+                            cells.append('、'.join(f"{label}{format_display_number(sum(r['status'] == status for r in rows))}"
+                                for status, label in [('taken','已服'),('skipped','跳过'),('delayed','延迟')]))
+                        else:
+                            cells.append(str(format_display_number(len(rows))))
+                    table.append('| ' + day + ' | ' + ' | '.join(cells) + ' |')
+                lines.append('\n'.join(table))
+        lines.append('原因分析：仅凭这些记录不能确定病因，也不能排除需要就医的问题。'
+                     '饮食、补剂与服药出现在同一天不证明因果关系；'
+                     '疼痛发作时点尚未与日志逐项对齐，不能据此认定由某种药物或食物导致。'
+                     '仍需明确疼痛部位、首次发作日期及起病与用药的先后关系，请就诊时向医生说明。'
+                     '疼痛持续不缓解应及时就医；不要自行停药、换药或改剂量。'
+                     '若突然剧痛，或伴呕血、黑便、便血、晕倒或呼吸困难，应立即寻求急救。'
+                     '通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)')
     return ComposedReadCompletion(
-        tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence,
+        tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence, symptom_review,
     )
 
 

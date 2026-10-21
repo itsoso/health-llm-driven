@@ -1,0 +1,34 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+  "builds": [
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70"
+    }
+  ],
+  "cohort_query": {
+    "platform": "ios",
+    "status": "finished",
+    "runtime": "1.3.6",
+    "channel": "production",
+    "limit": 50,
+    "offset": 0,
+    "returned": 1
+  },
+  "candidate_source_exceptions": {
+    "mobile/package-lock.json": "332dab4a865dc2ba3f549c8492bb495ae234362c34212ec9a964089f61bed44e"
+  },
+  "lock_delta": {
+    "follow-redirects": [
+      "1.16.0",
+      "1.16.1"
+    ],
+    "launch-editor": [
+      "2.14.1",
+      "2.14.2"
+    ]
+  },
+  "scope": "Baseline preparation only; current cohort is revalidated by publisher before claim. Review freeze retained. No OTA publication."
+}

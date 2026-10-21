@@ -31,7 +31,7 @@ from app.config import settings
 from app.services.agent_context_statement import ContextStatement
 from app.services.notification.detail import (
     NOTIFICATION_REVIEW_PROMPT, selected_notification_id,
-    read_notification_detail, notification_review_context,
+    read_notification_detail, notification_review_context, notification_review_safe_explanation,
 )
 from app.services.tool_schema_registry import (
     ANALYSIS_TURN_TOOL_NAMES,
@@ -7907,8 +7907,8 @@ def _contextual_diet_write_rejection(reason: str, *, action: str) -> str:
         message = f"已按你的取消要求处理，本轮没有{action}饮食记录。"
         recovery_guidance = None
     elif reason == "non_diet_photo_intent":
-        message = f"本轮图片用于运动记录，本轮没有{action}饮食记录。"
-        recovery_guidance = "请继续补充运动类型和时长，不要将运动照片作为餐食保存。"
+        message = f"本轮图片并非用于记录餐食，本轮没有{action}饮食记录。"
+        recovery_guidance = "请按本轮明确的图片用途继续处理，不要将非餐食照片作为饮食保存。"
     elif reason == "capture_failed":
         message = f"图片资产未能安全保存，本轮没有{action}饮食记录。"
         recovery_guidance = "请重新上传图片后再试。"
@@ -12316,6 +12316,7 @@ class AgentExecutor:
         self._turn_composed_read_executions = []
         self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
+        self._turn_bmi_result = None
         self._turn_focused_read_result = None
         self._turn_sync_reply = None
         self._current_turn_recent_messages: list[dict] = []
@@ -12482,6 +12483,7 @@ class AgentExecutor:
         self._turn_composed_read_executions = []
         self._composed_synthesis_retry_eligible = False
         self._turn_sync_status_result = None
+        self._turn_bmi_result = None
         self._turn_focused_read_result = None
         self._turn_sync_reply = None
         self._agent_kernel_blocked_request_cache = {}
@@ -13056,8 +13058,11 @@ class AgentExecutor:
         from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
 
         snapshot = self._agent_kernel_snapshot
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
         return bool(snapshot is not None and not snapshot.intent.is_write
-                    and is_current_input_advice(snapshot.envelope.text))
+                    and is_current_input_advice(snapshot.envelope.text)
+                    and resolve_owned_read_scope(snapshot) is None)
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -14803,7 +14808,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
-        tools = scope_tools_for_current_input_advice(tools, message)
+        if self._has_current_input_recovery_advice_goal():
+            tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
         tools = scope_tools_for_goal(
             tools,
@@ -15827,11 +15833,12 @@ class AgentExecutor:
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
-        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
-        full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
-        if not advice_answer_supported:
-            completion_status = "error"
-            self._record_model_fallback_reason("unverified_current_input_answer")
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+            if not advice_answer_supported:
+                completion_status = "error"
+                self._record_model_fallback_reason("unverified_current_input_answer")
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
@@ -16168,7 +16175,7 @@ class AgentExecutor:
             reason_code = "health_fact_confirmation_required"
             route = "health_fact_draft"
         else:
-            text = clarification_reply()
+            text = clarification_reply(message)
             reason_code = "input_too_short"
             route = "clarification"
         outcome = {
@@ -16731,6 +16738,7 @@ class AgentExecutor:
             from app.services.agent_kernel.current_input_advice_scope import local_advice_response
             if (
                 retry_recovery is None and not effective_images and not file_base64
+                and not owned_read_followup
                 and local_advice_response(effective_message) is not None
                 and (recovered_user_message is None or (
                     recovered_user_message.content == effective_message
@@ -16829,9 +16837,11 @@ class AgentExecutor:
                     and "classifier:context_statement" in self._agent_kernel_snapshot.intent.evidence)
                 else None
             )
-            if context_statement is not None and context_statement.allows_local_reply and context_reply_is_standalone(
+            if context_statement is not None and context_statement.allows_local_reply and (
+                context_statement.kind in {"transit_timeline", "arrival_boarding"} or context_reply_is_standalone(
                 self.db, user_id=user_id,
                 conversation_id=conversation_id,
+                )
             ):
                 async for event in self._run_input_clarification_stream(
                     user_id=user_id, message=display_message,
@@ -16937,7 +16947,10 @@ class AgentExecutor:
         self._turn_contextual_diet_consumed_fraction = None
         self._turn_contextual_diet_write_blocked_reason = None
         self._turn_food_photo_recognition = None
-        if images and self._is_exercise_photo_context(message):
+        self._diet_photo_auto_save = _is_diet_photo_auto_save_turn(
+            extra_context, has_images=bool(images),
+        )
+        if images and not self._has_food_photo_purpose(message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             if _is_diet_photo_auto_save_turn(extra_context, has_images=True):
                 # Current typed purpose overrides stale camera/draft metadata.
@@ -17206,14 +17219,7 @@ class AgentExecutor:
             extra_context,
             has_images=bool(images),
         )
-        diet_photo_progress_turn = bool(
-            images
-            and not self._is_exercise_photo_context(message)
-            and (
-                self._diet_photo_auto_save
-                or self._looks_like_food_photo_context(message)
-            )
-        )
+        diet_photo_progress_turn = bool(images and self._has_food_photo_purpose(message))
         self._request_model_id = (
             str(getattr(settings, "health_evidence_model_id", "") or "").strip()
             if health_advice_buffered
@@ -18087,9 +18093,8 @@ class AgentExecutor:
         messages.insert(0, {"role": "system", "content": system_content})
         pre_stages["history_ms"] = _pre_stage(_t_stage)
 
-        # 如果有图片：明确的普通图片可直传商用多模态模型；食物语境和
-        # Mobile 的默认纯图片提示必须先走结构化识别，避免 provider 选择
-        # 绕过饮食清洗、校准与写入边界。
+        # 普通附件按通用图片处理；明确餐食用途才走结构化识别。
+        # 默认“分析图片”不证明食物类别，也不授予饮食写入权限。
         _t_stage = time.time()
         vision_description = None
         if images:
@@ -18246,7 +18251,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
-        tools = scope_tools_for_current_input_advice(tools, message)
+        if self._has_current_input_recovery_advice_goal():
+            tools = scope_tools_for_current_input_advice(tools, message)
         # Preserve only explicitly requested sync across the generic answer
         # filter, never restore capabilities removed by earlier boundaries.
         _, admitted_garmin_scope = self._focused_read_scopes()
@@ -19685,9 +19691,28 @@ class AgentExecutor:
                                     proposed_calls = [symptom_call]
                                     deterministic_symptom_fallback_attempted = True
                                     self._record_model_fallback_reason("symptom_status_observation_preplanned")
+                            from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request
+                            bmi_turn = is_bmi_read_request(message)
+                            if (bmi_turn and round_idx == 0 and not proposed_calls
+                                    and not self._read_only_turn and not health_advice_buffered
+                                    and not images and not file_base64 and not self._current_turn_has_attachment
+                                    and any((tool.get('function') or {}).get('name') == 'health_query' for tool in round_tools)):
+                                proposed_calls = [{'id': 'owned-bmi-read', 'type': 'function', 'function': {
+                                    'name': 'health_query', 'arguments': json.dumps({'dimension': 'bmi'})}}]
                             server_preplanned_round = bool(proposed_calls)
                             if server_preplanned_round:
                                 finish_reason = "tool_calls"
+                            elif bmi_turn and self._turn_bmi_result is not None:
+                                from app.services.bmi_read import bmi_reply
+                                candidate = bmi_reply(self._turn_bmi_result)
+                                finish_reason = 'stop'
+                                server_preplanned_round = True
+                            elif bmi_turn and round_idx > 0:
+                                # A failed closed read cannot be repaired by a
+                                # model guessing measurements or broader tools.
+                                candidate = '本次 BMI 数据查询未完成，暂时无法计算。请稍后重试。'
+                                finish_reason = 'stop'
+                                server_preplanned_round = True
                             elif (garmin_scope is not None and self._turn_sync_attempted
                                     and self._turn_focused_read_result is not None):
                                 # Thin records cannot support free-form personal
@@ -20599,6 +20624,7 @@ class AgentExecutor:
             medical_boundary.flagged
             and not composed_boundary.flagged
             and final_finish_reason == "stop"
+            and self._turn_notification_detail is None
         ):
             repaired_text, repair_elapsed_ms = (
                 await self._repair_incidental_medical_boundary(
@@ -20633,6 +20659,23 @@ class AgentExecutor:
             medical_boundary.violations = list(dict.fromkeys(
                 [*medical_boundary.violations, *composed_boundary.violations],
             ))
+        if self._turn_notification_detail is not None and (
+            medical_boundary.flagged or final_finish_reason != "stop"
+        ):
+            # The owned historical text selects a fixed glossary, never advice.
+            # Preserve provider completion and boundary flags: a useful partial
+            # explanation does not establish the original medical conclusion.
+            safe_review = enforce_medical_evidence_boundaries(
+                notification_review_safe_explanation(self._turn_notification_detail),
+                model_generated=False,
+            )
+            medical_boundary.text = safe_review.text
+            medical_boundary.flagged = True
+            medical_boundary.violations = list(dict.fromkeys([
+                *medical_boundary.violations, *safe_review.violations,
+                "notification_review_explanation_incomplete",
+            ]))
+            self._record_model_fallback_reason("notification_review_safe_explanation")
         if medical_boundary.flagged:
             logger.warning(
                 "[agent_executor] medical boundary sanitized response violations=%s",
@@ -20826,11 +20869,12 @@ class AgentExecutor:
         )
         full_reply = output_quality.text
         if response_output_buffered:
-            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
-            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
-            if not advice_answer_supported:
-                final_finish_reason = "error"
-                self._record_model_fallback_reason("unverified_current_input_answer")
+            if self._has_current_input_recovery_advice_goal():
+                from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+                full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+                if not advice_answer_supported:
+                    final_finish_reason = "error"
+                    self._record_model_fallback_reason("unverified_current_input_answer")
             # 所有改写之后、唯一发布点之前: 危机回合一定带经核对的急救电话与热线,
             # 不依赖模型是否遵守 TRIAGE 红线, 也不被记录兜底等改写抹掉。
             full_reply = with_crisis_support(
@@ -21031,7 +21075,11 @@ class AgentExecutor:
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
             + plan_goals
-            + self._sync_goal_outcomes(),
+            + self._sync_goal_outcomes()
+            + ([{'goal_id': 'bmi', 'kind': 'answer',
+                 'status': 'verified' if self._turn_bmi_result.get('status') == 'complete' else 'waiting_for_user',
+                 'reason_code': 'bmi_calculated' if self._turn_bmi_result.get('status') == 'complete' else 'bmi_measurements_required'}]
+               if self._turn_bmi_result is not None else []),
             capability_block_reasons=[
                 reason
                 for reason in self._agent_kernel_capability_block_reasons
@@ -22854,16 +22902,15 @@ class AgentExecutor:
             # force-tool grammar: complex creative prompts keep the general
             # toolset, but must still never become diet candidates first.
             return False
-        if (self._is_exercise_photo_context(message)
+        if (self._is_non_diet_photo_context(message)
                 and intent.domain not in {"supplement", "medication", "clinical_context"}
                 and not _looks_like_medical_report_image_context(message)):
             return not self._should_send_raw_images_to_primary_model(user_id)
         return (
             not self._should_send_raw_images_to_primary_model(user_id)
-            or not (message or "").strip()
-            or intent.domain == "diet"
-            or self._is_default_image_analysis_prompt(message)
-            or intent.is_write
+            or self._has_food_photo_purpose(message)
+            or intent.domain in {"supplement", "medication", "clinical_context"}
+            or _looks_like_medical_report_image_context(message)
         )
 
     def _build_tool_decision_system_prompt(self) -> str:
@@ -24741,7 +24788,7 @@ class AgentExecutor:
     async def _analyze_image_with_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """用 vision 模型预分析图片内容，返回文字描述"""
         structured_food = None
-        if not self._is_exercise_photo_context(user_message):
+        if self._has_food_photo_purpose(user_message):
             structured_food = await self._analyze_food_images_with_structured_vision(user_message, images)
         if structured_food:
             return structured_food
@@ -24757,7 +24804,7 @@ class AgentExecutor:
                 "餐食的结构化识别由独立且可校准的链路负责。用简洁中文回复。"
             )},
             {"role": "user", "content": [
-                {"type": "text", "text": user_message or "请识别这张图片中的食物"},
+                {"type": "text", "text": user_message or "请客观描述这张图片中的内容"},
             ]},
         ]
         for img in images:
@@ -24800,7 +24847,7 @@ class AgentExecutor:
     async def _analyze_food_images_with_structured_vision(self, user_message: str, images: List[dict]) -> Optional[str]:
         """Prefer strict food-recognition JSON over free-form vision prose for diet photos."""
         self._turn_food_photo_recognition = None
-        if self._is_exercise_photo_context(user_message):
+        if not self._has_food_photo_purpose(user_message):
             self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
             return None
         if not images:
@@ -25016,8 +25063,11 @@ class AgentExecutor:
             self._turn_contextual_diet_write_blocked_reason = reason
             vision_result['contextual_capture_write_blocked_reason'] = reason
             return None
-        if self._is_exercise_photo_context(user_message):
-            self._turn_contextual_diet_write_blocked_reason = "non_diet_photo_intent"
+        if not self._has_food_photo_purpose(user_message):
+            reason = ('cancelled' if _diet_write_is_explicitly_cancelled(user_message)
+                      else 'non_diet_photo_intent')
+            self._turn_contextual_diet_write_blocked_reason = reason
+            vision_result['contextual_capture_write_blocked_reason'] = reason
             return None
         user_id = self._current_user_id
         source_message_id = (
@@ -25597,6 +25647,43 @@ class AgentExecutor:
         if 17 <= hour < 22:
             return "dinner"
         return "snack"
+
+    def _has_food_photo_purpose(self, user_message: str) -> bool:
+        """Require positive meal purpose before recognition or capture.
+
+        Ordinary uploads are general images. A meal-camera hint may supply
+        purpose only for an empty/default caption; typed non-meal text wins.
+        This routes recognition, never grants a write by itself.
+        """
+        if (self._is_non_diet_photo_context(user_message)
+                or _looks_like_medical_report_image_context(user_message)):
+            return False
+        text = user_message or ''
+        if not text.strip() or self._is_default_image_analysis_prompt(text):
+            return bool(self._diet_photo_auto_save)
+        intent = classify_agent_utterance(text, reference_now=self._agent_kernel_reference_now())
+        if intent.domain in {'supplement', 'medication', 'clinical_context'}:
+            return False
+        return intent.domain == 'diet' or self._looks_like_food_photo_context(text)
+
+    @classmethod
+    def _is_non_diet_photo_context(cls, user_message: str) -> bool:
+        """Explicit attachment purpose revokes diet authority, never grants a write.
+
+        A camera meal hint must not turn a skin/wound question into food
+        recognition, even when a vision provider hallucinates edible objects.
+        Mixed skin/food requests remain outside automatic meal capture.
+        """
+        if cls._is_exercise_photo_context(user_message):
+            return True
+        return bool(re.search(
+            r"皮肤|皮疹|伤口|磨破|擦伤|破皮|红疹|湿疹|荨麻疹|水疱|"
+            r"(?:手腕|手掌|手指|脚趾|脚后跟|脚|手|胳膊|腿)(?:上|处)?"
+            r"(?:起了?|长了?|有|出现了?)(?:一个|几个|一些)?水泡|"
+            r"烫伤|晒伤|蚊虫叮咬|表带.*(?:过敏|红肿|痒)|"
+            r"\b(?:rash|wound|blister|abrasion|eczema)\b|skin\s+irritation",
+            user_message or "", re.I,
+        ))
 
     @staticmethod
     def _is_exercise_photo_context(user_message: str) -> bool:
@@ -27336,12 +27423,47 @@ class AgentExecutor:
         supplied_args = dict(args)
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == 'bmi':
+            from app.services.agent_kernel.bmi_read_scope import bmi_query_authorized
+            from app.services.bmi_read import read_bmi
+            snapshot = self._ensure_agent_kernel_turn()
+            if (not bmi_query_authorized(snapshot, supplied_args)
+                    or type(self._current_user_id) is not int
+                    or self._current_user_id != snapshot.context.user_id
+                    or self._current_turn_user_message != snapshot.envelope.text):
+                return 'Error: BMI 查询范围与当前请求不一致。'
+            result = read_bmi(self.db, self._current_user_id, snapshot.context.current_time.date())
+            self._turn_bmi_result = result
+            return json.dumps(result, ensure_ascii=False)
         if dim == "medical_exam" and self._turn_selected_exam_id is not None:
             from app.services.health_read import read_selected_medical_exam
             return read_selected_medical_exam(
                 self.db, self._current_user_id, self._turn_selected_exam_id,
                 reference_date=self._agent_kernel_reference_now().date(),
             )
+        if dim == 'medication':
+            from app.services.agent_kernel.medication_review_scope import has_medication_reminder_read_reference
+            snapshot = self._agent_kernel_snapshot
+            if (has_medication_reminder_read_reference(self._current_turn_user_message)
+                    or (snapshot is not None and has_medication_reminder_read_reference(snapshot.envelope.text))):
+                if (snapshot is None or type(self._current_user_id) is not int
+                        or snapshot.context.user_id != self._current_user_id
+                        or snapshot.envelope.user_id != self._current_user_id
+                        or snapshot.envelope.text != self._current_turn_user_message):
+                    return 'Error: 用药提醒查询范围与当前请求不一致。'
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                from app.services.agent_query_window import parse_query_window
+                from app.services.medication_review_read import read_medication_reminder_slot
+                scope = resolve_owned_read_scope(snapshot)
+                expected = scope.query('medication') if scope is not None else None
+                if (expected is None or supplied_args != expected
+                        or self._current_user_id != snapshot.context.user_id
+                        or type(self._current_user_id) is not int
+                        or scope.medication_reminder_time is None):
+                    return 'Error: 用药提醒查询范围与当前请求不一致。'
+                return json.dumps(read_medication_reminder_slot(
+                    self.db, self._current_user_id, parse_query_window(expected),
+                    scope.medication_reminder_time), ensure_ascii=False, default=str)
         medical_scope, garmin_scope = self._focused_read_scopes()
         if dim == 'medical_exam' and medical_scope is not None:
             from app.services.health_read import read_owned_imaging_reports
@@ -27388,6 +27510,21 @@ class AgentExecutor:
                         and status_scope.query('sleep') is not None))
                 self._turn_sync_status_result = status
                 return json.dumps(status, ensure_ascii=False, default=str)
+        if dim == 'medication':
+            from app.services.agent_kernel.medication_review_scope import symptom_record_review_request
+            snapshot = self._ensure_agent_kernel_turn()
+            if symptom_record_review_request(snapshot.envelope.text) is not None:
+                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+                from app.services.agent_query_window import parse_query_window
+                from app.services.medication_review_read import read_medication_history
+                scope = resolve_owned_read_scope(snapshot)
+                expected = scope.query('medication') if scope is not None else None
+                if (expected is None or supplied_args != expected
+                        or self._current_user_id != snapshot.context.user_id):
+                    return 'Error: 用药查询范围与当前请求不一致。'
+                return json.dumps(read_medication_history(
+                    self.db, self._current_user_id, parse_query_window(expected)),
+                    ensure_ascii=False, default=str)
         if dim == 'medication':
             from app.services.agent_kernel.medication_review_scope import is_medication_review_request
             snapshot = self._ensure_agent_kernel_turn()

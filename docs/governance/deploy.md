@@ -487,6 +487,16 @@ iPad/其他原生开关及非 production 环境。证据见
 [`固定原生等价证据`](../reviews/2026-10-14-ota-native-equivalence.json)。此为源码/配置等价审定，
 不宣称 IPA 二进制逐字一致；候选仍须独立安全审查、完整 CI、实时 cohort 和远端环境复验。
 
+2026-10-21 新基线迁移：当前发布契约绑定 runtime 1.3.6、已完成的 production iOS STORE
+279（`399eb452-402e-47cd-a0e3-18dff2d1ca51`），原生源码
+`1ba724dcb62ac389a72e41eecf40fea7aaca27e3`。旧 276/277 等价例外仅作历史证据，
+不迁移到新契约；新 runtime 下任何额外构建、来源或指纹变化继续阻断。
+唯一源码例外为已审计的 package-lock 精确摘要，差异仅为 follow-redirects 与
+launch-editor 的 Node/开发工具更新；不允许任意 lockfile 或原生依赖变化。
+证据见 [`1.3.6 基线`](../reviews/2026-10-21-ota-runtime136-baseline.json)。
+此次迁移不解除 279 的送审 OTA 冻结，不代表已发布。正式操作仍须实时核对完整 cohort、
+同 SHA 完整 CI、后端部署与 trusted validate/publish；旧 runtime1.3.5 不接收1.3.6更新。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
@@ -866,6 +876,21 @@ build 锁（后端-only 已证明不存在时继续复证缺失）。第一阶�
 
 #### 审核账号维护入口
 
+原子发布成功但没有 legacy `deployment.env` 时，旧 reset 不可重试或手工补文件。
+专用 `scripts/trusted_review_maintenance.py --operator-sha <current-main> --target-sha <deployed-sha> --operation-id <32hex>`
+区分当前维护工具与固定生产版本。仅用户明确批准审核演示重置后可用，须独立安全审查和完整 CI。
+两者从 canonical staging 加载；当前工具要求精确 main 全绿，目标要求历史完整 CI 稳定成功、
+生产 SUCCEEDED/runtime COMMITTED、原 installed policy 和执行器匹配。全 scripts/ 与 deploy.sh
+执行闭包字节和权限相同，仅新维护入口及其测试例外；不执行 operator 的业务代码。
+在原 launcher 锁内先完成目标证明，再以独占 0600 创建派生环境，前后核对生产配置身份及摘要。
+独立 `/var/lib/reva-release/review-maintenance/<target-sha>` 意图绑定两个 SHA、原配置身份、CI 及 operation ID；
+已存在配置或准备意图均拒绝重试，不覆盖、不备份、不轮换。准备后再次通过原 workspace 校验，
+由固定 target 的 `deploy.sh -R` 和原 lease 内 seeder 执行；原 reset 回执格式保持不变。
+先写原 reset 意图，再准备环境；专用审计成功后才写原 reset 成功。部分失败保留 NEEDS_OPERATOR 或不完整意图，由既有历史消费者阻断，需独立调查，不以新 ID 重发。
+此入口不授予 backend/OTA 发布权限，不放宽普通 reset、release gate 或轮换规则。
+可选 `--token-stdin` 仅消费既有只读 GitHub App 的短期令牌；复用有界解析，所有 CI 请求显式绑定同一内存令牌，错误不回退，不写服务器凭据或传给 deploy.sh。未指定则使用原凭据读取边界。
+
+
 只有用户明确授权的审核 fixture 恢复，才可由管理员从同样的受审 canonical staging
 以系统 Python `-I -S -B` 执行 `scripts/trusted_review_reset.py --sha <sha> --operation-id <32hex>`。
 它不是 cloud SSH RPC，不接受账号、密码、命令或路径参数，不用于业务部署。
@@ -933,7 +958,96 @@ Python `-I -S -B` 执行，显式传入旧发布 SHA、操作 ID、`--accept-unk
 历史证明不依赖未来服务 PID、当前生产版本或易失 `/run` 归档。只有已完成退休证明中明确
 绑定的那个 UNKNOWN 操作可视为行政已处置。新部署、发包及最终审核仍分别通过全部既有闸。
 
+#### 无原 lease 的审核维护：仅登记已接受 UNKNOWN
+
+针对已明确授权的失败审核维护，可通过独立 `review_maintenance_acknowledgement.py`
+登记 `UNKNOWN_ACCEPTED_AUDIT_ONLY`。此入口不沿用上节需要原 lease 的退休流程。
+执行仍要求受审固定代码、精确主干 CI、canonical staging、原 launcher/build 锁、
+实际生产与源码证明、持续无 lease、执行进程静止、两组原始失败回执稳定。
+只对服务端配置唯一绑定的非管理员审核演示账号进行 PostgreSQL 只读计数和随机密钥
+HMAC 核对；相同快照不证明历史未写入，也不证明演示样例正确。
+
+默认仅检视；执行绑定检视摘要、明确风险接受与具体原操作。新增独立一次性审计意图和
+结果，原件原地保留，不复制配置或数据作备份，不改原 NEEDS_OPERATOR，不创建替代
+lease，不撤权、不轮换、不重新执行 reset。失败保留证据，禁止重放。
+结果必须包含 `reset_authorized=false` 与 `release_unblocked=false`；现有 reset、
+rotation 与发布历史消费者不得将它当作退休或成功凭据。该记录仅完成用户授权的
+行政确认，演示数据修复、发布和送审仍由各自 Gate 裁定。
+
+#### 279 审核简报的独立窄化修复
+
+用户已确认既有 loopback 5030 隧道用于 chatlog 并要求保留。仅专用审核
+acknowledgement 保留历史固定会话证明，并允许验证正常重连：仍绑定同一固定公钥，
+当前 boot、PID、启动时刻与该进程生命周期内唯一的 root 认证事件；要求无 TTY、
+无子进程且唯一的 5030 监听归属该进程并仅绑定 loopback。一次完整观察前后必须
+保持进程库存、身份、socket 和认证事件一致；观察期间重连、额外 SSH 或未知身份
+仍阻断。此证明仅适用于专用 acknowledgement，不授权重试失败操作。通用发布检查
+不变，不终止连接、不修改密钥或网络配置。
+
+`review_demo_briefing_repair.py` 与 `trusted_review_briefing_repair.py` 仅服务固定
+279 审核演示简报。要求同一受审 operator 的 UNKNOWN 审计确认先完成，再使用独立
+明确授权、新鲜 inspect 摘要和独立一次性 intent。仅向固定生产审核账号新增一条
+`app-store-review-demo-279` 会话及两条已固定字节摘要的演示消息；旧会话、消息和
+健康记录保持不变。目标 session key 已存在即拒绝，不重用、不删除、不复制旧数据。
+PostgreSQL SERIALIZABLE 事务、账号及既有行锁、快照比对、提交后只读核验必须通过。
+任何提交结果或回执不确定均保留 intent，禁止重试；不得把原维护标为成功或解除
+普通 reset、轮换及部署阻断。最终送审继续使用原始 live-demo 和实际 IPA 检查。
+
+#### 279 简报 intent-only 的专用审计收尾
+
+`review_briefing_unstarted_closure.py` 仅处理受审 `1e676eaa` 操作者留下的固定
+简报 intent。默认只读，执行需要明确的本次收尾授权和新鲜摘要。必须验证固定原件、
+完整目录仅含 intent、原 canonical 源码中数据库连接前持久化 marker 的顺序、
+原失败维护及 reconciliation 证据、无执行进程、原双锁及当前生产条件。
+任何 marker、完成回执、身份变化或无法证明的条件均拒绝。
+
+成功仅在独立 sibling 目录记录 `CANONICAL_WRITE_NOT_ENTERED`；它依赖 root 管理的
+审计证据未被外部删除或回退的信任边界，仅说明这一次 canonical 写路径未进入，
+不证明所有数据库内容没有变化。原 repair 目录与原 UNKNOWN 状态保持不变，
+reset、retry、release、rotation 和 new_attempt 权限全部为 false。
+
+如需继续修复，必须另行明确授权固定的新 attempt，使用当前受审精确 CI 候选、
+新鲜 inspect 摘要、独立目录及绑定该 attempt 的父子证明。不得重跑旧 apply、
+复制旧 parent proof、覆盖旧记录或仅凭审计收尾放行 advance。advance 必须验证
+旧 intent、专用审计收尾和新 attempt 的真实成功回执完整链。失败均保留证据，
+没有自动重试或自动解除发布阻断。
+
 #### 行政收尾期间临时暂停一个已授权管理密钥
+
+固定 `49a742fa` 的 `after-1e676eaa-intent-only-v1` 后继尝试可使用
+`review_briefing_unstarted_closure.py --successor-audit` 作独立审计收尾。
+它只接受固定 intent 摘要、原 canonical 源码字节及已完成的前序闭合链，
+要求目录仅含 intent、双锁、无执行进程和生产条件保持稳定。结果另存
+`review-demo-briefing-successor-closures`，原件不改。该结果仍是
+`CANONICAL_WRITE_NOT_ENTERED`，不证明所有历史数据未写，所有操作权限均为 false；
+不被现有部署、轮换或简报修复消费者视为成功。用户的“审计收尾”授权仅覆盖
+此审计写入，不重试失败 apply、不调用数据库、不调查或修改 chatlog。
+可经 `--token-stdin` 使用现有仓库只读凭据核验精确 CI，凭据不写入配置或回执。
+
+#### 固定审核维护与后端发布解耦
+
+`bootstrap_trusted_release.py close-review-maintenance-for-release` 通过独立
+`review_maintenance_release_closure.py` 处理固定 `1ba724dc` 的已接受 UNKNOWN
+维护，不要求为了部署再次写入审核演示数据。必须显式传入
+`--accept-unknown-review-writes` 与 `--accept-fixed-maintenance-advance-without-demo`，
+绑定当前受审精确绿色主干、canonical 源、原双锁、新鲜检视摘要、健康生产条件与
+完整固定历史链。历史各自使用原 operator 验证，不能改称当前候选的回执。
+
+该链仅证明两次固定简报 canonical 路径未进入数据库，不能证明原 reset 未写入，
+也不声称数据库无活动事务。原 UNKNOWN、intent 和所有失败记录原地保留。
+新协议不调用数据库、不重试 reset、不修复演示数据、不触碰 chatlog。
+普通 reset、普通 advance 与 App Store 演示账号验收要求保持不变。
+
+新 intent 必须先于精确撤销旧 managed 授权行及旧 loopback 私钥；成功后独立记录
+`FIXED_MAINTENANCE_RETIRED_WITH_ACCEPTED_UNKNOWN`，其中 `demo_verified=false`、
+`reset_authorized=false`、`retry_authorized=false`。失败保留现场且禁止重放。
+仅 `rotate --review-maintenance-release-closure-receipt-stdin` 可消费与同一候选绑定的
+受保护一次性回执。此入口 stdin 为有界、严格字段的 JSON（`receipt`、`github_token`），
+令牌限本仓库只读 App 短期凭据，仅在内存中用于现有精确 CI 校验，不写配置、argv 或回执。
+禁止与其他收尾或宽化 CI 权限混用；退休记录使用独立字段
+`review_maintenance_release_closure`，历史消费者复核静态原件链，不将旧服务 PID
+与未来生产 PID 比较。执行前后仍必须核对实际生产状态。新终态不等于部署成功，
+后续部署、OTA 及提审各自完成验证与回执。
 
 `scripts/admin_key_pause.py` 仅用于用户明确授权的单个管理密钥临时暂停与恢复；不是
 部署入口，也不能解除原 closure 的 SSH/proc 闸。只从新受审、精确 CI 绿色的 canonical

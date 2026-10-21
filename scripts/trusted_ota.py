@@ -13,10 +13,10 @@ import sys
 from pathlib import Path
 
 PROJECT = '911ea84f-bc7e-4a12-90cf-33966b6f7398'
-RUNTIME = '1.3.5'
+RUNTIME = '1.3.6'
 CHANNEL = 'production'
-NATIVE_SHA = '7fe06d8b34750b6bd56db8d5ec45d1aee705b02e'
-NATIVE_BUILD = '09719eb6-2887-4100-9ccb-6533fd9d71ed'
+NATIVE_SHA = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
+NATIVE_BUILD = '399eb452-402e-47cd-a0e3-18dff2d1ca51'
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
 
@@ -41,15 +41,11 @@ def read_json(stream, bound=2000000):
     return json.loads(raw, object_pairs_hook=unique)
 
 
-# Fixed production-only native equivalence, evidenced by the actual EAS
-# 276/277 fingerprint sources and both canonical plugin execution paths.
-# This is not permission to change a native file: each exception is byte-bound.
+# Build279 is the native baseline. Only this exact reviewed lockfile delta
+# (Node HTTP redirect helper and development editor) is admitted; no native
+# configuration/plugin exceptions from runtime1.3.5 carry forward.
 REVIEWED_NATIVE_SOURCE = {
-    "mobile/app.config.ts": "e376406f4098135db5e3b42c878ddb5d811401d6cb89e35a00ea9cf595d1abe9",
-    "mobile/eas.json": "ec4f30cb042955ce954c8b1c6bebbcf21b91af8dba0bf3f8a03119412489bb07",
-    "mobile/plugins/withIosSupportedOrientations.js": "8bcd2bc518af7495f532614c706368f1f563abeabf35ec5f5c41ba076937e9f8",
-    "mobile/plugins/__tests__/withIosSupportedOrientations.test.js": "a06a176647eb365e660c7d1dfdf6bace8c55271c82ab596130a5d1df24681e52",
-    "mobile/jest.config.js": "79e24af57d97f428692fbaae79fb267147c5235fdb2f2cede9fdf9d67573c354"
+    "mobile/package-lock.json": "332dab4a865dc2ba3f549c8492bb495ae234362c34212ec9a964089f61bed44e"
 }
 
 

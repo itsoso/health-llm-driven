@@ -230,8 +230,10 @@ function ChatBubbleInner({
     || thinkingSteps.length > 0
     || !!processingStatusLabel
   );
+  const recoveryNoticeOnly = !!item.recoveryPending
+    && visibleMarkdown.trim() === '小巴还在处理，正在同步完整回答。';
   const rawVisibleAssistantMarkdown = (
-    showProcessingPanel && placeholderOnly
+    showProcessingPanel && (placeholderOnly || recoveryNoticeOnly)
       ? ''
       : visibleMarkdown
   );
@@ -2774,8 +2776,15 @@ function ThinkingStepsPanel({
   if (recoveryPending) {
     return (
       <View testID="assistant-recovery-panel" style={styles.thinkingAnalysisCard}>
-        <Text style={txt.thinkingAnalysisEyebrow}>正在同步回答</Text>
-        <Text style={txt.thinkingAnalysisTitle}>正在检查完整回答，请稍候。</Text>
+        <View style={styles.thinkingAnalysisHeader}>
+          <View style={styles.thinkingIndicatorWrap}>
+            <Ionicons name="sync-outline" size={16} color={C.green600} />
+          </View>
+          <View style={styles.thinkingAnalysisCopy}>
+            <Text style={txt.thinkingAnalysisTitle}>正在同步回答</Text>
+            <Text style={txt.thinkingSubtitle}>正在检查完整回答，请稍候。</Text>
+          </View>
+        </View>
       </View>
     );
   }

@@ -248,7 +248,7 @@ def valid_records():
         "ota-claim.json": {
             "sha": sha,
             "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
-            "runtime": "1.3.5",
+            "runtime": "1.3.6",
             "platform": "ios",
             "channel": "production",
             "branch_id": branch,
@@ -268,7 +268,7 @@ def valid_records():
         "ota-receipt.json": {
             **ids,
             "state": "SUCCEEDED",
-            "runtime": "1.3.5",
+            "runtime": "1.3.6",
             "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
             "channel": "production",
             "platform": "ios",
