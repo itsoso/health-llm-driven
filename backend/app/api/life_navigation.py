@@ -1,6 +1,11 @@
 """本人私人规划：读取无写入，显式保存、恢复和备份。"""
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
+from uuid import UUID
+from fastapi import Query
+from app.api.deps import get_authenticated_relay_token
+from app.schemas.life_morning_readings import MorningReadingList, MorningReadingDetail
+from app.services import life_morning_readings
 from app.api.integration_lifenav import PrivateIntegrationRoute, _private, self_only
 from app.database import get_db
 from app.schemas.life_navigation import LifeBackup, LifeHistory, LifeImport, LifeRevisionRequest, LifeWorkspace, LifeWorkspaceWrite
@@ -14,6 +19,19 @@ def owner(request: Request, user=Depends(self_only)):
     if subject is not None and subject != str(user.id):
         raise HTTPException(409, '登录账号已变化，请刷新页面后重试')
     return user
+
+
+@router.get('/morning-readings', response_model=MorningReadingList)
+def morning_readings(request: Request, response: Response, offset: int = Query(0, ge=0, le=100_000),
+                     user=Depends(owner)):
+    _private(response)
+    return life_morning_readings.list_readings(user.id, get_authenticated_relay_token(request, user), offset)
+
+
+@router.get('/morning-readings/{report_id}', response_model=MorningReadingDetail)
+def morning_reading(report_id: UUID, request: Request, response: Response, user=Depends(owner)):
+    _private(response)
+    return life_morning_readings.get_reading(user.id, get_authenticated_relay_token(request, user), str(report_id))
 
 
 @router.get('/workspace', response_model=LifeWorkspace)

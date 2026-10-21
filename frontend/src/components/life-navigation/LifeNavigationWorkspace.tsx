@@ -7,6 +7,7 @@ import { useAuth } from '@/contexts/AuthContext';
 import { getLifeWorkspace, saveLifeWorkspace, getLifeHistory, restoreLifeWorkspace, getLifeBackup, importLifeBackup, type LifeData, type LifeWorkspace, type LifeVersion, type LifeBackup, type LifeTask, type LifeOpportunity, type LifeFocus, type LifeReview } from '@/services/lifeNavigation';
 import { addDays, mondayOf, localDate, blankWeek, blankTask, copy, tracks, slotLabels, statusLabels, newId, reviewDraft, applyReviewDraft, focusStart, focusPause, focusResume, focusEnd, focusAdvance, parseBackup, weekNumber, weekDayLabel } from './model';
 import css from './workspace.module.css';
+import MorningReadingPanel from './MorningReadingPanel';
 type Tab = '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
 const navGroups = [
     { label: '行动与时间', items: [{ title: '今日', icon: Sun }, { title: '周计划', icon: CalendarDays }, { title: '时段导航', icon: Timer }] },
@@ -209,6 +210,7 @@ function SessionWorkspace({ owner }: {
     <div className={css.weekHeader}><div className={css.weekSummary}><span className={css.eyebrow}>第 {weekNumber(day)} 周</span><h2>{monday.slice(0, 4)} 年 {Number(monday.slice(5, 7))} 月 <span>{monday.slice(5)} — {addDays(monday, 6).slice(5)}</span></h2></div><div className={css.row}><button type="button" className={css.iconButton} aria-label="上一周" onClick={() => selectDay(addDays(day, -7))}><ChevronLeft size={18} aria-hidden="true"/></button><button type="button" className={css.button} aria-label="回到今天" onClick={() => selectDay(localDate())}>今天</button><button type="button" className={css.iconButton} aria-label="下一周" onClick={() => selectDay(addDays(day, 7))}><ChevronRight size={18} aria-hidden="true"/></button><label className={css.datePicker}>查看日期<input className={css.input} type="date" value={day} onChange={e => { if (e.target.value) selectDay(e.target.value); }}/></label></div></div>
     <div className={css.dayStrip}>{days.map(date => <button type="button" className={`${css.dayButton} ${day === date ? css.selectedDay : ''}`} aria-label={`${date} ${weekDayLabel(date)}`} aria-pressed={day === date} key={date} onClick={() => selectDay(date)}><span>{weekDayLabel(date)}</span><strong>{Number(date.slice(8))}</strong><span className={css.dayDot} aria-label={date === localDate() ? '今天' : undefined}>{date === localDate() ? '今天' : week.tasks.some(t => t.date === date) ? '·' : ' '}</span></button>)}</div>
   </section>
+  {tab === '今日' || tab === '周计划' ? <MorningReadingPanel owner={owner} day={day}/> : null}
   <fieldset className={css.fieldset} disabled={busy}>
   {tab === '今日' ? <>
     <nav className={css.quickLinks} aria-label="今日快捷导航"><a href="#life-today-tasks">今日任务</a><a href="#life-today-schedule">时间安排</a><a href="#life-today-notes">日记录</a></nav>

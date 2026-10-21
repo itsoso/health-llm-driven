@@ -183,3 +183,13 @@
 .tableDay{display:block;font-size:10px;color:#a58c76;margin-top:6px}
 .workspace .addSlot{font-size:10px;color:#a3866c;background:transparent;border:1px dashed #e1d1bc;border-radius:5px;padding:6px;width:100%;margin-top:7px;text-align:left}
 .workspace .addSlot:hover{background:#f4e9da;color:#805a3e}
+.morningText {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 55vh;
+  overflow-y: auto;
+  font-size: 13px;
+  line-height: 1.7;
+  margin: 8px 0;
+}
+.morningHistory { margin-top: 8px; font-size: 12px; }

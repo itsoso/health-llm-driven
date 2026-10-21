@@ -2487,6 +2487,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/life-navigation/morning-readings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Morning Readings */
+        get: operations["morning_readings_api_v1_life_navigation_morning_readings_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/morning-readings/{report_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Morning Reading */
+        get: operations["morning_reading_api_v1_life_navigation_morning_readings__report_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/life-navigation/workspace": {
         parameters: {
             query?: never;
@@ -29770,6 +29804,55 @@ export interface components {
              */
             mood_energy_correlation?: number | null;
         };
+        /** MorningReadingDetail */
+        MorningReadingDetail: {
+            /**
+             * Report Id
+             * Format: uuid
+             */
+            report_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Reading Date
+             * Format: date
+             */
+            reading_date: string;
+            /** Content Text */
+            content_text: string;
+        };
+        /** MorningReadingItem */
+        MorningReadingItem: {
+            /**
+             * Report Id
+             * Format: uuid
+             */
+            report_id: string;
+            /** Title */
+            title: string;
+            /**
+             * Generated At
+             * Format: date-time
+             */
+            generated_at: string;
+            /**
+             * Reading Date
+             * Format: date
+             */
+            reading_date: string;
+        };
+        /** MorningReadingList */
+        MorningReadingList: {
+            /** Items */
+            items: components["schemas"]["MorningReadingItem"][];
+            /** Next Offset */
+            next_offset: number | null;
+        };
         /** NavigationAction */
         NavigationAction: {
             /** Action Ref */
@@ -40415,6 +40498,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NavigationEventReceipt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    morning_readings_api_v1_life_navigation_morning_readings_get: {
+        parameters: {
+            query?: {
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningReadingList"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    morning_reading_api_v1_life_navigation_morning_readings__report_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                report_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MorningReadingDetail"];
                 };
             };
             /** @description Validation Error */
