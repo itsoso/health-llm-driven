@@ -76,6 +76,13 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     assert record.notes == notes
     assert record.calories == 210
     assert str(record.id) == str(done["write_receipts"][0]["resource_id"])
+    cards = [card for card in done['cards'] if card['type'] == 'diet_draft']
+    assert len(cards) == 1
+    assert cards[0]['data']['recorded'] is True
+    assert cards[0]['data']['record_id'] == record.id
+    assert cards[0]['data']['food_items'] == record.food_items
+    assert cards[0]['data']['calories'] == record.calories
+    assert not any(card['type'] == 'record_quality' for card in done['cards'])
 
     # Replaying the persisted client turn must not issue another write.
     replay = [event async for event in executor.run_stream(
@@ -85,3 +92,6 @@ async def test_reviewer_meal_reaches_authenticated_api_and_durable_receipt(
     assert any(event.get("event") == "done" for event in replay)
     assert len(posts) == 1
     assert db.query(DietRecord).filter_by(user_id=user.id).count() == 1
+    replay_done = next(event['data'] for event in replay if event.get('event') == 'done')
+    assert any(card['type'] == 'diet_draft' and card['data']['recorded'] is True
+               for card in replay_done['cards'])

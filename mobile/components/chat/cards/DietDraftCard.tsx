@@ -19,6 +19,7 @@ import { CardShell } from './CardShell';
 import { DietRecordAdjustEditor } from './RecordQualityCard';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
 import { privateDietPhotoUris } from '../../diet/dietSharePresentation';
+import { formatDisplayNumber } from '../../../utils/displayNumber';
 import type {
   CardRenderOptions,
   CardSpec,
@@ -93,6 +94,8 @@ interface DietDraftData {
   confidence?: unknown;
   source?: unknown;
   suggestions?: unknown;
+  personal_cautions?: unknown;
+  next_action?: unknown;
   post_meal_walk?: unknown;
   expanded_sections?: unknown;
   next_meal_detail?: unknown;
@@ -129,6 +132,8 @@ function clearDietDraftNutritionDerivations(data: DietDraftData): DietDraftData 
   delete next.suggestions;
   delete next.post_meal_walk;
   delete next.next_meal_detail;
+  delete next.personal_cautions;
+  delete next.next_action;
   return next;
 }
 
@@ -347,6 +352,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
   const timeLabel = mealTimeLabel(data);
   const meta = [confidenceLabel(data.confidence), sourceLabel(data.source)].filter(Boolean).join(' · ');
   const suggestions = listText(data.suggestions);
+  const personalCautions = listText(data.personal_cautions);
   const walkText = postMealWalkText(data.post_meal_walk);
   const nextMealDetail = objectValue(data.next_meal_detail);
   const showNextMealDetail = Boolean(
@@ -399,7 +405,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     && savedAdjustOpen;
   const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
-  const recordedNextStep = walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
+  const recordedNextStep = text(data.next_action) || walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
   const publishDraftChange = React.useCallback((overrides: Partial<DraftEditValues> = {}) => {
     const values: DraftEditValues = {
       mealType: overrides.mealType ?? draftMealType,
@@ -618,7 +624,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       <View style={styles.heroRow}>
         <View style={styles.heroLeft}>
           <Text maxFontSizeMultiplier={1.18} style={styles.heroCal}>
-            {caloriesValue != null ? `${Math.round(caloriesValue)}` : '--'}
+            {caloriesValue != null ? formatDisplayNumber(caloriesValue) : '--'}
             <Text style={styles.heroUnit}> kcal</Text>
           </Text>
           {timeLabel ? (
@@ -827,7 +833,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
                 </Text>
               </View>
               <Text maxFontSizeMultiplier={1.1} style={[styles.macroValue, isRecorded && styles.recordedMacroValue, { color: row.color }]}>
-                {Math.round(row.value!)}{row.suffix}
+                {formatDisplayNumber(row.value!)}{row.suffix}
               </Text>
             </View>
           ))}
@@ -842,6 +848,13 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           </Text>
         </View>
       ) : null}
+
+      {isRecorded && personalCautions.map((caution) => (
+        <View key={caution} style={styles.boundaryRow}>
+          <Ionicons name="shield-checkmark-outline" size={12} color={revaSemantic.caution.fg} />
+          <Text maxFontSizeMultiplier={1.15} style={styles.boundary}>{caution}</Text>
+        </View>
+      ))}
 
       {isRecorded ? (
         <View style={styles.recordedBox}>

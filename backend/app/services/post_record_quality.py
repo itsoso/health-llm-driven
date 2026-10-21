@@ -871,6 +871,15 @@ def build_post_record_quality_response(
     kind = _normalize_kind(record_type)
 
     if kind == "diet":
+        record_id = _record_id_from_write(result, record_data)
+        current_record = (
+            _owner_matched_diet_write_result(result, record_id=record_id, user_id=user_id)
+            if record_id is not None and record_id > 0 else None
+        )
+        if write_verified is True and current_record is not None:
+            # Both input modes present the persisted values, including known
+            # nulls; model arguments are not the saved nutrition snapshot.
+            record_data = {**record_data, **current_record}
         context = extract_personal_context_pack(
             personal_context,
             db=db,
@@ -980,10 +989,28 @@ def build_post_record_quality_response(
                     "/goals",
                 )
             )
+        card_type = "record_quality"
+        if write_verified is True and current_record is not None:
+            from app.utils.number_format import format_card_numbers
+
+            seed = card_data["adjust_record"]
+            card_data = format_card_numbers({
+                **card_data,
+                **seed,
+                "recorded": True,
+                "user_id": user_id,
+                "record_date": current_record.get("record_date"),
+                "source": current_record.get("source") or "text",
+                "confidence": current_record.get("ai_confidence"),
+                "receipt_message": "已计入饮食记录",
+            })
+            # Display formatting must never round the next edit's write seed.
+            card_data["adjust_record"] = seed
+            card_type = "diet_draft"
         return {
             "reply": re.sub(r"\s+", " ", reply).strip()[:280],
             "cards": [{
-                "type": "record_quality",
+                "type": card_type,
                 "data": card_data,
                 "actions": actions,
             }],

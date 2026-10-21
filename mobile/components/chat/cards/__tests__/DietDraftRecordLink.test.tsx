@@ -9,6 +9,23 @@ jest.mock('expo-router', () => ({
 
 beforeEach(() => mockPush.mockClear());
 
+it.each(['text', 'chat_photo'])('uses the saved meal view and preserves personal cautions for %s', (source) => {
+  const screen = render(<DietDraftCardView recorded source={source} meal_type="dinner"
+    food_items="合成餐食" calories={50} protein={1.2}
+    personal_cautions={['合成提醒一', '合成提醒二']}
+    next_action="合成下一餐建议" record_id={42}
+    adjust_record={{ record_id: 42, food_items: '合成餐食', meal_type: 'dinner' }} />);
+  expect(screen.getByText('晚餐已记录')).toBeTruthy();
+  expect(screen.getByText('合成提醒一')).toBeTruthy();
+  expect(screen.getByText('合成提醒二')).toBeTruthy();
+  expect(screen.getByText('合成下一餐建议')).toBeTruthy();
+  expect(screen.getByText('1.2g')).toBeTruthy();
+  expect(screen.getByRole('button', { name: '查看饮食记录' })).toBeTruthy();
+  expect(screen.getByRole('button', { name: '继续修正本餐' })).toBeTruthy();
+  expect(screen.queryByText('可截图分享')).toBeNull();
+  expect(screen.queryByText('修正饮食草稿')).toBeNull();
+});
+
 it('opens the existing diet modal on the saved meal date', () => {
   const screen = render(<DietDraftCardView recorded record_date="2026-10-10" food_items="米饭" />);
   fireEvent.press(screen.getByRole('button', { name: '查看饮食记录' }));

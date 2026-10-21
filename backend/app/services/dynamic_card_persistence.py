@@ -350,6 +350,12 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
                                 and payload.get("target") == "adjust_record"):
                             payload["patch"] = {"expanded_sections": ["adjust_record"],
                                                 "adjust_record": deepcopy(seed)}
+                    # Cleared advice must not be restored by a stale expand action.
+                    card["actions"] = [action for action in card.get("actions") or []
+                        if not (isinstance(action, dict)
+                                and action.get("action") == "ui.inline.expand"
+                                and isinstance(action.get("payload"), dict)
+                                and action["payload"].get("target") in ("next_meal", "goal_progress"))]
                     continue
                 old_seed = data.get("adjust_record")
                 changed = not isinstance(old_seed, dict) or any(
@@ -376,7 +382,17 @@ def _refresh_record_quality_edits(db: Session, metas: list, owner_id: int) -> No
                             payload["patch"] = {"expanded_sections": ["adjust_record"],
                                                 "adjust_record": deepcopy(seed)}
                     continue
-                data.update(seed)
+                from app.utils.number_format import format_card_numbers
+
+                # Upgrade only a resolved saved record. Pending correction
+                # proposals above retain their explicit uncommitted state.
+                card["type"] = "diet_draft"
+                data.update(format_card_numbers(seed))
+                data.update(recorded=True, user_id=record.user_id,
+                            record_date=record.record_date.isoformat(),
+                            source=record.source or "text",
+                            confidence=format_display_number(record.ai_confidence),
+                            receipt_message="已计入饮食记录")
                 data["adjust_record"] = seed
                 meal = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}.get(record.meal_type, "饮食")
                 data["title"] = f"{meal}已记录"

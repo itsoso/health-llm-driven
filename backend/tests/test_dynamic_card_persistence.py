@@ -36,6 +36,23 @@ def _saved_photo_meta(record_id):
     }}]}]}
 
 
+def test_saved_meal_reload_cannot_restore_cleared_advice_from_action(db, auth_user_and_headers):
+    user, _ = auth_user_and_headers
+    record = DietRecord(user_id=user.id, record_date=date.today(), meal_type='lunch',
+                        food_items='合成餐食', calories=200)
+    db.add(record)
+    db.commit()
+    meta = _saved_photo_meta(record.id)
+    meta['cards'][0]['actions'].append({
+        'action': 'ui.inline.expand', 'payload': {'target': 'next_meal',
+            'patch': {'expanded_sections': ['next_meal'], 'next_meal_detail': {'summary': '旧建议'}}},
+    })
+    card = message_metas_for_delivery(db, [meta], user.id)[0]['cards'][0]
+    assert 'next_meal_detail' not in card['data']
+    assert all(action['payload']['target'] != 'next_meal' for action in card['actions'])
+    assert len(meta['cards'][0]['actions']) == 2
+
+
 def test_saved_photo_history_refreshes_later_nutrition_write(client, db, auth_user_and_headers):
     from copy import deepcopy
 
@@ -176,6 +193,10 @@ def test_quality_history_reload_uses_saved_record_not_old_action_seed(client, db
     response = client.get(f"/api/v1/agent/conversations/{conv.id}", headers=headers)
     assert response.status_code == 200
     card = response.json()["messages"][0]["meta"]["cards"][0]
+    assert card['type'] == 'diet_draft'
+    assert card['data']['recorded'] is True
+    assert card['data']['record_date'] == record.record_date.isoformat()
+    assert card['data']['calories'] == 195.12
     assert card["data"]["adjust_record"]["food_items"] == "米饭150克"
     assert card["data"]["adjust_record"]["calories"] == 195.1234  # never round edit data
     assert card["data"]["adjust_record"]["updated_at"] is not None

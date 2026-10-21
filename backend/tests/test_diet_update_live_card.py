@@ -65,6 +65,44 @@ def test_photo_autosave_card_has_owner_and_database_revision():
     assert card['data']['adjust_record']['calories'] == 650.1234
 
 
+def test_verified_text_and_photo_use_the_same_saved_meal_contract():
+    from app.services.post_record_quality import build_post_record_quality_response
+
+    saved = payload()
+    text_card = build_post_record_quality_response(
+        'diet', {**saved, 'calories': 900, 'food_items': '请求值不是保存结果'},
+        result=json.dumps(saved), user_id=7, write_verified=True,
+    )['cards'][0]
+    executor = AgentExecutor(None)
+    executor._current_user_id = 7
+    row = SimpleNamespace(**{**saved, 'record_date': date(2026, 10, 14),
+        'updated_at': datetime(2026, 10, 14, 10, 1, tzinfo=timezone.utc), 'ai_confidence': 0.95})
+    asset = SimpleNamespace(id='asset-test', user_id=7, storage_key='chat/test.jpeg',
+                           capture_session_id='session-test', origin_message_id=1)
+    photo_card = executor._contextual_diet_recorded_card(
+        SimpleNamespace(record=row, photo_assets=[asset], photo_asset=asset))
+    assert text_card['type'] == photo_card['type'] == 'diet_draft'
+    for key in ('recorded', 'record_id', 'user_id', 'record_date', 'meal_type',
+                'food_items', 'calories', 'protein', 'carbs', 'fat', 'fiber',
+                'updated_at', 'adjust_record'):
+        assert text_card['data'][key] == photo_card['data'][key], key
+    assert text_card['data']['calories'] == 650.12
+    assert text_card['data']['adjust_record']['calories'] == 650.1234
+    assert text_card['data']['protein'] is None
+    assert text_card['data']['source'] == 'text'
+    assert 'photo_url' not in text_card['data']
+    assert not any(a['action'] == 'diet_record.create' for a in text_card['actions'])
+
+
+@pytest.mark.parametrize('verified', [False, None])
+def test_unverified_text_write_cannot_become_a_saved_meal_card(verified):
+    from app.services.post_record_quality import build_post_record_quality_response
+
+    response = build_post_record_quality_response('diet', payload(),
+        result=json.dumps(payload()), user_id=7, write_verified=verified)
+    assert response is None or all(card['type'] != 'diet_draft' for card in response['cards'])
+
+
 @pytest.mark.asyncio
 async def test_run_stream_owned_put_card_receipt_and_persisted_history(
     db, client, auth_user_and_headers, consenting_agent_user, monkeypatch,
