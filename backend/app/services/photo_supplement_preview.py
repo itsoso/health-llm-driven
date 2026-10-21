@@ -69,3 +69,18 @@ def build_photo_supplement_preview(message: Any, candidates: Any) -> dict[str, A
             for i, name in enumerate(names)
         ],
     }
+
+
+def needs_photo_supplement_details(message: Any) -> bool:
+    """Incomplete current-turn photo captions request clarification, never intake.
+
+    A product label (including Kids) cannot establish who took it, the amount,
+    or whether the user wants an inventory entry instead of an intake record.
+    """
+    if not isinstance(message, str):
+        return False
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    if active_health_read_authority_text(message) != message.strip():
+        return False
+    return bool(re.fullmatch(r"记录(?:这个|这瓶|益生菌)?补剂[。.]?", message.strip()))

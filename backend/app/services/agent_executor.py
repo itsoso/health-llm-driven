@@ -18100,7 +18100,8 @@ class AgentExecutor:
         if images:
             should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
             from app.services.photo_supplement_recognition import is_photo_supplement_request
-            if is_photo_supplement_request(message):
+            from app.services.photo_supplement_preview import needs_photo_supplement_details
+            if is_photo_supplement_request(message) or needs_photo_supplement_details(message):
                 async for event in self._run_photo_supplement_preview(
                     user_id=user_id, message=message, images=images,
                     conversation_id=conv.id, source_message_id=user_msg.id,
@@ -21749,41 +21750,53 @@ class AgentExecutor:
         cards, intent_id = [], None
         completion = "complete"
         reply = "请核对图片中的补剂名称、已有规格和每项数量，确认后才会记录。"
-        try:
-            if not allowed or not client_turn_id or self._runtime_write_block_reason:
-                raise ValueError("photo_supplement_scope_not_writable")
-            if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
-                raise ValueError("photo_supplement_recognition_unconfigured")
-            require_ai_consent(user_id, destination=settings.llm_vision_base_url)
-            kwargs = dict(base_url=settings.llm_vision_base_url,
-                          api_key=settings.llm_vision_api_key,
-                          model=settings.llm_vision_model)
-            if self._http_client is not None:
-                candidates = await recognize_photo_supplements(message, images, client=self._http_client, **kwargs)
-            else:
-                async with httpx.AsyncClient(timeout=60.0) as client:
-                    candidates = await recognize_photo_supplements(message, images, client=client, **kwargs)
-            # Isolate the service's commits from any unrelated executor dirty work.
-            with Session(bind=self.db.get_bind(), autoflush=False) as proposal_db:
-                intent = propose(proposal_db, user_id, source_message_id, candidates)
-                if intent.status != "pending":
-                    raise ValueError("photo_supplement_proposal_not_pending")
-                cards, intent_id = [build_card(intent)], intent.id
-        except HTTPException as exc:
-            completion = "error"
-            reply = "暂未识别或记录补剂：请先核对 AI 数据使用授权及服务可用状态。"
-            logger.warning("[photo_supplement] consent rejected status=%s", exc.status_code)
-        except (ValueError, LookupError, httpx.HTTPError) as exc:
-            completion = "error"
-            reply = "这次补剂还没记下来：请核对清晰瓶身名称与已有补剂列表，并逐项确认服用数量。本轮没有执行记录。"
-            logger.warning("[photo_supplement] preview unavailable error_type=%s", type(exc).__name__)
+        from app.services.photo_supplement_preview import needs_photo_supplement_details
+        clarification_reason = None
+        if needs_photo_supplement_details(message):
+            clarification_reason = "supplement_photo_details_required"
+            reply = (
+                "你想把这瓶补剂加入自己的补剂清单，还是记录自己已经服用了一次？"
+                "请补充产品完整名称；如果已经服用，再告诉我实际数量、单位和服用时间。"
+                "照片中的包装不能代表实际服用量。本轮尚未写入补剂或服用记录。"
+            )
+        else:
+            try:
+                if not allowed or not client_turn_id or self._runtime_write_block_reason:
+                    raise ValueError("photo_supplement_scope_not_writable")
+                if not settings.llm_vision_base_url or not settings.llm_vision_api_key:
+                    raise ValueError("photo_supplement_recognition_unconfigured")
+                require_ai_consent(user_id, destination=settings.llm_vision_base_url)
+                kwargs = dict(base_url=settings.llm_vision_base_url,
+                              api_key=settings.llm_vision_api_key,
+                              model=settings.llm_vision_model)
+                if self._http_client is not None:
+                    candidates = await recognize_photo_supplements(message, images, client=self._http_client, **kwargs)
+                else:
+                    async with httpx.AsyncClient(timeout=60.0) as client:
+                        candidates = await recognize_photo_supplements(message, images, client=client, **kwargs)
+                # Isolate the service's commits from any unrelated executor dirty work.
+                with Session(bind=self.db.get_bind(), autoflush=False) as proposal_db:
+                    intent = propose(proposal_db, user_id, source_message_id, candidates)
+                    if intent.status != "pending":
+                        raise ValueError("photo_supplement_proposal_not_pending")
+                    cards, intent_id = [build_card(intent)], intent.id
+            except HTTPException as exc:
+                completion = "error"
+                reply = "暂未识别或记录补剂：请先核对 AI 数据使用授权及服务可用状态。"
+                logger.warning("[photo_supplement] consent rejected status=%s", exc.status_code)
+            except (ValueError, LookupError, httpx.HTTPError) as exc:
+                completion = "error"
+                reply = "这次补剂还没记下来：请核对清晰瓶身名称与已有补剂列表，并逐项确认服用数量。本轮没有执行记录。"
+                logger.warning("[photo_supplement] preview unavailable error_type=%s", type(exc).__name__)
         outcome = classify_agent_turn_outcome(
             completion_status=completion, final_text=reply, write_receipts=[],
+            input_clarification_reason=clarification_reason,
             pending_confirmation_tools=["photo_supplement_intake"] if cards else [],
             tool_failure_tools=["photo_supplement_intake"] if completion == "error" else [],
         )
         meta = {
             "mode": "photo_supplement_intake", "cards": cards,
+            "input_clarification_reason": clarification_reason,
             "write_receipts": [], "tools_used": [], "sources_used": [],
             "pending_write_intent_ids": [intent_id] if intent_id else [],
             "pending_write_intent_kinds": ["photo_supplement_intake"] if intent_id else [],

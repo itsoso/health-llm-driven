@@ -60,3 +60,15 @@ async def test_provider_failure_remains_failure():
             return httpx.Response(503, request=httpx.Request('POST', url))
     with pytest.raises(httpx.HTTPStatusError):
         await recognize_photo_supplements(TEXT, [{'base64': 'YWJj'}], client=FailedClient(), base_url='https://vision.example/v1', api_key='synthetic', model='test-model')
+
+
+@pytest.mark.parametrize('text', ['记录益生菌补剂', '记录这个补剂', '记录这瓶补剂', '记录补剂'])
+def test_incomplete_photo_record_requests_need_details(text):
+    from app.services.photo_supplement_preview import needs_photo_supplement_details
+    assert needs_photo_supplement_details(text)
+
+
+@pytest.mark.parametrize('text', ['不要记录益生菌补剂', '给孩子记录益生菌补剂', '记录益生菌补剂吗？', '> 记录益生菌补剂', '    记录益生菌补剂', '推荐益生菌补剂', TEXT])
+def test_photo_details_do_not_infer_authority_or_replace_complete_request(text):
+    from app.services.photo_supplement_preview import needs_photo_supplement_details
+    assert not needs_photo_supplement_details(text)

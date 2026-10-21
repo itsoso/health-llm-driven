@@ -157,3 +157,25 @@ async def test_stream_card_confirm_and_reload_preserve_terminal_receipts(db, mon
     assert card['actions'] == []
     assert saved.meta['write_receipts'] == result['write_receipts']
     assert sorted(row.actual_dosage for row in db.query(SupplementRecord).all()) == ['1粒', '1粒', '1粒', '2粒']
+
+
+@pytest.mark.asyncio
+async def test_incomplete_probiotic_photo_waits_for_details_without_model_or_write(db, monkeypatch, owned_data, photo_setup):
+    from app.services import photo_supplement_recognition as recognition
+    async def forbidden(*args, **kwargs):
+        raise AssertionError('missing intake facts must not invoke recognition')
+    monkeypatch.setattr(recognition, 'recognize_photo_supplements', forbidden)
+    events = [event async for event in photo_setup.executor.run_stream(
+        owned_data.id, '记录益生菌补剂', images=[{'base64': 'YWJj', 'type': 'jpeg'}],
+        channel='typed', client_turn_id=str(uuid4()),
+    )]
+    done = next(event['data'] for event in reversed(events) if event['event'] == 'done')
+    saved = db.get(AgentMessage, done['message_id'])
+    assert done['turn_outcome']['status'] == 'waiting_for_user'
+    assert done['input_clarification_reason'] == 'supplement_photo_details_required'
+    assert '补剂清单' in saved.content and '已经服用' in saved.content
+    assert '尚未写入' in saved.content
+    assert not done['write_receipts'] and not done['cards']
+    assert not photo_setup.calls and not photo_setup.dispatches
+    assert db.query(WriteIntent).count() == 0
+    assert db.query(SupplementRecord).count() == 0
