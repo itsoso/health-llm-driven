@@ -103,6 +103,7 @@ export default function MedicationsScreen() {
 
   const currentList = tab === 'active' ? (activeQuery.data || []) : archived;
   const isLoading = tab === 'active' ? activeQuery.isLoading : allQuery.isLoading;
+  const isError = tab === 'active' ? activeQuery.isError : allQuery.isError;
   const isFetching = tab === 'active' ? activeQuery.isFetching : allQuery.isFetching;
   const refetch = tab === 'active' ? activeQuery.refetch : allQuery.refetch;
   const today = todayStr();
@@ -111,7 +112,7 @@ export default function MedicationsScreen() {
 
   const confirmDraftMut = useMutation({
     mutationFn: async () => {
-      if (!medicationDraft) throw new Error('missing_medication_draft');
+      if (!medicationDraft || medicationDraft.needsReview) throw new Error('invalid_medication_draft');
       const existing = activeMedications.find((med) => sameMedicationName(med.name, medicationDraft.name));
       const medication = existing ?? await addMedication({
         name: medicationDraft.name,
@@ -142,7 +143,7 @@ export default function MedicationsScreen() {
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} hitSlop={12} style={styles.backBtn}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn} accessibilityRole="button" accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={26} color={C.ink1} />
         </TouchableOpacity>
         <Text style={txt.title}>用药管理</Text>
@@ -150,6 +151,7 @@ export default function MedicationsScreen() {
           onPress={() => router.push('/deprescribing' as any)}
           hitSlop={12}
           style={styles.backBtn}
+          accessibilityRole="button"
           accessibilityLabel="多药梳理"
         >
           <Ionicons name="list-outline" size={22} color={C.ink1} />
@@ -164,6 +166,8 @@ export default function MedicationsScreen() {
           <TouchableOpacity
             key={k}
             style={[styles.tabBtn, tab === k && styles.tabBtnActive]}
+            accessibilityRole="tab"
+            accessibilityState={{ selected: tab === k }}
             onPress={() => setTab(k)}
           >
             <Text style={[txt.tabText, tab === k && txt.tabTextActive]}>{label}</Text>
@@ -175,6 +179,7 @@ export default function MedicationsScreen() {
         contentContainerStyle={styles.scroll}
         refreshControl={<RefreshControl refreshing={isFetching} onRefresh={() => { refetch(); }} tintColor={C.green500} />}
       >
+        <Text style={txt.sectionHint}>管理用药安排，服用后再打卡</Text>
         {medicationDraft && !draftDismissed && (
           <View style={styles.draftCard}>
             <View style={styles.draftHeader}>
@@ -182,14 +187,14 @@ export default function MedicationsScreen() {
                 <Ionicons name="sparkles-outline" size={18} color={C.green500} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={txt.draftTitle}>小巴识别到用药草稿</Text>
-                <Text style={txt.draftHint}>确认后添加到用药清单, 并记录一次已服用。</Text>
+                <Text style={txt.draftTitle}>{medicationDraft.needsReview ? '这条内容需要核对' : '小巴识别到用药草稿'}</Text>
+                <Text style={txt.draftHint}>{medicationDraft.needsReview ? '这段文字包含查询或操作指令，不能直接作为药名记录。' : '请核对药名和剂量，仅在实际服用后确认。'}</Text>
               </View>
             </View>
-            <Text style={txt.draftName}>{medicationDraft.name}</Text>
+            <Text style={medicationDraft.needsReview ? txt.draftHint : txt.draftName}>{medicationDraft.name}</Text>
             {medicationDraft.dose ? <Text style={txt.draftDose}>{medicationDraft.dose}</Text> : null}
             <View style={styles.draftActions}>
-              <TouchableOpacity
+              {!medicationDraft.needsReview && <TouchableOpacity
                 style={[styles.draftPrimary, confirmDraftMut.isPending && styles.draftDisabled]}
                 disabled={confirmDraftMut.isPending}
                 onPress={() => confirmDraftMut.mutate()}
@@ -200,35 +205,29 @@ export default function MedicationsScreen() {
                 <Text style={txt.draftPrimary}>
                   {confirmDraftMut.isPending ? '记录中' : '确认记录用药'}
                 </Text>
-              </TouchableOpacity>
+              </TouchableOpacity>}
               <TouchableOpacity
                 style={styles.draftSecondary}
                 onPress={() => setDraftDismissed(true)}
                 accessibilityRole="button"
-                accessibilityLabel="稍后处理用药草稿"
+                accessibilityLabel={medicationDraft.needsReview ? '关闭待核对提示' : '稍后处理用药草稿'}
               >
-                <Text style={txt.draftSecondary}>稍后处理</Text>
+                <Text style={txt.draftSecondary}>{medicationDraft.needsReview ? '关闭提示' : '稍后处理'}</Text>
               </TouchableOpacity>
             </View>
             <Text style={txt.draftBoundary}>不替代医嘱, 不自动调整剂量。</Text>
           </View>
         )}
-        {activeMedications.length > 0 && (
-          <AgentFeedbackLink
-            label="跟小巴整理用药问题"
-            accessibilityLabel="跟小巴整理用药问题"
-            prompt="请基于我的在用药品列表, 帮我整理今天的用药执行情况、可能需要向医生确认的问题、近期不适该如何描述。不要建议我自行停药、换药或改剂量。"
-            context={createMedicationAgentContext({
-              date: today,
-              activeMedications,
-              archivedMedications: archived,
-            })}
-            badge={`在用药品 ${activeMedications.length} 个`}
-            style={styles.agentLink}
-          />
-        )}
         {isLoading ? (
           <View style={styles.center}><ActivityIndicator color={C.green500} /></View>
+        ) : isError ? (
+          <View style={styles.empty}>
+            <Ionicons name="cloud-offline-outline" size={32} color={C.ink2} />
+            <Text style={txt.emptyTitle}>暂时无法加载用药清单</Text>
+            <TouchableOpacity style={styles.reminderAction} accessibilityRole="button" accessibilityLabel="重试加载用药清单" onPress={() => { refetch(); }}>
+              <Text style={txt.actionLabel}>重新加载</Text>
+            </TouchableOpacity>
+          </View>
         ) : currentList.length === 0 ? (
           <View style={styles.empty}>
             <Ionicons name="medical-outline" size={48} color={C.ink3} />
@@ -255,9 +254,33 @@ export default function MedicationsScreen() {
             ))}
           </View>
         )}
+        {activeMedications.length > 0 && (
+          <AgentFeedbackLink
+            label="跟小巴整理用药问题"
+            accessibilityLabel="跟小巴整理用药问题"
+            prompt="请基于我的在用药品列表, 帮我整理今天的用药执行情况、可能需要向医生确认的问题、近期不适该如何描述。不要建议我自行停药、换药或改剂量。"
+            context={createMedicationAgentContext({
+              date: today,
+              activeMedications,
+              archivedMedications: archived,
+            })}
+            badge={`在用药品 ${activeMedications.length} 个`}
+            style={styles.agentLink}
+          />
+        )}
       </ScrollView>
     </SafeAreaView>
   );
+}
+
+// Route parameters may contain old assistant prose. They are not a medication identity.
+function isInstructionName(name: string) {
+  return /(?:不要|不用|别|请勿|不需要|无需).{0,12}(?:记录|服药|停药|换药|剂量)|(?:查询|核实|查看).{0,20}(?:药品|用药|计划|记录)|(?:记录状态|用药提醒|计划时间)/.test(name);
+}
+
+function formatFrequency(value: string) {
+  const labels: Record<string, string> = { daily: '每日', bid: '每日两次', tid: '每日三次', qd: '每日一次', weekly: '每周', 'once daily': '每日一次', 'twice daily': '每日两次' };
+  return labels[value.trim().toLowerCase()] ?? value;
 }
 
 type MedicationDraftRouteParams = ReturnType<typeof useLocalSearchParams>;
@@ -268,6 +291,7 @@ function parseMedicationDraftParams(params: MedicationDraftRouteParams) {
   if (draft !== 'medication' || !name) return null;
   return {
     name,
+    needsReview: isInstructionName(name),
     dose: readParam(params.dose),
   };
 }
@@ -315,35 +339,40 @@ function MedicationRow({
     );
   };
 
+  const needsReview = isInstructionName(med.name);
+  const openActions = () => Alert.alert(med.name, '仅管理清单状态，不代表医生建议停药或恢复用药。', [
+    { text: '编辑信息', onPress: onEdit },
+    tab === 'active'
+      ? { text: '移至已停用', style: 'destructive', onPress: confirmDeactivate }
+      : { text: '恢复至在用清单', onPress: onRestore },
+    { text: '取消', style: 'cancel' },
+  ]);
   return (
     <View style={styles.row}>
-      <TouchableOpacity
-        style={{ flex: 1 }}
-        onPress={onEdit}
-        hitSlop={8}
-        accessibilityRole="button"
-        accessibilityLabel={`编辑 ${med.name}`}
-      >
-        <Text style={txt.medName}>{med.name}</Text>
-        {(med.dosage || med.frequency) && (
-          <Text style={txt.medMeta}>
-            {[med.dosage, med.frequency].filter(Boolean).join(' · ')}
-          </Text>
-        )}
-        {med.purpose && (
-          <Text style={txt.medPurpose} numberOfLines={1}>{med.purpose}</Text>
-        )}
-      </TouchableOpacity>
-      {tab === 'active' && <TouchableOpacity onPress={onReminder} style={[styles.actionBtn, { minWidth: 44, minHeight: 44 }]} accessibilityRole="button" accessibilityLabel={`查看 ${med.name} 的提醒`}><Ionicons name="notifications-outline" size={23} color={C.green600} /></TouchableOpacity>}
-      {tab === 'active' ? (
-        <TouchableOpacity onPress={confirmDeactivate} hitSlop={8} style={styles.actionBtn}>
-          <Ionicons name="pause-circle-outline" size={24} color={revaSemantic.risk.fg} />
+      <View style={styles.rowHeading}>
+        <TouchableOpacity style={styles.medContent} onPress={onEdit}
+          accessibilityRole="button" accessibilityLabel={`编辑 ${med.name}`}>
+          {needsReview && <Text style={txt.reviewLabel}>名称待核对</Text>}
+          <Text style={txt.medName}>{med.name}</Text>
+          <View style={styles.metaRow}>
+            {med.dosage ? <Text style={txt.medMeta}>{med.dosage}</Text> : null}
+            {med.frequency ? <Text style={txt.medMeta}>{formatFrequency(med.frequency)}</Text> : null}
+            {!med.dosage && !med.frequency && <Text style={txt.medPurpose}>剂量与频次待完善</Text>}
+          </View>
+          {med.purpose && <Text style={txt.medPurpose} numberOfLines={2}>{med.purpose}</Text>}
         </TouchableOpacity>
-      ) : (
-        <TouchableOpacity onPress={onRestore} hitSlop={8} style={styles.actionBtn}>
-          <Ionicons name="refresh-circle-outline" size={24} color={C.green500} />
+        <TouchableOpacity onPress={openActions} style={styles.actionBtn}
+          accessibilityRole="button" accessibilityLabel={`更多 ${med.name} 的操作`}>
+          <Ionicons name="ellipsis-horizontal" size={22} color={C.ink2} />
         </TouchableOpacity>
-      )}
+      </View>
+      {tab === 'active' && !needsReview && <TouchableOpacity onPress={onReminder} style={styles.reminderAction}
+        accessibilityRole="button" accessibilityLabel={`查看 ${med.name} 的提醒`}>
+        <Ionicons name="notifications-outline" size={17} color={C.green600} />
+        <Text style={txt.actionLabel}>提醒与打卡</Text>
+        <Ionicons name="chevron-forward" size={15} color={C.green600} />
+      </TouchableOpacity>}
+      {needsReview && <Text style={txt.draftHint}>请编辑并核对药品名称，原记录保持不变。</Text>}
     </View>
   );
 }
@@ -355,18 +384,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row', alignItems: 'center',
     paddingHorizontal: revaSpacing.s3, paddingVertical: revaSpacing.s2,
   },
-  backBtn: { width: 40, alignItems: 'flex-start' },
+  backBtn: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
   tabBar: {
     flexDirection: 'row',
     marginHorizontal: revaSpacing.s3, marginBottom: revaSpacing.s1,
     backgroundColor: C.paper2, borderRadius: revaRadii.sm, padding: 3,
   },
   tabBtn: {
-    flex: 1, paddingVertical: 8, alignItems: 'center',
+    flex: 1, minHeight: 44, paddingVertical: 12, alignItems: 'center',
     borderRadius: revaRadii.sm - 2,
   },
   tabBtnActive: { backgroundColor: C.surface },
-  scroll: { paddingHorizontal: revaSpacing.s3, paddingBottom: revaSpacing.s5 },
+  scroll: { paddingHorizontal: revaSpacing.s3, paddingBottom: revaSpacing.s5 + 24 },
   agentLink: { marginTop: revaSpacing.s2, marginBottom: revaSpacing.s3 },
   center: { paddingTop: 80, alignItems: 'center' },
   empty: { paddingTop: 80, alignItems: 'center', paddingHorizontal: revaSpacing.s4 },
@@ -406,21 +435,29 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     borderRadius: revaRadii.pill,
     paddingHorizontal: revaSpacing.s3,
+    minHeight: 44,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.paper2,
   },
   row: {
-    flexDirection: 'row', alignItems: 'center',
     backgroundColor: C.surface, borderRadius: revaRadii.md,
-    padding: revaSpacing.s3, gap: revaSpacing.s2, ...revaShadows.sm,
+    padding: revaSpacing.s3, gap: revaSpacing.s2,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line,
   },
-  actionBtn: { padding: 4 },
+  rowHeading: { flexDirection: 'row', alignItems: 'flex-start', gap: 8 },
+  medContent: { flex: 1, minHeight: 44 },
+  metaRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 6 },
+  reminderAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, minHeight: 44, borderRadius: revaRadii.sm, backgroundColor: C.green50, paddingHorizontal: 12, marginTop: 4 },
+  actionBtn: { width: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' },
 });
 
 // 剂量/频次走 IBM Plex Mono = Reva 等宽 signature;文字走 Manrope/ink。
 const txt = {
-  title: { fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  title: { flex: 1, textAlign: 'center', fontFamily: revaFonts.sans, fontSize: 17, fontWeight: '600', color: C.ink1 } as TextStyle,
+  sectionHint: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, lineHeight: 18, marginVertical: 12 } as TextStyle,
+  actionLabel: { fontFamily: revaFonts.sans, fontSize: 13, color: C.green700, fontWeight: '600' } as TextStyle,
+  reviewLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: revaSemantic.caution.fg, marginBottom: 4 } as TextStyle,
   tabText: { fontFamily: revaFonts.sans, fontSize: 14, color: C.ink2, fontWeight: '500' } as TextStyle,
   tabTextActive: { color: C.ink1, fontWeight: '600' } as TextStyle,
   emptyTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1, marginTop: revaSpacing.s3 } as TextStyle,
