@@ -45,6 +45,8 @@ _DOMAINS = {
     "spo2": r"血氧|[Ss][Pp][Oo]2",
     "workout": r"运动|锻炼|训练",
     "supplements": r"补剂|营养补充剂",
+    "medication": r"服药|用药|药物",
+    "conversation": r"(?:我(?:的)?)?(?:输入的所有内容|所有输入内容|原始对话|对话记录)",
 }
 _NEGATIVE = re.compile(
     r"不要|不用|无需|不必|不需要|未授权|不授权|不允许|(?<!分)别(?:再)?(?:查|读|调|获取|分析|看)|取消|停止|不(?:再|查|读取|调用|获取)|假如|假设|如果|举例|例句"
@@ -108,7 +110,7 @@ _CONTEXT_DOMAIN_SCOPE = re.compile(r"(?:以及|和|与|及)?" + _CONTEXT_DOMAIN_
 _ANALYSIS_GOAL = (
     r"(?:(?:并且|然后|并|再|也|来|这样才能)(?:请)?)?"
     r"(?:(?:依据|基于)(?:真实|已有|这些|上述|以上)(?:数据|记录))?"
-    r"(?:(?:分析|洞察|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态))?|"
+    r"(?:(?:分析|洞察|复盘|总结)(?:一下)?(?:(?:我(?:的)?)?(?:当前|现在)?(?:的)?(?:状况|情况|状态|原因))?|"
     r"(?:给|给到|给出|提供)(?:我)?(?:一些|一点|些|点|精准的|你的)?(?:建议|意见)|"
     # Domain-free improvement questions are answer goals, not read filters.
     # Consume their entire grammar: an attached owner/date/filter must survive.
@@ -116,6 +118,35 @@ _ANALYSIS_GOAL = (
     r"(?:我|本人|自己)?(?:还)?有哪些方面(?:需要|可以)(?:提升|改进|改善|改进提升))"
 )
 _ANALYSIS_GOAL_RE = re.compile(_ANALYSIS_GOAL)
+
+
+def _project_symptom_analysis_request(text: str) -> str | None:
+    """A closed bounded read plus fully consumed clinical background/goals.
+
+    Unknown owners, date filters and commands remain unprojectable. Original
+    prose stays in the transcript; this projection only binds read authority.
+    """
+    from app.services.agent_symptom_analysis import is_symptom_analysis_context
+
+    match = re.search(r"(?:基于|结合)(?:我(?:的)?|本人(?:的)?)?(?:过去|最近|近)[0-9一二两三四五六七八九十]+(?:天|日|周)", text)
+    if match is None:
+        return None
+    prefix = text[:match.start()].strip(" 。,，；;\n")
+    if prefix and not is_symptom_analysis_context(prefix):
+        return None
+    request = text[match.start():].strip(" 。!！?？")
+    goal = re.search(r"\s*(?:分析(?:一下)?原因|做推断)(.*)$", request)
+    if goal is None:
+        return None
+    suffix = goal[1].strip(" 。,，；;!?！？\n")
+    if suffix and not is_symptom_analysis_context(suffix):
+        return None
+    # Require a complete recent/domain expression, including every requested
+    # source. The caller's normal full-scope consumer still validates the body.
+    body = request[:goal.start()].strip()
+    if not _RECENT.search(body) or not _record_domains(body):
+        return None
+    return body + "并分析原因"
 _METHOD_CLAUSE_RE = re.compile(
     r"(?:要|请|先|再|然后|分别|去|或者|或|的|对应|相关|各个|各|模块|"
     r"工具|接口|HTTP|MCP|Skills|调用|发起|请求|查询|读取|已有|记录|数据|\s)+", re.I,
@@ -545,6 +576,9 @@ def _complete_read_background(clause: str) -> bool:
         return True
     if _diagnosis_background_clause(clause):
         return True
+    from app.services.agent_symptom_analysis import is_symptom_analysis_followup
+    if is_symptom_analysis_followup(clause) and re.search(r"疼|痛|嗳气|大便|腹泻|呕吐|发热", clause):
+        return True
     if re.fullmatch(r"(?:有人|医生|他|她)(?:说|提到|表示)", clause):
         return True  # Empty reporting introduction after quoted material removal.
     return bool(
@@ -610,7 +644,7 @@ def _read_projection_parts(active: str) -> list[tuple[str, bool]]:
 
 def _consume_read_scope(snapshot, scope: str, domains: set[str]) -> bool:
     """Consume a complete date/recent/domain expression, never a date substring."""
-    deep_read = bool(re.search(r"分析|洞察|复盘|总结|建议|状况", snapshot.envelope.text))
+    deep_read = bool(re.search(r"分析|推断|洞察|复盘|总结|建议|状况", snapshot.envelope.text))
     residue = (_CONTEXT_DOMAIN_SCOPE if deep_read else _DOMAIN_SCOPE).sub("", scope)
     residue = re.sub(r"(?:我|本人|自己)?的|记录|数据|\s", "", residue)
     if not deep_read:
@@ -649,6 +683,7 @@ def _query_object_scope(clause: str) -> str:
     qualifiers after a word such as records or an analysis verb.
     """
     scope = re.sub(r"(?:并|再|然后)(?:请)?" + _ANALYSIS_GOAL + r"$", "", clause)
+    scope = re.sub(r"(?<=记录)\s*(?:分析原因|分析一下原因)$", "", scope)
     scope = _strip_exam_request_scaffolding(scope)
     scope = re.sub(r"^(?:先|再|然后)?(?:分析|洞察|复盘|总结|结合|包括|针对|基于)(?:一下)?", "", scope)
     scope = re.sub(r"^(?:我|本人|自己)(?:的)?", "", scope)
@@ -806,6 +841,7 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     never model-authored authority. None means unsupported scope, not no request.
     """
     source_text = snapshot.envelope.text if text_override is None else text_override
+    source_text = _project_symptom_analysis_request(source_text) or source_text
     from app.services.agent_kernel.read_task_scope import daily_supplement_question_day
     supplement_day = daily_supplement_question_day(source_text)
     if supplement_day is not None:
@@ -844,7 +880,8 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     ):
         return None
     active = active_health_instruction_text(
-        project_recent_health_overview(snapshot.envelope.text) or snapshot.envelope.text
+        _project_symptom_analysis_request(snapshot.envelope.text)
+        or project_recent_health_overview(snapshot.envelope.text) or snapshot.envelope.text
     )
     active = project_active_quote_roles(active)
     if active is None:
@@ -862,13 +899,15 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     # requests a read (e.g. 分析最近一周的睡眠血氧). Keep the historical
     # explicit-owner/tool requirements for other longitudinal speech acts.
     from app.services.agent_kernel.read_task_scope import _owned_active
+    projected = longitudinal_read_projection_text(snapshot)
+    owner_expression = re.sub(_DOMAINS["conversation"], "饮食", projected or "")
     bounded_analysis = bool(
-        _owned_active(active)
+        _owned_active(re.sub(r"(^|。)(?:请)?(?:基于|结合)", r"\1分析", owner_expression))
         and any(
-            re.match(r"^(?:请)?(?:分析|洞察|复盘|总结)(?:一下)?", clause.strip())
+            re.match(r"^(?:请)?(?:分析|洞察|复盘|总结|基于|结合)(?:一下)?", clause.strip())
             and _RECENT.search(clause)
             and _record_domains(clause)
-            for clause in re.split(r"[，,。；;！？!?\n]", active)
+            for clause in re.split(r"[，,。；;！？!?\n]", projected or "")
         )
     )
     if (not re.search(r"我|本人", active) and not bounded_analysis) or re.search(
@@ -910,11 +949,13 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     hits = list(_RECENT.finditer(request))
     if len(hits) > 1:
         return None
+    if "conversation" in _record_domains(request) and not hits:
+        return None  # Cross-conversation text requires an explicit bounded window.
     days = 7
     if hits:
         hit = hits[0]
         days = _number(hit[1]) * (7 if hit[2] == "周" else 1)
-    remainder = _RECENT.sub("", request)
+    remainder = re.sub(_DOMAINS["conversation"], "", _RECENT.sub("", request))
     # Calendar scope can be expressed in a separate active clause. Leave it
     # to the exact calendar binder; never replace an explicit day with 7 days.
     if not 1 <= days <= 31 or _AMBIGUOUS_DATE.search(remainder):
@@ -967,6 +1008,12 @@ def longitudinal_read_limitations(snapshot) -> tuple[str, ...]:
         result.append("mood_not_queried")
     if re.search(r"工作", text):
         result.append("work_not_queried")
+    from app.services.agent_symptom_analysis import is_symptom_analysis_followup
+    if re.search(r"分析(?:一下)?原因", text) or any(
+        is_symptom_analysis_followup(clause.strip())
+        for clause in re.split(r"[。；;\n]", snapshot.envelope.text)
+    ):
+        result.append("symptom_analysis_current_input")
     return tuple(result)
 
 
@@ -1003,6 +1050,12 @@ def read_longitudinal_health_query(
     window = parse_query_window(window.as_dict())
     if dimension in {"diet", "sleep", "spo2"}:
         return read_calendar_health_query(db, user_id, dimension, window)
+    if dimension == "medication":
+        from app.services.medication_review_read import read_medication_history
+        return read_medication_history(db, user_id, window)
+    if dimension == "conversation":
+        from app.services.agent_conversation_evidence import read_conversation_evidence
+        return read_conversation_evidence(db, user_id, window)
     if window.period is not None:
         raise ValueError('calendar_query_period_unsupported')
     if dimension not in {"workout", "supplements"}:

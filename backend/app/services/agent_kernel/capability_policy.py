@@ -2843,14 +2843,14 @@ def decide_tool_capability(
         owned_read_tool_names, requires_owned_read_tool_scope, resolve_owned_read_scope,
     )
     from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
-    if is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
+    owned_scope = resolve_owned_read_scope(snapshot)
+    if owned_scope is None and is_current_input_advice(snapshot.envelope.text) and tool_name != "knowledge_search":
         # A whole current-input advice goal needs no personal records. This is
         # a restrictive boundary, including broad specialists and shadow mode.
         optional_read = (tool_name in READ_ONLY_TOOLS | SPECIALIST_READ_ONLY_TOOLS
                          or (tool_name == "health_manage" and args.get("operation") == "list"))
         return _decision("block", "current_input_advice_read_not_needed" if optional_read
                          else "current_input_advice_tool_not_allowed", tool_name, args)
-    owned_scope = resolve_owned_read_scope(snapshot)
     from app.services.agent_kernel.medication_review_scope import has_medication_reminder_read_reference
     if owned_scope is None and has_medication_reminder_read_reference(snapshot.envelope.text):
         return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
@@ -3088,7 +3088,7 @@ def decide_tool_capability(
         guarding_longitudinal_domain = isinstance(read_proposals, list) and any(
             isinstance(proposal, dict)
             and normalize_health_query_args(proposal).get("dimension")
-            in {"diet", "sleep", "spo2", "workout", "supplements"}
+            in {"diet", "sleep", "spo2", "workout", "supplements", "conversation"}
             for proposal in read_proposals
         )
         if (guarding_longitudinal_domain
@@ -3157,7 +3157,7 @@ def decide_tool_capability(
                 return _decision("block", "health_query_subject_not_current_user", tool_name, args)
             proposals = ([normalize_health_query_args(args)] if tool_name == "health_query"
                          else plan.get("queries"))
-            if not isinstance(proposals, list) or not 1 <= len(proposals) <= 6:
+            if not isinstance(proposals, list) or not 1 <= len(proposals) <= 7:
                 return _decision("block", "health_query_semantics_unresolved", tool_name, args)
             if tool_name == "health_query_batch":
                 if any(not isinstance(proposal, dict) for proposal in proposals):

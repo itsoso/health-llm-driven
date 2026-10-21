@@ -328,12 +328,10 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         now = snapshot.context.current_time
         today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
         return OwnedReadScope(tuple(
-            {'dimension': dimension, 'start_date': (today - timedelta(days=days - 1)).isoformat(),
+            {'dimension': dimension, 'days': days, 'start_date': (today - timedelta(days=days - 1)).isoformat(),
              'end_date': today.isoformat(), 'timezone': snapshot.context.timezone}
             for dimension in domains
-        ), ('symptom_record_review',), composite_advice=True)
-    if has_symptom_record_review_reference(snapshot.envelope.text):
-        return None
+        ), ('symptom_record_review', 'symptom_analysis_current_input'), composite_advice=True)
     if is_medication_review_request(snapshot.envelope.text):
         zone = ZoneInfo(snapshot.context.timezone)
         now = snapshot.context.current_time
@@ -380,6 +378,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         return OwnedReadScope(
             tuple(dict(query) for query in continuation["queries"]),
             tuple(continuation["limitations"]),
+            composite_advice="symptom_analysis_current_input" in continuation["limitations"],
         )
     from app.services.agent_longitudinal_read import (
         resolve_longitudinal_read_queries, longitudinal_read_limitations,
@@ -394,7 +393,10 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if longitudinal is not None:
         return OwnedReadScope(longitudinal, longitudinal_read_limitations(snapshot),
                               weather_city=running_analysis_weather_city(snapshot.envelope.text),
-                              composite_advice=project_running_analysis_read(snapshot.envelope.text) is not None)
+                              composite_advice=(project_running_analysis_read(snapshot.envelope.text) is not None
+                                                or "symptom_analysis_current_input" in longitudinal_read_limitations(snapshot)))
+    if has_symptom_record_review_reference(snapshot.envelope.text):
+        return None
     text = _active(snapshot.envelope.text)
     if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
         return None

@@ -5083,14 +5083,15 @@ def test_server_bound_anatomical_symptom_keeps_adjacent_predicate(
     message,
     description,
 ):
-    assert agent_executor_module._extract_clear_symptom_record(message) == {
+    assert agent_executor_module._extract_clear_symptom_record(message) is None
+    assert agent_executor_module._extract_clear_symptom_record("记录" + message) == {
         "body_part": {
             "眼睛痒": "eye",
             "嗓子疼": "respiratory",
             "皮肤发痒": "skin",
             "膝盖疼": "musculoskeletal",
         }[message],
-        "description": description,
+        "description": "记录" + description,
     }
 
 

@@ -13058,8 +13058,11 @@ class AgentExecutor:
         from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
 
         snapshot = self._agent_kernel_snapshot
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
         return bool(snapshot is not None and not snapshot.intent.is_write
-                    and is_current_input_advice(snapshot.envelope.text))
+                    and is_current_input_advice(snapshot.envelope.text)
+                    and resolve_owned_read_scope(snapshot) is None)
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -13390,6 +13393,13 @@ class AgentExecutor:
             or classify_clinician_turn(message).kind != "none"
         ):
             return None
+        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
+        clinical_scope = resolve_owned_read_scope(snapshot)
+        if clinical_scope is not None and "symptom_analysis_current_input" in clinical_scope.limitations:
+            # Symptom clarifications need the original user history and safety
+            # reasoning. The compact lifestyle view drops that clinical context.
+            return None
         from app.services.agent_longitudinal_read import project_running_analysis_read
 
         if project_running_analysis_read(snapshot.envelope.text) is not None:
@@ -13554,13 +13564,25 @@ class AgentExecutor:
         return '\n\n'.join(part for part in (self._trusted_sync_summary(), facts) if part)
 
     def _bind_read_task_reference(self, user_id: int, conversation_id: int) -> None:
-        from app.services.agent_read_task_continuation import load_read_task_reference
+        from app.services.agent_read_task_continuation import load_read_task_reference, resolve_read_task_continuation
+        from app.services.agent_symptom_analysis import is_symptom_analysis_followup
         snapshot = self._ensure_agent_kernel_turn()
         reference = load_read_task_reference(self.db, user_id, conversation_id, snapshot)
         if reference is not None:
-            self._agent_kernel_snapshot = replace(snapshot, actionable_references=(
+            snapshot = replace(snapshot, actionable_references=(
                 *snapshot.actionable_references, reference,
             ))
+            task = resolve_read_task_continuation(snapshot)
+            if (task is not None and "symptom_analysis_current_input" in task["limitations"]
+                    and is_symptom_analysis_followup(snapshot.envelope.text)):
+                intent = replace(snapshot.intent, primary="advice", domain="symptom", operation="analyze",
+                                 is_write=False, requires_reliable_tool_model=True,
+                                 evidence=(*snapshot.intent.evidence, "continuation:symptom_analysis"))
+                snapshot = replace(snapshot, intent=intent, goal=compile_goal_spec(
+                    envelope=snapshot.envelope, context=snapshot.context, intent=intent,
+                    actionable_references=snapshot.actionable_references,
+                ))
+            self._agent_kernel_snapshot = snapshot
             self._agent_kernel_event_bus.rebind_snapshot(self._agent_kernel_snapshot, reason='owned_read_task_continuation')
         self._bind_diet_portion_reference(user_id, conversation_id)
 
@@ -14786,7 +14808,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
-        tools = scope_tools_for_current_input_advice(tools, message)
+        if self._has_current_input_recovery_advice_goal():
+            tools = scope_tools_for_current_input_advice(tools, message)
         tools = scope_tools_for_owned_read(tools, panel_read_scope)
         tools = scope_tools_for_goal(
             tools,
@@ -15810,11 +15833,12 @@ class AgentExecutor:
         )
         panel_quality_flags.update(output_quality.flags)
         full_reply = output_quality.text
-        from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
-        full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
-        if not advice_answer_supported:
-            completion_status = "error"
-            self._record_model_fallback_reason("unverified_current_input_answer")
+        if self._has_current_input_recovery_advice_goal():
+            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+            if not advice_answer_supported:
+                completion_status = "error"
+                self._record_model_fallback_reason("unverified_current_input_answer")
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
@@ -16714,6 +16738,7 @@ class AgentExecutor:
             from app.services.agent_kernel.current_input_advice_scope import local_advice_response
             if (
                 retry_recovery is None and not effective_images and not file_base64
+                and not owned_read_followup
                 and local_advice_response(effective_message) is not None
                 and (recovered_user_message is None or (
                     recovered_user_message.content == effective_message
@@ -17605,6 +17630,15 @@ class AgentExecutor:
         if not self._has_isolated_report_scope():
             self._bind_read_task_reference(user_id, conv.id)
 
+        resolved_intent = self._ensure_agent_kernel_turn().intent
+        if "continuation:symptom_analysis" in resolved_intent.evidence:
+            completion_intent = replace(
+                completion_intent, primary=resolved_intent.primary, domain=resolved_intent.domain,
+                operation=resolved_intent.operation, is_write=resolved_intent.is_write,
+                reason="symptom_analysis_continuation",
+            )
+            record_write_requested = False
+
         if (health_evidence_turn is None and not self._has_isolated_report_scope()
                 and not read_only_tools and not images and not file_base64):
             from app.services.diet_photo_correction import build_correction_proposal
@@ -18217,7 +18251,8 @@ class AgentExecutor:
         from app.services.agent_input_tool_scope import scope_tools_for_exercise_plan
         tools = scope_tools_for_exercise_plan(tools, message)
         from app.services.agent_input_tool_scope import scope_tools_for_current_input_advice
-        tools = scope_tools_for_current_input_advice(tools, message)
+        if self._has_current_input_recovery_advice_goal():
+            tools = scope_tools_for_current_input_advice(tools, message)
         # Preserve only explicitly requested sync across the generic answer
         # filter, never restore capabilities removed by earlier boundaries.
         _, admitted_garmin_scope = self._focused_read_scopes()
@@ -20834,11 +20869,12 @@ class AgentExecutor:
         )
         full_reply = output_quality.text
         if response_output_buffered:
-            from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
-            full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
-            if not advice_answer_supported:
-                final_finish_reason = "error"
-                self._record_model_fallback_reason("unverified_current_input_answer")
+            if self._has_current_input_recovery_advice_goal():
+                from app.services.agent_kernel.current_input_advice_scope import guard_current_input_answer
+                full_reply, advice_answer_supported = guard_current_input_answer(message, full_reply)
+                if not advice_answer_supported:
+                    final_finish_reason = "error"
+                    self._record_model_fallback_reason("unverified_current_input_answer")
             # 所有改写之后、唯一发布点之前: 危机回合一定带经核对的急救电话与热线,
             # 不依赖模型是否遵守 TRIAGE 红线, 也不被记录兜底等改写抹掉。
             full_reply = with_crisis_support(
@@ -27754,7 +27790,7 @@ class AgentExecutor:
             isinstance(q, dict) and any(key in q for key in ("start_date", "end_date", "timezone"))
             for q in queries
         ):
-            if not 1 <= len(queries) <= 6 or args.get("compare") is not None:
+            if not 1 <= len(queries) <= 7 or args.get("compare") is not None:
                 return "Error: 日历批查询参数无效，请分别读取所需日期。"
             results = []
             for query in queries:

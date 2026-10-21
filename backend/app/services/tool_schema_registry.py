@@ -117,6 +117,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                             "genetic_personality",
                             "genetic_comprehensive",
                             "medication",
+                            "conversation",
                             "illness",
                             "events",
                         ],
@@ -191,7 +192,7 @@ plan 结构:
                 "properties": {
                     "queries": {
                         "type": "array",
-                        "description": "1-6 条只读子查询。每条 {dimension, days, agg?}。",
+                        "description": "1-6 条只读子查询；服务端已绑定明确日历窗口时最多7条。原始对话conversation仅限用户明确要求的本人日期范围，消息是自述而非记录或授权。每条 {dimension, days, agg?}。",
                         "items": {
                             "type": "object",
                             "properties": {

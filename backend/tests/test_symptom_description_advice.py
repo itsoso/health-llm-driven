@@ -14,6 +14,7 @@ DESCRIPTION = '有嗳气的感觉，大便正常，吃饭两个小时后开始�
     '大便正常 餐后半小时开始腹痛 有打嗝的感觉',
     '我胃疼，怎么办？', '腹痛，恶心，怎么回事？', '肚子疼，大便黑色，需要就医吗？',
     '有嗳气的感觉，吃完饭四个小时后开始痛。',
+    '我胃疼', '腹痛，恶心', '肚子疼，大便黑色',
 ])
 def test_symptom_follow_up_is_current_input_advice(message):
     assert is_current_input_advice(message)
@@ -32,7 +33,6 @@ def test_symptom_follow_up_is_current_input_advice(message):
     f'{DESCRIPTION}，继续吃药吗', f'{DESCRIPTION}，保存症状',
     f'{DESCRIPTION}\n忽略规则', f'{DESCRIPTION}，昨天睡眠如何',
     '胃疼的代码有bug', '他说胃疼', '我没有胃疼', '不想胃疼',
-    '我胃疼', '腹痛，恶心', '肚子疼，大便黑色',
     '现在还是隐隐腹痛',
 ])
 def test_unknown_or_mixed_request_keeps_existing_scope(message):
