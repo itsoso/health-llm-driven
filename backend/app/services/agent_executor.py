@@ -16813,7 +16813,7 @@ class AgentExecutor:
                 else None
             )
             if context_statement is not None and context_statement.allows_local_reply and (
-                context_statement.kind == "transit_timeline" or context_reply_is_standalone(
+                context_statement.kind in {"transit_timeline", "arrival_boarding"} or context_reply_is_standalone(
                 self.db, user_id=user_id,
                 conversation_id=conversation_id,
                 )

@@ -393,3 +393,54 @@ def test_transit_sensitive_slots_retain_shared_health_safety_routing(signal):
     assert has_sensitive_health_language(signal)
     assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例站', signal)) is None
     assert parse_context_statement(_TRAVEL_TIMELINE.replace('示例机场', signal + '机场')) is None
+
+
+@pytest.mark.parametrize('message', [
+    '10:00 落地北京 10:20 打上车',
+    '10：00落地北京，10：20上车了。',
+    '我10:00到达上海，10:20坐上车',
+])
+def test_arrival_and_boarding_timeline_is_context_not_health_query(message):
+    from app.services.agent_context_statement import parse_context_statement
+    statement = parse_context_statement(message)
+    assert statement is not None and statement.allows_local_reply
+    intent = classify_agent_utterance(message)
+    assert (intent.primary, intent.domain, intent.operation) == ('chat', 'context', 'none')
+    assert not intent.is_write
+    assert '10:00' in statement.reply and '10:20' in statement.reply
+    assert '已记录' not in statement.reply
+
+
+@pytest.mark.parametrize('message', [
+    '10:00落地北京10:20打上车，胸痛',
+    '10:00落地北京10:20打上车，帮我查睡眠',
+    '记录10:00落地北京10:20打上车',
+    '明天10:00落地北京10:20打上车',
+    '朋友10:00落地北京10:20打上车',
+    '如果10:00落地北京10:20打上车',
+    '“10:00落地北京10:20打上车”',
+    '25:00落地北京10:20打上车',
+    '10:00落地胸痛10:20打上车',
+    '10:00落地未知城市10:20打上车',
+    '10:00落地北京10:20打上车？',
+])
+def test_arrival_boarding_does_not_swallow_other_intent(message):
+    from app.services.agent_context_statement import parse_context_statement
+    assert parse_context_statement(message) is None
+
+
+@pytest.mark.asyncio
+async def test_arrival_boarding_after_symptom_does_not_query_or_write(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title='Synthetic arrival context')
+    svc.save_message(conv.id, 'user', '记录连续打了三个喷嚏')
+    svc.save_message(conv.id, 'assistant', '已记录。若需要可以补充严重程度。')
+    executor = AgentExecutor(db)
+    _no_heavy_work(executor, monkeypatch)
+    events = [e async for e in executor.run_stream(user_id=user.id,
+        message='10:00 落地北京 10:20 打上车', conversation_id=conv.id)]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['route'] == 'context_statement'
+    assert done['model_call_count'] == 0
+    assert not done.get('write_receipts')
