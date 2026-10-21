@@ -5,7 +5,7 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import MedicalCitations from '../MedicalCitations';
 
 describe('MedicalCitations', () => {
-  it('keeps sources visible, opens the official link, and shows the medical boundary', async () => {
+  it('collapses sources by default, toggles them, and keeps links and the medical boundary available', async () => {
     const open = jest.spyOn(Linking, 'openURL').mockResolvedValueOnce(undefined as never);
     const screen = render(
       <MedicalCitations
@@ -23,6 +23,9 @@ describe('MedicalCitations', () => {
     );
 
     expect(screen.getByText('参考来源')).toBeTruthy();
+    expect(screen.queryByText('中国成人体重判定标准')).toBeNull();
+    expect(screen.getByRole('button', { name: '展开参考来源' }).props.accessibilityState).toEqual({ expanded: false });
+    fireEvent.press(screen.getByRole('button', { name: '展开参考来源' }));
     expect(screen.getByText('中国成人体重判定标准')).toBeTruthy();
     expect(screen.getByText('国家卫生健康委员会')).toBeTruthy();
     expect(screen.getByText('健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。')).toBeTruthy();
@@ -33,6 +36,9 @@ describe('MedicalCitations', () => {
     await waitFor(() => {
       expect(open).toHaveBeenCalledWith('https://www.nhc.gov.cn/example.pdf');
     });
+    fireEvent.press(screen.getByRole('button', { name: '收起参考来源' }));
+    expect(screen.queryByRole('link')).toBeNull();
+    expect(screen.getByText('健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。')).toBeTruthy();
     open.mockRestore();
   });
 
@@ -75,6 +81,7 @@ describe('MedicalCitations', () => {
       />,
     );
 
+    fireEvent.press(screen.getByRole('button', { name: '展开参考来源' }));
     fireEvent.press(screen.getByRole('link', {
       name: '打开参考来源：成人 BMI 计算方法与分类，美国疾病控制与预防中心，外部网站',
     }));

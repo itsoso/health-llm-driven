@@ -88,8 +88,8 @@ const CONTENT = '已为你记录今天的体重。';
 const EXPAND_LABEL = '展开处理详情';
 
 describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
-  it('renders an always-visible medical source panel below a completed health answer', () => {
-    const { getByText, getByLabelText } = renderBubble({
+  it('keeps the source heading visible and its links collapsed below a completed answer', () => {
+    const { getByText, getByLabelText, queryByText } = renderBubble({
       id: 'assistant-bmi-citations',
       role: 'assistant',
       content: '你的 BMI 是 22.9，属于正常范围。',
@@ -108,14 +108,16 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     });
 
     expect(getByText('参考来源')).toBeTruthy();
+    expect(queryByText('成人 BMI 计算方法与分类')).toBeNull();
+    fireEvent.press(getByLabelText('展开参考来源'));
     expect(getByText('成人 BMI 计算方法与分类')).toBeTruthy();
     expect(getByLabelText(
       '打开参考来源：成人 BMI 计算方法与分类，美国疾病控制与预防中心，外部网站',
     )).toBeTruthy();
   });
 
-  it('renders prompt-grounded medical sources as separate accessible links while answer text is still streaming', () => {
-    const { getByTestId, getByText, getByRole } = renderBubble({
+  it('keeps streaming sources collapsed until explicitly expanded', () => {
+    const { getByTestId, getByText, getByRole, queryByRole } = renderBubble({
       id: 'assistant-bmi-citations-streaming',
       role: 'assistant',
       content: '⏳ AI 正在思考中...',
@@ -132,6 +134,8 @@ describe('ChatBubble 调用 Skill 展示 (透视面板)', () => {
     });
 
     expect(getByText('参考来源')).toBeTruthy();
+    expect(queryByRole('link')).toBeNull();
+    fireEvent.press(getByRole('button', { name: '展开参考来源' }));
     expect(getByText('中国成人体重判定标准')).toBeTruthy();
     expect(getByTestId('assistant-message-surface').props.accessible).toBe(false);
     expect(getByRole('link', {

@@ -1,4 +1,4 @@
-import React, { useCallback, useRef } from 'react';
+import React, { useCallback, useRef, useState } from 'react';
 import {
   Alert,
   Linking,
@@ -32,6 +32,7 @@ async function openCitation(url: string): Promise<void> {
 }
 
 export default function MedicalCitations({ citations = [], onPaint }: Props) {
+  const [expanded, setExpanded] = useState(false);
   const reportedPaintRef = useRef(false);
   const handleLayout = useCallback(() => {
     if (reportedPaintRef.current) return;
@@ -48,11 +49,19 @@ export default function MedicalCitations({ citations = [], onPaint }: Props) {
       accessibilityLabel="医学参考来源"
       onLayout={handleLayout}
     >
-      <View style={styles.headingRow}>
+      <Pressable
+        onPress={() => setExpanded((value) => !value)}
+        accessibilityRole="button"
+        accessibilityLabel={expanded ? '收起参考来源' : '展开参考来源'}
+        accessibilityState={{ expanded }}
+        style={styles.headingRow}
+      >
         <Ionicons name="library-outline" size={14} color={C.green600} />
         <Text maxFontSizeMultiplier={2} style={styles.heading}>参考来源</Text>
-      </View>
-      {citations.map((citation) => (
+        <Text maxFontSizeMultiplier={2} style={styles.count}>{citations.length} 项</Text>
+        <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={C.green600} />
+      </Pressable>
+      {expanded && citations.map((citation) => (
         <Pressable
           key={`${citation.sourceId}:${citation.url}`}
           onPress={() => { void openCitation(citation.url); }}
@@ -89,15 +98,22 @@ const styles = StyleSheet.create({
     gap: 7,
   },
   headingRow: {
+    minHeight: 44,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 6,
   },
   heading: {
+    flex: 1,
     fontFamily: revaFonts.sans,
     fontSize: 13,
     fontWeight: '700',
     color: C.green700,
+  } as TextStyle,
+  count: {
+    fontFamily: revaFonts.sans,
+    fontSize: 12,
+    color: C.ink2,
   } as TextStyle,
   source: {
     minHeight: 44,
