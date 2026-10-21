@@ -515,6 +515,8 @@ def test_diet_adjust_seed_uses_owner_matched_write_response_for_current_revision
         },
         result=(
             '{"id":77,"user_id":42,"fiber":4.25,'
+            '"record_date":"2026-08-20","meal_type":"lunch","food_items":"牛肉饭",'
+            '"calories":650,"protein":28,"carbs":72,"fat":18,'
             '"updated_at":"2026-08-20T13:19:00+00:00"}'
         ),
         personal_context="",
