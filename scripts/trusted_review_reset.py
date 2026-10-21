@@ -123,14 +123,44 @@ def _assert_previous_resets(bootstrap, server):
                     # relabelled SUCCEEDED, nor does this authorize a retry.
                     if name == "completed.json" and bootstrap._read_json(operation / name) == _marker(workspace.name, operation.name, "NEEDS_OPERATOR"):
                         try:
-                            retired = bootstrap._retired_history().get(workspace.name, {}).get("workspace", {})
+                            retirement = bootstrap._retired_history().get(workspace.name, {})
+                            retired = retirement.get("workspace", {})
                         except Exception:
                             raise ResetError("previous review reset retirement unproven") from None
                         if (retired.get("state") == "CLOSED_UNKNOWN_REVIEW_MAINTENANCE"
                                 and retired.get("operation_id") == operation.name
                                 and retired.get("original_outcome") == "UNKNOWN"):
                             continue
+                        if _fixed_retired_reset(bootstrap, retirement, workspace.name, operation.name):
+                            continue
                     raise ResetError("previous review reset termination unproven")
+
+
+def _fixed_retired_reset(bootstrap, retirement, sha, operation_id):
+    """Consume only the fixed closure already verified by _retired_history.
+
+    Its workspace intentionally has no operation ID: the canonical closure
+    validates that binding in its saved evidence. Preserve UNKNOWN semantics.
+    """
+    proof = retirement.get("review_maintenance_release_closure")
+    if not isinstance(proof, dict):
+        return False
+    closure = bootstrap._review_release_closure_module()
+    workspace = retirement.get("workspace", {})
+    successor = retirement.get("new_sha")
+    return (sha == closure.TARGET and operation_id == closure.OPERATION
+            and retirement.get("old_sha") == sha
+            and isinstance(successor, str) and re.fullmatch(r"[0-9a-f]{40}", successor) is not None
+            and successor != sha
+            and set(proof) == {"kind", "old_sha", "new_sha", "original_outcome", "reset_authorized", "inventory"}
+            and proof.get("kind") == closure.KIND and proof.get("old_sha") == sha
+            and proof.get("new_sha") == successor and proof.get("original_outcome") == "UNKNOWN"
+            and proof.get("reset_authorized") is False and isinstance(proof.get("inventory"), dict)
+            and set(workspace) == {"state", "original_outcome", "reset_authorized", "evidence_sha256"}
+            and workspace.get("state") == closure.READY and workspace.get("original_outcome") == "UNKNOWN"
+            and workspace.get("reset_authorized") is False
+            and isinstance(workspace.get("evidence_sha256"), str)
+            and re.fullmatch(r"[0-9a-f]{64}", workspace["evidence_sha256"]) is not None)
 
 
 def _assert_lock(server, lock, fd):

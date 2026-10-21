@@ -1434,3 +1434,87 @@ class NestedHistoryPreflightTests(unittest.TestCase):
                         maintenance.preflight_nested_history(Path('/canonical/source'), SHA)
                 self.assertNotIn('secret', str(caught.exception))
                 self.assertEqual(run.call_count, 1)
+
+
+class RetiredFixedMaintenanceReaderTests(unittest.TestCase):
+    """A validated administrative closure preserves UNKNOWN, never reset success."""
+
+    def setUp(self):
+        self.reset = load('trusted_review_reset')
+        self.closure = load('review_maintenance_release_closure')
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.reset.STATE = Path(self.temp.name)
+        self.operation = self.reset.STATE / self.closure.TARGET / 'review-resets' / self.closure.OPERATION
+        self.operation.mkdir(parents=True, mode=0o700)
+        self.operation.parent.chmod(0o700)
+        for name, state in (('started', 'STARTED'), ('completed', 'NEEDS_OPERATOR')):
+            put(self.operation / (name + '.json'), {'sha': self.closure.TARGET,
+                'operation_id': self.closure.OPERATION, 'state': state})
+        self.entry = {'old_sha': self.closure.TARGET, 'new_sha': SHA,
+            'workspace': {'state': self.closure.READY, 'original_outcome': 'UNKNOWN',
+                'reset_authorized': False, 'evidence_sha256': 'd' * 64},
+            'review_maintenance_release_closure': {'kind': self.closure.KIND,
+                'old_sha': self.closure.TARGET, 'new_sha': SHA, 'original_outcome': 'UNKNOWN',
+                'reset_authorized': False, 'inventory': {}}}
+        self.bootstrap = SimpleNamespace(_read_json=lambda p: json.loads(p.read_bytes()),
+            _retired_history=lambda: {self.closure.TARGET: self.entry},
+            _review_release_closure_module=lambda: self.closure)
+        self.server = SimpleNamespace(secure_path=lambda *a, **k: None)
+
+    def check(self):
+        self.reset._assert_previous_resets(self.bootstrap, self.server)
+
+    def test_verified_fixed_closure_accepts_unknown_without_rewriting_markers(self):
+        before = {p.name: (p.stat().st_ino, p.read_bytes()) for p in self.operation.iterdir()}
+        self.check()
+        self.assertEqual(before, {p.name: (p.stat().st_ino, p.read_bytes()) for p in self.operation.iterdir()})
+
+    def test_bare_ready_state_and_wrong_binding_remain_blocked(self):
+        import copy
+        original = copy.deepcopy(self.entry)
+        changes = [('old_sha', OTHER), ('new_sha', self.closure.TARGET)]
+        for key, value in changes:
+            self.entry = copy.deepcopy(original); self.entry[key] = value
+            with self.subTest(key=key), self.assertRaises(self.reset.ResetError): self.check()
+        for key, value in (('kind', 'other'), ('old_sha', SHA), ('new_sha', OTHER),
+                           ('original_outcome', 'SUCCEEDED'), ('reset_authorized', True)):
+            self.entry = copy.deepcopy(original); self.entry['review_maintenance_release_closure'][key] = value
+            with self.subTest(proof=key), self.assertRaises(self.reset.ResetError): self.check()
+        for key, value in (('original_outcome', 'SUCCEEDED'), ('reset_authorized', True), ('evidence_sha256', 'bad')):
+            self.entry = copy.deepcopy(original); self.entry['workspace'][key] = value
+            with self.subTest(workspace=key), self.assertRaises(self.reset.ResetError): self.check()
+        self.entry = copy.deepcopy(original); del self.entry['review_maintenance_release_closure']
+        with self.assertRaises(self.reset.ResetError): self.check()
+
+    def test_other_operation_cannot_borrow_fixed_closure(self):
+        other = self.operation.with_name(OTHER); self.operation.rename(other)
+        for name, state in (('started', 'STARTED'), ('completed', 'NEEDS_OPERATOR')):
+            put(other / (name + '.json'), {'sha': self.closure.TARGET, 'operation_id': OTHER, 'state': state})
+        with self.assertRaises(self.reset.ResetError): self.check()
+
+    def test_invalid_retirement_history_still_blocks(self):
+        def fail(): raise ValueError('invalid canonical retirement')
+        self.bootstrap._retired_history = fail
+        with self.assertRaises(self.reset.ResetError): self.check()
+
+    def test_legacy_unknown_closure_remains_supported(self):
+        self.entry = {'workspace': {'state': 'CLOSED_UNKNOWN_REVIEW_MAINTENANCE',
+            'operation_id': self.closure.OPERATION, 'original_outcome': 'UNKNOWN'}}
+        self.check()
+
+    def test_other_workspace_cannot_borrow_fixed_closure(self):
+        old_workspace = self.operation.parent.parent
+        other_workspace = old_workspace.with_name(SHA)
+        old_workspace.rename(other_workspace)
+        operation = other_workspace / 'review-resets' / self.closure.OPERATION
+        for name, state in (('started', 'STARTED'), ('completed', 'NEEDS_OPERATOR')):
+            put(operation / (name + '.json'), {'sha': SHA,
+                'operation_id': self.closure.OPERATION, 'state': state})
+        self.bootstrap._retired_history = lambda: {SHA: self.entry}
+        with self.assertRaises(self.reset.ResetError): self.check()
+
+    def test_completed_unknown_cannot_hide_wrong_start_marker(self):
+        put(self.operation / 'started.json', {'sha': self.closure.TARGET,
+            'operation_id': self.closure.OPERATION, 'state': 'NEEDS_OPERATOR'})
+        with self.assertRaises(self.reset.ResetError): self.check()
