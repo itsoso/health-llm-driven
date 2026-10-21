@@ -65,7 +65,8 @@ class ClosureError(Exception):
 # Defaults above remain the original da91 profile for legacy history and callers.
 LEGACY_FAILED_SHA = FAILED_SHA
 CURRENT_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
-SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA)
+F202_FAILED_SHA = 'f2022e10027bcf35c4225bf1cc898a9001161ecc'
+SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA)
 _SELECTED_PROFILE = None
 
 
@@ -93,6 +94,24 @@ def select_profile(failed_sha):
             'ota-diagnostic.json': '216244e2c6ba859fdb85a5d880fe8b59601559c2b246898c18800d923ab96584',
             'ota-claim.json': 'f3261786e09b757ee7c5ca7118dcf0b66345a71062be88c33a01b9725ffc0f4b',
             'ota-preflight.json': '91a314fc581906aa9c649fd504c1ccae1a096df7932d5a4d910ed9d13c621ecd',
+        }
+        SOURCE_HASHES = {
+            '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+            'scripts/trusted_ota_publish.py': 'd3cba2e115f9b14bd0ac02a120b3007e5b17cb68d24ab1f73bcb1aa3afee8db6',
+            'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+            'scripts/trusted_ota.py': '6cdb0b1353675215d5660d0b39ac4b347273066aa0ce9fdbb656f45e6ab25abb',
+        }
+    elif failed_sha == F202_FAILED_SHA:
+        FAILED_SHA = F202_FAILED_SHA
+        RUN_ID = 39546553940
+        JOB_ID = 119045918716
+        ARTIFACT_ID = 12321694024
+        ARTIFACT_SIZE = 2533
+        ARTIFACT_ZIP_SHA256 = '49c2f461f7c089ae770c86c50a77359887fd7090a1bb1fdd412915b2b411a92e'
+        ENTRY_DIGESTS = {
+            'ota-diagnostic.json': 'e52078e7c9f6cc04e99d752add662df2ca4c1822b1972432f46767b11f0aaae4',
+            'ota-claim.json': '95e20f0dd109e1298dbecd9b167b118c7fe4420f70b81e9542ca3714e038a63e',
+            'ota-preflight.json': '4a46b4731606e591fe3fb53706b7dd1d954ab3a48fc1e4fedc1c7a1bebffc6e9',
         }
         SOURCE_HASHES = {
             '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',

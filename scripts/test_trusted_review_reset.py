@@ -1518,3 +1518,73 @@ class RetiredFixedMaintenanceReaderTests(unittest.TestCase):
         put(self.operation / 'started.json', {'sha': self.closure.TARGET,
             'operation_id': self.closure.OPERATION, 'state': 'NEEDS_OPERATOR'})
         with self.assertRaises(self.reset.ResetError): self.check()
+
+
+class ResetHistoryInvocationReuseTests(unittest.TestCase):
+    """One locked observation reuses history; a later invocation proves it anew."""
+
+    def setUp(self):
+        from unittest.mock import Mock
+        self.reset = load('trusted_review_reset')
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.reset.STATE = Path(self.temp.name)
+        self.history = {}
+        self.operations = []
+        for sha, operation_id in [('1' * 40, 'a' * 32), ('2' * 40, 'b' * 32)]:
+            operation = self.reset.STATE / sha / 'review-resets' / operation_id
+            operation.mkdir(parents=True, mode=0o700)
+            operation.parent.chmod(0o700)
+            for name, state in [('started', 'STARTED'), ('completed', 'NEEDS_OPERATOR')]:
+                put(operation / (name + '.json'), self.reset._marker(sha, operation_id, state))
+            self.operations.append(operation)
+            self.history[sha] = {'workspace': {'state': 'CLOSED_UNKNOWN_REVIEW_MAINTENANCE',
+                'operation_id': operation_id, 'original_outcome': 'UNKNOWN'}}
+        self.history_reader = Mock(side_effect=lambda: self.history)
+        self.bootstrap = SimpleNamespace(_read_json=lambda p: json.loads(p.read_bytes()),
+            _retired_history=self.history_reader)
+        self.server = SimpleNamespace(secure_path=lambda *a, **k: None)
+
+    def check(self):
+        self.reset._assert_previous_resets(self.bootstrap, self.server)
+
+    def test_two_unknown_resets_verify_full_history_once_without_rewriting(self):
+        before = {p: (p.stat().st_ino, p.read_bytes())
+                  for operation in self.operations for p in operation.iterdir()}
+        self.check()
+        self.assertEqual(self.history_reader.call_count, 1)
+        self.assertEqual(before, {p: (p.stat().st_ino, p.read_bytes()) for p in before})
+
+    def test_successful_resets_do_not_require_retirement_history(self):
+        for operation in self.operations:
+            put(operation / 'completed.json', self.reset._marker(operation.parent.parent.name,
+                operation.name, 'SUCCEEDED'))
+        self.check()
+        self.history_reader.assert_not_called()
+
+    def test_second_operation_binding_is_checked_despite_valid_first(self):
+        self.history['2' * 40]['workspace']['operation_id'] = 'c' * 32
+        with self.assertRaises(self.reset.ResetError):
+            self.check()
+        self.assertEqual(self.history_reader.call_count, 1)
+
+    def test_second_operation_invalid_marker_remains_blocked(self):
+        operation = self.operations[1]
+        put(operation / 'completed.json', self.reset._marker('2' * 40, operation.name, 'UNKNOWN'))
+        with self.assertRaises(self.reset.ResetError):
+            self.check()
+
+    def test_next_invocation_revalidates_and_rejects_changed_history(self):
+        self.check()
+        self.history_reader.reset_mock()
+        self.history = {}
+        with self.assertRaises(self.reset.ResetError):
+            self.check()
+        self.history_reader.assert_called_once_with()
+
+    def test_history_error_is_sanitized_and_not_retried(self):
+        self.history_reader.side_effect = RuntimeError('synthetic sensitive detail')
+        with self.assertRaises(self.reset.ResetError) as caught:
+            self.check()
+        self.assertNotIn('synthetic sensitive detail', str(caught.exception))
+        self.history_reader.assert_called_once_with()

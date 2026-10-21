@@ -36,7 +36,8 @@ def test_requires_exact_failed_profile_and_no_mutation_on_changed_inspection(tmp
 
 
 @pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
-                                      '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'])
+                                      '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
+                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc'])
 def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch, failed_sha):
     m = load()
     m.select_profile(failed_sha)
@@ -87,8 +88,11 @@ def metadata(m):
 
 @pytest.mark.parametrize('fault', ['attempt', 'running', 'wrong_sha', 'success', 'extra_job',
                                   'wrong_job', 'step', 'expired', 'digest', 'artifact_run'])
-def test_official_metadata_failures_are_closed(fault):
-    m = load()
+@pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
+                                      '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
+                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc'])
+def test_official_metadata_failures_are_closed(fault, failed_sha):
+    m = load(); m.select_profile(failed_sha)
     run, jobs, artifact = metadata(m)
     if fault == 'attempt': run['run_attempt'] = 2
     elif fault == 'running': run['status'] = 'in_progress'
@@ -105,7 +109,8 @@ def test_official_metadata_failures_are_closed(fault):
 
 
 @pytest.fixture(params=('da91b5de303313f1fb014bbe045e8f1597d15229',
-                        '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'))
+                        '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
+                        'f2022e10027bcf35c4225bf1cc898a9001161ecc'))
 def transaction(tmp_path, monkeypatch, request):
     m = load()
     m.select_profile(request.param)
@@ -390,3 +395,36 @@ def test_fresh_history_modules_do_not_share_profile_state():
     assert old.RUN_ID == 38509318595 and new.RUN_ID == 39539354647
     assert old.SOURCE_HASHES != new.SOURCE_HASHES
     assert old.ENTRY_DIGESTS != new.ENTRY_DIGESTS
+
+
+F202_FAILED_SHA = 'f2022e10027bcf35c4225bf1cc898a9001161ecc'
+
+
+def test_f202_fixed_official_profile():
+    m = load(); m.select_profile(F202_FAILED_SHA)
+    assert (m.RUN_ID, m.RUN_ATTEMPT, m.WORKFLOW_ID, m.JOB_ID, m.ARTIFACT_ID, m.ARTIFACT_SIZE) == (
+        39546553940, 1, 370218159, 119045918716, 12321694024, 2533)
+    assert m.ARTIFACT_ZIP_SHA256 == '49c2f461f7c089ae770c86c50a77359887fd7090a1bb1fdd412915b2b411a92e'
+    assert m.ENTRY_DIGESTS == {
+        'ota-diagnostic.json': 'e52078e7c9f6cc04e99d752add662df2ca4c1822b1972432f46767b11f0aaae4',
+        'ota-claim.json': '95e20f0dd109e1298dbecd9b167b118c7fe4420f70b81e9542ca3714e038a63e',
+        'ota-preflight.json': '4a46b4731606e591fe3fb53706b7dd1d954ab3a48fc1e4fedc1c7a1bebffc6e9'}
+    assert m.validate_official_metadata(*metadata(m))['run']['head_sha'] == F202_FAILED_SHA
+
+
+@pytest.mark.parametrize('foreign_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA])
+def test_f202_rejects_foreign_profile_and_preserves_loaded_history(foreign_sha):
+    import copy
+    old = load(); old.select_profile(foreign_sha)
+    old_values = copy.deepcopy(metadata(old)); old_entries = copy.deepcopy(old.ENTRY_DIGESTS)
+    new = load(); new.select_profile(F202_FAILED_SHA)
+    for index in range(3):
+        mixed = list(metadata(new)); mixed[index] = old_values[index]
+        with pytest.raises(new.ClosureError): new.validate_official_metadata(*mixed)
+    before = copy.deepcopy(metadata(new)); before_entries = copy.deepcopy(new.ENTRY_DIGESTS)
+    with pytest.raises(new.ClosureError): new.select_profile(foreign_sha)
+    new.select_profile(F202_FAILED_SHA)
+    assert metadata(new) == before and new.ENTRY_DIGESTS == before_entries
+    assert metadata(old) == old_values and old.ENTRY_DIGESTS == old_entries
+    with pytest.raises(old.ClosureError): old.select_profile(F202_FAILED_SHA)
+    assert metadata(old) == old_values and old.ENTRY_DIGESTS == old_entries

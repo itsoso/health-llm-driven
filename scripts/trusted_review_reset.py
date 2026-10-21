@@ -102,6 +102,9 @@ def _marker(sha, operation_id, state):
 
 def _assert_previous_resets(bootstrap, server):
     # Include other release SHAs: old unknown work is not a new authorization.
+    # Reuse only within this observation under the caller's transaction locks.
+    # Every subsequent invocation must validate the complete history again.
+    verified_history = None
     for workspace in STATE.iterdir():
         if re.fullmatch(r"[0-9a-f]{40}", workspace.name) is None:
             continue
@@ -123,7 +126,9 @@ def _assert_previous_resets(bootstrap, server):
                     # relabelled SUCCEEDED, nor does this authorize a retry.
                     if name == "completed.json" and bootstrap._read_json(operation / name) == _marker(workspace.name, operation.name, "NEEDS_OPERATOR"):
                         try:
-                            retirement = bootstrap._retired_history().get(workspace.name, {})
+                            if verified_history is None:
+                                verified_history = bootstrap._retired_history()
+                            retirement = verified_history.get(workspace.name, {})
                             retired = retirement.get("workspace", {})
                         except Exception:
                             raise ResetError("previous review reset retirement unproven") from None
