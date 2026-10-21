@@ -1,5 +1,23 @@
 # Medication management page refinement
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | defining |
+| 当前阶段 | S3 — CI repair before delivery |
+| 更新日期 | 2026-10-21 |
+
+## G1 Scope admission
+
+裁决: PASS
+
+Screenshot-driven repair of existing behavior. Scope is bounded to the implementation and regression evidence below; no new health authority, inferred clinical facts, or historical data cleanup.
+
+## G3 Verification
+
+裁决: FAIL
+
+Candidate dfa45494b7 has failed remote backend-quality and docs-quality checks. Repair and fresh exact-revision CI are required before delivery. Local targeted tests do not substitute for those gates.
+
 ## Scope
 
 Screenshot-driven refinement of `/medications`: clear header, readable medication name/dose/frequency hierarchy, named reminder/check-in action, secondary management menu, and an actionable load-error state. No new routes, APIs or clinical recommendations. Existing list data is preserved.
@@ -21,4 +39,4 @@ New regression tests failed before implementation (three expected failures). Foc
 
 ## Delivery
 
-Independent safety review and exact-SHA CI pending. Production OTA remains frozen under279 submission plan pending user's policy choice; no new OTA claim or publication.
+Independent safety review returned GO. Related tests15, TypeScript and ESLint passed. Exact-SHA CI is not green. The user explicitly lifted the279 pre-submission OTA freeze on2026-10-21; normal publication gates remain and affected submission acceptance must be refreshed before a future submission. No new OTA has been published.
