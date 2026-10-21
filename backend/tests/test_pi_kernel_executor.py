@@ -177,7 +177,7 @@ async def test_symptom_plan_and_verified_operation_use_identical_canonical_args(
     monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
     monkeypatch.setattr(executor, "_call_llm_stream", provider)
     monkeypatch.setattr(executor, "_execute_tool", execute)
-    events = [event async for event in executor.run_stream(user.id, "我头痛", channel="typed", client_turn_id="pi-canonical")]
+    events = [event async for event in executor.run_stream(user.id, "记录我头痛", channel="typed", client_turn_id="pi-canonical")]
     assert events[-1]["event"] == "done"
     assert executed and executed[0]["data"]["description"]
     from app.services.agent_conversation_service import AgentConversationService

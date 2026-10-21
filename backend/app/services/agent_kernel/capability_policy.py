@@ -3059,6 +3059,19 @@ def decide_tool_capability(
             receipt_required=True,
         )
 
+    # Neither reader can correlate a measurement with a medication intake.
+    # Ownership alone must not silently discard this requested event filter.
+    blood_pressure_read = (
+        tool_name == "health_query"
+        and normalize_health_query_args(args).get("dimension") == "blood_pressure"
+    ) or (
+        tool_name == "health_manage"
+        and args.get("record_type") == "blood_pressure"
+        and args.get("operation") == "list"
+    )
+    if blood_pressure_read and "服药后" in _query_scope_text(snapshot.envelope.text):
+        return _decision("block", "longitudinal_read_scope_unresolved", tool_name, args)
+
     if tool_name == "health_query":
         from app.services.agent_kernel.read_task_scope import is_owned_oxygen_sync_diagnostic, resolve_sync_status_query
         if is_owned_oxygen_sync_diagnostic(snapshot) and normalize_health_query_args(args).get('dimension') in {'spo2', 'garmin'}:

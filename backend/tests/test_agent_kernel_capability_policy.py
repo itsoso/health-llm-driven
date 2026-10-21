@@ -6323,7 +6323,6 @@ def test_v45_query_then_unrelated_assessment_language_is_allowed(
         ("查询我最近的血压记录", "blood_pressure"),
         ("查询我今早的血压记录", "blood_pressure"),
         ("查询本人晨起的血压记录", "blood_pressure"),
-        ("查询我服药后的血压记录", "blood_pressure"),
         ("查询我午后的血压记录", "blood_pressure"),
         ("查询我最近的睡眠记录", "sleep"),
         ("查询我起床后的体重记录", "weight"),
@@ -7350,3 +7349,14 @@ def test_legacy_mobile_report_explanation_is_whole_owned_act(suffix):
         assert decision.normalized_args == {'dimension':'medical_exam'}
     for invalid in ('“'+text+'”','如果'+text,text.replace('帮我','帮我朋友'),text+'不要读取报告'):
         assert decide_tool_capability(_snapshot(invalid),_request('health_query',{'dimension':'medical_exam'})).action=='block'
+
+
+@pytest.mark.parametrize("tool_name", ("health_query", "health_manage"))
+def test_post_medication_blood_pressure_filter_cannot_be_dropped(tool_name):
+    arguments = ({"dimension": "blood_pressure"} if tool_name == "health_query"
+                 else {"record_type": "blood_pressure", "operation": "list"})
+    decision = decide_tool_capability(
+        _snapshot("查询我服药后的血压记录"), _request(tool_name, arguments),
+    )
+    assert decision.action == "block"
+    assert decision.reason == "longitudinal_read_scope_unresolved"

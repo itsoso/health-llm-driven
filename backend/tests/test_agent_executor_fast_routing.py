@@ -1813,7 +1813,7 @@ def test_clear_voice_symptom_statement_skips_confirmation():
         "health_record",
         args,
         channel="voice",
-        user_message="还是有腰疼的症状。",
+        user_message="记录一下，还是有腰疼的症状。",
     )
 
     assert out["confirmed"] is True

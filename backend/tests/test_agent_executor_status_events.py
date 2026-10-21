@@ -96,7 +96,7 @@ async def _run(
 
 def test_deterministic_symptom_tool_call_accepts_clear_statement_only():
     call = _build_deterministic_symptom_tool_call(
-        "还是有腰疼的症状。",
+        "记录一下，还是有腰疼的症状。",
         write_receipts=[],
     )
 
@@ -105,7 +105,7 @@ def test_deterministic_symptom_tool_call_accepts_clear_statement_only():
     assert call["function"]["arguments"] == (
         '{"record_type": "symptom", "data": {'
         '"body_part": "musculoskeletal", '
-        '"description": "还是有腰疼的症状"}}'
+        '"description": "记录一下，还是有腰疼的症状"}}'
     )
 
 
@@ -560,8 +560,8 @@ def test_retracted_symptom_does_not_receive_server_write_authorization(message):
     [
         ("记录下来刚才打了一个喷嚏。", {"sneezing": 1}),
         ("我刚才连续打了3个喷嚏，记录一下。", {"sneezing": 3}),
-        ("今天有鼻塞，程度3级。", {"congestion": 3}),
-        ("今天流鼻涕。", {"runny_nose": 1}),
+        ("记录今天有鼻塞，程度3级。", {"congestion": 3}),
+        ("记录今天流鼻涕。", {"runny_nose": 1}),
     ],
 )
 def test_clear_rhinitis_record_extracts_only_explicit_user_fields(message, expected):
@@ -654,7 +654,7 @@ async def test_structured_symptom_write_uses_current_statement_before_api(
 ):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "还是有腰疼的症状。"
+    executor._current_turn_user_message = "记录一下，还是有腰疼的症状。"
     executor._current_turn_recent_messages = []
     executor._agent_kernel_preflight_tool = lambda *args, **kwargs: None
     captured = {}
@@ -690,7 +690,7 @@ async def test_structured_symptom_write_uses_current_statement_before_api(
         "record_type": "symptom",
         "data": {
             "body_part": "musculoskeletal",
-            "description": "还是有腰疼的症状",
+            "description": "记录一下，还是有腰疼的症状",
             "record_date": executor._agent_kernel_reference_now().date().isoformat(),
         },
     }
@@ -2072,3 +2072,9 @@ async def test_answer_max_tokens_helper_switches_on_flag(db):
     assert executor._answer_max_tokens() == ANSWER_MAX_TOKENS
     executor._fast_route_simple_turn = True
     assert executor._answer_max_tokens() == FAST_ROUTE_ANSWER_MAX_TOKENS
+
+
+@pytest.mark.parametrize("message", ["还是有腰疼的症状。", "今天有鼻塞，程度3级。", "今天流鼻涕。", "眼睛痒", "我头痛"])
+def test_bare_symptom_consultation_does_not_create_record(message):
+    assert _build_deterministic_symptom_tool_call(message, write_receipts=[]) is None
+    assert _extract_clear_rhinitis_record(message) is None

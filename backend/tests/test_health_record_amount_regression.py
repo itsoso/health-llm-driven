@@ -334,7 +334,7 @@ async def test_symptom_record_does_not_throw_on_missing_amount(db):
 
     executor = AgentExecutor(db)
     executor._current_user_id = 1
-    executor._current_turn_user_message = "眼睛痒"
+    executor._current_turn_user_message = "记录眼睛痒"
 
     captured = {}
 
@@ -361,7 +361,7 @@ async def test_symptom_record_does_not_throw_on_missing_amount(db):
     assert "amount" not in str(result).lower() or "Error" not in str(result)
     assert "/symptoms" in captured.get("url", "")
     assert captured["payload"]["body_part"] == "eye"
-    assert captured["payload"]["description"] == "眼睛痒"
+    assert captured["payload"]["description"] == "记录眼睛痒"
 
 
 def test_symptom_body_part_is_inferred_from_explicit_chinese_location():
@@ -415,7 +415,7 @@ async def test_voice_symptom_recovers_truncated_tool_args_and_writes(db):
     executor = AgentExecutor(db)
     executor._current_user_id = 1
     executor._turn_channel = "voice"
-    executor._current_turn_user_message = "还是有腰疼的症状。"
+    executor._current_turn_user_message = "记录一下，还是有腰疼的症状。"
     captured = {}
 
     async def fake_post(url, headers, payload):
@@ -433,7 +433,7 @@ async def test_voice_symptom_recovers_truncated_tool_args_and_writes(db):
     assert "Error" not in str(result)
     assert captured["url"].endswith("/symptoms")
     assert captured["payload"]["body_part"] == "musculoskeletal"
-    assert captured["payload"]["description"] == "还是有腰疼的症状"
+    assert captured["payload"]["description"] == "记录一下，还是有腰疼的症状"
 
 
 @pytest.mark.asyncio
