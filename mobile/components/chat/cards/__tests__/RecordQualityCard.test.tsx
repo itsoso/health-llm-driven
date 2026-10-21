@@ -86,6 +86,28 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(getByText('重新估算并保存')).toBeTruthy();
   });
 
+  it('cannot reopen old next-meal advice after saving a unified meal card', async () => {
+    const seed = baseAdjustCard().adjust_record;
+    mockUpdate.mockResolvedValue({ ...seed, id: 123, protein: 12 } as any);
+    const view = render(renderCard({ type: 'diet_draft', data: {
+      ...seed, recorded: true, record_id: 123, adjust_record: seed,
+      personal_cautions: ['旧个人提醒'], next_action: '旧下一步',
+    }, actions: [{ id: 'show-next-meal', label: '看下一餐建议', action: 'ui.inline.expand',
+      payload: { target: 'next_meal', patch: { expanded_sections: ['next_meal'],
+        next_meal_detail: { summary: '旧下一餐详情' } } },
+    }] }, { onAction: jest.fn() })!);
+    expect(view.getByText('看下一餐建议')).toBeTruthy();
+    fireEvent.press(view.getByRole('button', { name: '继续修正本餐' }));
+    fireEvent.changeText(view.getByLabelText('蛋白'), '12');
+    await act(async () => fireEvent.press(view.getByLabelText('保存修正')));
+    expect(mockUpdate).toHaveBeenCalled();
+    expect(view.getByText('记录已更新')).toBeTruthy();
+    expect(view.queryByText('旧个人提醒')).toBeNull();
+    expect(view.queryByText('旧下一步')).toBeNull();
+    expect(view.queryByText('看下一餐建议')).toBeNull();
+    expect(view.queryByText('旧下一餐详情')).toBeNull();
+  });
+
   it('prefills a photo proposal but only recalculates after explicit save using the original revision', async () => {
     const card = baseAdjustCard();
     card.adjust_record = { ...card.adjust_record, proposed_food_items: '牛肉面一碗（按实际食用1/5计）' } as any;

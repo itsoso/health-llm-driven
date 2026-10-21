@@ -225,6 +225,11 @@ function StatefulCardRenderer({
   );
   try {
     const actions = normalizeCardActions(descriptor.actions, descriptor.type)
+      .filter((action) => !(
+        descriptor.type === 'diet_draft' && data?.adjust_saved === true
+        && action.action === 'ui.inline.expand'
+        && ['next_meal', 'goal_progress'].includes(String(action.payload?.target))
+      ))
       .map((action) => rewriteActionForCurrentCardData(action, descriptor.type, data));
     const currentDescriptor: ServerCardDescriptor = { ...descriptor, data, actions };
     const rendered = spec.render(data, {

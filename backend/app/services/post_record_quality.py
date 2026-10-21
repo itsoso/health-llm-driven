@@ -879,7 +879,7 @@ def build_post_record_quality_response(
         if write_verified is True and current_record is not None:
             # Both input modes present the persisted values, including known
             # nulls; model arguments are not the saved nutrition snapshot.
-            record_data = {**record_data, **current_record}
+            record_data = dict(current_record)
         context = extract_personal_context_pack(
             personal_context,
             db=db,

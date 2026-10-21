@@ -103,6 +103,21 @@ def test_unverified_text_write_cannot_become_a_saved_meal_card(verified):
     assert response is None or all(card['type'] != 'diet_draft' for card in response['cards'])
 
 
+def test_saved_null_nutrition_never_falls_back_to_request_aliases():
+    from app.services.post_record_quality import build_post_record_quality_response
+
+    saved = {**payload(), 'calories': None, 'carbs': None}
+    response = build_post_record_quality_response('diet',
+        {'meal_type': 'dinner', 'food_items': '合成餐食', 'kcal': 999, 'carbohydrates': 999},
+        result=json.dumps(saved), user_id=7, write_verified=True)
+    card = response['cards'][0]
+    assert card['data']['calories'] is None
+    assert card['data']['carbs'] is None
+    assert card['data']['adjust_record']['calories'] is None
+    assert card['data']['adjust_record']['carbs'] is None
+    assert '999' not in json.dumps(response)
+
+
 @pytest.mark.asyncio
 async def test_run_stream_owned_put_card_receipt_and_persisted_history(
     db, client, auth_user_and_headers, consenting_agent_user, monkeypatch,

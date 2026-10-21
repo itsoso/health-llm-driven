@@ -1,5 +1,14 @@
 # 文本与图片饮食记录结果一致性
 
+| 字段 | 值 |
+|---|---|
+| 状态 | in_progress |
+| 当前阶段 | 回归验证与独立安全复审，待精确 CI 及发布 |
+
+## G1 准入
+
+裁决：PASS。修复用户反馈的既有文本/图片饮食结果不一致，不新增数据权限或健康行为。
+
 ## 范围与原因
 
 修复现有结果展示，不新增记录权限或健康行为。文本 health_record 的质量层返回
@@ -21,7 +30,13 @@ record_quality，照片自动保存返回 diet_draft，导致同类已保存餐�
   Mobile 个人提醒用例失败。
 - 第一轮 PostgreSQL：57 passed，覆盖真实认证 API 保存、回执、幂等重放、照片、
   owner 隔离与历史回读。所有样本为合成数据，未读取真实健康记录。
-- Mobile：25 suites / 354 tests / 1 snapshot passed；TypeScript 检查通过。
+- Mobile：25 suites / 355 tests / 1 snapshot passed；TypeScript 检查通过。
 - System Map 和 git diff --check 通过。最终 PostgreSQL 扩展回归及独立安全审查待完成。
 - 发布尚未执行；须确认最新 main、精确 CI、安全 GO 及原发布状态后才能部署/OTA。
   当前共享工作区的其他任务改动保留，不进入本次提交。
+
+## 独立审查修正
+
+固定提交 0d55386cd 首轮 NO-GO：保存 null 可被入参营养别名覆盖；即时修改后旧建议
+可从原 action patch 恢复。两项均先补失败用例：保存结果替换全部模型入参；实际
+渲染器编辑保存后移除旧建议操作。待新提交独立复审，首轮 NO-GO 保留。
