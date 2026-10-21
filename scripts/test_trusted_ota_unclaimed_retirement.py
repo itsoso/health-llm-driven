@@ -35,8 +35,11 @@ def test_requires_exact_failed_profile_and_no_mutation_on_changed_inspection(tmp
     assert not record.exists()
 
 
-def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch):
+@pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
+                                      '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'])
+def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch, failed_sha):
     m = load()
+    m.select_profile(failed_sha)
     entries = {
         'ota-diagnostic.json': {'sha': m.FAILED_SHA, 'state': 'BLOCKED',
                                 'phase': 'claim-ota', 'reason': 'command_failed'},
@@ -76,7 +79,7 @@ def metadata(m):
         'conclusion': 'failure', 'steps': [{'name': name, 'status': 'completed', 'conclusion': result}
             for name, result in m.REQUIRED_STEPS.items()]}]}
     artifact = {'id': m.ARTIFACT_ID, 'name': f'trusted-ota-{m.FAILED_SHA}-{m.RUN_ID}-1',
-        'digest': 'sha256:' + m.ARTIFACT_ZIP_SHA256, 'size_in_bytes': 2533, 'expired': False,
+        'digest': 'sha256:' + m.ARTIFACT_ZIP_SHA256, 'size_in_bytes': m.ARTIFACT_SIZE, 'expired': False,
         'workflow_run': {'id': m.RUN_ID, 'repository_id': 1127096388, 'head_repository_id': 1127096388,
                           'head_branch': 'main', 'head_sha': m.FAILED_SHA}}
     return run, jobs, artifact
@@ -101,9 +104,11 @@ def test_official_metadata_failures_are_closed(fault):
         m.validate_official_metadata(run, jobs, artifact)
 
 
-@pytest.fixture
-def transaction(tmp_path, monkeypatch):
+@pytest.fixture(params=('da91b5de303313f1fb014bbe045e8f1597d15229',
+                        '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'))
+def transaction(tmp_path, monkeypatch, request):
     m = load()
+    m.select_profile(request.param)
     monkeypatch.setattr(sys, 'dont_write_bytecode', True)
     root = tmp_path / 'state'
     root.mkdir(mode=0o700)
@@ -339,3 +344,49 @@ def test_history_allows_different_current_lease_but_not_original_inode(transacti
     a.server.BUSINESS_LEASE.rmdir()
     m.retired_path(a.server).rename(a.server.BUSINESS_LEASE)
     with pytest.raises(m.ClosureError):m.validate_closed_history(a.server,op)
+
+
+NEW_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
+
+
+def test_fixed_profile_selection_preserves_legacy_and_is_one_shot():
+    old = load()
+    old.select_profile(old.FAILED_SHA)
+    assert old.RUN_ID == 38509318595 and old.ARTIFACT_SIZE == 2533
+    new = load()
+    new.select_profile(NEW_FAILED_SHA)
+    assert new.FAILED_SHA == NEW_FAILED_SHA and new.RUN_ID == 39539354647
+    assert new.JOB_ID == 119023297148 and new.ARTIFACT_ID == 12318856926
+    assert new.ARTIFACT_SIZE == 2531
+    with pytest.raises(new.ClosureError): new.select_profile(old.FAILED_SHA)
+    new.select_profile(NEW_FAILED_SHA)  # Same fixed profile is idempotent.
+    unknown = load()
+    with pytest.raises(unknown.ClosureError): unknown.select_profile('f' * 40)
+
+
+def test_mixed_profile_metadata_cannot_authorize_new_closure():
+    old = load(); old_values = metadata(old)
+    new = load(); new.select_profile(NEW_FAILED_SHA)
+    with pytest.raises(new.ClosureError): new.validate_official_metadata(*old_values)
+    run, jobs, artifact = metadata(new); artifact['size_in_bytes'] = new.ARTIFACT_SIZE
+    assert new.validate_official_metadata(run, jobs, artifact)['run']['head_sha'] == NEW_FAILED_SHA
+    for field in ('id', 'digest', 'size_in_bytes'):
+        changed = dict(artifact); changed[field] = old_values[2][field]
+        with pytest.raises(new.ClosureError): new.validate_official_metadata(run, jobs, changed)
+
+
+def test_history_selects_only_fixed_directory_before_reading_evidence(tmp_path):
+    m = load()
+    with pytest.raises(m.ClosureError):
+        m.validate_closed_history(SimpleNamespace(), tmp_path / ('f' * 40))
+    assert m._SELECTED_PROFILE is None
+
+
+def test_fresh_history_modules_do_not_share_profile_state():
+    old, new = load(), load()
+    old.select_profile(old.LEGACY_FAILED_SHA)
+    new.select_profile(new.CURRENT_FAILED_SHA)
+    old.select_profile(old.LEGACY_FAILED_SHA)
+    assert old.RUN_ID == 38509318595 and new.RUN_ID == 39539354647
+    assert old.SOURCE_HASHES != new.SOURCE_HASHES
+    assert old.ENTRY_DIGESTS != new.ENTRY_DIGESTS

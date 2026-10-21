@@ -28,6 +28,7 @@ RUN_ATTEMPT = 1
 WORKFLOW_ID = 370218159
 JOB_ID = 115673932021
 ARTIFACT_ID = 11869725525
+ARTIFACT_SIZE = 2533
 ARTIFACT_ZIP_SHA256 = 'dba9fdf15b0098e982627210ea67f29a146d038729ccc2e405fb6230beb2050a'
 ROOT_NAME = 'ota-preclaim-closures'
 TERMINAL = 'CLOSED_UNPUBLISHED_CLAIM'
@@ -59,6 +60,47 @@ REQUIRED_STEPS = {
 
 class ClosureError(Exception):
     """Static diagnostics only; never tokens, signed URLs, or vendor output."""
+
+
+# Defaults above remain the original da91 profile for legacy history and callers.
+LEGACY_FAILED_SHA = FAILED_SHA
+CURRENT_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
+SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA)
+_SELECTED_PROFILE = None
+
+
+def select_profile(failed_sha):
+    """Select one reviewed, fixed profile per freshly loaded operator module.
+
+    Only same-SHA selection is idempotent. No caller-provided evidence fields
+    can alter a profile, and historical consumers select by operation dirname.
+    """
+    global _SELECTED_PROFILE, FAILED_SHA, RUN_ID, JOB_ID, ARTIFACT_ID
+    global ARTIFACT_SIZE, ARTIFACT_ZIP_SHA256, ENTRY_DIGESTS, SOURCE_HASHES
+    if failed_sha not in SUPPORTED_FAILED_SHAS or (
+            _SELECTED_PROFILE is not None and _SELECTED_PROFILE != failed_sha):
+        raise ClosureError('unknown or changed fixed OTA closure profile')
+    if _SELECTED_PROFILE == failed_sha:
+        return
+    if failed_sha == CURRENT_FAILED_SHA:
+        FAILED_SHA = CURRENT_FAILED_SHA
+        RUN_ID = 39539354647
+        JOB_ID = 119023297148
+        ARTIFACT_ID = 12318856926
+        ARTIFACT_SIZE = 2531
+        ARTIFACT_ZIP_SHA256 = '3b466632b5a1dd263378012ad21a0e9090dced2f069ab94935acd12d445b91cb'
+        ENTRY_DIGESTS = {
+            'ota-diagnostic.json': '216244e2c6ba859fdb85a5d880fe8b59601559c2b246898c18800d923ab96584',
+            'ota-claim.json': 'f3261786e09b757ee7c5ca7118dcf0b66345a71062be88c33a01b9725ffc0f4b',
+            'ota-preflight.json': '91a314fc581906aa9c649fd504c1ccae1a096df7932d5a4d910ed9d13c621ecd',
+        }
+        SOURCE_HASHES = {
+            '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+            'scripts/trusted_ota_publish.py': 'd3cba2e115f9b14bd0ac02a120b3007e5b17cb68d24ab1f73bcb1aa3afee8db6',
+            'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+            'scripts/trusted_ota.py': '6cdb0b1353675215d5660d0b39ac4b347273066aa0ce9fdbb656f45e6ab25abb',
+        }
+    _SELECTED_PROFILE = failed_sha
 
 
 def digest(value):
@@ -123,7 +165,7 @@ def validate_official_metadata(run, jobs, artifact):
     expected_artifact = {
         'id': ARTIFACT_ID,
         'name': f'trusted-ota-{FAILED_SHA}-{RUN_ID}-{RUN_ATTEMPT}',
-        'digest': 'sha256:' + ARTIFACT_ZIP_SHA256, 'size_in_bytes': 2533, 'expired': False,
+        'digest': 'sha256:' + ARTIFACT_ZIP_SHA256, 'size_in_bytes': ARTIFACT_SIZE, 'expired': False,
     }
     workflow_run = {'id': RUN_ID, 'repository_id': 1127096388, 'head_repository_id': 1127096388,
                     'head_branch': 'main', 'head_sha': FAILED_SHA}
@@ -401,6 +443,7 @@ def close_transaction(adapter, evidence_sha256=None):
 
 
 def validate_closed_history(server, operation):
+    select_profile(Path(operation).name)
     original = operation_evidence(server, Path(operation))
     record = server.STATE / ROOT_NAME / FAILED_SHA
     private_directory(server, record.parent)
@@ -534,8 +577,10 @@ def context(sha):
 def main():
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--sha', required=True)
+    parser.add_argument('--failed-sha', choices=SUPPORTED_FAILED_SHAS, default=LEGACY_FAILED_SHA)
     parser.add_argument('--evidence-sha256')
     args = parser.parse_args()
+    select_profile(args.failed_sha)
     b, server, source = context(args.sha)
     os.umask(0o077)
     credentials = parsed(sys.stdin.buffer.read(8193))
