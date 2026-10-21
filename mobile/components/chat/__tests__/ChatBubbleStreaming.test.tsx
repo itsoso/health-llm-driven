@@ -521,10 +521,20 @@ describe('ChatBubble streaming degraded render', () => {
       streaming: true, recoveryPending: true, thinkingSteps: ['正在理解你的问题'],
     });
     expect(getByText('正在同步回答')).toBeTruthy();
+    expect(queryByText('小巴还在处理，正在同步完整回答。')).toBeNull();
     expect(queryByText('正在分析')).toBeNull();
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByTestId('assistant-thinking-indicator')).toBeNull();
     expect(queryByLabelText('停止本轮分析')).toBeNull();
+  });
+
+  it('keeps partial answer content visible during recovery', () => {
+    const { getByText } = renderBubble({
+      id: 'assistant-partial-recovery', role: 'assistant',
+      content: '已经收到你的行程。', streaming: true, recoveryPending: true,
+    });
+    expect(getByText('已经收到你的行程。')).toBeTruthy();
+    expect(getByText('正在同步回答')).toBeTruthy();
   });
 
   it('uses the same thinking panel while waiting for the first status event', () => {
