@@ -4,11 +4,11 @@ The original photo snapshot is the absolute baseline even after a prior edit.
 Nothing in this module creates, updates or deletes a diet record or photo asset.
 """
 from datetime import datetime
+from decimal import Decimal
 import base64
 import binascii
 import hashlib
 import json
-import math
 import re
 from time import perf_counter
 from zoneinfo import ZoneInfo
@@ -20,7 +20,7 @@ from app.services.chat_utils import read_owned_chat_image_data_uri
 from app.services.post_record_quality import build_diet_adjust_action
 from app.utils.number_format import format_display_number
 
-_LEFTOVER = re.compile(r'剩余|剩下|剩菜|没吃完|未吃完|leftovers?', re.I)
+_LEFTOVER = re.compile(r'剩余|剩下|剩菜|没吃完|未吃完|餐后(?:的)?照片|leftovers?', re.I)
 _MEALS = {'早餐':'breakfast','早饭':'breakfast','午餐':'lunch','午饭':'lunch',
           '晚餐':'dinner','晚饭':'dinner','加餐':'snack'}
 _MEAL = '(?:早餐|早饭|午餐|午饭|晚餐|晚饭|加餐)'
@@ -62,13 +62,14 @@ def _portion(food):
     name = food['name'].strip()
     if not 1 <= len(name) <= 40 or re.search(r'[\n+＋;；]', name):
         return None
-    match = _QUANTITY.fullmatch(str(food.get('quantity') or '').strip())
+    quantity = str(food.get('quantity') or '').strip()
+    if len(quantity) > 40:
+        return None
+    match = _QUANTITY.fullmatch(quantity)
     if not match:
         return None
-    amount = _NUMBERS.get(match['amount'])
-    if amount is None:
-        amount = float(match['amount'])
-    if not math.isfinite(amount) or not 0 < amount <= 10000:
+    amount = Decimal(str(_NUMBERS.get(match['amount'], match['amount'])))
+    if not amount.is_finite() or not 0 < amount <= 10000:
         return None
     return name, amount, match['unit']
 
@@ -82,11 +83,16 @@ def consumed_description(foods, result):
         if portion is None:
             raise LeftoverRecognitionError('baseline_quantity_unavailable')
         name, amount, unit = portion
-        consumed = amount * (1 - item['remaining_fraction'])
+        consumed = amount * (Decimal(1) - Decimal(str(item['remaining_fraction'])))
+        if unit in {'千克', '公斤', 'kg'}:
+            consumed *= 1000
+            unit = '克'
         if consumed > 0:
-            display = format_display_number(consumed)
-            if display == 0:
-                raise LeftoverRecognitionError('portion_below_display_precision')
+            display = format_display_number(float(consumed))
+            # This text becomes editable command input. Never round a write
+            # quantity just to meet the display precision limit.
+            if Decimal(str(display)) != consumed:
+                raise LeftoverRecognitionError('portion_requires_manual_quantity')
             labels.append(f'{name} 约{display}{unit}')
     if not labels:
         raise LeftoverRecognitionError('no_consumed_food')

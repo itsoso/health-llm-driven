@@ -209,14 +209,16 @@ async def test_photo_digest_must_match_original_asset(db,context,monkeypatch):
     assert 'proposed_food_items' not in answer['cards'][0]['data']['adjust_record']
 
 
-def test_generic_capture_cannot_save_leftovers_even_if_called_directly():
+@pytest.mark.parametrize('text', [REQUEST, '根据餐后照片修正昨天午餐记录',
+    '这是午餐餐后照片，请修正原来的记录'])
+def test_generic_capture_cannot_save_leftovers_even_if_called_directly(text):
     from app.services.agent_executor import AgentExecutor
     from unittest.mock import MagicMock
     executor=AgentExecutor(MagicMock())
     executor._current_user_id=1
     executor._current_turn_source_message_id=1
     result={'success':True,'foods':[{'name':'米饭','quantity':'半碗','confidence':.99}]}
-    assert executor._capture_contextual_meal_photos(REQUEST,result,image_indexes=[0]) is None
+    assert executor._capture_contextual_meal_photos(text,result,image_indexes=[0]) is None
     assert result['contextual_capture_write_blocked_reason']=='leftover_confirmation_required'
     executor.db.add.assert_not_called()
 
@@ -225,3 +227,19 @@ def test_generic_capture_cannot_save_leftovers_even_if_called_directly():
 def test_after_meal_alone_does_not_hijack_other_domains(text):
     from app.services.diet_leftover_correction import is_leftover_context
     assert not is_leftover_context(text)
+
+
+def test_small_mass_is_converted_without_rounding_write_payload():
+    from app.services.diet_leftover_correction import consumed_description
+    assert consumed_description([{'name':'米饭','quantity':'1千克'}],{
+        'comparable':True,'full_plate_visible':True,'items':[
+            {'index':0,'remaining_fraction':.994,'confidence':.9}]}) == '米饭 约6克'
+
+
+def test_unrepresentable_portion_requires_clarification_not_rounded_write():
+    from app.services.diet_leftover_correction import consumed_description
+    from app.services.ai.diet_leftover_vision import LeftoverRecognitionError
+    with pytest.raises(LeftoverRecognitionError):
+        consumed_description([{'name':'米饭','quantity':'1碗'}],{
+            'comparable':True,'full_plate_visible':True,'items':[
+                {'index':0,'remaining_fraction':.994,'confidence':.9}]})
