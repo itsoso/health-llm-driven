@@ -16,5 +16,7 @@
 - Focused SQLite tests: 213 passed. Includes original request and owner-bound retry through real diet API, blocked/runtime/read-only/incomplete-nutrition boundaries. No real models or real health records used.
 - System Map passed. PostgreSQL: 213 passed in 33.78s, isolated UTF-8 test database; /tmp/reva-dinner-pg.log.
 - Safety review, full CI and production deployment pending. No mobile change.
-- Existing local prompt-contract commits 51d7cf09b and 7b3c69f8c are preserved. Their receipt explicitly marks live-evaluation decision pending; this patch does not claim their deployment or waive that gate.
+- Existing local prompt-contract commits 51d7cf09b and 7b3c69f8c are included in this release batch. On 2026-10-22 the user explicitly replied “跳过 继续发布” to the question about skipping live model evaluation for this dinner and prompt-contract batch. Live evaluation status is waived, confirmed=false; bind HARNESS_LIVE_LLM_EVAL_WAIVED_SHA to the final exact release commit. Offline validation, independent safety review, full exact-SHA CI and production gates remain required.
 - Screenshot alone does not prove the retry was stuck for its entire timestamp interval. The test verifies original-message recovery and finalization; device UI timing remains unverified.
+
+- Duplicate retry replay tests: 5 passed on SQLite and 5 passed on isolated PostgreSQL; no duplicate meal was created. Independent safety review GO for implementation 92e14d4ff; final candidate incremental review remains required. Clean CI-mode on 92e14d4ff: 4588 tests, zero failures/errors, 49 skipped; final candidate verification and production readback pending.
