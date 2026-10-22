@@ -44,7 +44,14 @@
 - 独立 PostgreSQL 测试库 69 passed，实际 Pi/工具适配器读取合成数据：本人和指定
   时间范围正确、他人及窗外记录不泄露、原始健康数据指纹不变。
 - System Map、Dossier 一致性及 diff whitespace 检查通过。
-- 独立安全审查、精确 SHA CI 与线上发布状态记录在同名 Dossier；当前尚未发布。
+- 隔离同步 helper 后最终核心 3311 passed、PostgreSQL 组合 112 passed；独立审查另跑
+  78 项权限/同步合成反例，未意外放行。
+- 独立静态代码安全审查通过；发布 Gate 为 NO-GO，尚缺真实模型行为证据。
+  `agent_prompt_sections.py` 未命中现行高风险路径检测，不视为豁免。
+- 当前本地候选 `edf9b08e8959cf3efdda1a9a286ac812a311de7c`，未 push/deploy。
+  真实评测授权及后续精确 SHA CI/线上发布状态记录在同名 Dossier。
+- 该精确候选的干净源码本地 CI-mode 发布集成检查：4412 passed、127 subtests passed、49 skipped，
+  0 errors、0 failures。macOS 结果不替代远端 Linux CI。
 
 ## 保留的后续问题
 

@@ -6821,6 +6821,10 @@ def _parse_explicit_diet_correction(
     text = _normalize_meal_fraction_symbols(
         " ".join((message or "").strip().split())
     )
+    # Remaining food describes a subtraction proposal, never replacement food.
+    # Keep explicit consumed-fraction corrections (e.g. 没吃完，只吃了一半).
+    if re.search(r"剩余|剩下|剩菜|餐后照片|leftovers?", text, re.I):
+        return None
     if _DIET_LATEST_MEAL_RE.search(text):
         if not _has_explicit_update_intent(text) or _meal_fraction_utterance_is_unsafe(text, allow_latest=True):
             return None
@@ -17639,6 +17643,29 @@ class AgentExecutor:
             )
             record_write_requested = False
 
+        from app.services.diet_leftover_correction import is_leftover_context
+        if images and is_leftover_context(message) and self._has_food_photo_purpose(message):
+            from app.services.diet_leftover_correction import build_leftover_proposal
+
+            allowed = (health_evidence_turn is None and not read_only_tools
+                       and not self._read_only_turn and not self._runtime_write_block_reason
+                       and not self._has_isolated_report_scope() and not file_base64
+                       and self._should_preprocess_attached_images(user_id, message))
+            if allowed:
+                proposal = await build_leftover_proposal(
+                    self.db, user_id, conv.id, user_msg.id, message, images,
+                    self._agent_kernel_reference_now(), self._ensure_agent_kernel_turn().context.timezone,
+                )
+            else:
+                proposal = {"status": "waiting_for_user", "reason": "leftover_unavailable", "cards": [],
+                            "reply": "尚未修改饮食记录。当前无法进行剩余照片对比，请从原餐记录点击修正本餐，核对实际吃下的份量。"}
+            async for evt in self._run_diet_photo_correction_proposal(
+                proposal, svc=svc, conv=conv, user_id=user_id,
+                client_turn_id=client_turn_id, start_time=start_time,
+            ):
+                yield evt
+            return
+
         if (health_evidence_turn is None and not self._has_isolated_report_scope()
                 and not read_only_tools and not images and not file_base64):
             from app.services.diet_photo_correction import build_correction_proposal
@@ -22462,9 +22489,10 @@ class AgentExecutor:
         }
         meta = {
             "mode": "diet_photo_correction_proposal", "llm_rounds": 0, "llm_ms": 0,
+            "vision_ms": proposal.get("vision_ms", 0), "vision_calls": proposal.get("vision_calls", 0),
             "elapsed_ms": int((time.time() - start_time) * 1000),
             "cards": cards_for_persistence(cards), "write_receipts": [], "tools_used": [],
-            "sources_used": ["本人照片识别快照", "本人指定餐次记录"] if cards else [],
+            "sources_used": proposal.get("sources_used", ["本人照片识别快照", "本人指定餐次记录"] if cards else []),
             "client_turn_finalized": True, "record_intent_no_tool": False,
             "turn_outcome": outcome, **agent_completion_metadata("complete", outcome),
             "kernel_trace": self._agent_kernel_trace_summary(status="complete"),
@@ -25108,6 +25136,11 @@ class AgentExecutor:
                 block_reason
             )
             return None
+        from app.services.diet_leftover_correction import is_leftover_context
+        if is_leftover_context(user_message):
+            self._turn_contextual_diet_write_blocked_reason = "leftover_confirmation_required"
+            vision_result['contextual_capture_write_blocked_reason'] = 'leftover_confirmation_required'
+            return None
         normalized_indexes = sorted(set(image_indexes))
         if not normalized_indexes or any(
             image_index < 0 or image_index >= len(self._current_turn_image_urls)
@@ -25729,7 +25762,7 @@ class AgentExecutor:
         if not text.strip():
             return True
         return bool(re.search(
-            r"食物|饮食|餐|饭|吃|营养成分|热量|卡路里|"
+            r"食物|饮食|餐|饭|吃|剩菜|leftovers?|营养成分|热量|卡路里|"
             r"蛋白|碳水|脂肪|kcal|calorie",
             text,
             re.I,
