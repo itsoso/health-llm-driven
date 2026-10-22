@@ -11,8 +11,9 @@ import pytest
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('write_veto', ['', '不要修改数据。', '不要记录服药。'])
 async def test_long_analysis_reads_owned_recent_rows_including_inactive_supplement_history(
-    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch,
+    db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, write_veto,
 ):
     from app.models.agent_conversation import AgentMessage
     from app.models.daily_health import DietRecord, GarminData, WorkoutRecord
@@ -109,7 +110,7 @@ async def test_long_analysis_reads_owned_recent_rows_including_inactive_suppleme
     events = [event async for event in executor.run_stream(
         user.id,
         "请结合我的日常饮食、每天睡眠、运动状态和实际服用的补剂，分析我当前的状况。"
-        "要分别调用相关模块的HTTP接口或Skills，依据真实数据给我建议。",
+        "要分别调用相关模块的HTTP接口或Skills，依据真实数据给我建议。" + write_veto,
         client_turn_id="longitudinal-actual-adapter",
     )]
     done = next(e["data"] for e in reversed(events) if e.get("event") == "done")

@@ -1,7 +1,7 @@
 """Pure stage-rule assembly; authority and user evidence stay with the executor.
 
-The default builder is byte-equivalent to the original base rules. Keeping
-material selection separate lets experiments compare one stage at a time.
+The original safety rules remain byte-equivalent; response organization is
+appended separately so execution and synthesis receive the same guidance.
 """
 from collections.abc import Sequence
 
@@ -120,4 +120,10 @@ def build_base_prompt_parts(
         "- 不做诊断;不下诊断标签(如不直接断言\"代谢综合征\",用\"…的风险信号\"并建议就医确认)。",
         "- 不要说\"你的诊断非常准确\"。用户自述疼痛/功能问题时,改为\"你的描述提示可能存在某种模式,需要结合医生/康复师评估\";训练建议只作为健康管理/康复辅助动作,不是诊断或治疗处方。",
         "- **绝对不要把工具返回的原始 JSON / 数组 / 字段名(如 record_date、meal_type、food_items、`[{...}]`)复述或粘贴进回复。工具结果只供你阅读,必须用自然语言概括给用户**(例:今天只有早餐记录,没有午餐;而不是把 `[{\"record_date\":...,\"meal_type\":\"breakfast\",...}]` 贴出来)。",
+        "",
+        "## 回答组织",
+        "- 先直接回答用户当前问题，再给必要依据和下一步。普通单一问题通常用三到六句话；用户要求详细解释、逐项记录或多个问题时按需展开，不机械限字。不能为了简短省略风险信号、就医指引、关键日期和单位、证据缺口或不确定性。",
+        "- 面向用户使用自然语言，不复述内部的‘本轮’‘只读范围’‘授权解析’‘工具调用’等过程术语。执行失败仍须明确说明哪些事情未完成、哪些已核实完成；不得把系统解析失败说成用户没有授权，也不隐瞒真实权限限制。",
+        "- 已回答完当前问题就结束，不要以“如果你愿意”“要不要我再帮你”等泛化邀请收尾。仅在完成当前请求确实缺少信息时，一次问清必要项；明确告诉用户缺什么，避免让用户重复已给出的信息。",
+        "- 这些规则只调整表达，不改变工具权限、确认步骤或医疗安全要求。禁止写入不等于取消用户另行明确请求的查询；读取或保存是否成功必须以实际工具结果和回执为准。",
     ]

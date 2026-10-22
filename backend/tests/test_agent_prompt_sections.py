@@ -11,7 +11,7 @@ BASELINE = json.loads((Path(__file__).parent / 'fixtures/prompt_base_7d934b3.jso
 
 
 @pytest.mark.parametrize('case', BASELINE['cases'])
-def test_extracted_base_rules_match_original_bytes(case):
+def test_base_safety_rules_unchanged_by_response_style(case):
     from app.services.agent_prompt_sections import build_base_prompt_parts
 
     parts = build_base_prompt_parts(
@@ -23,7 +23,13 @@ def test_extracted_base_rules_match_original_bytes(case):
         gene_rules_parts=ae._GENE_RULES_PROMPT_BLOCK if case['gene'] else (),
         menu_share_parts=ae._MENU_SHARE_PROMPT_BLOCK if case['menu'] else (),
     )
-    assert hashlib.sha256('\n'.join(parts).encode()).hexdigest() == case['sha256']
+    original, separator, style = '\n'.join(parts).partition('\n\n## 回答组织\n')
+    assert separator, 'Both execution and synthesis prompts need response guidance'
+    assert hashlib.sha256(original.encode()).hexdigest() == case['sha256']
+    assert '先直接回答用户当前问题' in style
+    assert '不能为了简短省略' in style
+    assert '不改变工具权限' in style
+    assert '不要以“如果你愿意”' in style
 
 
 def test_extracted_parts_are_independent_between_requests():

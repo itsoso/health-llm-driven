@@ -861,7 +861,8 @@ def longitudinal_read_projection_text(snapshot, *, text_override: str | None = N
     active = project_active_quote_roles(active)
     if active is None:
         return None
-    return _restricted_read_text(snapshot, active)
+    from app.services.agent_kernel.health_semantics import project_read_request_without_write_veto
+    return _restricted_read_text(snapshot, project_read_request_without_write_veto(active))
 
 
 def longitudinal_read_restrictions_unresolved(snapshot) -> bool:
@@ -886,6 +887,8 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
     active = project_active_quote_roles(active)
     if active is None:
         return None
+    from app.services.agent_kernel.health_semantics import project_read_request_without_write_veto
+    active = project_read_request_without_write_veto(active)
     if (
         re.search(r"""[“”「」『』"'‘’`]""", active)
         or _NEGATIVE.search(active)

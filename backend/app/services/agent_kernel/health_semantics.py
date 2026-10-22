@@ -809,6 +809,28 @@ NEGATED_HEALTH_ACTION_RE = re.compile(
 )
 
 
+_WRITE_ONLY_VETO_CLAUSE_RE = re.compile(
+    r"(?:请)?(?:不要|别|不用|无需|不必|不需要|请勿|勿)"
+    r"(?:帮我|给我|替我)?"
+    r"(?:记录服药|记录用药|记录数据|记录|保存(?:数据|记录)?|新增记录|"
+    r"录入(?:数据|记录)|写入(?:数据|记录)|更新(?:数据|记录)|"
+    r"修改(?:数据|记录)|打卡)"
+)
+
+
+def project_read_request_without_write_veto(text: str) -> str:
+    """Remove only fully consumed write-only clauses from read projections.
+
+    Never use this for writes. Unknown objects, owners, dates and mixed clauses
+    survive unchanged so the existing read binders can reject them.
+    """
+    parts = re.split(r"([，,。；;！？!?\n])", str(text or ""))
+    for index in range(0, len(parts), 2):
+        if _WRITE_ONLY_VETO_CLAUSE_RE.fullmatch(parts[index].strip()):
+            parts[index] = ""
+    return "".join(parts).strip("，,。；;！？!?\n ")
+
+
 _EXAM_MODALITY_PATTERN = r"(?:MRI|核磁|磁共振|CT|X光|B超|胃镜)"
 _EXAM_ANATOMY_PATTERN = (
     r"(?:(?:左|右|双侧)?(?:头|头颅|颅脑|脑|脑部|胸|胸部|腹|腹部|盆腔|"
@@ -1565,6 +1587,10 @@ def resolve_health_read_act(text: str) -> HealthReadActResolution:
     saw_read = False
     for clause_start, clause_end in clause_spans:
         clause = normalized[clause_start:clause_end].strip("，,。.!！；;：:?？ ")
+        # A prohibition on saving data does not revoke a separate query.
+        # Keep the original text in active_clause and in all write checks.
+        if _WRITE_ONLY_VETO_CLAUSE_RE.fullmatch(clause):
+            continue
         read_match = next(iter(READ_VERB_RE.finditer(clause)), None)
         has_read = read_match is not None and has_positive_health_read_verb(clause)
         saw_read = saw_read or has_read

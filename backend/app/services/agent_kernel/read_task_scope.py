@@ -19,6 +19,7 @@ from app.services.agent_kernel.health_semantics import (
     health_read_cancelled,
     has_positive_health_read_verb,
     normalize_health_authorization_text,
+    project_read_request_without_write_veto,
 )
 from app.services.agent_query_window import resolve_calendar_query_window
 from app.services.agent_read_task_continuation import resolve_read_task_continuation
@@ -398,6 +399,8 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     if has_symptom_record_review_reference(snapshot.envelope.text):
         return None
     text = _active(snapshot.envelope.text)
+    if text is not None:
+        text = project_read_request_without_write_veto(text)
     if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
         return None
     # Prospective diet/medical advice does not implicitly authorize history.
