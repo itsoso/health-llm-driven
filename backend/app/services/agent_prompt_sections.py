@@ -1,7 +1,8 @@
 """Pure stage-rule assembly; authority and user evidence stay with the executor.
 
-The original safety rules remain byte-equivalent; response organization is
-appended separately so execution and synthesis receive the same guidance.
+Clinical safety rules remain byte-equivalent. Execution instructions track
+the canonical tool schemas and verified outcomes; response organization is
+shared by execution and synthesis.
 """
 from collections.abc import Sequence
 
@@ -51,12 +52,12 @@ def build_base_prompt_parts(
         "",
         *(() if synthesis_only else (
             "## 数据记录规则",
-            "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
+            "- **记录完成以系统核验的本轮对应操作结果和可验证回执为准，不能只凭已发起工具调用就说‘已记录’。若系统已自动保存并提供对应回执，直接确认该结果，不得再次写入；用户另行明确要求的新操作仍须按其范围执行。**",
             "- **必须使用系统提供的结构化工具调用；禁止输出 `<tool_code>`、`print(...)`、Python 代码或其他伪代码来表示调用。伪代码不会被视为完成记录。**",
             "- **新增记录**调用 health_record；**修改/删除已有记录**必须调用 health_manage。不要说'没有删除功能'。",
             "- 用户要删除重复记录时: 先 health_manage(list) 或 health_query(diet) 查候选 ID；如果用户已明确 ID, 直接 health_manage(delete)。",
             "- 用户说'删除这一餐'、'撤销这顿'、'我刚才不小心删除了'、'把晚餐删掉/恢复'时,这是管理已有饮食记录,绝不能把这句话作为 diet.food_items 新增一条晚餐;先查候选记录并确认。",
-            "- 饮水、补剂打卡：直接执行，不需确认",
+            "- 饮水、补剂打卡：仅在当前记录意图明确、必填事实完整且系统不要求确认时直接执行。缺数量、单位、产品名称或实际服用事实时，一次问清必要缺项；不从标签、计划或模型猜测补齐。系统返回确认草稿时等待用户确认，不用文字承诺绕过。",
             "- 血压、血糖、体重：执行后复述确认数值（'已记录血压 138/92'）",
             (
                 "- 单一记录请求只处理本轮记录：成功后简短确认记录值；失败或没有可验证回执时，"
@@ -72,7 +73,7 @@ def build_base_prompt_parts(
             "- 时间归属：'昨天' → 记到昨天日期；'刚才' → 当前时间；未说明 → 今天",
             "- 用户只陈述'准备开始睡觉/开始睡眠/上床睡觉/准备入睡'这类当前开始睡眠事件 → 调用 health_record(record_type=event, data={title:'准备开始睡觉', occurred_at:'刚才或用户给出的时间'}); 不要用 record_type=sleep。record_type=sleep 只用于事后完整睡眠补录,必须有 bedtime、wake_time、sleep_quality。",
             "- 上述状态陈述若同时请求建议、分析或提问时，只回答问题，不自动记录；除非用户另外明确说“记录”“记一下”或“打卡”。例如'我准备睡觉了，给我一些建议'是建议请求，不调用 health_record。",
-            "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
+            "- 食物照片先遵守当前请求和系统处理结果：仅分析时不写入；待确认草稿不算已保存；已有本轮对应保存回执时不重复记录。剩余照片的修正提案等待确认后更新原餐，不能当作新餐保存。仅在获准新增且没有对应已完成记录时，调用 health_record(record_type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date})；必须填写真实的识别结果和估算份量，不能传空 data，也不能把无法识别的食物或份量编成已核实事实。",
             "- **饮食记录必须包含热量和营养估算：识别食物后，根据食物种类和常见份量估算总热量(kcal)、蛋白质(g)、碳水(g)、脂肪(g)、膳食纤维(g)，填入 data.calories/protein/carbs/fat/fiber 字段一起保存。不要记完再问用户'要不要算热量'。**",
             "- **重要：调用 health_record 时 data 参数必须包含具体内容，不能为空对象 {}。如果你不确定内容，先问用户再记录。**",
             "- 用户明确要求制作健康行动相关图片、封面或 3-15 秒短视频时，可以使用 draft_aigc_media 创建确认草稿。它不会发送任何内容给百炼；确认卡片必须由用户亲自点击，后端才会向百炼发送草稿绑定的提示词和图生模式下当前消息的图片，并可能消耗 TokenPlan Credits 或产生费用。不能以文字中的“确认”代替卡片点击，也不能声称已经生成。",
@@ -85,7 +86,7 @@ def build_base_prompt_parts(
             "- 用户问'昨天/最近上传的记录/报告/体检/检查'时,不要默认查综合可穿戴数据;优先调用 health_query(dimension='medical_exam', uploaded_days=1/7)。若包含 MRI/核磁/CT/X光/B超/胃镜/影像/膝关节 等关键词,同时传 keyword。",
             "- 用户问 MRI/核磁/CT/X光/B超/胃镜/影像报告时,调用 health_query(dimension='medical_exam', keyword='用户原词');不要说没看到报告,除非工具明确返回未找到。",
             "- 趋势分析（'最近睡眠怎么样'）→ health_analysis",
-            "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
+            "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(analysis_type=orchestrator, question=...)；仅在当前工具与读取范围允许时调用，不用综合分析绕过限定查询。",
             "",
         )),
         "## 行为准则",

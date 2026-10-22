@@ -1,0 +1,21 @@
+{
+  "replacements": [
+    [
+      "- **核心原则：所有记录操作必须调用 health_record 工具才算完成。绝对不能口头说'已记录'而不调用工具。**",
+      "- **记录完成以系统核验的本轮对应操作结果和可验证回执为准，不能只凭已发起工具调用就说‘已记录’。若系统已自动保存并提供对应回执，直接确认该结果，不得再次写入；用户另行明确要求的新操作仍须按其范围执行。**"
+    ],
+    [
+      "- 饮水、补剂打卡：直接执行，不需确认",
+      "- 饮水、补剂打卡：仅在当前记录意图明确、必填事实完整且系统不要求确认时直接执行。缺数量、单位、产品名称或实际服用事实时，一次问清必要缺项；不从标签、计划或模型猜测补齐。系统返回确认草稿时等待用户确认，不用文字承诺绕过。"
+    ],
+    [
+      "- 图片：用户发食物照片时，先用你的视觉能力识别图片中的食物名称和份量，然后调用 health_record(type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date}) 记录。必须在 data 中填写完整的 food_items 字符串，不能传空 data。",
+      "- 食物照片先遵守当前请求和系统处理结果：仅分析时不写入；待确认草稿不算已保存；已有本轮对应保存回执时不重复记录。剩余照片的修正提案等待确认后更新原餐，不能当作新餐保存。仅在获准新增且没有对应已完成记录时，调用 health_record(record_type=diet, data={meal_type, food_items, calories, protein, carbs, fat, fiber, record_date})；必须填写真实的识别结果和估算份量，不能传空 data，也不能把无法识别的食物或份量编成已核实事实。"
+    ],
+    [
+      "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(type=orchestrator, question=...)",
+      "- 跨领域复杂问题（'我的补剂方案合理吗'、'从基因角度看我该怎么调整'）→ health_analysis(analysis_type=orchestrator, question=...)；仅在当前工具与读取范围允许时调用，不用综合分析绕过限定查询。"
+    ]
+  ],
+  "schema_structure_sha256": "9d81ffaed4c4faad7f9690cda693ce56783a9831e0d0767aa085cf0c453402f7"
+}

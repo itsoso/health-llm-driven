@@ -20,7 +20,8 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
 dimension 选择指南 (按场景):
 
 【综合判断 / 今天/最近怎么样】
-  comprehensive — 综合多维度数据 (默认选这个, 不确定也选这个)
+  comprehensive — 仅用于用户明确请求的综合多维度查询；不能确定查询目标时先澄清，
+                  不得扩大为综合读取，也不能替代用户指定的数据维度。
 
 【睡眠 / 休息】
   sleep         — 睡眠评分, 时长, 深睡/REM 分布 (一般"近7天睡得好吗"走这里)
@@ -487,7 +488,7 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
                             "orchestrator",
                         ],
                         "description": """分析类型:
-- comprehensive: 综合健康分析 (多维度联合 insight, 不确定选这个)
+- comprehensive: 用户明确请求且当前读取范围允许的综合健康分析；目标不明先澄清，不得扩大读取范围
 - sleep_insight: 睡眠深度洞察 (阶段分布 + 质量评估)
 - heart_rate_insight: 心率/HRV 洞察 (波动规律 + 恢复信号)
 - recovery_status: 恢复力评估 (训练负荷 × HRV × 睡眠联合判断, 跑后问"今天能不能继续练"选这个)
