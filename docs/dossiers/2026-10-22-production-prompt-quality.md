@@ -70,4 +70,17 @@
   未覆盖的“餐后照片”措辞可绕过新增拦截；展示舍入改变提案份量。
   新增反例 RED 4 failed/2 passed；修复采用更宽的只撤销新增权限规则，及 Decimal
   精确差量、千克转克；不能无损展示的份量转人工核对，不将舍入写回草稿。
-  修复后相关组合 329 passed/1 skipped，PostgreSQL 新功能 33 passed，等待重审。
+  修复后相关组合 329 passed/1 skipped，PostgreSQL 新功能 33 passed。
+- 固定 `2422ee13bea326175b176bb3c230b0b7fff1529e` 独立复审：静态实现 GO，
+  reviewer 独立复跑 78 tests 通过，并核验实际 capture 入口及千克/公斤/kg 三种单位。
+  发布仍为 NO-GO：须真实模型评测证据或用户明确豁免，再通过目标精确 SHA CI 与发布闸。
+
+- 前一代码候选 `ff58c9cf919a6426290269395527631b31a0d407` 的干净 checkout
+  本地 CI-mode 发布集成闸完成：JUnit 4588 项、0 errors、0 failures、49 skipped；
+  耗时 620.49 秒，运行后 checkout 干净。该结果不是修复后精确 SHA CI 证明，
+  仍需最终目标的完整 CI。
+- 联合合成评测准备完成 12 个文本请求及 8 个视觉请求，未调用 provider；
+  仅使用合成文字与程序绘制示意图。独立隔离探针验证非特权进程、无生产目录、
+  本地数据库/额外出网被阻断以及错误主机 TLS 证书拒绝。
+  双 endpoint 适配和 token 预算边界仍须受审，准备产物不是 live Gate 证据。
+  用户尚未选择允许合成评测或本次明确豁免；没有 push/deploy/OTA。
