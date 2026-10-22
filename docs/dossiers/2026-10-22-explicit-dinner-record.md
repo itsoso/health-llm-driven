@@ -12,7 +12,7 @@
 
 - The screenshot caption compiles to a diet/create goal with all five foods/amounts preserved. The existing diet preplan helper was not connected to the ordinary Pi loop.
 - RED: synthetic provider returns no tools, receipt remains empty. First two test invocations had an incorrect model import; corrected fixture then reproduced the behavioral failure.
-- Connect the existing preplan only for round-zero, authorized current-turn diet/create, no attachments, no pending/unverified operations, no runtime block or read-only mode. Keep ordinary nutrition enrichment, Pi validation, gateway, persistence and receipt verification.
+- Connect the existing proposal helper only after a normal round-zero model stop without tool calls, for authorized current-turn diet/create, no crisis language, no attachments, no pending/unverified operations, no runtime block or read-only mode. Keep ordinary nutrition enrichment, Pi validation, gateway, persistence and receipt verification.
 - Focused SQLite tests: 213 passed. Includes original request and owner-bound retry through real diet API, blocked/runtime/read-only/incomplete-nutrition boundaries. No real models or real health records used.
 - System Map passed. PostgreSQL: 213 passed in 33.78s, isolated UTF-8 test database; /tmp/reva-dinner-pg.log.
 - Safety review, full CI and production deployment pending. No mobile change.
@@ -20,3 +20,5 @@
 - Screenshot alone does not prove the retry was stuck for its entire timestamp interval. The test verifies original-message recovery and finalization; device UI timing remains unverified.
 
 - Duplicate retry replay tests: 5 passed on SQLite and 5 passed on isolated PostgreSQL; no duplicate meal was created. Independent safety review GO for implementation 92e14d4ff; final candidate incremental review remains required. Clean CI-mode on 92e14d4ff: 4588 tests, zero failures/errors, 49 skipped; final candidate verification and production readback pending.
+
+- Full remote CI 39788650370 rejected candidate 1ec8534b3 before production changes. Failures revealed a stale prompt projection assertion, crisis-turn enrichment, and automatic proposals preempting structured model results. Move proposal generation after a normal no-tool model stop, preserve structured nutrition and model-call accounting, exclude crisis turns, and strengthen crisis no-enrichment assertions. Existing receipt/gateway guards remain unchanged. Repaired candidate requires fresh exact-SHA CI and independent review.

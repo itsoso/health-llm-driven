@@ -41,7 +41,7 @@ def test_static_projection_retains_same_rules_without_loading_personal_context(d
     assert not calls
     for sentinel in ('PERSONAL_CONTEXT', 'COURSE', 'LIVER', 'LAB', 'MEDICATION', 'INTERVENTION', 'EFFECT'):
         assert sentinel + '_SENTINEL' not in projected
-    for rule in ('安全与边界 (R4', '不做诊断', '相关性,非因果', '必须调用 health_record', '确认卡片必须由用户亲自点击', '自我标识', 'STATIC_TRIAGE_SENTINEL'):
+    for rule in ('安全与边界 (R4', '不做诊断', '相关性,非因果', '记录完成以系统核验的本轮对应操作结果和可验证回执为准', '**新增记录**调用 health_record', '**修改/删除已有记录**必须调用 health_manage', '不得再次写入', '确认卡片必须由用户亲自点击', '自我标识', 'STATIC_TRIAGE_SENTINEL'):
         assert rule in normal and rule in projected
     from app.services.agent_executor import _CLINICIAN_PROVENANCE_PROMPT_BLOCK
     for rule in _CLINICIAN_PROVENANCE_PROMPT_BLOCK:

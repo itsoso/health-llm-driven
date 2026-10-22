@@ -922,8 +922,17 @@ async def test_crisis_record_turn_final_reply_keeps_hotline_without_echo(
     executor = AgentExecutor(db)
     captured = _stub_llm_reply(executor, monkeypatch, model_reply)
 
+    estimated = []
+    async def track_nutrition(*args, **kwargs):
+        estimated.append(True)
+        return None
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition", track_nutrition,
+    )
+
     streamed, persisted = await _run_turn(executor, user.id, message)
 
+    assert not estimated, "crisis support must not start automatic meal enrichment"
     assert captured, "stub model must actually run (no vacuous pass on an error path)"
     for text in (streamed, persisted):
         assert has_crisis_support(text)
