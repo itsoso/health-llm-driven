@@ -88,6 +88,19 @@ def test_read_descriptions_do_not_default_unknown_scope_to_comprehensive():
         assert '不得扩大' in description
 
 
+def test_water_does_not_inherit_supplement_required_facts():
+    water = next((line for line in _execution_prompt().splitlines() if line.startswith('- 饮水记录：')), '')
+    assert 'amount' in water
+    assert not any(word in water for word in ('产品名称', '服用', '服药'))
+
+
+def test_analysis_examples_do_not_expand_an_unspecified_query():
+    from app.services.tool_schema_registry import HEALTH_TOOLS
+    description = next(t['function']['description'] for t in HEALTH_TOOLS if t['function']['name'] == 'health_analysis')
+    assert '近7天怎么样 / 最近怎么样' not in description
+    assert '目标或维度不明时先澄清' in description
+
+
 def test_prompt_corrections_do_not_change_tool_schema_structure():
     from app.services.tool_schema_registry import HEALTH_TOOLS
 

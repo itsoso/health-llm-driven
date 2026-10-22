@@ -467,7 +467,8 @@ goal: {"title":"每日快走 30 分钟","status":"paused","notes":"膝盖恢复�
   health_analysis: 拉**解读** (HRV 下降和训练负荷有没有关系, 恢复得怎么样). 需要综合推理.
 
 选择指南:
-  用户问"近7天怎么样 / 最近怎么样"       → health_query comprehensive
+  用户明确请求最近整体健康数据且当前范围允许 → health_query comprehensive
+  目标或维度不明时先澄清；不能用综合查询替代已限定的单项查询。
   用户问"为什么 / 和 X 有关系吗 / 要不要调整" → health_analysis
 
 当涉及跨领域 (睡眠 × 运动 × 饮食) 或要给建议时, 优先 analysis.
