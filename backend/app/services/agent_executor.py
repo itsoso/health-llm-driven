@@ -19697,6 +19697,29 @@ class AgentExecutor:
                                 proposed_calls = self._initial_composed_read_calls(round_idx, round_tools)
                                 if proposed_calls:
                                     self._record_model_fallback_reason("owned_garmin_review_preplanned")
+                            if (
+                                not proposed_calls and round_idx == 0
+                                and not health_advice_buffered
+                                and not deterministic_simple_record_fallback_attempted
+                                and not unverified_write_operations and not failed_write_operations
+                                and not self._agent_kernel_pending_confirmation_tools
+                                and any((tool.get("function") or {}).get("name") == "health_record"
+                                        for tool in round_tools)
+                            ):
+                                # Compile only current-turn diet/create facts;
+                                # the ordinary Pi path still enriches nutrition,
+                                # validates scope and verifies the saved receipt.
+                                diet_call = _build_preplanned_simple_diet_tool_call(
+                                    self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
+                                    write_receipts=write_receipts,
+                                    has_attachment=bool(images or file_base64 or self._current_turn_has_attachment),
+                                    runtime_write_blocked=bool(self._runtime_write_block_reason),
+                                    read_only_turn=self._read_only_turn,
+                                )
+                                if diet_call is not None:
+                                    proposed_calls = [diet_call]
+                                    deterministic_simple_record_fallback_attempted = True
+                                    self._record_model_fallback_reason("simple_diet_record_preplanned")
                             from app.services.agent_symptom_status_observation import parse_symptom_status_observation
                             if (
                                 not proposed_calls and round_idx == 0
