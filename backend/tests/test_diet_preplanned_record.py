@@ -45,6 +45,13 @@ async def test_explicit_dinner_records_when_provider_returns_no_tool(db, monkeyp
     rows = db.query(DietRecord).filter_by(user_id=owned_data.id, record_date=clock[0].date()).all()
     assert len(rows) == 1
     assert rows[0].meal_type == 'dinner'
+    replay = [e async for e in trace.executor.run_stream(
+        owned_data.id, message, channel='typed', client_turn_id=turn_id, **kwargs,
+    )]
+    replay_done = next(e['data'] for e in reversed(replay) if e['event'] == 'done')
+    assert replay_done['write_receipts'] == done['write_receipts']
+    assert db.query(DietRecord).filter_by(user_id=owned_data.id,
+                                       record_date=clock[0].date()).count() == 1
 
 
 @pytest.mark.asyncio
