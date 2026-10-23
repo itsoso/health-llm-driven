@@ -222,3 +222,57 @@ complete exact owned identifier and one DROP statement, retaining the unowned
 database protection. The production runner is unchanged. Focused follow-up:
 191 passed, 3 environment-dependent skips. The failed CI remains failed; the
 corrected candidate needs fresh fixed review and CI, not a lucky rerun.
+
+The correction was independently reviewed at fixed `cfc996e7495e0d3bb9eebf9610694ec9bd97dac2`
+with 37 passed and 3 environment-dependent skips. Its complete local release
+invariants passed (3290 passed, 20 skipped, 84 subtests). Full CI `38038910636`
+succeeded with all 31 jobs, including native systemd 249 and Ubuntu 24 release
+invariants (3292 passed, 18 skipped, 84 subtests). This evidence remains tied to
+`cfc996e`; the later local adapter continuation cannot inherit its CI verdict.
+
+## Read-only release-owner handoff
+
+The authorized task route returned an original-owner observation at
+2026-10-10 08:57:32 UTC: production `346035f78b362804df06e1524099f87294286ef6`,
+clean checkout, backend/frontend/worker/beat active. Failed batch `637520e25`
+retains a trusted `NEEDS_OPERATOR` terminal and failure run `38031474956`.
+Launcher inode 7777226 had no holder observed in the instantaneous kernel read;
+the business lease was absent. Runtime remains paused, generation 8 / ack 7.
+This is attributed evidence from `优化 README`, not a bridge-owned production
+check or release reservation. The original task and authenticated administrator
+own reconciliation. No retry, receipt/lock deletion, or production write is
+authorized by this handoff.
+
+## Concrete local adapter continuation
+
+The temporary-filesystem host adapter, installed-history reader and exact boot-link
+primitive are implemented. Production capability issuance, closure authority and
+boot integration remain unavailable. Tests never run actual systemctl/nginx/curl
+commands and never read real credentials. Installed admission deliberately rejects
+every lifecycle namespace; its structural diagnostic is not authenticated closure
+or cross-namespace provisioning provenance.
+
+Advance independent review found OTA, retained-build and initial-bootstrap paths
+could reach a new claim before checking the bridge namespace. A second failing
+regression set reproduced six cases; the common history checks now run first.
+Actual temporary claim tests verify no lease or audit is created on rejection.
+Native-only paths already reached the real readiness gate before consumption.
+Exact credential revocation retains its existing scope and preserves recovery
+evidence. The original owner's independently reviewed bridge-backend-history fix
+was imported unchanged from `c45c152777b4175e7aa214e5e25deed71d2d11da`, limited to
+the installer and its tests; unrelated integration changes were not copied.
+
+Host tests exposed missing runtime-directory handling and a real stop limitation:
+HTTP 502 after the units stop cannot prove loaded nginx configuration. Missing
+parent absence is now checked narrowly without accepting symlinks; the 502 case
+retains uncertainty, preserves the include and never retries. Production stop
+still requires a reviewed proof/protocol, not a cached positive observation.
+
+Fresh combined verification after final corrections: **985 passed, 6 skipped**.
+This includes 72 host/boot tests and 40 installed-history filesystem tests.
+Coverage includes all activation/stop journal acknowledgement interruption points,
+claim fsync failures, exclusive writes, exact runtime inventory, proxy ownership,
+FIFO-safe reads, history/lease replacement and privacy. Secret scan, System Map,
+dossier consistency and shell syntax checks passed. The LLM change classifier
+requires no live evaluation for these paths; it does not waive cross-family G3.
+This candidate still needs fixed-commit independent review and its own complete CI.
