@@ -61,6 +61,10 @@ UNIT_CONFIG_PINS = {'celery-beat.service': '70a2c544ec74aa7218795a186446b921ba49
  'health-backend.service': '5aaf964ff5df7e42ff0ecc1c9ebb125201dfda05e1379189379f26a1ec32b6e9',
  'health-backend.socket': '30b035fcd5dbd1c194dd10817ea8aaed08b53e799b58e6547f8aeaa088aa17ac'}
 
+# Static projection of the independently captured post-containment unit properties.
+# Original UNIT_CONFIG_PINS remain historical raw evidence, not configuration hashes.
+UNIT_STATIC_CONFIG_PINS = {'health-backend.service': '484847fda07777bc8e283ed49290ed2794e6707a1d0dc5552f14608ad2b2de34', 'celery-worker.service': '73abf7db325abc817d7ee93e9f06622caf0ad4148a82a72db0f740273d05a8fd', 'celery-beat.service': '7b4ec3aa21dace0e28217cb831086fffe04ac1e88949911d75fb1c7f9ee9dbdb', 'health-backend.socket': '7416fff1af90dd70b403b15b221ec1943e0851f0a03e8a63a3b7db7a8de4fd94'}
+
 
 class RecoveryError(RuntimeError):
     pass
@@ -158,6 +162,42 @@ def stopped_unit_allowed(unit, fields, pids):
         need(fields['ActiveState'] == 'inactive' and fields['SubState'] == 'dead')
 
 
+UNIT_PROPERTIES = frozenset(('FragmentPath', 'DropInPaths', 'EnvironmentFiles',
+    'WorkingDirectory', 'User', 'Group', 'Requires', 'After', 'NeedDaemonReload'))
+
+
+def unit_static_properties(raw):
+    """Pin effective execution definitions, never systemd's last execution result.
+
+    Fail closed on unknown ExecStart serialization instead of dropping fields
+    by name or truncating argv. Service state/PIDs are checked by the base proof.
+    """
+    values = {}
+    for line in raw.decode().splitlines():
+        need('=' in line)
+        key, value = line.split('=', 1)
+        need(key in UNIT_PROPERTIES | {'ExecStart'})
+        if key == 'EnvironmentFiles':
+            values.setdefault(key, []).append(value)
+        else:
+            need(key not in values)
+            values[key] = value
+    need(UNIT_PROPERTIES - {'EnvironmentFiles'} <= values.keys())
+    if 'ExecStart' in values:
+        match = re.fullmatch(
+            r'(?P<definition>\{ path=[^;\n]+ ; argv\[\]=[^\n]*? ; ignore_errors=(?:yes|no))'
+            r' ; start_time=\[[^\]\n]+\] ; stop_time=\[[^\]\n]+\]'
+            r' ; pid=[0-9]+ ; code=(?:\(null\)|[a-z-]+) ; status=[0-9]+(?:/[A-Za-z0-9_-]+)? \}',
+            values['ExecStart'])
+        need(match is not None)
+        values['ExecStart'] = match.group('definition') + ' }'
+    return values
+
+
+def unit_static_digest(values):
+    return hashlib.sha256(json.dumps(values, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
+
+
 class DinnerProof:
     failed_sha = FAILED
     production_sha = PRODUCTION
@@ -178,11 +218,12 @@ class DinnerProof:
 
     def unit_configuration(self):
         result = {}
-        for unit, expected in UNIT_CONFIG_PINS.items():
+        for unit, expected in UNIT_STATIC_CONFIG_PINS.items():
             raw = run(['/usr/bin/systemctl', 'show', unit,
                 '--property=FragmentPath,DropInPaths,ExecStart,EnvironmentFiles,WorkingDirectory,User,Group,Requires,After,NeedDaemonReload'])
-            need(hashlib.sha256(raw).hexdigest() == expected)
-            values = dict(line.split('=', 1) for line in raw.decode().splitlines() if '=' in line)
+            values = unit_static_properties(raw)
+            need(('ExecStart' in values) == unit.endswith('.service'))
+            need(unit_static_digest(values) == expected)
             need(values['NeedDaemonReload'] == 'no')
             paths = [values['FragmentPath'], *values['DropInPaths'].split()]
             need(set(paths) == {p for p in FILE_PINS if p == values['FragmentPath'] or p.startswith('/etc/systemd/system/' + unit + '.d/')})
@@ -250,11 +291,13 @@ def load(path, name):
     return module
 
 
-def main():
+def main(*, continuation=None):
     parser = argparse.ArgumentParser(allow_abbrev=False)
     parser.add_argument('--sha', required=True)
     parser.add_argument('--evidence-sha256')
     parser.add_argument('--github-token-stdin', action='store_true', required=True)
+    if continuation is not None:
+        parser.add_argument('--accept-20261023-continuation', action='store_true', required=True)
     args = parser.parse_args()
     need(os.geteuid() == 0 and sys.flags.isolated and sys.flags.no_site and sys.flags.dont_write_bytecode)
     need(not sys.flags.optimize and re.fullmatch('[a-f0-9]{40}', args.sha) and args.sha not in (FAILED, PRODUCTION))
@@ -290,6 +333,11 @@ def main():
         check()
         bootstrap._recovery_process_proof()
         proof = DinnerProof(source, bootstrap, server, token, check)
+        if continuation is not None:
+            result = continuation(source, core, bootstrap, proof, args)
+            check()
+            print(json.dumps(result, sort_keys=True))
+            return
         parent = STATE / 'contained-service-recoveries'
         if os.path.lexists(parent):
             secure(parent, True)

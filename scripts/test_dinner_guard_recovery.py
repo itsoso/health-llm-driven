@@ -177,3 +177,61 @@ def test_dependency_walk_error_is_not_silently_skipped(tmp_path, monkeypatch):
     monkeypatch.setattr(m.os, 'walk', failed_walk)
     with pytest.raises(m.RecoveryError):
         m.dependency_metadata(tmp_path)
+
+
+def synthetic_unit_properties(runtime='', executable='/usr/bin/example', argv='/usr/bin/example --serve'):
+    return ('FragmentPath=/etc/systemd/system/example.service\n'
+            'DropInPaths=\nExecStart={ path=' + executable + ' ; argv[]=' + argv +
+            ' ; ignore_errors=no ; ' + (runtime or 'start_time=[n/a] ; stop_time=[n/a] ; pid=0 ; code=(null) ; status=0/0') +
+            ' }\nEnvironmentFiles=/etc/example.env (ignore_errors=no)\nWorkingDirectory=/srv/example\n'
+            'User=example\nGroup=example\nRequires=example.socket\nAfter=network.target\nNeedDaemonReload=no\n').encode()
+
+
+def test_unit_static_projection_ignores_only_execution_observations():
+    before = synthetic_unit_properties()
+    after = synthetic_unit_properties('start_time=[Fri 2026-10-23 02:00:00 UTC] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0/SUCCESS')
+    assert hashlib.sha256(before).digest() != hashlib.sha256(after).digest()
+    assert m.unit_static_properties(before) == m.unit_static_properties(after)
+
+
+@pytest.mark.parametrize('old,new', [('/usr/bin/example', '/usr/bin/other'),
+    ('--serve', '--unsafe'), ('ignore_errors=no ;', 'ignore_errors=yes ;'),
+    ('User=example', 'User=other'), ('After=network.target', 'After=other.target'),
+    ('EnvironmentFiles=/etc/example.env', 'EnvironmentFiles=/etc/other.env')])
+def test_unit_static_projection_preserves_effective_config(old, new):
+    raw = synthetic_unit_properties()
+    assert m.unit_static_properties(raw) != m.unit_static_properties(raw.replace(old.encode(), new.encode()))
+
+
+@pytest.mark.parametrize('suffix', ['unknown=yes', 'pid=abc', 'start_time=[x] ; pid=1'])
+def test_unit_static_projection_rejects_unrecognized_exec_format(suffix):
+    with pytest.raises(m.RecoveryError):
+        m.unit_static_properties(synthetic_unit_properties(suffix))
+
+
+def test_unit_static_projection_rejects_duplicate_properties():
+    with pytest.raises(m.RecoveryError):
+        m.unit_static_properties(synthetic_unit_properties() + b'User=other\n')
+
+
+def test_repeated_environment_files_are_preserved_in_order():
+    raw = synthetic_unit_properties()
+    first = m.unit_static_properties(raw + b'EnvironmentFiles=/etc/override.env (ignore_errors=no)\n')
+    assert first['EnvironmentFiles'] == ['/etc/example.env (ignore_errors=no)', '/etc/override.env (ignore_errors=no)']
+    assert first != m.unit_static_properties(raw)
+
+
+def test_unit_configuration_survives_start_but_rejects_changed_argv(monkeypatch):
+    before = synthetic_unit_properties()
+    monkeypatch.setattr(m, 'UNIT_STATIC_CONFIG_PINS', {'example.service': m.unit_static_digest(m.unit_static_properties(before))})
+    monkeypatch.setattr(m, 'FILE_PINS', {'/etc/systemd/system/example.service': 'a' * 64})
+    monkeypatch.setattr(m, 'identity', lambda *a, **k: ({'unchanged': True}, b''))
+    raw = [before]
+    monkeypatch.setattr(m, 'run', lambda args: raw[0])
+    proof = object.__new__(m.DinnerProof)
+    initial = proof.unit_configuration()
+    raw[0] = synthetic_unit_properties('start_time=[Fri 2026-10-23 02:00:00 UTC] ; stop_time=[n/a] ; pid=123 ; code=exited ; status=0')
+    assert proof.unit_configuration() == initial
+    raw[0] = raw[0].replace(b'--serve', b'--different')
+    with pytest.raises(m.RecoveryError):
+        proof.unit_configuration()

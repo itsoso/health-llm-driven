@@ -194,11 +194,19 @@ def _application_probes(production_sha, recovery_sha):
                    stderr=subprocess.DEVNULL, check=True, timeout=180)
 
 
-def recover_services(proof, audit, recovery_sha, expected_hash=None):
+def recover_services(proof, audit, recovery_sha, expected_hash=None, *, stage_observer=None):
+    current_stage = "admission"
+    def stage(name):
+        nonlocal current_stage
+        current_stage = name
+        if stage_observer is not None:
+            stage_observer(name)
+    stage("admission")
     if os.path.lexists(STATE / "unchanged-release-closures" / proof.failed_sha):
         raise RecoveryError("unchanged release closure already attempted")
     if os.path.lexists(audit):
         raise RecoveryError("recovery already attempted; retry forbidden")
+    stage("initial_snapshot")
     before = proof.snapshot()
     proof.stopped()
     evidence = {"recovery_sha": recovery_sha, "failed_sha": proof.failed_sha,
@@ -207,7 +215,9 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
     if expected_hash is not None and expected_hash != digest:
         raise RecoveryError("recovery evidence changed")
     try:
+        stage("application_probes")
         _application_probes(proof.production_sha, recovery_sha)
+        stage("verify_snapshot")
         if proof.snapshot() != before:
             raise RecoveryError("application preflight changed evidence")
         proof.stopped()
@@ -215,30 +225,42 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
         raise RecoveryError("application preflight failed; no recovery consumed") from None
     if expected_hash is None:
         return {"state": "INSPECTED", "evidence_sha256": digest}
+    stage("consume_intent")
     audit.mkdir(mode=0o700)
     _sync(audit.parent)
     _write(audit / "intent.json", {**evidence, "evidence_sha256": digest})
     started = False
     try:
+        stage("verify_snapshot")
         if proof.snapshot() != before:
             raise RecoveryError("pre-start evidence changed")
         proof.stopped()
         started = True
         for unit in UNITS:
+            stage("start_" + unit)
             _systemctl("start", unit)
+        stage("first_stable_health")
         _wait_ready(proof)
+        stage("application_probes")
         _application_probes(proof.production_sha, recovery_sha)
+        stage("http_auth_probes")
         _http_probes()
+        stage("final_stable_health")
         stable = _wait_ready(proof)
+        stage("verify_snapshot")
         if proof.snapshot() != before:
             raise RecoveryError("post-start evidence changed")
         result = {"state": "RESTORED_PREVIOUS_SERVICES", "recovery_sha": recovery_sha,
                   "failed_sha": proof.failed_sha, "production_sha": proof.production_sha,
                   "evidence_sha256": digest, "stable_services": stable,
                   "original_release_and_lease_preserved": True}
+        stage("write_completed")
         _write(audit / "completed.json", result)
         return result
-    except BaseException:
+    except BaseException as error:
+        failure = RecoveryError("recovery incomplete; preserve intent and original lease")
+        failure.recovery_stage = current_stage
+        failure.original_exception_type = type(error).__name__
         if started:
             failures = []
             for unit in UNITS:
@@ -252,7 +274,7 @@ def recover_services(proof, audit, recovery_sha, expected_hash=None):
                 failures.append("containment")
             if failures:
                 raise RecoveryError("recovery and containment unproven; preserve all evidence") from None
-        raise RecoveryError("recovery incomplete; preserve intent and original lease") from None
+        raise failure from None
 
 
 def _check_original_build_lock(bootstrap, failed_sha, fd):

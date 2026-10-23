@@ -50,3 +50,31 @@
 - Preserve original receipts and lease. No re-run, backup, real model invocation, or personal health record access. User explicitly confirmed dedicated old-service recovery on 2026-10-23. Recovery remains limited to unchanged previous services, preserving original receipts/lease, without replay or backup. A reviewed no-backup proof is required; existing legacy recovery cannot be reused as-is.
 
 - Dedicated recovery candidate `c93f0ec5ba220ffbfa02234a0ff1527c250027d2` passed independent safety review and 52 recovery tests. Full CI `39887385644` found existing frontend Next 16.3.8 vulnerable to GHSA-2464-fhr4-w9xw, GHSA-673q-mjm6-r5xr and GHSA-p3m5-59mp-jv5r. Upgrade only Next/eslint-config-next and lockfile to 16.4.1. Original OSV audit passes, frontend production build passes, Vitest 565 passed/1 skipped, lint 0 errors. New exact-SHA full CI remains required. Recovery and deployment remain unexecuted.
+
+
+### 2026-10-23 恢复后验失败：保留原 intent
+
+恢复候选 `6492f31789edf257ace6710cdfdff7b6c6c3b8b6` 的完整 CI
+`39888949129` 已成功；本地精确 CI-mode 4617 项，49 skipped，0 failures/errors。
+独立审查 GO 后 canonical stage、只读 inspect 成功，证据摘要
+`3d9c4ba906fae58c67c25d18bbc0ea2a18be37176a6745347a74387f3f2446a2`。
+
+已授权的一次恢复在写入原 audit intent 后启动三个服务，随后后验拒绝，
+保护逻辑停止全部服务。当前 audit 仅 intent.json，无 completed.json；
+原失败回执、lease 和生产 f42 代码保留，晚餐修复没有部署。
+只读诊断定位到 dinner_guard_recovery.unit_configuration 的 raw show hash；
+ExecStart 输出含启动时变化的 pid/start_time/stop_time/code/status，
+不可作为静态配置不变证明。原 FILE_PINS 在该诊断中通过。
+不得重放已消费恢复、改写 intent 或换操作 ID。须先完成静态配置修复与独立
+审查；任何第二次启动尝试需明确说明现有不重跑规则例外并取得具体授权。
+证据见本任务 receipt 及 /tmp/reva-dinner-recovery-readonly-diagnostic.json。
+
+
+### 2026-10-23 再次授权原服务恢复
+
+用户获知上述失败及再次恢复的规则例外后回复「授权恢复原版本服务」。
+继续限定原 f42 服务恢复，保留 ae49 失败回执、lease 与 6492 原恢复 intent。
+静态配置规范化修复已独立 GO，65 项测试通过；原依赖与全部配置文件 pins
+只读验证未变。当前正在准备固定原 audit/continuation-20261023-static-unit-proof 的单次继续入口；
+尚未再次启动，完整新 revision CI、独立审查与两阶段检查仍为必需条件。
+后续退休消费者也需认识该子目录终态，不能将其伪装为首次恢复成功。
