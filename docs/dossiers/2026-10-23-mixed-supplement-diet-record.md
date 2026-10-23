@@ -24,3 +24,9 @@
 - Real Pi, ToolGateway and authenticated supplement/diet API tests: 2 passed. Two distinct verified writes on success, one verified write plus error on definite sibling failure; same client turn replay creates neither duplicate. Synthetic NFC clock and debounce state are isolated per test.
 - PostgreSQL suites: 105 passed (supplement/domain/API); fresh final mixed scope and persistence tests: 26 passed. No real health data or actual model used.
 - System Map and dossier consistency checks pass. Executor broader regression pending; independent review and release gates remain pending.
+
+## Independent review correction
+
+- Initial commit 187c1ec8b received NO-GO: a correct top-level supplement target could carry an extra data.items batch through the existing projection. Downstream batch reconstruction still rejects it; no unintended persistence was proven. The capability boundary itself must reject it.
+- Added failing malicious-items regression (1 failed / 24 passed), then rejected any items key at either top-level or data for the mixed single-intake grammar. Malicious, empty, null and malformed aliases now covered. Fresh focused suite including real Pi/API persistence: 35 passed.
+- Broader executor/receipt/dinner regression on the initial implementation: 353 passed. Final correction only narrows capability authorization; fixed-commit independent re-review remains required.

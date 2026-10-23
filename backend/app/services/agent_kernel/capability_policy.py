@@ -4534,6 +4534,11 @@ def _health_record_target_status(
 
     mixed_intake = direct_mixed_supplement_food_values(snapshot.envelope.text)
     if mixed_intake is not None:
+        data = args.get("data") if isinstance(args.get("data"), dict) else {}
+        if "items" in args or "items" in data:
+            # This grammar grants one supplement and one drink, never a batch.
+            # Reject even malformed/empty arrays before payload projection.
+            return "mismatch"
         # Keep the two objects separate even though the turn-level classifier
         # is supplement. The drink uses the existing unassigned-meal storage
         # default (snack); no clock-based meal or supplement strength is inferred.

@@ -40,6 +40,8 @@ def test_mixed_intake_has_authority_for_both_typed_facts(text):
     ('supplement', {'supplement_name': '豆浆', 'dosage': '1杯'}),
     ('supplement', {'supplement_name': '锌片', 'dosage': '2粒'}),
     ('supplement', {'supplement_name': '锌片', 'dosage': '50mg'}),
+    ('supplement', {'supplement_name': '锌片', 'dosage': '1粒',
+                    'items': [{'supplement_name': '褪黑素', 'dosage': '20粒'}]}),
     ('diet', {'food_items': '一粒锌片'}),
     ('diet', {'food_items': '两杯豆浆'}),
     ('diet', {'food_items': '一杯豆浆', 'meal_type': 'dinner'}),
@@ -68,3 +70,15 @@ def test_mixed_intake_rejects_cross_type_or_invented_details(record_type, data):
 def test_mixed_intake_does_not_bypass_provenance_or_dose_boundaries(text):
     for record_type, data in [('supplement', {'supplement_name': '锌片', 'dosage': '1粒'}), ('diet', {'food_items': '一杯豆浆'})]:
         assert decision(text, record_type, data).action == 'block'
+
+
+@pytest.mark.parametrize('items', [[], None, 'invalid', [{'supplement_name': '锌片', 'dosage': '999粒'}]])
+@pytest.mark.parametrize('container', ['top', 'data'])
+def test_mixed_single_intake_rejects_any_batch_payload(items, container):
+    envelope = AgentEnvelope(user_id=1, channel='chat', text=TEXT)
+    context = ExecutionContext.for_test(user_id=1, channel='chat')
+    snapshot = TurnSnapshot(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    args = {'record_type': 'supplement', 'data': {'supplement_name': '锌片', 'dosage': '1粒'}}
+    (args if container == 'top' else args['data'])['items'] = items
+    result = decide_tool_capability(snapshot, ToolExecutionRequest(tool_name='health_record', arguments=args))
+    assert result.action == 'block'
