@@ -319,9 +319,28 @@ def _dinner_guard_module():
     return module
 
 
+def _fdd_guard_module():
+    path = Path(__file__).absolute().with_name("fdd_guard_retirement.py")
+    secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise BootstrapError("cached fdd retirement proof forbidden")
+    spec = importlib.util.spec_from_file_location("reviewed_fdd_retirement", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+def _dinner_profile_module(sha):
+    if sha == "fdd5659502888d44bf91c9b35a7368366932098f":
+        return _fdd_guard_module()
+    return _dinner_guard_module()
+
+
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
     dinner_closure = os.path.lexists(STATE / "dinner-guard-closures" / sha)
+    fdd_closure = os.path.lexists(STATE / "fdd-guard-closures" / sha)
     rollback_closure = os.path.lexists(STATE / "rolled-back-release-closures" / sha)
     retained_closure = os.path.lexists(STATE / "retained-candidate-closures" / sha)
     native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
@@ -330,8 +349,11 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure, dinner_closure)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure, dinner_closure, fdd_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if fdd_closure:
+        return _fdd_guard_module().closed_evidence(
+            sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if dinner_closure:
         return _dinner_guard_module().closed_evidence(
             sys.modules[__name__], sha, recovery_receipt, historical=historical)
@@ -1081,7 +1103,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
     if dinner_guard_github_token is not None:
-        if (old_sha != _dinner_guard_module().FAILED or recovery_receipt is None
+        if (old_sha != _dinner_profile_module(old_sha).FAILED or recovery_receipt is None
                 or finalized_production_sha is not None or backend_ci
                 or review_advance_receipt is not None or review_release_closure_receipt is not None
                 or review_release_github_token is not None

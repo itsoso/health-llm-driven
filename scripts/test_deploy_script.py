@@ -5325,16 +5325,20 @@ def test_deploy_runtime_deferral_requires_explicit_safe_report(safe, detail, def
         assert result.stdout.strip() == detail
 
 
-@pytest.mark.parametrize('case,allowed', [('inactive',True),('timeout',True),('timeout_stop_error',True),('lease_changed',False),('reactivated',False),('pid',False),('control_pid',False),('cgroup',False),('job',False),('exit_code',False),('stop_error',False)])
+@pytest.mark.parametrize('case,allowed', [('query_error',False),('inactive',True),('settling_cgroup',True),('transient_job',True),('settling_pid',True),('settling_state',True),('timeout',True),('timeout_stop_error',True),('lease_changed',False),('reactivated',False),('pid',False),('control_pid',False),('cgroup',False),('job',False),('exit_code',False),('stop_error',False)])
 def test_guard_stop_writer_timeout_requires_full_quiescence(tmp_path, case, allowed):
     env_file=tmp_path/'deploy.env';env_file.write_text('DEPLOY_SERVER=fake\nDEPLOY_PATH=/opt/test\n')
     fake=tmp_path/'bin';fake.mkdir();lease=tmp_path/'lease';lease.mkdir();(lease/'token').write_text('test-token\n')
     groups=tmp_path/'cgroup';groups.mkdir();events=tmp_path/'events';reset=tmp_path/'reset'
-    if case=='cgroup':(groups/'system.slice'/'celery-worker.service').mkdir(parents=True)
+    if case in ('cgroup','settling_cgroup'):(groups/'system.slice'/'celery-worker.service').mkdir(parents=True)
+    _write_executable(fake/'sleep', '''#!/usr/bin/env bash
+if [ "$CASE" = settling_cgroup ]; then rmdir "$CGROUP/system.slice/celery-worker.service" 2>/dev/null || :; fi
+touch "$ONCE"
+''')
     _write_executable(fake/'systemctl', '''#!/usr/bin/env bash
 printf '%s\\n' "$*" >> "$EVENTS"
 case "$1" in
-list-jobs) [ "$CASE" != job ] || echo '1 worker stop running';;
+list-jobs) if [ "$CASE" = job ] || { [ "$CASE" = transient_job ] && [ ! -e "$ONCE" ]; }; then echo '1 worker stop running'; fi;;
 stop)
  if [ "$CASE" = reactivated ] && [ "$2" = celery-beat.service ]; then touch "$RESET"; fi
  if [ "$CASE" = lease_changed ]; then rm -f "$LEASE/token"; fi
@@ -5343,16 +5347,30 @@ reset-failed) touch "$RESET";;
 show)
  property="${3#--property=}"
  case "$property" in
- ActiveState) if [ "$CASE" = reactivated ] && [ "$2" = health-backend.service ] && [ -e "$RESET" ]; then echo active; elif [ "$2" = celery-worker.service ] && [ "$CASE" != inactive ] && [ ! -e "$RESET" ]; then echo failed; else echo inactive; fi;;
+ ActiveState) if [ "$CASE" = settling_state ] && [ "$2" = celery-worker.service ] && [ ! -e "$ONCE" ]; then echo deactivating; elif [ "$CASE" = reactivated ] && [ "$2" = health-backend.service ] && [ -e "$RESET" ]; then echo active; elif [ "$2" = celery-worker.service ] && [ "$CASE" != inactive ] && [ ! -e "$RESET" ]; then echo failed; else echo inactive; fi;;
  SubState) if [ "$2" = celery-worker.service ] && [ "$CASE" != inactive ] && [ ! -e "$RESET" ]; then echo failed; else echo dead; fi;;
  Result) if [ "$CASE" = exit_code ]; then echo exit-code; else echo timeout; fi;;
- MainPID) if [ "$CASE" = pid ]; then echo 22; else echo 0; fi;;
+ MainPID) if [ "$CASE" = query_error ]; then exit 1; fi; if [ "$CASE" = pid ] || { [ "$CASE" = settling_pid ] && [ "$2" = celery-worker.service ] && [ ! -e "$ONCE" ]; }; then echo 22; else echo 0; fi;;
  ControlPID) if [ "$CASE" = control_pid ]; then echo 23; else echo 0; fi;;
  ControlGroup) echo '';;
  esac;;
 esac
 ''')
     result=subprocess.run(['bash','-c',f'source {DEPLOY_SCRIPT}; guard_stop_backend_writers "$LEASE" test-token "$CGROUP"'],capture_output=True,text=True,
-        env={**os.environ,'DEPLOY_ENV_FILE':str(env_file),'PATH':f'{fake}:'+os.environ['PATH'],'CASE':case,'EVENTS':str(events),'RESET':str(reset),'LEASE':str(lease),'CGROUP':str(groups)})
+        env={**os.environ,'DEPLOY_ENV_FILE':str(env_file),'PATH':f'{fake}:'+os.environ['PATH'],'CASE':case,'EVENTS':str(events),'RESET':str(reset),'LEASE':str(lease),'CGROUP':str(groups),'ONCE':str(tmp_path/'once')})
     assert (result.returncode==0)==allowed,(result.stdout,result.stderr)
     if not allowed and case not in ("reactivated",):assert not reset.exists()
+
+    assert 'test-token' not in result.stdout + result.stderr
+    if not allowed:
+        assert 'GUARD_STOP_REJECTED unit=' in result.stderr
+    expected_checks = {'query_error':'MainPID_query_failed', 'pid':'MainPID_not_zero',
+        'control_pid':'ControlPID_not_zero', 'cgroup':'cgroup_path_present',
+        'job':'systemd_jobs_present', 'exit_code':'non_timeout_failure',
+        'lease_changed':'lease_changed', 'reactivated':'state_not_stopped', 'stop_error':'stop_command_failed'}
+    if case in expected_checks:
+        assert 'check=' + expected_checks[case] in result.stderr
+    if case in ('cgroup','pid','control_pid','job','reactivated'):
+        assert 'attempt=40' in result.stderr
+    if case == 'query_error':
+        assert 'attempt=1' in result.stderr

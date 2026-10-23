@@ -112,3 +112,18 @@ ls-remote 返回当前 main。原 ae49 发布及两次恢复均禁止重放。
 同时修正下一次 guard 对 worker sticky timeout 的处理：仅在无 PID、ControlPID、
 cgroup、systemd 作业且租约仍有效时归一化 failed/timeout；其他失败仍阻断。
 新候选尚未发布，独立审查、完整精确 CI、CI-mode 及 canonical 收尾/轮换仍需实证。
+
+
+## 2026-10-23 第二次部署的停服检查事故
+
+候选 `fdd5659502888d44bf91c9b35a7368366932098f` 的完整 CI `39904217306` 成功，本地 CI-mode 4711 项（零失败、49 skipped）。原 ae49 事故收尾、凭据刷新及 fdd 授权安装均有成功回执。
+
+正式后端工作流 `39912810389` 在停止 writer 的 guard 阶段失败，终态 `NEEDS_OPERATOR`；生产代码仍为 f42，未 checkout、未启动 runtime prepare/install/commit/restore。后端及 worker 已正常停止，beat 保持原进程。失败日志没有精确检查项，不能从事后状态断言具体原因。
+
+依据用户既有原版本恢复授权，固定 fdd/f42 专用恢复入口验证源码、配置、依赖、schema、原 lease/stage/runtime 及混合服务状态。只读预检摘要为 `de48cf7ce6985439c571692b9e7341ba356d01cde96c7bbbb5d4f6d874a714be`，受审 apply 正在执行；未把原失败发布改为成功，不重放部署，不创建备份。
+
+新 guard 对状态/PID/cgroup/jobs 的异步收敛做固定有界等待，每轮复核 lease，查询错误与非 timeout 失败立即拒绝，最终两轮复证全部 writer 静止；新增静态 unit/phase/check/attempt 诊断。四种合理瞬态先红后绿，完整部署脚本测试 202 passed。此为收敛处理及诊断增强，不构成对本次现场具体失败项的确认。
+
+恢复 apply 已在 `verify_snapshot` 阶段失败，原 core 完成失败停服。只读复核四服务均 inactive/dead、无 systemd jobs，原 `intent.json` 与 `restore/intent.json` 保留，未生成 completed。原 restore snapshot 的 incident、config、installed 三部分与停服后观测均无变化；三个服务启动时间戳已推进，具体运行态触发条件尚未确定，不将其宣称为恢复或部署成功。原回执摘要：quiesce `6cb754d7a286ad1495d1975781808324cd765210bb2d2b115b3efa117a583217`，restore intent `e6ade82f0baf2822f7e712246d2cd9d0d2d57225823caeb778568f56fe016f03`。后续限定入口必须保留两份原始证据、原校验与失败隔离，并记录首个脱敏异常或差异字段，不能重放原 apply。
+
+限定续行实际完成 `RESTORED_PREVIOUS_SERVICES`；独立完整 collector 与公网 TLS 健康检查通过，数据库/Redis/Celery 均 connected，匿名 auth/me 仍 401。线上仍为 f42 旧版本，原 fdd NEEDS_OPERATOR 与 lease 保留。固定子目录 intent 原字节摘要 `0d60a90cc24c0735c8fef19ba98e5ba567437a5e81ecb80bf67ced18d04b2772`，completed `c464e556abce7814187745609758006fa3f77fe28c85831a6b395e01f087cc70`；实际取证摘要 `377c71560a95554f130b3f692336992ee0e5bcf97aaa7ab6c0a58e3e1e223531`。同一原校验在续行与独立运行态复核中通过，前次瞬态失败的具体原因仍未确定，不据此宣称其根因已修复。下一步仅为新候选发布，不重放 fdd 失败部署。

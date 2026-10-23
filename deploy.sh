@@ -3143,56 +3143,112 @@ verify_laya_service() {
 # reports no processes, control process, cgroup or queued operation.
 guard_stop_backend_writers() {
     local lock_dir="$1" token="$2" cgroup_root="$3"
-    local unit state substate value jobs stop_ok
+    local unit stop_ok guard_reason guard_state
     local units=(health-backend.socket health-backend.service celery-worker.service celery-beat.service)
+    guard_stop_lease() {
+        guard_reason=lease_changed
+        test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token"
+    }
+    guard_stop_jobs() {
+        local jobs
+        guard_reason=systemd_jobs_query_failed
+        jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 2
+        guard_reason=systemd_jobs_present
+        [ -z "$jobs" ]
+    }
+    guard_stop_probe() {
+        local target="$1" allow_timeout="$2" substate value property
+        guard_reason=active_state_query_failed
+        guard_state="$(systemctl show "$target" --property=ActiveState --value)" || return 2
+        guard_reason=sub_state_query_failed
+        substate="$(systemctl show "$target" --property=SubState --value)" || return 2
+        if [ "$guard_state" = failed ]; then
+            guard_reason=unexpected_failed_state
+            [ "$allow_timeout" = 1 ] && [ "$target" != health-backend.socket ] && [ "$substate" = failed ] || return 2
+            guard_reason=result_query_failed
+            value="$(systemctl show "$target" --property=Result --value)" || return 2
+            guard_reason=non_timeout_failure
+            [ "$value" = timeout ] || return 2
+        elif [ "$guard_state" != inactive ] || [ "$substate" != dead ]; then
+            guard_reason=state_not_stopped
+            return 1
+        fi
+        for property in MainPID ControlPID; do
+            guard_reason="${property}_query_failed"
+            value="$(systemctl show "$target" --property="$property" --value)" || return 2
+            guard_reason="${property}_not_zero"
+            [ "$value" = 0 ] || { [ "$target" = health-backend.socket ] && [ -z "$value" ]; } || return 1
+        done
+        guard_reason=control_group_query_failed
+        value="$(systemctl show "$target" --property=ControlGroup --value)" || return 2
+        guard_reason=control_group_not_empty
+        [ -z "$value" ] || return 1
+        guard_reason=cgroup_path_present
+        [ ! -e "$cgroup_root/system.slice/$target" ] && [ ! -L "$cgroup_root/system.slice/$target" ] || return 1
+        guard_stop_jobs
+    }
+    guard_stop_wait() {
+        local target="$1" phase="$2" allow_timeout="$3" attempt status reason
+        # systemctl stop can return before PID1/cgroup observations settle. Each
+        # poll re-proves the lease; only a complete unchanged proof may pass.
+        for ((attempt=1; attempt<=40; attempt++)); do
+            if ! guard_stop_lease; then
+                printf 'GUARD_STOP_REJECTED unit=%s phase=%s check=%s attempt=%s\n' "$target" "$phase" "$guard_reason" "$attempt" >&2
+                return 1
+            fi
+            status=0
+            if [ "$phase" = before_stop ]; then
+                guard_stop_jobs || status=$?
+            else
+                guard_stop_probe "$target" "$allow_timeout" || status=$?
+            fi
+            reason="$guard_reason"
+            if ! guard_stop_lease; then reason=lease_changed; status=2; fi
+            guard_reason="$reason"
+            if [ "$status" = 0 ]; then return 0; fi
+            if [ "$status" = 2 ] || [ "$attempt" = 40 ]; then
+                printf 'GUARD_STOP_REJECTED unit=%s phase=%s check=%s attempt=%s\n' "$target" "$phase" "$reason" "$attempt" >&2
+                return 1
+            fi
+            if [ "$attempt" = 1 ]; then
+                printf 'GUARD_STOP_WAIT unit=%s phase=%s check=%s\n' "$target" "$phase" "$reason"
+            fi
+            if ! sleep 0.25; then
+                printf 'GUARD_STOP_REJECTED unit=%s phase=%s check=wait_sleep_failed\n' "$target" "$phase" >&2
+                return 1
+            fi
+        done
+        return 1
+    }
     for unit in "${units[@]}"; do
-        test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
-        jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
-        [ -z "$jobs" ] || return 1
+        guard_stop_wait "$unit" before_stop 0 || return 1
         stop_ok=1
         systemctl stop "$unit" || stop_ok=0
-        state="$(systemctl show "$unit" --property=ActiveState --value)" || return 1
-        substate="$(systemctl show "$unit" --property=SubState --value)" || return 1
-        for value in MainPID ControlPID; do
-            local pid
-            pid="$(systemctl show "$unit" --property="$value" --value)" || return 1
-            [ "$pid" = 0 ] || { [ "$unit" = health-backend.socket ] && [ -z "$pid" ]; } || return 1
-        done
-        value="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
-        [ -z "$value" ] || return 1
-        [ ! -e "$cgroup_root/system.slice/$unit" ] && [ ! -L "$cgroup_root/system.slice/$unit" ] || return 1
-        jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
-        [ -z "$jobs" ] || return 1
-        if [ "$state" = failed ]; then
-            [ "$unit" != health-backend.socket ] && [ "$substate" = failed ] || return 1
-            value="$(systemctl show "$unit" --property=Result --value)" || return 1
-            [ "$value" = timeout ] || return 1
-            test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
-            systemctl reset-failed "$unit" || return 1
-        else
-            [ "$state" = inactive ] && [ "$substate" = dead ] && [ "$stop_ok" = 1 ] || return 1
+        guard_stop_wait "$unit" after_stop 1 || return 1
+        if [ "$guard_state" = failed ]; then
+            if ! guard_stop_lease; then
+                printf 'GUARD_STOP_REJECTED unit=%s phase=normalize check=lease_changed\n' "$unit" >&2
+                return 1
+            fi
+            if ! systemctl reset-failed "$unit"; then
+                printf 'GUARD_STOP_REJECTED unit=%s phase=normalize check=reset_failed\n' "$unit" >&2
+                return 1
+            fi
+        elif [ "$stop_ok" != 1 ]; then
+            printf 'GUARD_STOP_REJECTED unit=%s phase=after_stop check=stop_command_failed\n' "$unit" >&2
+            return 1
         fi
-        test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
-        [ "$(systemctl show "$unit" --property=ActiveState --value)" = inactive ] || return 1
-        [ "$(systemctl show "$unit" --property=SubState --value)" = dead ] || return 1
+        guard_stop_wait "$unit" after_normalize 0 || return 1
     done
-    # Re-prove the complete set after the last stop; no earlier unit may have
-    # reactivated while a later writer was stopping.
-    for unit in "${units[@]}"; do
-        [ "$(systemctl show "$unit" --property=ActiveState --value)" = inactive ] || return 1
-        [ "$(systemctl show "$unit" --property=SubState --value)" = dead ] || return 1
-        for value in MainPID ControlPID; do
-            local pid
-            pid="$(systemctl show "$unit" --property="$value" --value)" || return 1
-            [ "$pid" = 0 ] || { [ "$unit" = health-backend.socket ] && [ -z "$pid" ]; } || return 1
+    # Two complete rounds separated by a bounded interval prove the full writer
+    # set remains stopped, rather than just checking each unit once in turn.
+    local round
+    for round in 1 2; do
+        for unit in "${units[@]}"; do
+            guard_stop_wait "$unit" final_set 0 || return 1
         done
-        value="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
-        [ -z "$value" ] || return 1
-        [ ! -e "$cgroup_root/system.slice/$unit" ] && [ ! -L "$cgroup_root/system.slice/$unit" ] || return 1
+        if [ "$round" = 1 ]; then sleep 0.25 || return 1; fi
     done
-    test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
-    jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
-    [ -z "$jobs" ]
 }
 
 deploy_backend() {
