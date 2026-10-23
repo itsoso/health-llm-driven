@@ -120,9 +120,19 @@ def dependency_metadata(root):
     """No imports or package execution; reject any post-lease non-bytecode change."""
     root = Path(root)
     secure(root, True)
-    entries = []
-    for parent, dirs, files in os.walk(root, followlinks=False):
+    entries, directories = [], []
+    def walk_error(_error):
+        raise RecoveryError('dependency inventory unavailable') from None
+    for parent, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
         dirs[:] = sorted(d for d in dirs if d != '__pycache__')
+        for name in dirs:
+            path = Path(parent) / name
+            info = path.lstat()
+            need(stat.S_ISDIR(info.st_mode) or stat.S_ISLNK(info.st_mode))
+            need(max(info.st_ctime_ns, info.st_mtime_ns) < LEASE_NS)
+            target = os.readlink(path) if stat.S_ISLNK(info.st_mode) else None
+            directories.append((str(path.relative_to(root)), target, *(getattr(info, k) for k in FIELDS)))
+            need(len(directories) <= 100000)
         for name in sorted(files):
             if name.endswith(('.pyc', '.pyo')):
                 continue
@@ -135,7 +145,9 @@ def dependency_metadata(root):
     expected = {'/opt/health-app/backend/venv': 11935,
                 '/opt/health-app/backend/pi-runtime/node_modules': 11799}
     need(entries and (str(root) not in expected or len(entries) == expected[str(root)]))
-    return {'count': len(entries), 'sha256': hashlib.sha256(json.dumps(entries).encode()).hexdigest()}
+    return {'count': len(entries), 'directory_count': len(directories),
+            'sha256': hashlib.sha256(json.dumps([entries, directories]).encode()).hexdigest()}
+
 
 
 def stopped_unit_allowed(unit, fields, pids):

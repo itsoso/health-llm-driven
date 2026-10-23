@@ -138,3 +138,42 @@ def test_only_exact_sticky_lease_parent_exception(monkeypatch, mode, uid, gid, p
     else:
         with pytest.raises(m.RecoveryError):
             m.secure(Path(path), True, lease_parent=True)
+
+
+@pytest.mark.parametrize('kind', ['empty_directory', 'directory_symlink'])
+def test_dependency_rejects_post_lease_directory_entries(tmp_path, monkeypatch, kind):
+    from types import SimpleNamespace
+    package = tmp_path / 'package.py'
+    package.write_text('x = 1')
+    if kind == 'empty_directory':
+        (tmp_path / 'new_package').mkdir()
+    else:
+        outside = tmp_path.parent / (tmp_path.name + '-outside')
+        outside.mkdir()
+        (tmp_path / 'new_package').symlink_to(outside, target_is_directory=True)
+    original = Path.lstat
+    def observed(path):
+        info = original(path)
+        if path == package:
+            fields = {key: getattr(info, key) for key in m.FIELDS}
+            fields.update(st_ctime_ns=0, st_mtime_ns=0)
+            return SimpleNamespace(**fields)
+        return info
+    monkeypatch.setattr(Path, 'lstat', observed)
+    monkeypatch.setattr(m, 'secure', lambda *a: None)
+    monkeypatch.setattr(m, 'LEASE_NS', 1)
+    with pytest.raises(m.RecoveryError):
+        m.dependency_metadata(tmp_path)
+
+
+def test_dependency_walk_error_is_not_silently_skipped(tmp_path, monkeypatch):
+    (tmp_path / 'package.py').write_text('x = 1')
+    monkeypatch.setattr(m, 'secure', lambda *a: None)
+    monkeypatch.setattr(m, 'LEASE_NS', 2**63 - 1)
+    def failed_walk(root, **kwargs):
+        yield str(root), [], ['package.py']
+        if kwargs.get('onerror'):
+            kwargs['onerror'](PermissionError('synthetic inaccessible subdirectory'))
+    monkeypatch.setattr(m.os, 'walk', failed_walk)
+    with pytest.raises(m.RecoveryError):
+        m.dependency_metadata(tmp_path)
