@@ -308,5 +308,7 @@ def test_running_but_disabled_service_is_not_healthy(tmp_path, monkeypatch):
 def test_deploy_prepares_before_stopping_backend_and_activates_after_checkout():
     script = (ROOT / "deploy.sh").read_text()
     body = script.split("deploy_backend() {", 1)[1].split("deploy_frontend() {", 1)[0]
-    assert body.index("prepare_laya_service") < body.index("systemctl stop health-backend.socket")
+    assert body.index("prepare_laya_service") < body.index(
+        "guard_stop_backend_writers '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN' /sys/fs/cgroup"
+    )
     assert body.index("$remote_git_sync &&") < body.index("$activate_laya_service &&") < body.index("systemctl restart health-backend.socket")
