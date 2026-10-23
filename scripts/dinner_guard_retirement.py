@@ -124,12 +124,20 @@ def no_conflicts(b, sha):
     need(not any(os.path.lexists(b.STATE / name / sha) for name in CONFLICTS))
 
 
+def private_directory(b, path):
+    # bootstrap.secure(private=True) is exclusively for regular 0600 files.
+    # Keep its root-owner/ancestor/symlink checks, then require a private directory.
+    b.secure(path)
+    info = path.lstat()
+    need(stat.S_ISDIR(info.st_mode) and stat.S_IMODE(info.st_mode) == 0o700)
+
+
 def workspace(b, source):
     # The fixed ae49 incident failed before deployment.env was created. This is
     # a distinct, strictly ten-entry profile, not an optional-env relaxation of
     # any generic retained-candidate contract.
     root = b.STATE / FAILED
-    b.secure(root, private=True)
+    private_directory(b, root)
     need(stat.S_ISDIR(root.lstat().st_mode) and stat.S_IMODE(root.lstat().st_mode) == 0o700)
     expected = {'bin', 'completed.json', 'deployment-started.json', 'deployment.log',
                 'home', 'preparation-started.json', 'preparation.log', 'prepared.json',
@@ -198,7 +206,7 @@ def restoration(b, source):
     child = root / CONTINUATION
     for directory, names in ((root, {'intent.json', CONTINUATION}),
                              (child, {'intent.json', 'completed.json'})):
-        b.secure(directory, private=True)
+        private_directory(b, directory)
         need(stat.S_ISDIR(directory.lstat().st_mode))
         need({p.name for p in directory.iterdir()} == names)
     recovery_source = b.canonical_source(RESTORED_FROM)
@@ -261,7 +269,7 @@ class Adapter:
         self.check()
         no_conflicts(b, FAILED)
         if os.path.lexists(self.record.parent):
-            b.secure(self.record.parent, private=True)
+            private_directory(b, self.record.parent)
             need(stat.S_ISDIR(self.record.parent.lstat().st_mode))
         b._recovery_process_proof()
         original, completed, audit = restoration(b, self.source)
@@ -366,7 +374,7 @@ class Adapter:
 def closed_evidence(b, sha, receipt, *, historical=False):
     no_conflicts(b, sha)
     root = b.STATE / ROOT_NAME / sha
-    b.secure(root, private=True)
+    private_directory(b, root)
     b._inventory(root, {'intent.json', 'completed.json'})
     intent, done = (b._read_json(root / n) for n in ('intent.json', 'completed.json'))
     fields = {'old_sha', 'closing_sha', 'production_sha', 'restoration', 'snapshot', 'workspace',

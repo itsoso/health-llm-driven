@@ -85,7 +85,7 @@ def test_historical_consumption_preserves_receipt_and_no_live_dependency(tmp_pat
     from types import SimpleNamespace
     m = load()
     root = tmp_path / m.ROOT_NAME / m.FAILED
-    root.mkdir(parents=True)
+    root.mkdir(parents=True, mode=0o700)
     closing, recovery, receipt = '1'*40, '2'*40, '3'*64
     snapshot, audit, services, work = {k: {} for k in m.SNAPSHOT_FIELDS}, {'complete': True}, {'stable': True}, {'original': True}
     intent = {'old_sha': m.FAILED, 'closing_sha': closing, 'production_sha': m.PRODUCTION,
@@ -331,6 +331,7 @@ def restoration_tree(continuation_receipts,tmp_path,monkeypatch):
     root=tmp_path/'contained-service-recoveries'/m.FAILED
     child=root/m.CONTINUATION
     child.mkdir(parents=True,mode=0o700)
+    root.chmod(0o700)
     raw=json.dumps(prior).encode()
     (root/'intent.json').write_bytes(raw)
     pin=hashlib.sha256(raw).hexdigest()
@@ -388,3 +389,110 @@ def test_restoration_incomplete_continuation_rejected(restoration_tree):
     m,b,root,child=restoration_tree
     (child/'completed.json').unlink()
     with pytest.raises(m.ClosureError):m.restoration(b,Path('/unused'))
+
+
+@pytest.fixture
+def root_owned_metadata(monkeypatch, tmp_path):
+    """Real filesystem objects with only host-dependent ownership normalized."""
+    import os
+    original = Path.lstat
+    ancestors = set(tmp_path.parents)
+    def lstat(path, *args, **kwargs):
+        value = original(path, *args, **kwargs)
+        from types import SimpleNamespace
+        fields = {name: getattr(value, name) for name in dir(value) if name.startswith('st_')}
+        fields['st_uid'] = fields['st_gid'] = 0
+        if path in ancestors:
+            fields['st_mode'] &= ~0o022
+        return SimpleNamespace(**fields)
+    monkeypatch.setattr(Path, 'lstat', lstat)
+
+
+def test_private_directory_uses_real_bootstrap_secure(tmp_path, root_owned_metadata):
+    m, b = load(), bootstrap()
+    directory = tmp_path/'private-directory'
+    directory.mkdir(mode=0o700)
+    # Establish the exact dependency contract that exposed the production defect.
+    with pytest.raises(b.BootstrapError):
+        b.secure(directory, private=True)
+    m.private_directory(b, directory)
+    directory.chmod(0o755)
+    with pytest.raises(m.ClosureError):
+        m.private_directory(b, directory)
+    directory.chmod(0o777)
+    with pytest.raises(b.BootstrapError):
+        m.private_directory(b, directory)
+    file = tmp_path/'private-file'
+    file.write_text('synthetic')
+    file.chmod(0o600)
+    with pytest.raises(m.ClosureError):
+        m.private_directory(b, file)
+    link = tmp_path/'link'
+    link.symlink_to(file)
+    with pytest.raises(b.BootstrapError):
+        m.private_directory(b, link)
+
+
+def test_workspace_uses_real_bootstrap_directory_contract(dinner_workspace, root_owned_metadata):
+    m, b, source, root, executor, calls = dinner_workspace
+    real = bootstrap()
+    b.secure, b._read_json, b._preparation_manifest = real.secure, real._read_json, real._preparation_manifest
+    for path in root.iterdir():
+        if path.is_file():
+            path.chmod(0o600)
+    manifest = m.workspace(b, source)['manifest']
+    assert manifest['entries'] == 11 and manifest['bytes'] > 0
+    (root/'completed.json').chmod(0o644)
+    with pytest.raises(real.BootstrapError):
+        m.workspace(b, source)
+
+
+def test_restoration_directories_use_real_bootstrap_secure(restoration_tree, root_owned_metadata):
+    m, b, root, child = restoration_tree
+    b.secure = bootstrap().secure
+    assert m.restoration(b, root)[2]['root']['st_mode'] & 0o777 == 0o700
+    child.chmod(0o755)
+    with pytest.raises(m.ClosureError):
+        m.restoration(b, root)
+
+
+def test_real_installation_and_closure_inventory_contract(tmp_path, monkeypatch, root_owned_metadata):
+    m, b = load(), bootstrap()
+    config, library, canonical = (tmp_path/name for name in ('config', 'library', 'canonical'))
+    for directory in (config, library, canonical):
+        directory.mkdir(mode=0o700)
+    (canonical/'scripts').mkdir(mode=0o700)
+    code = b'executor synthetic bytes\n'
+    (canonical/'scripts/trusted_release_server.py').write_bytes(code)
+    executor = hashlib.sha256(code).hexdigest()
+    monkeypatch.setattr(b, 'canonical_source', lambda sha: canonical)
+    monkeypatch.setattr(b, 'CONFIG', config)
+    monkeypatch.setattr(b, 'INSTALLED', library/'trusted_release_server.py')
+    monkeypatch.setattr(b, 'AUTHORIZED', tmp_path/'authorized_keys')
+    monkeypatch.setattr(b, 'validate_install', lambda *args, **kwargs: None)
+    values = {'known_hosts': 'synthetic host', 'loopback.conf': 'synthetic config',
+              'authorized-release.json': json.dumps({'sha': m.FAILED, 'expires_at': 0, 'executor_sha256': executor}),
+              'cloud.pub': 'ssh-ed25519 cloudsynthetic', 'loopback.pub': 'ssh-ed25519 loopsynthetic'}
+    for name, value in values.items():
+        (config/name).write_text(value)
+        (config/name).chmod(0o600)
+    b.INSTALLED.write_bytes(code)
+    b.INSTALLED.chmod(0o600)
+    b.AUTHORIZED.write_text('unrelated operator key\n')
+    b.AUTHORIZED.chmod(0o600)
+    expected = {'config': b._inventory(config, set(values)), 'library': b._inventory(library, {b.INSTALLED.name})}
+    assert b._installation_evidence(m.FAILED, config, library) == expected
+    closure = tmp_path/'closure'
+    closure.mkdir(mode=0o700)
+    for name in ('intent.json', 'completed.json'):
+        (closure/name).write_text(json.dumps({'synthetic': True}))
+        (closure/name).chmod(0o600)
+    m.private_directory(b, closure)
+    assert set(b._inventory(closure, {'intent.json', 'completed.json'})) == {'.', 'intent.json', 'completed.json'}
+    assert b._read_json(closure/'intent.json') == {'synthetic': True}
+    (closure/'intent.json').chmod(0o644)
+    with pytest.raises(b.BootstrapError):
+        b._inventory(closure, {'intent.json', 'completed.json'})
+    (config/'cloud.pub').chmod(0o644)
+    with pytest.raises(b.BootstrapError):
+        b._installation_evidence(m.FAILED, config, library)
