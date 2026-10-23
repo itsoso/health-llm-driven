@@ -3139,6 +3139,62 @@ verify_laya_service() {
     ssh "$SERVER" "$(laya_service_command verify)"
 }
 
+# Guard-only stop proof: a sticky timeout may be normalized only after systemd
+# reports no processes, control process, cgroup or queued operation.
+guard_stop_backend_writers() {
+    local lock_dir="$1" token="$2" cgroup_root="$3"
+    local unit state substate value jobs stop_ok
+    local units=(health-backend.socket health-backend.service celery-worker.service celery-beat.service)
+    for unit in "${units[@]}"; do
+        test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
+        jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
+        [ -z "$jobs" ] || return 1
+        stop_ok=1
+        systemctl stop "$unit" || stop_ok=0
+        state="$(systemctl show "$unit" --property=ActiveState --value)" || return 1
+        substate="$(systemctl show "$unit" --property=SubState --value)" || return 1
+        for value in MainPID ControlPID; do
+            local pid
+            pid="$(systemctl show "$unit" --property="$value" --value)" || return 1
+            [ "$pid" = 0 ] || { [ "$unit" = health-backend.socket ] && [ -z "$pid" ]; } || return 1
+        done
+        value="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
+        [ -z "$value" ] || return 1
+        [ ! -e "$cgroup_root/system.slice/$unit" ] && [ ! -L "$cgroup_root/system.slice/$unit" ] || return 1
+        jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
+        [ -z "$jobs" ] || return 1
+        if [ "$state" = failed ]; then
+            [ "$unit" != health-backend.socket ] && [ "$substate" = failed ] || return 1
+            value="$(systemctl show "$unit" --property=Result --value)" || return 1
+            [ "$value" = timeout ] || return 1
+            test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
+            systemctl reset-failed "$unit" || return 1
+        else
+            [ "$state" = inactive ] && [ "$substate" = dead ] && [ "$stop_ok" = 1 ] || return 1
+        fi
+        test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
+        [ "$(systemctl show "$unit" --property=ActiveState --value)" = inactive ] || return 1
+        [ "$(systemctl show "$unit" --property=SubState --value)" = dead ] || return 1
+    done
+    # Re-prove the complete set after the last stop; no earlier unit may have
+    # reactivated while a later writer was stopping.
+    for unit in "${units[@]}"; do
+        [ "$(systemctl show "$unit" --property=ActiveState --value)" = inactive ] || return 1
+        [ "$(systemctl show "$unit" --property=SubState --value)" = dead ] || return 1
+        for value in MainPID ControlPID; do
+            local pid
+            pid="$(systemctl show "$unit" --property="$value" --value)" || return 1
+            [ "$pid" = 0 ] || { [ "$unit" = health-backend.socket ] && [ -z "$pid" ]; } || return 1
+        done
+        value="$(systemctl show "$unit" --property=ControlGroup --value)" || return 1
+        [ -z "$value" ] || return 1
+        [ ! -e "$cgroup_root/system.slice/$unit" ] && [ ! -L "$cgroup_root/system.slice/$unit" ] || return 1
+    done
+    test -r "$lock_dir/token" && test "$(cat "$lock_dir/token")" = "$token" || return 1
+    jobs="$(systemctl list-jobs --no-legend --no-pager)" || return 1
+    [ -z "$jobs" ]
+}
+
 deploy_backend() {
     local runtime_state_preflight_complete=0
     local remote_dependency_sync
@@ -3267,17 +3323,12 @@ deploy_backend() {
     _REMOTE_RELEASE_LOCK_DELEGATED=1
     set +e
     ssh $SERVER "
+        $(declare -f guard_stop_backend_writers)
         $(declare -f release_timing_checkpoint)
         SECONDS=0
         release_timing_checkpoint remote_guard_started && \
         echo '停止后端 socket 与所有 writer...' && \
-        systemctl stop health-backend.socket && \
-        systemctl stop health-backend && \
-        systemctl stop celery-worker celery-beat && \
-        test \"\$(systemctl show health-backend.socket -p ActiveState --value)\" = inactive && \
-        test \"\$(systemctl show health-backend -p ActiveState --value)\" = inactive && \
-        test \"\$(systemctl show celery-worker -p ActiveState --value)\" = inactive && \
-        test \"\$(systemctl show celery-beat -p ActiveState --value)\" = inactive && \
+        guard_stop_backend_writers '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN' /sys/fs/cgroup && \
         release_timing_checkpoint remote_writers_stopped && \
         if [ '$RUNTIME_STATE_RESUME_PHASE' != 'COMMITTED' ]; then \
             /usr/bin/python3 '$REMOTE_RUNTIME_STATE_RUNNER' \

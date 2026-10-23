@@ -1524,3 +1524,24 @@ Pi 安装并因路径不存在退出。修复后的 guard 将整个依赖块放�
 不可换目录绕过。执行前必须新精确绿色 CI、独立 GO、只读 inspect 摘要一致及
 显式限定授权参数。保留数据库只读探针、进程稳定、健康/认证后验和失败隔离；
 错误必须有脱敏阶段证据。恢复完成仍不代表新业务修复已部署或原发布成功。
+
+
+#### 晚餐事故恢复后的无副本收尾
+
+用户于 2026-10-23 要求继续上线。`scripts/dinner_guard_retirement.py` 仅用于上述
+固定 ae49 失败发布及 f42 恢复状态，不重跑已消费部署或恢复。收尾读取原 6492
+intent 和 2c2679 固定 continuation 子目录的 intent/completed，校验原字节摘要、
+静态配置桥和非 unit 证据；不得补造原根目录 completed 或忽略未知 snapshot 字段。
+
+新候选必须是完整 CI 绿色的精确当前 main，独立审查通过，先 inspect 再以相同证据
+摘要执行。持有既有 launcher/build 锁，保持原服务稳定，核验原失败 workspace、
+租约和 runtime。仅撤销准确匹配的旧 cloud/loopback 身份及旧 loopback 私钥；
+租约按同文件系统原 inode 移至固定终态路径，不复制配置、lease、stage 或数据。
+原失败回执、恢复 intent、continuation 审计均保留原字节。
+
+持久化收尾 intent/completed 并复证后，才产生受保护的单次 rotation receipt。
+新 canonical bootstrap 的 `rotate --dinner-guard-rotation-stdin` 仅接受该回执及
+只读仓库 token 的受保护 stdin，复验完整 CI 和原收尾状态；秘密不得进入 argv、
+公开日志或仓库。历史消费者只消费完整持久审计，不依赖已删除旧安装副本。
+任何 intent 后失败均保留证据并停止，禁止换 ID 或自动重放。收尾不重启服务，
+也不代表业务修复已部署；后续新候选仍须通过 trusted backend 发布及线上复验。

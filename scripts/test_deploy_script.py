@@ -777,7 +777,7 @@ def test_backend_wraps_runtime_state_in_verified_release_transaction():
     preflight = deploy_body.index(
         "run_runtime_state_transaction \\\n            preflight"
     )
-    stop = deploy_body.index("systemctl stop health-backend.socket")
+    stop = deploy_body.index("guard_stop_backend_writers ")
     prepare = deploy_body.index(
         "prepare-code '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA'"
     )
@@ -1344,11 +1344,7 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
     guard_end = deploy_body.index("CODE_EXIT=$?")
     guard_body = deploy_body[:guard_end]
 
-    stop_socket = guard_body.index("systemctl stop health-backend.socket")
-    stop_backend = guard_body.index("systemctl stop health-backend &&")
-    stop_celery = guard_body.index(
-        "systemctl stop celery-worker celery-beat"
-    )
+    stop_writers = guard_body.index("guard_stop_backend_writers ")
     checkout = guard_body.index("$remote_git_sync")
     dependency_sync = guard_body.index("$remote_dependency_sync")
     migration = guard_body.index("code-only：不执行数据库迁移")
@@ -1373,9 +1369,7 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
     )
 
     assert (
-        stop_socket
-        < stop_backend
-        < stop_celery
+        stop_writers
         < checkout
         < dependency_sync
         < migration
@@ -1443,10 +1437,15 @@ def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
         """#!/usr/bin/env bash
 printf 'systemctl:%s\\n' "$*" >> "$FAKE_EVENT_LOG"
 if [ "$1" = "show" ]; then
-    if [ "${FAKE_STOP_PROOF_FAILED:-0}" = 1 ] && [ "$2" = celery-worker ]; then
+    if [ "${FAKE_STOP_PROOF_FAILED:-0}" = 1 ] && [ "$2" = celery-worker.service ]; then
         printf 'failed\\n'
     else
-        printf 'inactive\\n'
+        case "$3" in
+            --property=ActiveState) printf 'inactive\\n';;
+            --property=SubState) printf 'dead\\n';;
+            --property=MainPID|--property=ControlPID) printf '0\\n';;
+            --property=ControlGroup) printf '\\n';;
+        esac
     fi
 fi
 """,
@@ -1566,8 +1565,8 @@ fi
         if event.startswith("systemctl:stop ")
     } >= {
         "stop health-backend.socket",
-        "stop health-backend",
-        "stop celery-worker celery-beat",
+        "stop health-backend.service",
+        "stop celery-worker.service",
     }
 
 
@@ -2634,7 +2633,7 @@ def test_backend_revokes_durable_runtime_before_checkout_or_kb_mutation():
     assert sync < body.index("prove_health_evidence_runtime_process_flag false", sync) < body.index("$remote_git_sync")
     assert "prepare-code" in body
     assert "python scripts/apply_managed_migrations.py" not in body
-    assert body.index("verify_code_only_source_changes") < body.index("systemctl stop health-backend.socket")
+    assert body.index("verify_code_only_source_changes") < body.index("guard_stop_backend_writers ")
 
 
 def test_deactivation_delegates_before_remote_stage_or_live_mutation_and_proves_last_restart():
@@ -5324,3 +5323,36 @@ def test_deploy_runtime_deferral_requires_explicit_safe_report(safe, detail, def
     assert (result.returncode == 0) is allowed
     if allowed:
         assert result.stdout.strip() == detail
+
+
+@pytest.mark.parametrize('case,allowed', [('inactive',True),('timeout',True),('timeout_stop_error',True),('lease_changed',False),('reactivated',False),('pid',False),('control_pid',False),('cgroup',False),('job',False),('exit_code',False),('stop_error',False)])
+def test_guard_stop_writer_timeout_requires_full_quiescence(tmp_path, case, allowed):
+    env_file=tmp_path/'deploy.env';env_file.write_text('DEPLOY_SERVER=fake\nDEPLOY_PATH=/opt/test\n')
+    fake=tmp_path/'bin';fake.mkdir();lease=tmp_path/'lease';lease.mkdir();(lease/'token').write_text('test-token\n')
+    groups=tmp_path/'cgroup';groups.mkdir();events=tmp_path/'events';reset=tmp_path/'reset'
+    if case=='cgroup':(groups/'system.slice'/'celery-worker.service').mkdir(parents=True)
+    _write_executable(fake/'systemctl', '''#!/usr/bin/env bash
+printf '%s\\n' "$*" >> "$EVENTS"
+case "$1" in
+list-jobs) [ "$CASE" != job ] || echo '1 worker stop running';;
+stop)
+ if [ "$CASE" = reactivated ] && [ "$2" = celery-beat.service ]; then touch "$RESET"; fi
+ if [ "$CASE" = lease_changed ]; then rm -f "$LEASE/token"; fi
+ [ "$CASE" != stop_error ] && { [ "$CASE" != timeout_stop_error ] || [ "$2" != celery-worker.service ]; };;
+reset-failed) touch "$RESET";;
+show)
+ property="${3#--property=}"
+ case "$property" in
+ ActiveState) if [ "$CASE" = reactivated ] && [ "$2" = health-backend.service ] && [ -e "$RESET" ]; then echo active; elif [ "$2" = celery-worker.service ] && [ "$CASE" != inactive ] && [ ! -e "$RESET" ]; then echo failed; else echo inactive; fi;;
+ SubState) if [ "$2" = celery-worker.service ] && [ "$CASE" != inactive ] && [ ! -e "$RESET" ]; then echo failed; else echo dead; fi;;
+ Result) if [ "$CASE" = exit_code ]; then echo exit-code; else echo timeout; fi;;
+ MainPID) if [ "$CASE" = pid ]; then echo 22; else echo 0; fi;;
+ ControlPID) if [ "$CASE" = control_pid ]; then echo 23; else echo 0; fi;;
+ ControlGroup) echo '';;
+ esac;;
+esac
+''')
+    result=subprocess.run(['bash','-c',f'source {DEPLOY_SCRIPT}; guard_stop_backend_writers "$LEASE" test-token "$CGROUP"'],capture_output=True,text=True,
+        env={**os.environ,'DEPLOY_ENV_FILE':str(env_file),'PATH':f'{fake}:'+os.environ['PATH'],'CASE':case,'EVENTS':str(events),'RESET':str(reset),'LEASE':str(lease),'CGROUP':str(groups)})
+    assert (result.returncode==0)==allowed,(result.stdout,result.stderr)
+    if not allowed and case not in ("reactivated",):assert not reset.exists()

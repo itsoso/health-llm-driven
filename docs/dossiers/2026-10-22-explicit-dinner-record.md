@@ -78,3 +78,37 @@ ExecStart 输出含启动时变化的 pid/start_time/stop_time/code/status，
 只读验证未变。当前正在准备固定原 audit/continuation-20261023-static-unit-proof 的单次继续入口；
 尚未再次启动，完整新 revision CI、独立审查与两阶段检查仍为必需条件。
 后续退休消费者也需认识该子目录终态，不能将其伪装为首次恢复成功。
+
+
+### 2026-10-23 原服务恢复完成（不等于晚餐修复发布）
+
+候选 `2c2679bf137aadc926c35d2197d740b3cefd5552` 经独立 G4 GO，
+完整 CI `39896637763` success；本地 exact CI-mode 4650 项，49 skipped，
+零失败/错误。canonical stage 与 inspect 成功，按固定摘要
+`b79b4a14f724648f264db72193db08424a0fdc5dffd30abb5a97b217e68ccf9f`
+执行已授权的单次 continuation，返回 RESTORED_PREVIOUS_SERVICES。
+
+独立回读确认生产仍为 f42、原 runtime COMMITTED；三个服务 active/running、
+NRestarts=0，原 ae49 NEEDS_OPERATOR、发布 lease、6492 原 intent 原字节均保留。
+continuation terminal 只在固定子目录内，未冒充首次恢复成功。公开 HTTPS
+health healthy，API/database/Redis/Celery 正常；匿名 auth/me=401。
+只读回读对 systemd socket 不提供 MainPID/NRestarts 的序列化差异做严格兼容，
+8 项正反测试和独立 GO 后复验成功；未重放生产恢复。
+
+证据位于本任务 receipt 与 /tmp/reva-dinner-continuation-readback-2.json、
+/tmp/reva-dinner-continuation-public-health-2.json。未备份、未读真实健康记录、
+未调用真实模型。晚餐修复仍未部署；后续 lifecycle 收尾须消费真实 continuation
+证据再走独立 gate，不能重跑原已失败部署或提前清除 lease。
+
+
+### 2026-10-23 新候选发布准备
+
+用户要求「想办法上线」。新鲜只读回读确认旧 f42 服务保持稳定、NRestarts=0，
+没有其他活动 trusted-release；GitHub relay enabled/active 且隔离 canonical
+ls-remote 返回当前 main。原 ae49 发布及两次恢复均禁止重放。
+
+为新候选补专用 no-copy retirement：严格消费原 intent 与实际成功 continuation，
+保留失败回执，撤销旧精确双身份，原 inode 归档租约后通过受保护回执轮换。
+同时修正下一次 guard 对 worker sticky timeout 的处理：仅在无 PID、ControlPID、
+cgroup、systemd 作业且租约仍有效时归一化 failed/timeout；其他失败仍阻断。
+新候选尚未发布，独立审查、完整精确 CI、CI-mode 及 canonical 收尾/轮换仍需实证。

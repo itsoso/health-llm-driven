@@ -307,8 +307,21 @@ def _inventory(directory, names, *, content_digests=None):
     return result
 
 
+def _dinner_guard_module():
+    path = Path(__file__).absolute().with_name("dinner_guard_retirement.py")
+    secure(path)
+    if os.path.lexists(path.parent / "__pycache__"):
+        raise BootstrapError("cached dinner retirement proof forbidden")
+    spec = importlib.util.spec_from_file_location("reviewed_dinner_retirement", path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    dinner_closure = os.path.lexists(STATE / "dinner-guard-closures" / sha)
     rollback_closure = os.path.lexists(STATE / "rolled-back-release-closures" / sha)
     retained_closure = os.path.lexists(STATE / "retained-candidate-closures" / sha)
     native_closure = os.path.lexists(STATE / "native-only-closures" / sha)
@@ -317,8 +330,11 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure, dinner_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if dinner_closure:
+        return _dinner_guard_module().closed_evidence(
+            sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if rollback_closure:
         if lost_receipt_ack or os.path.lexists(STATE / "recoveries" / sha):
             raise BootstrapError("conflicting rolled-back release closure evidence")
@@ -1060,10 +1076,18 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None, dinner_guard_github_token=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
+    if dinner_guard_github_token is not None:
+        if (old_sha != _dinner_guard_module().FAILED or recovery_receipt is None
+                or finalized_production_sha is not None or backend_ci
+                or review_advance_receipt is not None or review_release_closure_receipt is not None
+                or review_release_github_token is not None
+                or not isinstance(dinner_guard_github_token, str)
+                or re.fullmatch('[A-Za-z0-9_.-]{1,4096}', dinner_guard_github_token) is None):
+            raise BootstrapError("exclusive dinner retirement token and receipt required")
     if review_release_github_token is not None and (review_release_closure_receipt is None
             or not isinstance(review_release_github_token, str)
             or re.fullmatch('[A-Za-z0-9_.-]{1,4096}', review_release_github_token) is None):
@@ -1079,7 +1103,11 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if recovery_receipt is not None or finalized_production_sha is not None or backend_ci:
             raise BootstrapError("review advance requires exclusive exact candidate CI")
         _review_advance_module().profile(old_sha, sha)
-    if review_release_github_token is not None:
+    if dinner_guard_github_token is not None:
+        gate = _predeploy_module(source, 'trusted_release_gate.py')
+        gate.verify_release(sha, sha, observed_main=sha,
+            _get_json=lambda url: gate._get_json(url, token=dinner_guard_github_token))
+    elif review_release_github_token is not None:
         gate = _predeploy_module(source, 'trusted_release_gate.py')
         gate.verify_release(sha, sha, observed_main=sha,
             _get_json=lambda url: gate._get_json(url, token=review_release_github_token))
@@ -1142,6 +1170,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                 return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt, historical=True)
             return _workspace_evidence(old_sha, recovery_receipt=recovery_receipt)
         workspace = inspect_workspace()
+        if dinner_guard_github_token is not None and workspace.get("state") != "CLOSED_DINNER_GUARD_RELEASE":
+            raise BootstrapError("dinner rotation token requires completed dinner closure")
         advance = None
         if advanced:
             if workspace.get("state") != "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD":
@@ -1157,7 +1187,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if review_advance is not None:
             check_advance()
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE", "CLOSED_DINNER_GUARD_RELEASE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         current_keys = {name: (CONFIG / name).read_text().strip()
                         for name in ('cloud.pub', 'loopback.pub')}
@@ -1219,7 +1249,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
-        if workspace.get("state") == "CLOSED_UNCHANGED_RELEASE":
+        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE"}:
             # The no-copy closure already proved the revoked installation before
             # deletion. Reconsume its durable retirement audit now: this checks
             # canonical executor/public-key hashes, original closure receipt and
@@ -1998,6 +2028,7 @@ def main():
         rotation.add_argument("--cloud-public-key", required=True)
         rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
+        rotation.add_argument("--dinner-guard-rotation-stdin", action="store_true")
         rotation.add_argument("--review-maintenance-advance-receipt-stdin", action="store_true")
         rotation.add_argument("--review-maintenance-release-closure-receipt-stdin", action="store_true")
         rotation.add_argument("--finalized-production-sha", help="fixed reviewed native-closure production advance only")
@@ -2055,9 +2086,12 @@ def main():
         elif args.action == "rotate":
             receipt = None
             github_token = None
-            if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin)) > 1:
+            if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin, args.dinner_guard_rotation_stdin)) > 1:
                 raise BootstrapError("exclusive protected receipt required")
-            if args.review_maintenance_release_closure_receipt_stdin:
+            if args.dinner_guard_rotation_stdin:
+                protected = _dinner_guard_module().rotation_input(sys.stdin.buffer.read(8193))
+                receipt, github_token = protected['receipt'], protected['github_token']
+            elif args.review_maintenance_release_closure_receipt_stdin:
                 protected = _review_release_rotation_input()
                 receipt, github_token = protected['receipt'], protected['github_token']
             elif args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin:
@@ -2066,10 +2100,10 @@ def main():
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
-                            recovery_receipt=receipt if args.recovery_receipt_stdin else None,
+                            recovery_receipt=receipt if args.recovery_receipt_stdin or args.dinner_guard_rotation_stdin else None,
                             review_advance_receipt=receipt if args.review_maintenance_advance_receipt_stdin else None,
                             review_release_closure_receipt=receipt if args.review_maintenance_release_closure_receipt_stdin else None,
-                            **({'review_release_github_token': github_token} if github_token is not None else {}),
+                            **({('dinner_guard_github_token' if args.dinner_guard_rotation_stdin else 'review_release_github_token'): github_token} if github_token is not None else {}),
                             finalized_production_sha=args.finalized_production_sha,
                             **({"backend_ci": True} if args.backend_ci else {}))
         elif args.action == "install":
