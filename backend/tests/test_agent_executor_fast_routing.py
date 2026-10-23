@@ -2401,3 +2401,13 @@ def test_photo_supplement_target_mismatch_explains_image_binding_not_missing_use
     assert '请补全每项' not in reply
     assert '已记录' not in reply
     assert '瓶身名称' in reply
+
+
+def test_explicit_create_block_does_not_ask_user_to_choose_create_again():
+    reply = _record_intent_needs_detail_message(
+        '记录补剂 吃了一粒锌片 喝了一杯豆浆',
+        reason_codes=('write_tool_without_write_intent',),
+    )
+    assert '新增记录，还是更新' not in reply
+    assert '还没记下来' in reply
+    assert '已记录' not in reply

@@ -5606,6 +5606,11 @@ def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
 
 
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
+    from app.services.write_intent_scope import direct_mixed_supplement_food_values
+
+    mixed = direct_mixed_supplement_food_values(str(user_message or ""))
+    if mixed is not None:
+        return (_normalized_current_turn_entity_text(mixed["supplement_name"]),)
     raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
     names = list(_explicit_labeled_supplement_names(raw_message))
     intent = classify_agent_utterance(raw_message)
@@ -6094,6 +6099,14 @@ def _record_intent_needs_detail_message(
         return (
             f"「{text}」还没记下来：待写入的名称或剂量没能与这条请求准确对应。"
             "请补全每项的名称、数量和单位后重新发送；本轮没有执行记录。"
+        )
+    if "write_tool_without_write_intent" in reason_codes:
+        # A policy rejection is not evidence that the user failed to choose
+        # create versus update. In particular, mixed current-turn facts can
+        # have a clear create intent while their target binding fails.
+        return (
+            "这条请求还没记下来，这轮没有完成记录动作。"
+            "系统未能将待保存内容与本次记录请求正确对应，本轮没有写入。"
         )
     # Capability blocks are deterministic boundaries, not transient failures.
     # Match turn_outcome.retryable=False without inventing a confirmation UI.

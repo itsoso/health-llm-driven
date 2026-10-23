@@ -1678,6 +1678,33 @@ def _event_segment_has_unmodeled_clause(segment: str) -> bool:
     return False
 
 
+# Only complete, current-self, quantified intake facts are decomposed here.
+# A closed vocabulary keeps a residual subject, medication, denial, quotation,
+# plan or attribution from being mistaken for the first predicate's object.
+_MIXED_SUPPLEMENT_DRINK_RE = re.compile(
+    r"(?:请|帮我)?记录补剂[:：]?(?:我)?(?:今天|刚才|刚刚)?"
+    r"(?:吃了|服了|服用了)"
+    r"(?P<dose>(?:[1-9][0-9]*|[一二两三四五六七八九十]+)(?:粒|片))"
+    r"(?P<name>锌片|钙片|鱼油|甘氨酸镁|褪黑素|复合维生素|维生素[abcd][0-9]*)"
+    r"[，,]?(?:并且|然后|还)?(?:我)?喝了"
+    r"(?P<food>(?:[1-9][0-9]*(?:\.[0-9]+)?|[一二两三四五六七八九十]+|半)"
+    r"(?:杯|毫升|ml)(?:豆浆|牛奶|酸奶))"
+    r"[。.!！]?"
+)
+
+
+def direct_mixed_supplement_food_values(value: str) -> dict[str, str] | None:
+    """Extract two explicit intake facts without inferring strength or meal time."""
+    match = _MIXED_SUPPLEMENT_DRINK_RE.fullmatch(normalize_write_scope_text(value))
+    if match is None:
+        return None
+    return {
+        "supplement_name": match.group("name"),
+        "dosage": match.group("dose"),
+        "food_items": match.group("food"),
+    }
+
+
 def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     """Return every direct clause that may own one concrete health write.
 
@@ -1690,6 +1717,12 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     text = normalize_write_scope_text(value)
     if not text:
         return ()
+    mixed_intake = direct_mixed_supplement_food_values(text)
+    if mixed_intake is not None:
+        return (
+            f"记录补剂{mixed_intake['dosage']}{mixed_intake['supplement_name']}",
+            f"记录饮食{mixed_intake['food_items']}",
+        )
     limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
     if limiting_matches:
         text = text[limiting_matches[-1].end() :]

@@ -4530,6 +4530,35 @@ def _health_record_target_status(
                 == _normalize_entity_name(exact_name)
                 else "mismatch"
             )
+    from app.services.write_intent_scope import direct_mixed_supplement_food_values
+
+    mixed_intake = direct_mixed_supplement_food_values(snapshot.envelope.text)
+    if mixed_intake is not None:
+        # Keep the two objects separate even though the turn-level classifier
+        # is supplement. The drink uses the existing unassigned-meal storage
+        # default (snack); no clock-based meal or supplement strength is inferred.
+        default_date = snapshot.context.current_time.date().isoformat()
+        expected: dict[str, Any] = {
+            "target_date": default_date,
+            "default_date": default_date,
+        }
+        if requested_type == "supplement":
+            expected.update({
+                "names": (mixed_intake["supplement_name"],),
+                "dosage": mixed_intake["dosage"],
+            })
+        elif requested_type == "diet":
+            expected.update({
+                "food_items": mixed_intake["food_items"],
+                "meal_types": ("snack",),
+            })
+        else:
+            return "mismatch"
+        return (
+            "mismatch" if _target_values_mismatch(requested_type, expected, args)
+            else "match"
+        )
+
     if requested_type == "supplement" and re.search(
         r"(?:记录|打卡)补剂\s*[:：]",
         str(snapshot.envelope.text or ""),
