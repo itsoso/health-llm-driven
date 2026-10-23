@@ -30,3 +30,10 @@
 - Initial commit 187c1ec8b received NO-GO: a correct top-level supplement target could carry an extra data.items batch through the existing projection. Downstream batch reconstruction still rejects it; no unintended persistence was proven. The capability boundary itself must reject it.
 - Added failing malicious-items regression (1 failed / 24 passed), then rejected any items key at either top-level or data for the mixed single-intake grammar. Malicious, empty, null and malformed aliases now covered. Fresh focused suite including real Pi/API persistence: 35 passed.
 - Broader executor/receipt/dinner regression on the initial implementation: 353 passed. Final correction only narrows capability authorization; fixed-commit independent re-review remains required.
+
+## Numeric-boundary follow-up
+
+- Adversarial probes after the first review found ambiguous Chinese counts and legacy food comparison removing decimal points (1.5 cups could match 15 cups). A second NO-GO supersedes the earlier GO pending correction.
+- Chinese quantities now use canonical positive integer forms. Mixed drink matching independently binds exact Decimal amount, unit and closed drink name, preserving decimal points and allowing equivalent order/half-cup forms. General food parsing is unchanged. Mixed supplement dosage uses the existing punctuation-preserving supplement normalizer before legacy projection.
+- RED: eight malformed Chinese count cases failed before correction; eight decimal/corrupted dose cases failed before correction. Corrected focused tests 55 passed; final expanded PostgreSQL scope/API tests 59 passed. Final scope suite and independent re-review pending.
+- Earlier local CI-mode candidates are superseded, not publication proof. No push, no production mutation. The current-batch live-evaluation/waiver choice was requested because previous waiver was scoped to the prior released batch and has been cleared.

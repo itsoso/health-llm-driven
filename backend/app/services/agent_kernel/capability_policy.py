@@ -4548,6 +4548,11 @@ def _health_record_target_status(
             "default_date": default_date,
         }
         if requested_type == "supplement":
+            requested_dose = _effective_argument_value(
+                args, data, data_keys=("dosage",), arg_keys=("dosage",),
+            )
+            if normalize_supplement_dosage(requested_dose) != normalize_supplement_dosage(mixed_intake["dosage"]):
+                return "mismatch"
             expected.update({
                 "names": (mixed_intake["supplement_name"],),
                 "dosage": mixed_intake["dosage"],
@@ -4556,6 +4561,7 @@ def _health_record_target_status(
             expected.update({
                 "food_items": mixed_intake["food_items"],
                 "meal_types": ("snack",),
+                "strict_single_drink": True,
             })
         else:
             return "mismatch"
@@ -6408,7 +6414,12 @@ def _target_values_mismatch(
                 requested_meal,
                 expected.get("food_items"),
             )
-            if not _food_targets_match(expected_food, requested_food):
+            matches_food = (
+                _strict_single_drink_matches(expected_food, requested_food)
+                if expected.get("strict_single_drink")
+                else _food_targets_match(expected_food, requested_food)
+            )
+            if not matches_food:
                 return True
 
     numeric_keys = {
@@ -7501,6 +7512,32 @@ def _normalize_unit(value: Any) -> str:
 def _normalize_reminder_title(value: Any) -> str:
     normalized = _normalize_entity_name(value)
     return re.sub(r"(?:提醒|闹钟)$", "", normalized)
+
+
+def _strict_single_drink_matches(expected: Any, requested: Any) -> bool:
+    """Compare one bounded drink without punctuation-stripping quantities."""
+    def signature(value: Any) -> tuple[str, Decimal, str] | None:
+        if not isinstance(value, str):
+            return None
+        raw = re.sub(r"\s+", "", unicodedata.normalize("NFKC", value)).casefold()
+        number = r"(?:[1-9][0-9]*(?:\.[0-9]+)?|0\.[0-9]+|[一二两三四五六七八九]|[一二三四五六七八九]?十[一二三四五六七八九]?|半)"
+        amount = rf"(?P<number>{number})(?P<unit>杯|毫升|ml)"
+        food = r"(?P<food>豆浆|牛奶|酸奶)"
+        match = re.fullmatch(amount + food, raw) or re.fullmatch(food + amount, raw)
+        if match is None:
+            return None
+        quantity = match.group("number")
+        if quantity == "半":
+            quantity = "0.5"
+        elif not re.fullmatch(r"[0-9]+(?:\.[0-9]+)?", quantity):
+            quantity = str(_parse_small_chinese_number(quantity))
+        parsed = Decimal(quantity)
+        if parsed <= 0:
+            return None
+        return match.group("food"), parsed, {"毫升": "ml"}.get(match.group("unit"), match.group("unit"))
+
+    left, right = signature(expected), signature(requested)
+    return left is not None and left == right
 
 
 def _food_targets_match(expected: Any, requested: Any) -> bool:

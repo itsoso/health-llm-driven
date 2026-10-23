@@ -1681,13 +1681,14 @@ def _event_segment_has_unmodeled_clause(segment: str) -> bool:
 # Only complete, current-self, quantified intake facts are decomposed here.
 # A closed vocabulary keeps a residual subject, medication, denial, quotation,
 # plan or attribution from being mistaken for the first predicate's object.
+_MIXED_INTAKE_COUNT = r"(?:[1-9][0-9]*|[一二两三四五六七八九]|[一二三四五六七八九]?十[一二三四五六七八九]?)"
 _MIXED_SUPPLEMENT_DRINK_RE = re.compile(
     r"(?:请|帮我)?记录补剂[:：]?(?:我)?(?:今天|刚才|刚刚)?"
     r"(?:吃了|服了|服用了)"
-    r"(?P<dose>(?:[1-9][0-9]*|[一二两三四五六七八九十]+)(?:粒|片))"
+    rf"(?P<dose>{_MIXED_INTAKE_COUNT}(?:粒|片))"
     r"(?P<name>锌片|钙片|鱼油|甘氨酸镁|褪黑素|复合维生素|维生素[abcd][0-9]*)"
     r"[，,]?(?:并且|然后|还)?(?:我)?喝了"
-    r"(?P<food>(?:[1-9][0-9]*(?:\.[0-9]+)?|[一二两三四五六七八九十]+|半)"
+    rf"(?P<food>(?:[1-9][0-9]*\.[0-9]+|{_MIXED_INTAKE_COUNT}|半)"
     r"(?:杯|毫升|ml)(?:豆浆|牛奶|酸奶))"
     r"[。.!！]?"
 )
