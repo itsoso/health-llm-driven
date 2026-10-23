@@ -1389,8 +1389,9 @@ def test_guard_probes_full_schema_before_starting_any_backend_writer():
     )
 
 
+@pytest.mark.parametrize("stop_proof_failed", [False, True])
 def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
-    tmp_path: Path,
+    tmp_path: Path, stop_proof_failed,
 ):
     env_file = tmp_path / "deploy.env"
     remote_repo = tmp_path / "remote"
@@ -1442,7 +1443,11 @@ def test_guard_lost_lease_after_pip_never_runs_migration_or_restarts_writers(
         """#!/usr/bin/env bash
 printf 'systemctl:%s\\n' "$*" >> "$FAKE_EVENT_LOG"
 if [ "$1" = "show" ]; then
-    printf 'inactive\\n'
+    if [ "${FAKE_STOP_PROOF_FAILED:-0}" = 1 ] && [ "$2" = celery-worker ]; then
+        printf 'failed\\n'
+    else
+        printf 'inactive\\n'
+    fi
 fi
 """,
     )
@@ -1516,7 +1521,11 @@ test -d "$REMOTE_RELEASE_LOCK_DIR"
 test -d "$REMOTE_BACKUP_PREFLIGHT_DIR"
 test -f "$REMOTE_BACKUP_PREFLIGHT_DIR/staged.sha256"
 test ! -e "$FAKE_MIGRATION_MARKER"
-test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
+if [ "$FAKE_STOP_PROOF_FAILED" = 1 ]; then
+    test -e "$REMOTE_RELEASE_LOCK_DIR/token"
+else
+    test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
+fi
 """
     result = subprocess.run(
         ["bash", "-c", harness],
@@ -1527,6 +1536,7 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
             **os.environ,
             "DEPLOY_ENV_FILE": str(env_file),
             "FAKE_BIN": str(fake_bin),
+            "FAKE_STOP_PROOF_FAILED": "1" if stop_proof_failed else "0",
             "FAKE_EVENT_LOG": str(event_log),
             "FAKE_LEASE_DIR": str(lease_dir),
             "FAKE_MIGRATION_ENV": str(fake_migration_env),
@@ -1537,7 +1547,10 @@ test ! -e "$REMOTE_RELEASE_LOCK_DIR/token"
     assert result.returncode == 0, (result.stdout, result.stderr)
     assert not migration_marker.exists()
     events = event_log.read_text(encoding="utf-8").splitlines()
-    assert any(event.startswith("pip:") for event in events)
+    assert any(event.startswith("pip:") for event in events) is not stop_proof_failed
+    if stop_proof_failed:
+        assert "remote_pi_install_started" not in result.stdout + result.stderr
+        assert "remote_checkout_completed" not in result.stdout
     assert not any(
         event.startswith("python:")
         and (

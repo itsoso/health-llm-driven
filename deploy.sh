@@ -3259,6 +3259,9 @@ deploy_backend() {
 
     release_timing_checkpoint guard_started
 
+    # Group the generated dependency block so its function definitions cannot
+    # escape the AND chain after a failed writer-stop or checkout proof.
+
     # 3. Guard phase：先启动新代码，不写入任何 System KB artifact。这样旧服务
     # 永远看不到新 runtime-only 文档，且健康失败可安全回到发布前代码。
     _REMOTE_RELEASE_LOCK_DELEGATED=1
@@ -3295,7 +3298,9 @@ deploy_backend() {
         source venv/bin/activate && \
         echo '加载环境变量...' && \
         set -a && source .env && set +a && \
-        $remote_dependency_sync && \
+        {
+        $remote_dependency_sync
+        } && \
         release_timing_checkpoint remote_dependencies_completed && \
         if [ '${DAILY_JOURNEY_ADDITIVE:-0}' = 1 ]; then \
             $daily_journey_apply; \
