@@ -44,12 +44,13 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
     source = (ROOT / 'deploy.sh').read_text()
     body = source.split('release_timing_checkpoint guard_started', 1)[1].split('CODE_EXIT=$?', 1)[0]
     assert '$(declare -f release_timing_checkpoint)' in body
+    assert '$(declare -f guard_stop_backend_writers)' in body
     assert 'SECONDS=0' in body
     assert 'apply_managed_migrations.py' not in body
     assert 'remote_migrations_completed' not in body
     boundaries = [
         'release_timing_checkpoint remote_guard_started',
-        'systemctl stop health-backend.socket',
+        "guard_stop_backend_writers '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN' /sys/fs/cgroup",
         'release_timing_checkpoint remote_writers_stopped',
         '$remote_git_sync',
         'release_timing_checkpoint remote_checkout_completed',
