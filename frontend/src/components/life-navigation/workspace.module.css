@@ -183,13 +183,43 @@
 .tableDay{display:block;font-size:10px;color:#a58c76;margin-top:6px}
 .workspace .addSlot{font-size:10px;color:#a3866c;background:transparent;border:1px dashed #e1d1bc;border-radius:5px;padding:6px;width:100%;margin-top:7px;text-align:left}
 .workspace .addSlot:hover{background:#f4e9da;color:#805a3e}
-.morningText {
-  white-space: pre-wrap;
+.morningPreview {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
   overflow-wrap: anywhere;
-  max-height: 55vh;
-  overflow-y: auto;
-  font-size: 13px;
-  line-height: 1.7;
-  margin: 8px 0;
+  color: #786b60;
+  max-width: 70ch;
+  line-height: 1.8;
+  margin: 12px 0 18px;
+}
+.morningReader {
+  margin: auto;
+  width: min(780px, calc(100vw - 48px));
+  max-width: none;
+  height: min(860px, calc(100dvh - 64px));
+  max-height: none;
+  padding: 0;
+  border: 1px solid #e2d7c9;
+  border-radius: 20px;
+  background: #fffcf6;
+  color: #493e35;
+  box-shadow: 0 24px 80px #2b211d33;
+  overflow: hidden;
+}
+.morningReader[open] { display: flex; flex-direction: column; }
+.morningReader::backdrop { background: #30271f66; backdrop-filter: blur(4px); }
+.readerHeader { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 24px 32px; border-bottom: 1px solid #e9dfd3; }
+.readerHeader h2 { font-size: 20px; line-height: 1.5; margin: 4px 0 0; overflow-wrap: anywhere; }
+.readerHeader button { flex-shrink: 0; min-height: 44px; }
+.readerBody { flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 12px 40px 40px; font-size: 16px; line-height: 1.95; overflow-wrap: anywhere; }
+.readerBody p { white-space: pre-wrap; margin: 24px 0; }
+.readerBody a { display: inline-block; color: #8a5b3c; margin-top: 20px; }
+@media (max-width: 600px) {
+  .morningReader { width: 100%; height: 100dvh; border: 0; border-radius: 0; }
+  .readerHeader { padding: 16px 20px; padding-top: max(16px, env(safe-area-inset-top)); }
+  .readerHeader h2 { font-size: 18px; }
+  .readerBody { padding: 0 22px max(28px, env(safe-area-inset-bottom)); }
 }
 .morningHistory { margin-top: 8px; font-size: 12px; }

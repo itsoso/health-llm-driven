@@ -1,5 +1,5 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useId, useRef, useState } from 'react';
 import { getMorningReading, getMorningReadings, type MorningReadingItem, type MorningReadingDetail } from '@/services/morningReadings';
 import css from './workspace.module.css';
 
@@ -8,6 +8,7 @@ export default function MorningReadingPanel({ owner, day }: { owner: number; day
 }
 
 function ReadingSession({ owner, day }: { owner: number; day: string }) {
+  const [reading, setReading] = useState(false);
   const [items, setItems] = useState<MorningReadingItem[]>([]);
   const [offset, setOffset] = useState(0);
   const [next, setNext] = useState<number | null>(null);
@@ -21,6 +22,7 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
   const [detailRefresh, setDetailRefresh] = useState(0);
   const choose = (id: string) => {
     if (selectedRef.current === id) return;
+    setReading(false);
     selectedRef.current = id; setReport(null); setSelected(id);
   };
 
@@ -56,13 +58,14 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
     {loading ? <p role="status" className={css.muted}>正在读取晨读…</p> : null}
     {listError ? <p role="alert">晨读加载失败，请刷新重试。</p> : null}
     {!loading && !listError && !items.some(item => item.reading_date === day) ? <p className={css.muted}>{next !== null ? '已加载记录中未找到所选日期的晨读。' : '所选日期暂无晨读。'}</p> : null}
-    {next !== null ? <p className={css.muted}>已读取部分历史，可继续加载更早的晨读。</p> : null}
     {selected && !report && !detailError ? <p role="status" className={css.muted}>正在读取正文…</p> : null}
     {detailError ? <div role="alert">正文读取失败。<button type="button" className={css.button} onClick={() => setDetailRefresh(v => v + 1)}>重试正文</button></div> : null}
     {report ? <article>
       <h3>{report.title}</h3>
       {report.reading_date !== day ? <p className={css.muted}>历史晨读 · {report.reading_date}</p> : null}
-      <details open><summary>阅读全文</summary><div className={css.morningText}>{report.content_text}</div></details>
+      <p className={css.morningPreview}>{report.content_text.slice(0, 180)}{report.content_text.length > 180 ? '…' : ''}</p>
+      <button type="button" className={css.button} onClick={() => setReading(true)}>开始阅读</button>
+      {reading ? <MorningReader report={report} onClose={() => setReading(false)} /> : null}
       <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer" className={css.muted}>在 Proofroom 查看原版 ↗</a>
     </article> : null}
     {items.length ? <details className={css.morningHistory}><summary>晨读历史 · {items.length} 份</summary>
@@ -70,4 +73,32 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
         onClick={() => choose(item.report_id)}>{item.reading_date} · {item.title}</button>)}</div></details> : null}
     {next !== null ? <button type="button" className={css.button} disabled={loading} onClick={() => setOffset(next)}>加载更早晨读</button> : null}
   </section>;
+}
+
+function MorningReader({ report, onClose }: { report: MorningReadingDetail; onClose: () => void }) {
+  const dialog = useRef<HTMLDialogElement>(null);
+  const titleId = useId();
+  useEffect(() => {
+    const element = dialog.current!;
+    const trigger = document.activeElement;
+    const overflow = document.body.style.overflow;
+    element.showModal();
+    document.body.style.overflow = 'hidden';
+    return () => {
+      element.close();
+      document.body.style.overflow = overflow;
+      if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
+    };
+  }, []);
+  return <dialog ref={dialog} className={css.morningReader} aria-labelledby={titleId}
+    onCancel={event => { event.preventDefault(); onClose(); }}>
+    <header className={css.readerHeader}>
+      <div><span className={css.muted}>{report.reading_date}</span><h2 id={titleId}>{report.title}</h2></div>
+      <button type="button" className={css.button} onClick={onClose}>关闭阅读</button>
+    </header>
+    <article className={css.readerBody}>
+      {report.content_text.split(/\n\s*\n/).filter(part => part.trim()).map((part, index) => <p key={index}>{part}</p>)}
+      <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">在 Proofroom 查看原版 ↗</a>
+    </article>
+  </dialog>;
 }

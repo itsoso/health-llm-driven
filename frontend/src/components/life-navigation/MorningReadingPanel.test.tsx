@@ -1,5 +1,5 @@
 import React from 'react';
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
 import { getMorningReadings, getMorningReading } from '@/services/morningReadings';
 import MorningReadingPanel from './MorningReadingPanel';
@@ -7,6 +7,8 @@ vi.mock('@/services/morningReadings', () => ({ getMorningReadings: vi.fn(), getM
 const item = { report_id: 'b3cbd442-0a47-454e-8fa7-c04050828c1a', title: '晨读 · 10月19日', generated_at: '2026-10-18T16:00:00Z', reading_date: '2026-10-19' };
 beforeEach(() => {
   vi.resetAllMocks();
+  HTMLDialogElement.prototype.showModal = function () { this.open = true; };
+  HTMLDialogElement.prototype.close = function () { this.open = false; };
   vi.mocked(getMorningReadings).mockResolvedValue({ items: [item], next_offset: null });
   vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '有依据的思考 <script>bad()</script>' });
 });
@@ -51,4 +53,39 @@ it('shows history coverage and lets the user load an additional page', async () 
   render(<MorningReadingPanel owner={7} day="2026-10-19" />);
   fireEvent.click(await screen.findByRole('button', { name: '加载更早晨读' }));
   expect(await screen.findByText('有依据的思考 <script>bad()</script>')).toBeTruthy();
+});
+
+it('keeps a long reading out of the week layout until explicitly opened', async () => {
+  const content = '开头摘要。'.repeat(50) + '\n\n正文结尾';
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: content });
+  const show = vi.spyOn(HTMLDialogElement.prototype, 'showModal').mockImplementation(function () { this.open = true; });
+  const view = render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  const open = await screen.findByRole('button', { name: '开始阅读' });
+  expect(screen.queryByText(/正文结尾/)).toBeNull();
+  expect(view.container.querySelector('iframe')).toBeNull();
+  fireEvent.click(open);
+  const reader = screen.getByRole('dialog', { name: item.title });
+  expect(within(reader).getByText('正文结尾')).toBeTruthy();
+  fireEvent.click(within(reader).getByRole('button', { name: '关闭阅读' }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(show).toHaveBeenCalledTimes(1);
+  show.mockRestore();
+});
+
+it('closes with Escape and removes private reading on account change', async () => {
+  const view = render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  const open = await screen.findByRole('button', { name: '开始阅读' });
+  open.focus();
+  fireEvent.click(open);
+  expect(document.body.style.overflow).toBe('hidden');
+  fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.body.style.overflow).toBe('');
+  expect(document.activeElement).toBe(open);
+  fireEvent.click(open);
+  vi.mocked(getMorningReadings).mockResolvedValue({ items: [], next_offset: null });
+  view.rerender(<MorningReadingPanel owner={8} day="2026-10-19" />);
+  expect(screen.queryByRole('dialog')).toBeNull();
+  expect(document.body.style.overflow).toBe('');
+  await screen.findByText('所选日期暂无晨读。');
 });
