@@ -147,7 +147,6 @@ def run_continuation(base, source, core, bootstrap, underlying, args):
         proof.phase = stage
     try:
         result = core.recover_services(proof, target, args.sha, args.evidence_sha256, stage_observer=observe)
-        proof.original_unchanged()
         return {**result, 'prior_recovery_sha': PRIOR_RECOVERY,
                 'prior_intent_sha256': INTENT_PIN, 'continuation': CONTINUATION}
     except BaseException as error:

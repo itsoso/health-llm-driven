@@ -148,3 +148,19 @@ def test_helper_identity_excludes_read_only_atime():
     m=module()
     assert "st_atime" not in m.IDENTITY_FIELDS and "st_atime_ns" not in m.IDENTITY_FIELDS
     assert "st_ctime_ns" in m.IDENTITY_FIELDS and "st_mtime_ns" in m.IDENTITY_FIELDS
+
+
+def test_completed_core_result_has_no_uncontained_post_return_recheck(tmp_path,monkeypatch):
+    m,core,base,source,bootstrap,underlying,args,audit,calls,raw=harness(tmp_path,monkeypatch)
+    returned = [False]
+    original = m.ContinuationProof.original_unchanged
+    def original_unchanged(proof):
+        if returned[0]:
+            pytest.fail('fallible proof check outside core containment after completed')
+        return original(proof)
+    monkeypatch.setattr(m.ContinuationProof,'original_unchanged',original_unchanged)
+    def completed_core(*args,**kwargs):
+        returned[0]=True
+        return {'state':'RESTORED_PREVIOUS_SERVICES'}
+    monkeypatch.setattr(core,'recover_services',completed_core)
+    assert m.run_continuation(base,source,core,bootstrap,underlying,args)['state']=='RESTORED_PREVIOUS_SERVICES'
