@@ -89,3 +89,15 @@ it('closes with Escape and removes private reading on account change', async () 
   expect(document.body.style.overflow).toBe('');
   await screen.findByText('所选日期暂无晨读。');
 });
+
+it('gives known reading sections hierarchy while keeping source text literal', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '速览\n第一条观点\n\n深入解读\n<script>bad()</script>\n\n普通段落保持原样' });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  expect(within(reader).getByRole('heading', { name: '速览' })).toBeTruthy();
+  expect(within(reader).getByText('第一条观点')).toBeTruthy();
+  expect(within(reader).getByText('<script>bad()</script>')).toBeTruthy();
+  expect(within(reader).getByText('普通段落保持原样')).toBeTruthy();
+  expect(reader.querySelector('script')).toBeNull();
+});
