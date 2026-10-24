@@ -57,3 +57,12 @@ Baseline main/backend 59c64cca666d85f3c7b738a508dd197d4ad6c84e. Existing closed 
 - Settlement negative cases plus real API stream: 15 passed, 6 inapplicable combinations skipped (`/tmp/reva-settlement-green.log`). Independent preliminary reviewer closed the settlement finding; this is not final G4.
 - Source claim refresh and CAS now recheck both source and retry message. Dedicated PostgreSQL concurrency/drift cases: 13 passed (`/tmp/reva-intake-claim-fresh-pg.log`).
 - Final combined regression and PostgreSQL rerun are in progress. This candidate is not published; new-batch live-model permission remains pending.
+
+## Candidate validation and upstream integration
+
+- Candidate `5fafcd6e437d4a6e4aa08d7ae085d0930dee56dc`: final G4 GO; focused backend 137 passed/7 skipped; PostgreSQL 103 passed/6 skipped; CI-mode 4695 passed/49 skipped, no failures or errors, clean verification checkout.
+- User explicitly authorized this batch's synthetic live-model evaluation. Isolated in-memory test database gate passed: orchestrator 5/5 (average rubric score 0.96), invariants 12/12, core 50/50, trajectory contracts/goldens passed. No real health records accessed. Evidence: `/tmp/reva-reliability-5faf-live-result.json` and `/tmp/reva-reliability-5faf-live-gate.json`. This result binds 5faf only.
+- Fresh production readback still proves prior 59c64 backend SUCCEEDED/COMMITTED and healthy services. No new deployment or OTA has run.
+- Remote main advanced to `b55b443d4351d1ece8974f441bbd10e1e4af5e2d` with Edu SSO and dependency security changes. Integrating locally preserves those commits and regenerates System Map; Edu remains disabled by default and no configuration activation is authorized by this merge.
+- Upstream CI 40075861268 failed because OTA tests treated moving main's dependency lock as the old reviewed exception. Tests now use immutable reviewed source for positive admission, and reject the new dependency source; production OTA policy is unchanged. 14 OTA contract tests passed (`/tmp/reva-integrated-ota-green.log`).
+- Integrated candidate needs fresh G4, CI-mode, live-model and remote exact-SHA gates. Its dependency changes are outside current OTA permission; do not publish an incompatible update or treat test repair as expanding admission. Native delivery assessment remains pending.

@@ -5,7 +5,7 @@ const config = require('../next.config.js');
   try {
     delete process.env.KBASE_SSO_ORIGIN;
     let rules = await config.headers();
-    assert.equal(rules.length, 2);
+    assert.equal(rules.length, 3);
     assert.match(rules[1].headers.find(h => h.key === 'Content-Security-Policy').value, /form-action 'self' https:\/\/kbase.executor.life;/);
     assert.match(rules[0].headers.find(h => h.key === 'Content-Security-Policy').value, /form-action 'self';/);
     process.env.KBASE_SSO_ORIGIN = 'https://library.example.test';

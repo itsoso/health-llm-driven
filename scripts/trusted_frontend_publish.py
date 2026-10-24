@@ -140,10 +140,14 @@ def runtime_config_bytes(source, revision, build):
 def validate_runtime_input_change(paths, before, after):
     # This reviewed headers() default is baked into routes-manifest.json.
     # Production keeps its tracked config; no other runtime input may differ.
-    expected = ('d19b9498bfa9b1b121045423352ecd52bcea0af2e82b1fe2c38b34d16b59250a',
-                'd6d9e7fd433568c15b2e10e83f22745bcb50add4a348928af7a3cab7115cc6a4')
+    reviewed_pairs = {
+        ('d19b9498bfa9b1b121045423352ecd52bcea0af2e82b1fe2c38b34d16b59250a',
+         'd6d9e7fd433568c15b2e10e83f22745bcb50add4a348928af7a3cab7115cc6a4'),
+        ('d6d9e7fd433568c15b2e10e83f22745bcb50add4a348928af7a3cab7115cc6a4',
+         '721045663ba705d96830984e150361fc07c780ccaec0e24cc622c4443881d3d3'),
+    }
     actual = (hashlib.sha256(before).hexdigest(), hashlib.sha256(after).hexdigest())
-    if paths != ['frontend/next.config.js'] or actual != expected:
+    if paths != ['frontend/next.config.js'] or actual not in reviewed_pairs:
         raise PublishError('runtime source inputs require a separately reviewed publication')
 
 
@@ -223,8 +227,8 @@ class NoRedirect(urllib.request.HTTPRedirectHandler):
         return None
 
 
-def verify_pages():
-    _verify_pages(include_connection=True)
+def verify_pages(*, include_edu=True):
+    _verify_pages(include_connection=True, include_edu=include_edu)
 
 
 def verify_availability_pages():
@@ -237,15 +241,16 @@ def valid_login_headers(headers, path):
     if len(policies) != 1:
         return False
     directives = [part.split() for part in policies[0].split(';') if part.strip()]
-    expected = ["'self'"] + (['https://kbase.executor.life'] if path == '/connect/kbase' else [])
+    origins = {'/connect/kbase': 'https://kbase.executor.life', '/connect/edu': 'https://edu.executor.life'}
+    expected = ["'self'"] + ([origins[path]] if path in origins else [])
     if [item[1:] for item in directives if item[0].lower() == 'form-action'] != [expected]:
         return False
-    return path != '/connect/kbase' or (
+    return path not in origins or (
         headers.get_all('Referrer-Policy', []) == ['strict-origin']
         and 'no-store' in [item.strip().lower() for item in headers.get('Cache-Control', '').split(',')])
 
 
-def _verify_pages(*, include_connection):
+def _verify_pages(*, include_connection, include_edu=False):
     context=ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
     defaults=ssl.get_default_verify_paths()
     cafile=defaults.openssl_cafile if os.path.isfile(defaults.openssl_cafile) else None
@@ -261,6 +266,8 @@ def _verify_pages(*, include_connection):
         if include_connection:
             routes.extend([('/connect/health', '小巴健康 · 数据连接'),
                            ('/connect/kbase', '登录知识库'), ('/login', '<html')])
+            if include_edu:
+                routes.append(('/connect/edu', '登录Edu'))
         for path, marker in routes:
             success = False
             for _ in range(10):
@@ -268,9 +275,9 @@ def _verify_pages(*, include_connection):
                     with opener.open(urllib.request.Request(host+path, headers={'Cache-Control':'no-cache'}), timeout=10) as response:
                         raw=response.read(2_000_001)
                         success=response.status == 200 and response.geturl() == host+path and len(raw)<=2_000_000 and marker in raw.decode()
-                        if success and path in ('/connect/kbase', '/login'):
+                        if success and path in ('/connect/kbase', '/connect/edu', '/login'):
                             success = valid_login_headers(response.headers, path)
-                            if path == '/connect/kbase':
+                            if path in ('/connect/kbase', '/connect/edu'):
                                 success = success and b'name="referrer" content="strict-origin"' in raw
                 except (OSError, UnicodeError):
                     success=False

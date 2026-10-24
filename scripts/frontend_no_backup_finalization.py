@@ -131,7 +131,8 @@ def inspect(sha, context, operation_id=None):
     if publisher.bundle_digest(publisher.PRODUCTION / 'frontend', build) != binding['artifact_digest']:
         raise FinalizationError('installed artifact differs')
     process = publisher.stable_runtime(build)
-    publisher.verify_pages()
+    # Historical fixed profiles predate Edu and retain their original page contract.
+    publisher.verify_pages(include_edu=False)
     if publisher.runtime(build) != process:
         raise FinalizationError('frontend changed during readback')
     publisher.assert_preserved(before, source, helper, bootstrap, server, build)

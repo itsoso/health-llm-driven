@@ -408,6 +408,7 @@ jobs:
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_vision_model.py
           scripts/test_trusted_kbase_login.py
+          scripts/test_trusted_edu_login.py
           scripts/test_trusted_neo_wechat.py
           scripts/test_neo_wechat_linux_isolation.py
           scripts/test_neo_wechat_provisioning.py
@@ -901,6 +902,10 @@ jobs:
           node frontend/scripts/braces-depth-guard.cjs --root mobile
           node --test scripts/braces-depth-regression.test.cjs scripts/braces-depth-guard.test.cjs
           node --test scripts/node-forge-backport.test.cjs scripts/osv-npm-audit-backport.integration.test.mjs
+
+      - name: Test security dependency compatibility and collection limits
+        working-directory: mobile
+        run: node --test scripts/security-dependency-compat.node.cjs
 
       - name: Test patched image parser denial-of-service guards
         working-directory: mobile
