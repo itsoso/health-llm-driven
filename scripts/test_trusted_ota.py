@@ -11,6 +11,7 @@ import pytest
 # working tree can legitimately move to a new native runtime without changing
 # what the old production OTA contract admits.
 REVIEWED_EQUIVALENT_SHA = '25b85536e3722dc111c528b8a915062a3f971397'
+REVIEWED_LOCK_SHA = '59c64cca666d85f3c7b738a508dd197d4ad6c84e'
 GPS_NATIVE_SHA = 'd1780551d17f3314cf401b91c4846c826fe07c5d'
 
 
@@ -94,13 +95,18 @@ def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tm
     relative = 'mobile/package-lock.json'
     target = tmp_path / relative
     target.parent.mkdir()
-    target.write_bytes((root / relative).read_bytes())
+    reviewed = source_bytes(REVIEWED_LOCK_SHA, relative)
+    import hashlib
+    assert hashlib.sha256(reviewed).hexdigest() == m.REVIEWED_NATIVE_SOURCE[relative]
+    target.write_bytes(reviewed)
     m.validate_runtime_changes([relative], root=tmp_path)
     for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
         monkeypatch.setenv(variable, '1')
         with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
         monkeypatch.delenv(variable)
-    target.write_bytes(target.read_bytes() + b' ')
+    target.write_bytes((root / relative).read_bytes())
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+    target.write_bytes(reviewed + b' ')
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
     target.unlink()
     target.symlink_to(root / relative)
@@ -139,10 +145,11 @@ def test_old_runtime_manifest_is_rejected_by_279_contract():
         m.validate_manifest(payload, ident, proof)
 
 
-def test_279_migration_contract_and_current_source_admission():
+def test_279_migration_contract_rejects_new_dependency_source():
     m = module()
     assert (m.RUNTIME, m.NATIVE_SHA, m.NATIVE_BUILD) == (
         '1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3',
         '399eb452-402e-47cd-a0e3-18dff2d1ca51')
-    m.validate_source(Path(__file__).resolve().parents[1],
-                      subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
+    with pytest.raises(ValueError, match='native or unknown mobile input changed'):
+        m.validate_source(Path(__file__).resolve().parents[1],
+                          subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip())
