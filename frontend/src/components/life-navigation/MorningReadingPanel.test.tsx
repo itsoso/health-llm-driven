@@ -13,6 +13,54 @@ beforeEach(() => {
   vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '有依据的思考 <script>bad()</script>' });
 });
 afterEach(cleanup);
+it('folds timestamped source materials after coverage while preserving their text and coverage gaps', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '主读｜今日判断\n\n正文与思考\n\ndedao · partial · 221 个订阅未扫描\n\n原文标题\n\n2026-10-23T00:00:00Z\n\n原始正文 <script>bad()</script>' });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  expect(within(reader).getByText('dedao · partial · 221 个订阅未扫描')).toBeVisible();
+  const source = within(reader).getByText('原始正文 <script>bad()</script>');
+  expect(source).not.toBeVisible();
+  const appendix = source.closest('details')!;
+  appendix.open = true;
+  expect(source).toBeVisible();
+  expect(reader.querySelector('script')).toBeNull();
+});
+
+it('keeps unstructured text after coverage visible when no material timestamp identifies an appendix', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: 'dedao · partial · 覆盖缺口\n\n这还是需要直接阅读的分析\n\n另一段正文' });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  expect(within(reader).getByText('这还是需要直接阅读的分析')).toBeVisible();
+  expect(reader.querySelector('details')).toBeNull();
+});
+
+it('tracks the visible chapter and lets the mobile contents close after navigation', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '主读｜第一章\n\n正文一\n\n深入问题｜第二章完整标题\n\n正文二' });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  const body = within(reader).getByRole('article');
+  const headings = within(reader).getAllByRole('heading', { level: 3 });
+  Object.defineProperties(body, { scrollHeight: { value: 1200 }, clientHeight: { value: 400 }, scrollTop: { value: 400, writable: true } });
+  vi.spyOn(body, 'getBoundingClientRect').mockReturnValue({ top: 0 } as DOMRect);
+  vi.spyOn(headings[0], 'getBoundingClientRect').mockReturnValue({ top: -300 } as DOMRect);
+  vi.spyOn(headings[1], 'getBoundingClientRect').mockReturnValue({ top: 24 } as DOMRect);
+  fireEvent.scroll(body);
+  expect(within(reader).getByRole('progressbar', { name: '正文位置' })).toHaveAttribute('aria-valuenow', '50');
+  const desktop = within(reader).getByRole('navigation', { name: '本期目录' });
+  expect(within(desktop).getByRole('button', { name: /第二章完整标题/ })).toHaveAttribute('aria-current', 'location');
+  const details = reader.querySelector('details')!;
+  details.open = true;
+  const mobile = within(reader).getByRole('navigation', { name: '手机章节目录' });
+  const scroll = vi.spyOn(headings[0], 'scrollIntoView');
+  fireEvent.click(within(mobile).getByRole('button', { name: /第一章/ }));
+  expect(details.open).toBe(false);
+  expect(document.activeElement).toBe(headings[0]);
+  expect(scroll).toHaveBeenCalledWith({ block: 'start' });
+});
+
 it('loads the selected date and renders source text without executing HTML', async () => {
   const view = render(<MorningReadingPanel owner={7} day="2026-10-19" />);
   expect(await screen.findByText('有依据的思考 <script>bad()</script>')).toBeTruthy();

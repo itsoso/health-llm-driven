@@ -1,6 +1,6 @@
 'use client';
-import { ArrowUpRight, ArrowRight, BookOpen, RefreshCw, X } from 'lucide-react';
-import { useEffect, useId, useRef, useState } from 'react';
+import { ArrowUpRight, ArrowRight, BookOpen, ChevronDown, RefreshCw, X } from 'lucide-react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { getMorningReading, getMorningReadings, type MorningReadingItem, type MorningReadingDetail } from '@/services/morningReadings';
 import css from './workspace.module.css';
 
@@ -100,13 +100,38 @@ function readingBlocks(text: string, title: string): ReadingBlock[] {
 
 function MorningReader({ report, onClose }: { report: MorningReadingDetail; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
+  const body = useRef<HTMLElement>(null);
+  const mobileContents = useRef<HTMLDetailsElement>(null);
   const titleId = useId();
-  const blocks = readingBlocks(report.content_text, report.title);
+  const [position, setPosition] = useState(0);
+  const [activeSection, setActiveSection] = useState<string | null>(null);
+  const { blocks, appendix } = useMemo(() => {
+    const allBlocks = readingBlocks(report.content_text, report.title);
+    const appendixStart = allBlocks.findIndex((block, index) => index > 0 && block.kind === 'paragraph'
+      && /^(?:dedao|xiaoyuzhou|wechat) · (?:partial|available|unavailable|failed) · /.test(allBlocks[index - 1].body)
+      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(allBlocks[index + 1]?.body ?? ''));
+    return { blocks: appendixStart < 0 ? allBlocks : allBlocks.slice(0, appendixStart),
+      appendix: appendixStart < 0 ? [] : allBlocks.slice(appendixStart) };
+  }, [report.content_text, report.title]);
+  const appendixParagraphs = useMemo(() => appendix.map((block, index) => <p key={index}>{[block.kicker, block.title, block.body].filter(Boolean).join('\n')}</p>), [appendix]);
   const contents = blocks.flatMap((block, index) => block.kind === 'heading' ? [{ ...block, index }] : []);
+  const updatePosition = useCallback(() => {
+    const element = body.current;
+    if (!element) return;
+    const range = element.scrollHeight - element.clientHeight;
+    setPosition(range > 0 ? Math.round(Math.max(0, Math.min(1, element.scrollTop / range)) * 100) : 0);
+    const headings = Array.from(element.querySelectorAll<HTMLHeadingElement>('h3[id]'));
+    const threshold = element.getBoundingClientRect().top + 60;
+    const visible = headings.filter(heading => heading.getBoundingClientRect().top <= threshold);
+    const current = range > 0 && element.scrollTop >= range - 2 ? headings.at(-1) : visible.at(-1) ?? headings[0];
+    setActiveSection(current?.id ?? null);
+  }, []);
   const jumpTo = (index: number) => {
+    if (mobileContents.current) mobileContents.current.open = false;
     const heading = document.getElementById(`${titleId}-section-${index}`);
     heading?.scrollIntoView({ block: 'start' });
     heading?.focus({ preventScroll: true });
+    updatePosition();
   };
   useEffect(() => {
     const element = dialog.current!;
@@ -114,12 +139,22 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
     const overflow = document.body.style.overflow;
     element.showModal();
     document.body.style.overflow = 'hidden';
+    updatePosition();
+    const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
+    if (body.current) observer?.observe(body.current);
     return () => {
+      observer?.disconnect();
       element.close();
       document.body.style.overflow = overflow;
       if (trigger instanceof HTMLElement && trigger.isConnected) trigger.focus();
     };
-  }, []);
+  }, [updatePosition]);
+  const activeIndex = Math.max(0, contents.findIndex(block => `${titleId}-section-${block.index}` === activeSection));
+  const contentsButtons = contents.map((block, index) => <button type="button" key={block.index}
+    aria-current={`${titleId}-section-${block.index}` === activeSection ? 'location' : undefined}
+    onClick={() => jumpTo(block.index)}>
+    <span>{String(index + 1).padStart(2, '0')}</span><span>{block.title}</span>
+  </button>);
   return <dialog ref={dialog} className={css.morningReader} aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); onClose(); }}>
     <header className={css.readerHeader}>
@@ -127,15 +162,20 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
       <div className={css.readerTools}><a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">原版 <ArrowUpRight size={13} aria-hidden="true" /></a>
       <button type="button" className={css.readerClose} aria-label="关闭阅读" onClick={onClose}><X size={19} aria-hidden="true" /></button></div>
     </header>
+    <div className={css.readerProgress} role="progressbar" aria-label="正文位置" aria-valuemin={0} aria-valuemax={100} aria-valuenow={position}>
+      <span style={{ width: `${position}%` }} />
+    </div>
     <div className={`${css.readerLayout} ${contents.length ? '' : css.readerWithoutContents}`}>
       {contents.length ? <aside className={css.readerSidebar}>
         <p className={css.readerContentsLabel}>本期目录 <span>{String(contents.length).padStart(2, '0')}</span></p>
-        <nav aria-label="本期目录">{contents.map((block, index) => <button type="button" key={block.index} onClick={() => jumpTo(block.index)}>
-          <span>{String(index + 1).padStart(2, '0')}</span><span>{block.title}</span>
-        </button>)}</nav>
+        <nav className={css.readerDesktopContents} aria-label="本期目录">{contentsButtons}</nav>
+        <details ref={mobileContents} className={css.readerMobileContents}>
+          <summary><span>本期目录</span><span>{String(activeIndex + 1).padStart(2, '0')} / {String(contents.length).padStart(2, '0')} <ChevronDown size={14} aria-hidden="true" /></span></summary>
+          <nav aria-label="手机章节目录">{contentsButtons}</nav>
+        </details>
         <p className={css.readerSideNote}>观点与依据，分开阅读。</p>
       </aside> : null}
-      <article className={css.readerBody}>
+      <article ref={body} className={css.readerBody} onScroll={updatePosition}>
         <div className={css.readerTitle}><p className={css.readingEyebrow}>MORNING JOURNAL</p><h2 id={titleId}>{report.title}</h2></div>
         {blocks.map((block, index) => {
           if (block.kind === 'heading') return <section className={css.readerSection} key={index}>
@@ -147,6 +187,10 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
           </section>;
           return <p className={block.kind === 'meta' ? css.readerMeta : undefined} key={index}>{block.body}</p>;
         })}
+        {appendix.length ? <details className={css.readerAppendix} onToggle={updatePosition}>
+          <summary>查看原始材料 <span>按需展开</span></summary>
+          <div>{appendixParagraphs}</div>
+        </details> : null}
         <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">在 Proofroom 查看原版 ↗</a>
       </article>
     </div>
