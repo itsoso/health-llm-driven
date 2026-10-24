@@ -328,3 +328,28 @@ it('searches from the header without saving, and keeps edited task drafts when l
     expect(view.getByLabelText('任务标题 '+first.id).props.value).toBe('产品研究草稿');
     expect(saveLifeWorkspace).not.toHaveBeenCalled();
 });
+
+it('saves the native study plan and answers through owner-scoped revision CAS',async()=>{
+ (saveLifeWorkspace as jest.Mock).mockImplementation(async(_owner,revision,data)=>({...workspace(),revision:revision+1,data}));
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('加入当日计划'));
+ fireEvent.press(view.getByLabelText('加入当日计划'));
+ fireEvent.press(view.getByLabelText('练习与错题'));
+ fireEvent.press(view.getByLabelText('A. cancel permanently'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ expect(view.getByText('本次答错，已加入待复练')).toBeTruthy();
+ expect(saveLifeWorkspace).not.toHaveBeenCalled();fireEvent.press(view.getByLabelText('保存个人安排'));
+ await waitFor(()=>view.getByText('已保存个人安排'));
+ const [owner,revision,data]=(saveLifeWorkspace as jest.Mock).mock.calls[0];expect(owner).toBe(1);expect(revision).toBe(0);
+ expect(data.weeks[mondayOf(localDate())].tasks).toHaveLength(4);
+ fireEvent.press(view.getByLabelText('只看待复练'));fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ expect(view.getByText('本次答对')).toBeTruthy();expect(view.getByText('正确答案 B')).toBeTruthy();
+});
+it('keeps a study answer draft visible on a cross-device conflict',async()=>{
+ (saveLifeWorkspace as jest.Mock).mockRejectedValue({response:{status:409}});
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('练习与错题'));
+ fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ fireEvent.press(view.getByLabelText('保存个人安排'));
+ await waitFor(()=>view.getByText('另一设备已更新，草稿已保留，请重新读取后核对。'));
+ expect(view.getByText('本次答对')).toBeTruthy();expect(view.queryByText('已保存个人安排')).toBeNull();
+});

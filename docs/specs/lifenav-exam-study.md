@@ -1,6 +1,6 @@
 # LifeNav 备考学习
 
-Status: implemented; release verification pending. Updated: 2026-10-24.
+Status: Web published; native extension verification pending. Updated: 2026-10-24.
 
 ## Decision and admission
 
@@ -18,10 +18,17 @@ Existing backend ownership, revision CAS, undo/history and account-switch isolat
 
 Open 备考学习 → add plan → study/answer → read explanation → explicitly save workspace → reload. Starting focus invokes the existing workspace save. Completion is self-reported; warm-up accuracy is not an exam score or admission prediction. Questions are original and labeled as foundational. Official university past-paper links do not include personal data. The exam date belongs to this cycle; planning stops at the exam date and admission-ticket details take precedence.
 
-Non-goals: guaranteed admission, automatic essay grading, medical advice, enrollment submission, native app changes. No copyrighted paper text is copied.
+Non-goals: guaranteed admission, automatic essay grading, medical advice, enrollment submission. No copyrighted paper text is copied.
 
 ## Acceptance and verification
 
 Repeated insertion produces three tasks totaling 60 minutes and preserves results. Wrong answers enter review; correct retries keep feedback visible and preserve prior attempts. Authenticated revisioned save/reload restores records. Existing conflict/account-switch tests remain green.
 
-Run frontend tests, TypeScript, ESLint and production build; independent safety review; exact main CI; canonical no-backup frontend publication; browser readback. Backend/OTA publication is unnecessary. No backup or schema migration; failed releases retain original lease/receipt under deployment governance.
+Run frontend tests, TypeScript, ESLint and production build; independent safety review; exact main CI; canonical no-backup frontend publication; browser readback. The native extension uses the same API and task identities. OTA delivery requires the same exact green SHA deployed on the backend under trusted release rules. No backup or schema migration; failed releases retain original lease/receipt under deployment governance.
+
+
+## Native extension
+
+User explicitly requested both mobile Web and native Reva. The native LifeNav workspace adds a 备考学习 tab with plan/result editing, focus timer, original practice and explanations, wrong-answer filtering and official resources. Existing owner-scoped save, account remount, background hiding and revision conflict preservation apply. No native dependency or runtime configuration change.
+
+The native pure model mirrors Web with an executable parity check for persisted IDs, questions and rules. This follows the existing separate platform model layout without introducing a Metro cross-root dependency. Both clients use identical date/key UUIDs and share the server ledger. Native writes clone without pre-creating weeks so capacity checks remain atomic. Resource links use the OS browser and surface failures.

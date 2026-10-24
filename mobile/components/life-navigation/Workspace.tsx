@@ -7,9 +7,10 @@ import { fetchLifeWorkspace, saveLifeWorkspace, fetchLifeHistory, restoreLifeWor
 import { addDays, applyReviewDraft, blankData, blankTask, blankWeek, copy, ensureWeek, focusAdvance, focusEnd, focusPause, focusResume, focusStart, localDate, mondayOf, newId, reviewDraft, slotLabels, statusLabels, tracks, validateData } from '../../utils/lifeNavigationModel';
 import { exportLifeBackup, pickLifeBackup } from '../../utils/lifeNavigationFiles';
 import TaskCard from './TaskCard';
+import ExamStudyPanel from './ExamStudyPanel';
 import TodayTaskList from './TodayTaskList';
 import DateNavigation from './DateNavigation';
-const tabs = ['今日', '周计划', '时段导航', '周复盘', '成果', '方向与季度', '机会', '备份'] as const;
+const tabs = ['今日', '周计划', '备考学习', '时段导航', '周复盘', '成果', '方向与季度', '机会', '备份'] as const;
 const reviewFields = { summary: '复盘总结', gap: '差距与根因', learning: '复盘收获', next_week: '下周改进' };
 const noteFields = { valuable: '有价值的事', beautiful: '美好的事', mistake: '失误', learning: '今日所学' };
 const quarterFields = { review: '季度回顾', strategy: '季度战略', decomposition: '季度拆解', plan: '季度计划', risk: '季度风险' };
@@ -70,6 +71,7 @@ export default function Workspace({ owner, onViewHealth }: {
     const week = draft?.weeks[monday] ?? blankWeek(), tasks = week.tasks, focus = draft?.focus;
     function edit(change: (d: LifeData) => void) { if (!draft || lock.current)
         return; const next = ensureWeek(draft, monday); change(next); setDraft(next); setDirty(true); setMessage(''); }
+    function editStudy(change: (d: LifeData) => void) { if (!draft || lock.current) return; const next = copy(draft); change(next); setDraft(next); setDirty(true); setMessage(''); }
     function editWeek(change: (w: typeof week) => void) { edit(d => change(d.weeks[monday])); }
     async function write(send: () => Promise<LifeWorkspace>) { if (!workspace || lock.current || !alive.current || !active.current)
         return; lock.current = true; setBusy(true); const version = ++epoch.current; try {
@@ -161,6 +163,7 @@ export default function Workspace({ owner, onViewHealth }: {
      status={dirty ? '有未保存草稿' : title || criterion ? '任务待加入' : '已同步'}
      trailing={button('保存个人安排', save, !dirty, '保存')}
      onDate={value=>{setDate(value);setGenerated(null);}}/>
+ {tab === '备考学习' && <ExamStudyPanel key={date} data={draft} day={date} disabled={busy} edit={editStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
  {tab === '今日' && <>
  <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>
