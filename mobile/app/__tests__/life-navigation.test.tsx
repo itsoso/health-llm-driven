@@ -330,6 +330,7 @@ it('searches from the header without saving, and keeps edited task drafts when l
 });
 
 it('saves the native study plan and answers through owner-scoped revision CAS',async()=>{
+ const errors=jest.spyOn(console,'error');
  (saveLifeWorkspace as jest.Mock).mockImplementation(async(_owner,revision,data)=>({...workspace(),revision:revision+1,data}));
  const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
  fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('加入当日计划'));
@@ -343,6 +344,7 @@ it('saves the native study plan and answers through owner-scoped revision CAS',a
  expect(data.weeks[mondayOf(localDate())].tasks).toHaveLength(4);
  fireEvent.press(view.getByLabelText('只看待复练'));fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
  expect(view.getByText('本次答对')).toBeTruthy();expect(view.getByText('正确答案 B')).toBeTruthy();
+ expect(errors.mock.calls.some(args=>args.some(value=>String(value).includes('same key')))).toBe(false);errors.mockRestore();
 });
 it('keeps a study answer draft visible on a cross-device conflict',async()=>{
  (saveLifeWorkspace as jest.Mock).mockRejectedValue({response:{status:409}});
@@ -352,4 +354,13 @@ it('keeps a study answer draft visible on a cross-device conflict',async()=>{
  fireEvent.press(view.getByLabelText('保存个人安排'));
  await waitFor(()=>view.getByText('另一设备已更新，草稿已保留，请重新读取后核对。'));
  expect(view.getByText('本次答对')).toBeTruthy();expect(view.queryByText('已保存个人安排')).toBeNull();
+});
+
+it('keeps study record dates fixed so editing a task cannot orphan its practice history',async()=>{
+ const {addStudyDay,recordAnswer,questions}=require('../../utils/examStudy');const data=blankData();addStudyDay(data,localDate());recordAnswer(data,localDate(),questions[0],0);
+ (fetchLifeWorkspace as jest.Mock).mockResolvedValue({...workspace(),data});
+ const view=render(<Screen/>);await waitFor(()=>view.getByLabelText('展开任务 备考练习｜英语 · 词义与搭配'));
+ fireEvent.press(view.getByLabelText('展开任务 备考练习｜英语 · 词义与搭配'));
+ expect(view.getByText('备考记录日期固定；请在目标日期新建计划或复练。')).toBeTruthy();
+ expect(view.queryAllByLabelText(/^任务日期 /)).toHaveLength(0);
 });
