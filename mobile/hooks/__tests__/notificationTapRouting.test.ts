@@ -84,3 +84,12 @@ describe('notification tap landing', () => {
     expect(mockClear).toHaveBeenCalledTimes(1);
   });
 });
+
+it.each(['warm', 'cold'])('opens grouped medication landing on %s notification tap without a write', async mode => {
+  jest.clearAllMocks(); mockPush.mockReset();
+  const notice = response(`grouped-medication-${mode}`, { reminder_type: 'medication', medication_ids: [7, 8], scheduled_date: '2026-10-24', scheduled_time: '18:00', scheduled_timezone: 'Asia/Shanghai', deep_link: '/(tabs)/chat' });
+  if (mode === 'cold') { mockLast.mockResolvedValue(notice); await consumeLastNotificationResponse(); }
+  else await consumeNotificationResponse(notice);
+  expect(mockPush).toHaveBeenCalledWith('/medication-reminders?ids=7%2C8&date=2026-10-24&time=18%3A00&sourceTimezone=Asia%2FShanghai');
+  expect(require('../../services/api').default.post).not.toHaveBeenCalled();
+});

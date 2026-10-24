@@ -270,6 +270,7 @@ export function AppContent() {
         <Stack.Screen name="trace/[id]" options={{ headerShown: false }} />
         <Stack.Screen name="voice-chat" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="timeline" options={{ headerShown: false, presentation: 'modal' }} />
+        <Stack.Screen name="medication-reminders" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="medication-reminder" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="medications" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="family" options={{ headerShown: false, presentation: 'modal' }} />

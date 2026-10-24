@@ -67,107 +67,45 @@ describe('resolveNotificationRoute', () => {
 
 
 describe('medication reminder landing', () => {
-  it('opens the owned catch-up summary without inventing one medication occurrence', () => {
-    const route = resolveNotificationRoute({
-      reminder_type: 'medication_summary',
-      deep_link: '/notification-history?detailId=81',
-      rule_id: 'medication_reminder.slot.7.2026-10-20.07:30',
-    });
-    expect(route).toBe('/notification-history?detailId=81');
-    expect(route).not.toContain('prompt=');
-    expect(route).not.toContain('context=');
+  const slot = { reminder_type: 'medication', scheduled_date: '2026-10-24', scheduled_time: '18:00', scheduled_timezone: 'Asia/Shanghai' };
+  const params = (route: string | null) => new URLSearchParams(route?.split('?')[1]);
+  it('opens the actual server group payload as a reminder list, not a chat draft', () => {
+    const route = resolveNotificationRoute({ ...slot, medication_ids: [7, 8], deep_link: '/(tabs)/chat' });
+    expect(route?.split('?')[0]).toBe('/medication-reminders');
+    expect(Object.fromEntries(params(route))).toEqual({ ids: '7,8', date: '2026-10-24', time: '18:00', sourceTimezone: 'Asia/Shanghai' });
+  });
+  it.each(['/medications', '/(tabs)/chat', '/(tabs)/record', '/notification-history?detailId=123'])('opens single detail from %s', deep_link => {
+    const route = resolveNotificationRoute({ ...slot, medication_id: 7, deep_link, medication_name: 'private-secret' });
+    expect(route?.split('?')[0]).toBe('/medication-reminder');
+    expect(Object.fromEntries(params(route))).toEqual({ id: '7', date: '2026-10-24', time: '18:00', sourceTimezone: 'Asia/Shanghai' });
+    expect(route).not.toContain('private');
+  });
+  it('deduplicates a singleton group and preserves a non-China timezone', () => {
+    const route = resolveNotificationRoute({ ...slot, medication_ids: [7, 7], scheduled_timezone: 'America/New_York' });
+    expect(route?.split('?')[0]).toBe('/medication-reminder');
+    expect(params(route).get('id')).toBe('7');
+    expect(params(route).get('sourceTimezone')).toBe('America/New_York');
+  });
+  it('preserves original local slot without inventing a date', () => {
+    const route = resolveNotificationRoute({ kind: 'medication_reminder', medication_id: 7, taken_time: '06:00', scheduled_time: '08:00' });
+    expect(route).toBe('/medication-reminder?id=7&time=06%3A00');
+  });
+  it('extracts only legacy medication occurrence fields', () => {
+    expect(resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-reminder?id=7&date=2026-10-18&time=18%3A30' })).toBe('/medication-reminder?id=7&date=2026-10-18&time=18%3A30');
+    expect(resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/notification-detail?id=7&date=2026-10-18' })).toBe('/medication-reminder?invalid=1');
   });
   it.each([
-    { reminder_type: 'medication', screen: 'home' },
-    { kind: 'medication_reminder', screen: 'home' },
-    { category: 'MEDICATION_REMINDER', deep_link: '/(tabs)/record' },
-    { reminder_type: 'medication', deep_link: 'health://(tabs)/record' },
-    { reminder_type: 'medication', deep_link: '/(tabs)' },
-    { reminder_type: 'medication' },
-  ])('opens medications for existing reminder payload %j', (data) => {
-    expect(resolveNotificationRoute(data)).toMatch(/^\/\(tabs\)\/chat\?prompt=/);
+    {}, { medication_id: '7x' }, { medication_ids: [] }, { medication_ids: [7, 'bad'] },
+    { medication_ids: Array.from({ length: 51 }, (_, i) => i + 1) },
+    { medication_id: 7, medication_ids: [8] },
+    { medication_id: 7, scheduled_date: '2026-02-31' },
+    { medication_id: 7, scheduled_time: '28:00' },
+    { medication_id: 7, scheduled_timezone: 'bad-zone' },
+  ])('rejects invalid occurrence without a model call or partial group: %j', fields => {
+    expect(resolveNotificationRoute({ ...slot, ...fields })).toBe('/medication-reminder?invalid=1');
   });
-  it('preserves a specific destination and unrelated record notifications', () => {
-    expect(resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-edit?id=7' })).toBe('/medication-edit?id=7');
-    expect(resolveNotificationRoute({ deep_link: '/(tabs)/record' })).toBe('/(tabs)/record');
-  });
-});
-
-
-describe('precise medication reminder target', () => {
-  it('generates the exact readonly slot query understood by the backend', () => {
-    const route = resolveNotificationRoute({
-      reminder_type: 'medication', scheduled_date: '2026-10-20',
-      scheduled_time: '09:00', scheduled_timezone: 'Asia/Shanghai',
-    })!;
-    const params = new URLSearchParams(route.split('?')[1]);
-    expect(params.get('prompt')).toBe('请帮我查看 2026-10-20 09:00 （北京时间） 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。');
-    expect(params.has('context')).toBe(false);
-    expect(params.has('autoSend')).toBe(false);
-  });
-  it('carries remote occurrence without private display fields', () => {
-    const route = resolveNotificationRoute({ reminder_type: 'medication', medication_id: 7, scheduled_date: '2026-10-16', scheduled_time: '18:00', scheduled_timezone: 'Asia/Shanghai', medication_name: 'secret', dosage: 'secret', deep_link: '/medications' })!;
-    const params = new URLSearchParams(route.split('?')[1]);
-    expect(params.has('context')).toBe(false);
-    expect(params.get('prompt')).toContain('2026-10-16 18:00 （北京时间）');
-    expect(decodeURIComponent(route)).not.toContain('secret');
-  });
-  it('preserves original local slot and leaves date unconfirmed', () => {
-    const route = resolveNotificationRoute({ kind: 'medication_reminder', medication_id: 7, taken_time: '06:00', scheduled_time: '08:00', deep_link: '/medications' })!;
-    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('日期未确认 06:00');
-  });
-  it('does not infer an id or use malformed time/date', () => {
-    const route = resolveNotificationRoute({ reminder_type: 'medication', medication_id: '7x', scheduled_date: '2026-02-31', scheduled_time: '28:00' })!;
-    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('通知信息不完整');
+  it('does not confuse catch-up summaries or unrelated destinations with a dose', () => {
+    expect(resolveNotificationRoute({ reminder_type: 'medication_summary', deep_link: '/notification-history?detailId=81' })).toBe('/notification-history?detailId=81');
+    expect(resolveNotificationRoute({ ...slot, deep_link: '/medication-edit?id=7' })).toBe('/medication-edit?id=7');
   });
 });
-
-describe('medication reminder Agent destination', () => {
-  it.each([
-    { reminder_type: 'medicine', reminder_id: 7, deep_link: '/notification-history?detailId=123' },
-    { reminder_type: 'medication', deep_link: '/notification-detail?id=invalid&date=2026-10-18&time=18%3A30' },
-  ])('overrides generic medication destinations without reading notification query fields as dose fields: %j', (data) => {
-    const route = resolveNotificationRoute(data)!;
-    expect(route.split('?')[0]).toBe('/(tabs)/chat');
-    const params = new URLSearchParams(route.split('?')[1]);
-    expect(params.get('prompt')).toContain('日期未确认 时间未确认');
-    expect(params.has('context')).toBe(false);
-    expect(params.has('autoSend')).toBe(false);
-  });
-  it('keeps unrelated history/detail links and extracts only legacy medication occurrence fields', () => {
-    for (const deep_link of ['/notification-history?detailId=123', '/notification-detail?id=123']) {
-      expect(resolveNotificationRoute({ deep_link })).toBe(deep_link);
-    }
-    const route = resolveNotificationRoute({ reminder_type: 'medication', deep_link: '/medication-reminder?id=7&date=2026-10-18&time=18%3A30&sourceTimezone=Asia%2FShanghai' })!;
-    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('2026-10-18 18:30 （北京时间）');
-  });
-  it.each(['/medications', '/medication-reminder?id=7&date=2026-10-18&time=18%3A30', '/(tabs)/chat'])('opens a draft for %s without automatic send or private text', (deep_link) => {
-    const route = resolveNotificationRoute({ reminder_type: 'medication', medication_id: 7, scheduled_date: '2026-10-18', scheduled_time: '18:30', scheduled_timezone: 'Asia/Shanghai', deep_link, medication_name: 'private-secret' })!;
-    expect(route.split('?')[0]).toBe('/(tabs)/chat');
-    const params = new URLSearchParams(route.split('?')[1]);
-    expect(params.get('prompt')).toContain('2026-10-18');
-    expect(params.get('prompt')).toContain('18:30');
-    expect(params.has('autoSend')).toBe(false);
-    expect(params.has('context')).toBe(false);
-    expect(decodeURIComponent(route)).not.toContain('private-secret');
-  });
-  it('old date-less local notices do not invent today or authorize taking medication', () => {
-    const route = resolveNotificationRoute({ kind: 'medication_reminder', medication_id: 7, taken_time: '18:30' })!;
-    expect(route.split('?')[0]).toBe('/(tabs)/chat');
-    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('日期未确认');
-  });
-});
-
- it('routes old medication pre-event notifications to an unsent Agent draft', () => {
-    const route = resolveNotificationRoute({ reminder_type: 'pre_event', kind: 'medication', category: 'AGENDA_ACTION', deep_link: '/(tabs)/record', complete_ref: { object_type: 'medication', object_id: 7, slot: '18:30' }, item_title: 'private' })!;
-    expect(route.split('?')[0]).toBe('/(tabs)/chat');
-    expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('日期未确认');
-    expect(new URLSearchParams(route.split('?')[1]).has('context')).toBe(false);
-    expect(decodeURIComponent(route)).not.toContain('private');
- });
-
- it('retains validated non-China reminder timezone without passing a context payload', () => {
-   const route = resolveNotificationRoute({ reminder_type: 'medication', scheduled_date: '2026-10-18', scheduled_time: '18:30', scheduled_timezone: 'America/New_York' })!;
-   expect(new URLSearchParams(route.split('?')[1]).get('prompt')).toContain('America/New_York');
-   expect(new URLSearchParams(route.split('?')[1]).has('context')).toBe(false);
- });

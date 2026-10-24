@@ -3,7 +3,7 @@
   "counts": {
     "api_routers": 173,
     "celery_tasks": 74,
-    "mobile_routes": 147,
+    "mobile_routes": 149,
     "model_files": 123,
     "safety_rules_total": 65,
     "service_files": 501,
@@ -2279,6 +2279,20 @@
       "owner": "mobile",
       "source": {
         "path": "mobile/app/medication-reminder.tsx",
+        "type": "code"
+      },
+      "tags": [
+        "mobile"
+      ]
+    },
+    {
+      "coverage": "complete",
+      "id": "surface.mobile.medication-reminders",
+      "kind": "surface",
+      "name": "Mobile /medication-reminders",
+      "owner": "mobile",
+      "source": {
+        "path": "mobile/app/medication-reminders.tsx",
         "type": "code"
       },
       "tags": [
@@ -5706,6 +5720,16 @@
         "type": "code"
       },
       "to": "surface.mobile.medication-reminder",
+      "type": "renders"
+    },
+    {
+      "coverage": "complete",
+      "from": "component.mobile",
+      "source": {
+        "path": "mobile/app/medication-reminders.tsx",
+        "type": "code"
+      },
+      "to": "surface.mobile.medication-reminders",
       "type": "renders"
     },
     {

@@ -55,11 +55,18 @@ const SCREEN_ROUTES: Record<string, string> = {
 function medicationReminderRoute(data: Record<string, any>): string {
   const parts: string[] = [];
   let invalid = false;
-  if (data.medication_id !== undefined) {
-    const raw = String(data.medication_id);
-    if (/^[1-9]\d*$/.test(raw) && Number.isSafeInteger(Number(raw))) parts.push(`id=${raw}`);
-    else invalid = true;
+  const validId = (value: unknown) => (typeof value === 'number' || typeof value === 'string') && /^[1-9]\d*$/.test(String(value)) && Number.isSafeInteger(Number(value));
+  let ids: number[] = [];
+  if (data.medication_ids !== undefined) {
+    if (!Array.isArray(data.medication_ids) || !data.medication_ids.length || data.medication_ids.length > 50 || !data.medication_ids.every(validId)) invalid = true;
+    else ids = [...new Set<number>(data.medication_ids.map(Number))];
   }
+  if (data.medication_id !== undefined) {
+    if (!validId(data.medication_id) || (ids.length > 0 && (ids.length !== 1 || ids[0] !== Number(data.medication_id)))) invalid = true;
+    else if (!ids.length) ids = [Number(data.medication_id)];
+  }
+  if (!ids.length) invalid = true;
+  parts.push(ids.length === 1 ? `id=${ids[0]}` : `ids=${encodeURIComponent(ids.join(','))}`);
   const date = data.scheduled_date;
   if (date !== undefined) {
     const parsed = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date) ? new Date(`${date}T00:00:00Z`) : null;
@@ -79,18 +86,8 @@ function medicationReminderRoute(data: Record<string, any>): string {
       parts.push(`sourceTimezone=${encodeURIComponent(zone)}`);
     } catch { invalid = true; }
   }
-  const occurrence = new URLSearchParams(parts.join('&'));
-  const dateLabel = occurrence.get('date') ?? '日期未确认';
-  const timeLabel = occurrence.get('time') ?? '时间未确认';
-  const timezone = occurrence.get('sourceTimezone');
-  const zoneLabel = timezone === 'Asia/Shanghai' ? '（北京时间）' : timezone ? `（${timezone}）` : '（请核实提醒时区）';
-  const prompt = invalid
-    ? '请帮我查看用药提醒。通知信息不完整，请先核实，不要记录服药。'
-    : `请帮我查看 ${dateLabel} ${timeLabel} ${zoneLabel} 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。`;
-  // Chat treats any context payload as an immediate send. Medication taps
-  // deliberately carry only a draft: no model call and no write on opening.
-  const params = new URLSearchParams({ prompt, badge: '用药提醒', newChat: '1', contextEntry: '1' });
-  return `/(tabs)/chat?${params.toString()}`;
+  if (invalid) return '/medication-reminder?invalid=1';
+  return `${ids.length === 1 ? '/medication-reminder' : '/medication-reminders'}?${parts.join('&')}`;
 }
 
 /**
