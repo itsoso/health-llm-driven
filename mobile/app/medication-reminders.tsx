@@ -9,6 +9,14 @@ import { resolveNotificationRoute } from '../services/notificationRoutes';
 import { revaColors as C } from '../constants/revaTheme';
 
 type Row = { id: number; context: MedicationReminderContext | null };
+function needsOccurrenceCheck(context: MedicationReminderContext): boolean {
+  return context.requires_date_confirmation || context.reason === 'timezone_mismatch';
+}
+function rowStatus(context: MedicationReminderContext): string {
+  if (context.requires_date_confirmation) return '日期待确认';
+  if (context.reason === 'timezone_mismatch') return '时区需核对';
+  return context.log ? ({ taken: '已记录服用', skipped: '已记录未服用', delayed: '已推迟' }[context.log.status] ?? '已有记录') : '待核对';
+}
 
 /** A notification group is a list of occurrences, never a bulk intake instruction. */
 export default function MedicationRemindersScreen() {
@@ -69,11 +77,11 @@ export default function MedicationRemindersScreen() {
       {state.key === key && state.error ? <Text accessibilityRole="alert" style={styles.body}>{state.error}</Text> : null}
       {rows.map((row, index) => <View key={row.id} style={styles.card}>
         <Text style={styles.title}>{row.context?.medication.name ?? `第 ${index + 1} 项提醒`}</Text>
-        {row.context ? <><Text style={styles.body}>{row.context.medication.dosage || '剂量未填写'}</Text><Text style={styles.label}>{row.context.log ? ({ taken: '已记录服用', skipped: '已记录未服用', delayed: '已推迟' }[row.context.log.status] ?? '已有记录') : '待核对'}</Text></> : <Text style={styles.body}>暂时无法读取，请刷新重试或到用药管理核对</Text>}
+        {row.context ? <><Text style={styles.body}>{row.context.medication.dosage || '剂量未填写'}</Text><Text style={styles.label}>{rowStatus(row.context)}</Text></> : <Text style={styles.body}>暂时无法读取，请刷新重试或到用药管理核对</Text>}
         {row.context && <Pressable accessibilityRole="button" accessibilityLabel={`查看第 ${index + 1} 项提醒`} style={styles.button} onPress={() => {
           if (activeKey.current !== key || invalidSession.current) return;
           router.push(resolveNotificationRoute({ ...payload, medication_ids: [row.id] }) as any);
-        }}><Text style={styles.buttonText}>{row.context.log ? '查看记录' : '查看并记录'} →</Text></Pressable>}
+        }}><Text style={styles.buttonText}>{needsOccurrenceCheck(row.context) ? '查看并核对' : row.context.log ? '查看记录' : '查看并记录'} →</Text></Pressable>}
       </View>)}
       {visible && state.loading && <ActivityIndicator accessibilityLabel="正在读取提醒" color={C.green600} />}
       <Pressable accessibilityRole="button" onPress={() => { void refresh(); }} style={styles.button}><Text style={styles.buttonText}>刷新核对</Text></Pressable>

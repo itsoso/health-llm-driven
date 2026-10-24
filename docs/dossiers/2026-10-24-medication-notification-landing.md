@@ -26,8 +26,8 @@ Updated: 2026-10-24
 - RED: `/tmp/reva-medication-route-red.log`，真实 server group payload 预期清单而实际 chat。
 - Implementation: ID 全量验证，拒绝空/超限/含非法项/相互冲突 ID，不静默截断；仅标识符和 occurrence 入路由。
 - 读取失败保留失败行；不把失败解释成未服用；切换账号和过期响应清空/丢弃，返回页面重新读取。
-- 最终定向回归：7 suites / 89 tests passed（`/tmp/reva-medication-landing-final-tests.log`）；TypeScript passed（`/tmp/reva-medication-landing-tsc.log`）；System Map check passed。包含冷/热启动分组通知。
-- G4: pending independent review.
+- 最终定向回归：7 suites / 91 tests passed（`/tmp/reva-medication-landing-final-tests.log`）；TypeScript passed（`/tmp/reva-medication-landing-tsc.log`）；System Map check passed。包含冷/热启动分组通知。
+- G4 first review NO-GO：无日期/时区冲突 context.log 不能证明原通知 occurrence 完成。已改为优先显示日期待确认/时区需核对、查看并核对，隐藏完成断言；两项带已有日志的测试先 RED 后 GREEN。复审 pending。
 - G5/G6: not published. 当前基线 010d0c5f 的真实模型验收曾失败，后续合成轮次不能替代失败归因；原生依赖差异仍阻断既有 OTA 通道。本修复不得宣称已到用户设备。
 
 ## Delivery boundary

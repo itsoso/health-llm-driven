@@ -64,3 +64,17 @@ it('clears names and disables row navigation when session is invalidated', async
   expect(s.queryByText('合成药品8')).toBeNull();
   expect(s.queryByLabelText('查看第 2 项提醒')).toBeNull();
 });
+
+it.each([
+  { requires_date_confirmation: true, reason: 'date_confirmation_required', label: '日期待确认' },
+  { requires_date_confirmation: false, reason: 'timezone_mismatch', label: '时区需核对' },
+])('does not attach an existing log to an unconfirmed occurrence: $reason', async fields => {
+  mockParams.ids = '7';
+  mockLoad.mockResolvedValue({ ...context(7), ...fields, log: { status: 'taken' } });
+  const s = renderWithProviders(<Screen />);
+  await waitFor(() => expect(s.getByText('合成药品7')).toBeTruthy());
+  expect(s.getByText(fields.label)).toBeTruthy();
+  expect(s.queryByText('已记录服用')).toBeNull();
+  expect(s.queryByText('查看记录 →')).toBeNull();
+  expect(s.getByText('查看并核对 →')).toBeTruthy();
+});
