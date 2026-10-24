@@ -45,7 +45,7 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["joi"] == "17.13.8"
     assert overrides["nanoid"] == "3.3.18"
     assert overrides["postcss"] == "8.5.26"
-    assert overrides["qs"] == "6.16.0"
+    assert overrides["qs"] == "6.16.1"
 
 
 def test_frontend_dependency_overrides_close_nanoid_and_postcss_advisories() -> None:
