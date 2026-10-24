@@ -408,6 +408,7 @@ jobs:
           scripts/test_trusted_frontend_rebuild.py
           scripts/test_trusted_vision_model.py
           scripts/test_trusted_kbase_login.py
+          scripts/test_trusted_edu_login.py
           scripts/test_trusted_neo_wechat.py
           scripts/test_neo_wechat_linux_isolation.py
           scripts/test_neo_wechat_provisioning.py

@@ -18,6 +18,7 @@ from app.models.registration_invitation import RegistrationAuthAttemptAudit
 from app.models.account_deletion_request import AccountDeletionRequest
 from app.schemas.auth import (
     UserRegister, UserLogin, Token, UserResponse, UserUpdate,
+    EduLoginTicketRequest, EduLoginTicketResponse, EduNativeLoginTicketResponse,
     PhoneCodeRequest, PhoneCodeResponse, PhoneCodeLogin, PhoneLoginToken,
     PhoneVerificationAuthenticated, PhoneVerificationInvitationRequired,
     InvitationCredentialInput, InvitationInspectResponse, InvitedRegistrationInput,
@@ -1731,5 +1732,52 @@ async def kbase_login_ticket(
     db.add(AgentAuditLog(user_id=current_user.id, agent_type="auth_sso",
         specialist_name="kbase_login", action="login_ticket_issued",
         result_summary="identity_only", result_detail={"audience": "kbase", "ttl_seconds": 60}))
+    db.commit()
+    return result
+
+
+@router.post("/sso/edu", response_model=EduLoginTicketResponse, summary="使用当前账号登录关联 Edu")
+@limiter.limit("10/minute")
+async def edu_login_ticket(
+    request: Request, response: Response, body: EduLoginTicketRequest = Body(...),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.edu_sso import issue_ticket
+    from app.services.web_session import enforce_cookie_request_origin
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if (getattr(request.state, "auth_type", None) != "cookie"
+            or getattr(request.state, "is_proxy_mode", False)):
+        raise HTTPException(403, "请使用本人 Web 账号登录")
+    enforce_cookie_request_origin(request)
+    result = issue_ticket(current_user, body.state, body.expected_user_id)
+    db.add(AgentAuditLog(user_id=current_user.id, agent_type="auth_sso",
+        specialist_name="edu_login", action="login_ticket_issued",
+        result_summary="identity_only", result_detail={"audience": "edu", "ttl_seconds": 60}))
+    db.commit()
+    return result
+
+
+@router.post("/sso/edu/native", response_model=EduNativeLoginTicketResponse, summary="为关联 Edu App 验证本人身份")
+@limiter.limit("10/minute")
+async def edu_native_login_ticket(
+    request: Request, response: Response, body: EduLoginTicketRequest = Body(...),
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    from app.services.edu_sso import issue_native_ticket
+
+    response.headers["Cache-Control"] = "no-store"
+    response.headers["Referrer-Policy"] = "no-referrer"
+    if (getattr(request.state, "auth_type", None) != "jwt"
+            or getattr(request.state, "is_proxy_mode", False)):
+        raise HTTPException(403, "请使用本人账号登录 App")
+    result = issue_native_ticket(current_user, body.state, body.expected_user_id)
+    db.add(AgentAuditLog(user_id=current_user.id, agent_type="auth_sso",
+        specialist_name="edu_native_login", action="login_ticket_issued",
+        result_summary="identity_only",
+        result_detail={"audience": "edu", "transport": "native", "ttl_seconds": 60}))
     db.commit()
     return result

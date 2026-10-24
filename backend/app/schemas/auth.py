@@ -208,3 +208,19 @@ class GarminMFAVerifyResponse(BaseModel):
 
 # 更新Token模型以避免循环引用
 Token.model_rebuild()
+
+
+class EduLoginTicketRequest(BaseModel):
+    """Browser challenge and the Health account explicitly confirmed by the user."""
+    model_config = ConfigDict(extra="forbid", strict=True)
+    state: str = Field(min_length=43, max_length=43, pattern=r"^[A-Za-z0-9_-]+$")
+    expected_user_id: int = Field(gt=0)
+
+
+class EduLoginTicketResponse(BaseModel):
+    ticket: str
+    callback_url: str
+
+
+class EduNativeLoginTicketResponse(BaseModel):
+    ticket: str

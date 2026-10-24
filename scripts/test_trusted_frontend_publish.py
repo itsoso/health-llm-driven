@@ -234,6 +234,10 @@ def test_old_availability_verifies_only_fixed_internal_and_public_privacy(monkey
 
 def kbase_config_pair():
     candidate = (Path(__file__).parents[1] / 'frontend/next.config.js').read_bytes()
+    start = candidate.index(b'    const eduOrigin =')
+    end = candidate.index(b'    return headers;', start)
+    candidate = candidate[:start] + candidate[end:]
+    candidate = candidate.replace(b"      {\n        source: '/api/v1/auth/sso/edu',\n        destination: `${backendUrl}/api/v1/auth/sso/edu`,\n      },\n", b'')
     previous = candidate.replace(b"process.env.KBASE_SSO_ORIGIN ?? 'https://kbase.executor.life'", b"process.env.KBASE_SSO_ORIGIN")
     return previous, candidate
 
@@ -312,7 +316,8 @@ def test_complete_page_readback_accepts_csr_login_without_translated_text(monkey
         status = 200
         def __init__(self, url):
             self.url = url
-            self.headers = login_headers("'self' https://kbase.executor.life" if url.endswith('/connect/kbase') else "'self'")
+            origin = {'kbase': 'https://kbase.executor.life', 'edu': 'https://edu.executor.life'}.get(url.rsplit('/', 1)[-1])
+            self.headers = login_headers("'self'" + (' ' + origin if origin else ''))
         def __enter__(self): return self
         def __exit__(self, *args): pass
         def geturl(self): return self.url
@@ -323,13 +328,14 @@ def test_complete_page_readback_accepts_csr_login_without_translated_text(monkey
             privacy_title = re.search(r"title: '(可选[^']*足迹与分享)'", privacy_source).group(1)
             return {'privacy': privacy_title, 'connect/health': '小巴健康 · 数据连接',
                     'connect/kbase': '登录知识库 <meta name="referrer" content="strict-origin">',
+                    'connect/edu': '登录Edu <meta name="referrer" content="strict-origin">',
                     'login': '<!DOCTYPE html><html><body><div id="root"></div></body></html>'}[path].encode()
     def request(req, **kwargs):
         visited.append(req.full_url)
         return Response(req.full_url)
     monkeypatch.setattr(m.urllib.request, 'build_opener', lambda *args: SimpleNamespace(open=request))
     m.verify_pages()
-    assert len(visited) == 8 and len(set(visited)) == 8
+    assert len(visited) == 10 and len(set(visited)) == 10
     monkeypatch.setattr(m.time, 'sleep', lambda _: None)
     original = Response.__init__
     def bad(self, url):
@@ -337,3 +343,29 @@ def test_complete_page_readback_accepts_csr_login_without_translated_text(monkey
         if url.endswith('/login'): self.headers = login_headers("'self' https://evil.test")
     monkeypatch.setattr(Response, '__init__', bad)
     with pytest.raises(m.PublishError): m.verify_pages()
+
+
+def test_edu_runtime_change_is_exact_and_keeps_login_and_kbase_isolated():
+    m = load()
+    _, previous = kbase_config_pair()
+    candidate = (Path(__file__).parents[1] / 'frontend/next.config.js').read_bytes()
+    m.validate_runtime_input_change(['frontend/next.config.js'], previous, candidate)
+    for before, after in [(candidate, previous), (previous, candidate + b'\n'),
+                          (previous + b'\n', candidate),
+                          (previous, candidate.replace(b'https://edu.executor.life', b'https://evil.test'))]:
+        with pytest.raises(m.PublishError):
+            m.validate_runtime_input_change(['frontend/next.config.js'], before, after)
+    good = login_headers("'self' https://edu.executor.life")
+    assert m.valid_login_headers(good, '/connect/edu')
+    assert not m.valid_login_headers(good, '/connect/kbase')
+    assert not m.valid_login_headers(good, '/login')
+    for form in ["'self'", "'self' https://kbase.executor.life", "'self' https://evil.test",
+                 "'self' https://edu.executor.life *",
+                 "'self' https://edu.executor.life; form-action 'self'"]:
+        assert not m.valid_login_headers(login_headers(form), '/connect/edu')
+    for key, value in [('Content-Security-Policy', "form-action 'self'"),
+                       ('Referrer-Policy', 'unsafe-url'), ('Cache-Control', 'public')]:
+        headers = login_headers("'self' https://edu.executor.life")
+        if key != 'Content-Security-Policy': del headers[key]
+        headers[key] = value
+        assert not m.valid_login_headers(headers, '/connect/edu')

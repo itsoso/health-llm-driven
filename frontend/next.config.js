@@ -69,6 +69,20 @@ const nextConfig = {
         ],
       });
     }
+    const eduOrigin = process.env.EDU_SSO_ORIGIN ?? 'https://edu.executor.life';
+    if (eduOrigin) {
+      const origin = new URL(eduOrigin);
+      if (origin.protocol !== 'https:' || origin.origin !== eduOrigin || origin.username || origin.password
+          || (origin.port && origin.port !== '443')) throw new Error('Invalid EDU_SSO_ORIGIN');
+      headers.push({
+        source: '/connect/edu',
+        headers: [
+          { key: 'Content-Security-Policy', value: contentSecurityPolicy.replace("form-action 'self'", `form-action 'self' ${origin.origin}`) },
+          { key: 'Referrer-Policy', value: 'strict-origin' },
+          { key: 'Cache-Control', value: 'no-store' },
+        ],
+      });
+    }
     return headers;
   },
 
@@ -76,6 +90,10 @@ const nextConfig = {
   async rewrites() {
     const backendUrl = process.env.BACKEND_URL || 'http://localhost:8000';
     return [
+      {
+        source: '/api/v1/auth/sso/edu',
+        destination: `${backendUrl}/api/v1/auth/sso/edu`,
+      },
       {
         source: '/api/:path*',
         destination: `${backendUrl}/api/v1/:path*`,

@@ -769,6 +769,40 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/auth/sso/edu": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 使用当前账号登录关联 Edu */
+        post: operations["edu_login_ticket_api_v1_auth_sso_edu_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/auth/sso/edu/native": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 为关联 Edu App 验证本人身份 */
+        post: operations["edu_native_login_ticket_api_v1_auth_sso_edu_native_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/wechat/login": {
         parameters: {
             query?: never;
@@ -24560,6 +24594,28 @@ export interface components {
             } | null;
         };
         /**
+         * EduLoginTicketRequest
+         * @description Browser challenge and the Health account explicitly confirmed by the user.
+         */
+        EduLoginTicketRequest: {
+            /** State */
+            state: string;
+            /** Expected User Id */
+            expected_user_id: number;
+        };
+        /** EduLoginTicketResponse */
+        EduLoginTicketResponse: {
+            /** Ticket */
+            ticket: string;
+            /** Callback Url */
+            callback_url: string;
+        };
+        /** EduNativeLoginTicketResponse */
+        EduNativeLoginTicketResponse: {
+            /** Ticket */
+            ticket: string;
+        };
+        /**
          * EffectiveTimezone
          * @description 派生的生效时区 + 来源。
          */
@@ -37887,6 +37943,72 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edu_login_ticket_api_v1_auth_sso_edu_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EduLoginTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EduLoginTicketResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    edu_native_login_ticket_api_v1_auth_sso_edu_native_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EduLoginTicketRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EduNativeLoginTicketResponse"];
                 };
             };
             /** @description Validation Error */
