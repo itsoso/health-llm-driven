@@ -1,0 +1,13 @@
+diff --git a/node_modules/expo/node_modules/@expo/cli/build/src/start/server/createMCPDevToolsExtensionSchema.js b/node_modules/expo/node_modules/@expo/cli/build/src/start/server/createMCPDevToolsExtensionSchema.js
+index d96a6cb..15edae1 100644
+--- a/node_modules/expo/node_modules/@expo/cli/build/src/start/server/createMCPDevToolsExtensionSchema.js
++++ b/node_modules/expo/node_modules/@expo/cli/build/src/start/server/createMCPDevToolsExtensionSchema.js
+@@ -9,7 +9,7 @@ Object.defineProperty(exports, "createMCPDevToolsExtensionSchema", {
+     }
+ });
+ function _zod() {
+-    const data = require("zod");
++    const data = require("zod/v3");
+     _zod = function() {
+         return data;
+     };

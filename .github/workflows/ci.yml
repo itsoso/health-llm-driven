@@ -903,6 +903,10 @@ jobs:
           node --test scripts/braces-depth-regression.test.cjs scripts/braces-depth-guard.test.cjs
           node --test scripts/node-forge-backport.test.cjs scripts/osv-npm-audit-backport.integration.test.mjs
 
+      - name: Test security dependency compatibility and collection limits
+        working-directory: mobile
+        run: node --test scripts/security-dependency-compat.node.cjs
+
       - name: Test patched image parser denial-of-service guards
         working-directory: mobile
         run: node --test scripts/image-size-security.node.js
