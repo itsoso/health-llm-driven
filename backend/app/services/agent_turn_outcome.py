@@ -135,6 +135,7 @@ def classify_agent_turn_outcome(
     final_text: str,
     capability_block_reasons: Iterable[str] = (),
     tool_failure_tools: Iterable[str] = (),
+    settled_write_failure_tools: Iterable[str] = (),
     pending_confirmation_tools: Iterable[str] = (),
     write_receipts: Iterable[dict[str, Any]] = (),
     record_intent_no_tool: bool = False,
@@ -157,6 +158,9 @@ def classify_agent_turn_outcome(
     """
     blocks = _unique(capability_block_reasons)
     failures = _unique(tool_failure_tools)
+    # Executor-only evidence: these failures have an explicit no-write result.
+    # A successful sibling having dispatched does not make them ambiguous.
+    unsettled_failures = set(failures) - set(_unique(settled_write_failure_tools))
     confirmations = _unique(pending_confirmation_tools)
     receipts = tuple(write_receipts or ())
     verified_receipt_count = sum(
@@ -197,7 +201,7 @@ def classify_agent_turn_outcome(
     )
     if (
         write_reconciliation_required or missing_claimed_receipt
-        or (dispatch_started and failures)
+        or (dispatch_started and unsettled_failures)
         or any(action.get("status") == "reconciliation_required" for action in raw_actions)
         or any(goal["status"] == "reconciliation_required" for goal in goals)
     ):
@@ -217,7 +221,7 @@ def classify_agent_turn_outcome(
     failed_action = next((action for action in raw_actions if action.get("status") in {"failed", "rejected"}), None)
     if failed_action is not None:
         return outcome(
-            status="failed", category="action_not_executed",
+            status="partial" if verified_receipt_count else "failed", category="action_not_executed",
             reason_code=str(failed_action.get("reason_code") or "action_not_executed")[:240],
             retryable=False,
         )

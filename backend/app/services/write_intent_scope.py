@@ -1678,31 +1678,19 @@ def _event_segment_has_unmodeled_clause(segment: str) -> bool:
     return False
 
 
-# Only complete, current-self, quantified intake facts are decomposed here.
-# A closed vocabulary keeps a residual subject, medication, denial, quotation,
-# plan or attribution from being mistaken for the first predicate's object.
-_MIXED_INTAKE_COUNT = r"(?:[1-9][0-9]*|[一二两三四五六七八九]|[一二三四五六七八九]?十[一二三四五六七八九]?)"
-_MIXED_SUPPLEMENT_DRINK_RE = re.compile(
-    r"(?:请|帮我)?记录补剂[:：]?(?:我)?(?:今天|刚才|刚刚)?"
-    r"(?:吃了|服了|服用了)"
-    rf"(?P<dose>{_MIXED_INTAKE_COUNT}(?:粒|片))"
-    r"(?P<name>锌片|钙片|鱼油|甘氨酸镁|褪黑素|复合维生素|维生素[abcd][0-9]*)"
-    r"[，,]?(?:并且|然后|还)?(?:我)?喝了"
-    rf"(?P<food>(?:[1-9][0-9]*\.[0-9]+|{_MIXED_INTAKE_COUNT}|半)"
-    r"(?:杯|毫升|ml)(?:豆浆|牛奶|酸奶))"
-    r"[。.!！]?"
-)
-
-
 def direct_mixed_supplement_food_values(value: str) -> dict[str, str] | None:
-    """Extract two explicit intake facts without inferring strength or meal time."""
-    match = _MIXED_SUPPLEMENT_DRINK_RE.fullmatch(normalize_write_scope_text(value))
-    if match is None:
+    """Compatibility view for exactly one supplement and one drink."""
+    from app.services.intake_plan import parse_intake_plan
+
+    plan = parse_intake_plan(value)
+    supplements = tuple(item for item in plan.items if item.record_type == "supplement")
+    foods = tuple(item for item in plan.items if item.record_type == "diet")
+    if plan.status != "complete" or len(supplements) != 1 or len(foods) != 1:
         return None
     return {
-        "supplement_name": match.group("name"),
-        "dosage": match.group("dose"),
-        "food_items": match.group("food"),
+        "supplement_name": supplements[0].name,
+        "dosage": supplements[0].amount_text,
+        "food_items": foods[0].amount_text + foods[0].name,
     }
 
 
@@ -1718,12 +1706,13 @@ def authorized_health_record_clauses(value: str) -> tuple[str, ...]:
     text = normalize_write_scope_text(value)
     if not text:
         return ()
-    mixed_intake = direct_mixed_supplement_food_values(text)
-    if mixed_intake is not None:
-        return (
-            f"记录补剂{mixed_intake['dosage']}{mixed_intake['supplement_name']}",
-            f"记录饮食{mixed_intake['food_items']}",
-        )
+    from app.services.intake_plan import parse_intake_plan
+
+    intake_plan = parse_intake_plan(text)
+    if intake_plan.status == "complete":
+        return tuple(item.canonical_text for item in intake_plan.items)
+    if intake_plan.status == "needs_clarification":
+        return ()
     limiting_matches = tuple(_LIMITING_WRITE_RE.finditer(text))
     if limiting_matches:
         text = text[limiting_matches[-1].end() :]

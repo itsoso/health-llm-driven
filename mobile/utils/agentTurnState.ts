@@ -1,3 +1,5 @@
+import { normalizeWriteReceipt } from '../services/writeReceipt';
+
 export type AgentTerminalStatus =
   | 'complete'
   | 'partial'
@@ -65,6 +67,9 @@ export interface AgentTurnState {
   recoverable: boolean;
   hadWrite: boolean;
   writeVerified?: boolean;
+  verifiedWriteOperationIds?: string[];
+  writeUncertain?: boolean;
+  resultLabel?: string;
 }
 
 export type AgentTurnEvent =
@@ -80,6 +85,7 @@ export type AgentTurnEvent =
       writes?: boolean;
       success: boolean;
       receiptVerified?: boolean;
+      writeReceipts?: readonly unknown[];
       writeOutcome?: 'verified' | 'rejected' | 'failed' | 'uncertain';
       errorCode?: string;
       label?: string;
@@ -87,6 +93,8 @@ export type AgentTurnEvent =
   | {
       type: 'done';
       at: number;
+      writeReceipts?: readonly unknown[];
+      actionOutcomes?: readonly { status?: unknown }[];
       completionStatus?: 'complete' | 'interrupted' | 'error' | 'unknown';
       terminalStatus?: 'complete' | 'partial' | 'waiting_for_user' | 'blocked' | 'failed' | 'refused' | 'reconciliation_required';
       conversationId?: number;
@@ -99,7 +107,10 @@ export type AgentTurnEvent =
   | { type: 'interrupt'; at: number; errorCode?: string; label?: string; recoverable?: boolean }
   | {
       type: 'recover';
+      turnId?: string;
       at: number;
+      writeReceipts?: readonly unknown[];
+      actionOutcomes?: readonly { status?: unknown }[];
       serverStatus: 'running' | AgentRecoveredPhase;
       conversationId?: number;
       messageId?: number;
@@ -150,7 +161,7 @@ export function resolveAgentTurnStatusLabel(
   return nextLabel?.trim() ? nextLabel : currentLabel;
 }
 
-export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): AgentTurnState {
+function reduceAgentTurnBase(state: AgentTurnState, event: AgentTurnEvent): AgentTurnState {
   if (event.type === 'reset') return createIdleAgentTurn();
   if (event.type === 'hydrate') return event.snapshot;
   if (event.type === 'submit') {
@@ -367,4 +378,63 @@ export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): A
       };
     }
   }
+}
+
+/** A partial retry is authorized only for the server-bound pending intake items. */
+export function hasActiveRetrySource(outcome: any, action: any): boolean {
+  if (action?.type !== 'retry_source_turn' || action?.status !== 'active') return false;
+  if (outcome?.status === 'reconciliation_required'
+    || (Array.isArray(outcome?.actions) && outcome.actions.some((item: any) => item?.status === 'uncertain' || item?.status === 'reconciliation_required'))) return false;
+  if (outcome?.status === 'partial') {
+    return action.version === 1 && action.scope === 'intake_pending_items';
+  }
+  return outcome?.retryable === true;
+}
+
+/** Keep per-write evidence separate from the authoritative whole-turn verdict. */
+export function reduceAgentTurn(state: AgentTurnState, event: AgentTurnEvent): AgentTurnState {
+  const sameRecoveredMessage = event.type !== 'recover' || (
+    typeof event.conversationId === 'number' && event.conversationId === state.conversationId
+    && (event.turnId == null || event.turnId === state.turnId)
+    && ((typeof event.messageId === 'number' && event.messageId === state.messageId)
+      || ((event.messageId == null || state.messageId == null)
+        && typeof event.turnId === 'string' && event.turnId.length > 0 && event.turnId === state.turnId))
+  );
+  const evidenceState = sameRecoveredMessage ? state : {
+    ...state, hadWrite: false, writeVerified: undefined,
+    verifiedWriteOperationIds: [], writeUncertain: false, resultLabel: undefined,
+  };
+  const next = reduceAgentTurnBase(evidenceState, event);
+  if (event.type === 'reset' || event.type === 'submit' || event.type === 'hydrate') return next;
+  if (isAgentTurnTerminal(state) && event.type !== 'recover') return next;
+  const receipts = 'writeReceipts' in event ? event.writeReceipts : undefined;
+  const ids = [...new Set([
+    ...(evidenceState.verifiedWriteOperationIds || []),
+    ...(receipts || []).flatMap(raw => {
+      const receipt = normalizeWriteReceipt(raw);
+      return receipt?.status === 'verified' ? [receipt.operationId] : [];
+    }),
+  ])];
+  const actions = 'actionOutcomes' in event ? event.actionOutcomes : undefined;
+  const uncertainAction = actions?.some(action => (
+    action?.status === 'reconciliation_required' || action?.status === 'uncertain'
+  ));
+  const writeUncertain = evidenceState.writeUncertain === true || uncertainAction === true
+    || next.phase === 'reconciliation_required'
+    || (event.type === 'tool_finished' && event.writes === true
+      && (event.writeOutcome === 'uncertain' || (event.success && event.receiptVerified === false)));
+  const terminal = isAgentTurnTerminal(next);
+  const hasVerified = ids.length > 0;
+  const unsafeRetry = writeUncertain || (hasVerified && next.retryMode === 'resubmit');
+  return {
+    ...next,
+    verifiedWriteOperationIds: ids,
+    writeUncertain,
+    ...(terminal && writeUncertain && next.phase === 'completed'
+      ? { phase: 'reconciliation_required' as const } : {}),
+    resultLabel: terminal && hasVerified && (next.phase !== 'completed' || writeUncertain)
+      ? writeUncertain ? '部分已保存，其余记录状态待核对' : '部分已保存，请查看未完成事项'
+      : undefined,
+    ...(unsafeRetry ? { recoverable: false, retryMode: undefined } : {}),
+  };
 }

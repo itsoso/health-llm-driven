@@ -1,4 +1,4 @@
-import { normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
+import { hasActiveRetrySource, normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
 import { getToken } from './auth';
 import { BASE_URL, WEB_SESSION_AUTH_SENTINEL } from './api';
 import { buildClientCapsHeader } from './clientCaps';
@@ -680,11 +680,7 @@ export async function* streamChat(
         const terminalStatus = normalizeAgentTerminalStatus(turnOutcome?.status);
         const actionOutcomes = normalizeAgentActionOutcomes(turnOutcome?.actions);
         const recoveryAction = parsed.data?.recovery_action;
-        const retrySourceActive = Boolean(
-          turnOutcome?.retryable === true
-          && recoveryAction?.type === 'retry_source_turn'
-          && recoveryAction?.status === 'active'
-        );
+        const retrySourceActive = hasActiveRetrySource(turnOutcome, recoveryAction);
         return {
           type: 'done',
           conversationId: parsed.data?.conversation_id,

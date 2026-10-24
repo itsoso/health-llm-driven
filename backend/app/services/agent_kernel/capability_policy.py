@@ -4395,6 +4395,61 @@ def recipe_replay_record_type(args: dict[str, Any]) -> str:
     return ""
 
 
+def _authorized_intake_item_match(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> tuple[int, dict[str, Any]] | None:
+    """Single source for intake identity matching and safe payload projection."""
+    from copy import deepcopy
+    from app.services.intake_plan import parse_intake_plan
+
+    plan = parse_intake_plan(snapshot.envelope.text)
+    if plan.status != "complete":
+        return None
+    requested_type = recipe_replay_record_type(args)
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    if "items" in args or "items" in data:
+        return None
+    default_date = snapshot.context.current_time.date().isoformat()
+    for index, item in enumerate(plan.items):
+        if item.record_type != requested_type:
+            continue
+        expected: dict[str, Any] = {
+            "target_date": default_date,
+            "default_date": default_date,
+        }
+        if requested_type == "supplement":
+            requested_dose = _effective_argument_value(
+                args, data, data_keys=("dosage",), arg_keys=("dosage",),
+            )
+            if normalize_supplement_dosage(requested_dose) != normalize_supplement_dosage(item.amount_text):
+                continue
+            expected.update({"names": (item.name,), "dosage": item.amount_text})
+        else:
+            expected.update({
+                "food_items": item.amount_text + item.name,
+                "meal_types": ("snack",),
+                "strict_single_drink": True,
+            })
+        candidate = deepcopy(args)
+        if not _target_values_mismatch(requested_type, expected, candidate):
+            return index, candidate
+    return None
+
+
+def authorized_intake_item_index(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> int | None:
+    """Match a plan item without mutating the caller's nested payload.
+
+    This identifies the item for coverage; it is neither dispatch permission
+    nor a write receipt. The normal capability/gateway checks still apply.
+    """
+    match = _authorized_intake_item_match(snapshot, args)
+    return match[0] if match is not None else None
+
+
 def _health_record_target_status(
     snapshot: TurnSnapshot,
     args: dict[str, Any],
@@ -4530,45 +4585,19 @@ def _health_record_target_status(
                 == _normalize_entity_name(exact_name)
                 else "mismatch"
             )
-    from app.services.write_intent_scope import direct_mixed_supplement_food_values
+    from app.services.intake_plan import parse_intake_plan
 
-    mixed_intake = direct_mixed_supplement_food_values(snapshot.envelope.text)
-    if mixed_intake is not None:
-        data = args.get("data") if isinstance(args.get("data"), dict) else {}
-        if "items" in args or "items" in data:
-            # This grammar grants one supplement and one drink, never a batch.
-            # Reject even malformed/empty arrays before payload projection.
+    intake_plan = parse_intake_plan(snapshot.envelope.text)
+    if intake_plan.status == "needs_clarification":
+        return "unauthorized"
+    if intake_plan.status == "complete":
+        match = _authorized_intake_item_match(snapshot, args)
+        if match is None:
             return "mismatch"
-        # Keep the two objects separate even though the turn-level classifier
-        # is supplement. The drink uses the existing unassigned-meal storage
-        # default (snack); no clock-based meal or supplement strength is inferred.
-        default_date = snapshot.context.current_time.date().isoformat()
-        expected: dict[str, Any] = {
-            "target_date": default_date,
-            "default_date": default_date,
-        }
-        if requested_type == "supplement":
-            requested_dose = _effective_argument_value(
-                args, data, data_keys=("dosage",), arg_keys=("dosage",),
-            )
-            if normalize_supplement_dosage(requested_dose) != normalize_supplement_dosage(mixed_intake["dosage"]):
-                return "mismatch"
-            expected.update({
-                "names": (mixed_intake["supplement_name"],),
-                "dosage": mixed_intake["dosage"],
-            })
-        elif requested_type == "diet":
-            expected.update({
-                "food_items": mixed_intake["food_items"],
-                "meal_types": ("snack",),
-                "strict_single_drink": True,
-            })
-        else:
-            return "mismatch"
-        return (
-            "mismatch" if _target_values_mismatch(requested_type, expected, args)
-            else "match"
-        )
+        _index, projected = match
+        args.clear()
+        args.update(projected)
+        return "match"
 
     if requested_type == "supplement" and re.search(
         r"(?:记录|打卡)补剂\s*[:：]",

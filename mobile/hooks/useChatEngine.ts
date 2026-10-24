@@ -1,5 +1,5 @@
 import { reconcileRecordedDietCards } from '../utils/recordedDietCardSync';
-import { normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
+import { hasActiveRetrySource, normalizeAgentTerminalStatus, type AgentTerminalStatus } from '../utils/agentTurnState';
 import { useState, useRef, useCallback, useEffect, useReducer } from 'react';
 import { AppState } from 'react-native';
 import { useFocusEffect } from 'expo-router';
@@ -1109,6 +1109,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     if (!assistant) {
       dispatchAgentTurn({
         type: 'recover',
+        turnId: current.turnId,
         serverStatus: 'running',
         conversationId: id,
         at: Date.now(),
@@ -1119,11 +1120,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
     const completionStatus = assistant?.meta?.completion_status;
     const turnOutcome = assistant?.meta?.turn_outcome;
     const recoveryAction = assistant?.meta?.recovery_action;
-    const recoveredRetryable = Boolean(
-      turnOutcome?.retryable === true
-      && recoveryAction?.type === 'retry_source_turn'
-      && recoveryAction?.status === 'active'
-    );
+    const recoveredRetryable = hasActiveRetrySource(turnOutcome, recoveryAction);
     const recoveredReceipts = normalizeWriteReceipts(assistant?.meta?.write_receipts) || [];
     const recoveredWrite = recoveredReceipts.length > 0;
     const missingWriteReceipt = current.hadWrite && !recoveredWrite;
@@ -1142,7 +1139,10 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           : undefined;
     dispatchAgentTurn({
       type: 'recover',
+      turnId: current.turnId,
       serverStatus: recoveredStatus,
+      writeReceipts: recoveredReceipts,
+      actionOutcomes: Array.isArray(turnOutcome?.actions) ? turnOutcome.actions : undefined,
       conversationId: id,
       messageId: typeof assistant.id === 'number' ? assistant.id : undefined,
       errorCode: recoveredErrorCode,
@@ -1289,7 +1289,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
         if (attempt + 1 < SERVER_RECOVERY_DELAYS_MS.length) {
           schedule(attempt + 1);
         } else {
-          dispatchAgentTurn({ type: 'recover', serverStatus: 'running', at: Date.now(),
+          dispatchAgentTurn({ type: 'recover', turnId: historyRecoveryTurnId, serverStatus: 'running', at: Date.now(),
             conversationId: id, label: STREAM_RECOVERY_PENDING_NOTICE });
           setMessages(current => current.map(message => message.sourceTurnId === historyRecoveryTurnId
             && message.role === 'assistant' ? { ...message, streaming: false,
@@ -1801,7 +1801,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             return;
           }
           dispatchAgentTurn({
-            type: 'recover', serverStatus: 'running', at: Date.now(),
+            type: 'recover', turnId, serverStatus: 'running', at: Date.now(),
             conversationId: conversationToRecover, label: STREAM_RECOVERY_PENDING_NOTICE,
           });
           setMessages(prev => prev.map(message => message.id === aId ? {
@@ -1937,6 +1937,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
       // recovery grants no resubmit action, including for uncertain writes.
       dispatchAgentTurn({
         type: 'recover',
+        turnId,
         at: Date.now(),
         serverStatus: 'running',
         conversationId: conversationToRecover,
@@ -2174,6 +2175,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
                 success: toolSucceeded,
                 receiptVerified: writes ? evt.receipt?.verified === true : undefined,
                 writeOutcome: evt.writeOutcome,
+                writeReceipts: evt.receipt ? [evt.receipt] : undefined,
                 errorCode: toolSucceeded ? undefined : (evt.errorCode ?? 'tool_failed'),
                 label: evt.thought,
               });
@@ -2302,6 +2304,8 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             at: Date.now(),
             completionStatus: effectiveCompletionStatus,
             terminalStatus: evt.terminalStatus,
+            writeReceipts: evt.writeReceipts,
+            actionOutcomes: evt.actionOutcomes,
             conversationId: evt.conversationId,
             messageId: evt.messageId,
             retryable: evt.terminalRetryable === true || (

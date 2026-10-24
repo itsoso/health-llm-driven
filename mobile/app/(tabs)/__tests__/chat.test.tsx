@@ -761,12 +761,12 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(mockSendMessage).toHaveBeenCalledWith('查询今天饮食', null));
   });
 
-  it('uses the server retry command instead of resubmitting a write request', async () => {
+  it.each(['failed', 'partial'])('uses the server retry command for %s instead of resubmitting a write request', async (phase) => {
     mockMessages = [{
       id: 'u-write', role: 'user', content: '记录喝水 1200 毫升', sourceTurnId: 'turn-write',
     }];
     mockActiveTurn = {
-      phase: 'failed',
+      phase,
       recoverable: true,
       retryMode: 'retry_source',
       label: '本轮未执行，可以安全重试',
@@ -801,6 +801,21 @@ describe('ChatScreen', () => {
     mockActiveTurn = { phase: 'completed', recoverable: false, turnId: 'turn-recovering' };
     view.rerender(<ChatScreen />);
     expect(view.queryByText('连接中断，正在从服务端恢复')).toBeNull();
+  });
+
+  it('preserves partial success in the header and never resubmits a mixed write', () => {
+    mockMessages = [{ id: 'u-mixed', role: 'user', content: '记录补剂和豆浆', sourceTurnId: 'mixed' }];
+    mockActiveTurn = { phase: 'blocked', turnId: 'mixed', recoverable: true, retryMode: 'resubmit',
+      verifiedWriteOperationIds: ['supplement:7'], resultLabel: '部分已保存，请查看未完成事项' };
+    const view = render(<ChatScreen />);
+    expect(view.getByText('部分已保存，请查看未完成事项')).toBeTruthy();
+    expect(view.queryByText('本次请求未执行，请查看回复中的说明')).toBeNull();
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
+    mockActiveTurn = { ...mockActiveTurn, phase: 'failed', writeUncertain: true, retryMode: 'retry_source',
+      resultLabel: '部分已保存，其余记录状态待核对' };
+    view.rerender(<ChatScreen />);
+    expect(view.getByText('部分已保存，其余记录状态待核对')).toBeTruthy();
+    expect(view.queryByLabelText('重试上一轮')).toBeNull();
   });
 
   it('shows an actually queued busy turn as waiting and keeps failures visible', () => {

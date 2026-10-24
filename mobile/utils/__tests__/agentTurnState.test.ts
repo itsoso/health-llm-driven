@@ -383,3 +383,82 @@ it.each(['error', 'interrupted'] as const)('clears progress label on legacy done
   expect(done.retryMode).toBe('retry_source');
   expect(done.turnId).toBe('legacy-label');
 });
+
+const mixedReceipt = { operationId: 'supplement:7', resourceType: 'supplement_record', resourceId: '7', completedAt: '2026-10-24T01:00:00Z', status: 'verified', verified: true };
+
+it.each(['failed', 'blocked', 'refused'] as const)('keeps a verified sibling visible when terminal is %s', terminalStatus => {
+  const state = reduceAgentTurn(createIdleAgentTurn(), { type: 'submit', turnId: 'mixed', at: 1 });
+  const done = reduceAgentTurn(state, { type: 'done', at: 2, completionStatus: 'error', terminalStatus,
+    writeReceipts: [mixedReceipt], retryable: true, retryMode: 'resubmit' } as any);
+  expect(done.resultLabel).toBe('部分已保存，请查看未完成事项');
+  expect(done.retryMode).toBeUndefined();
+  expect(done.recoverable).toBe(false);
+  expect(done.phase).toBe(terminalStatus);
+});
+
+it('uses the same partial projection after history recovery', () => {
+  const state = reduceAgentTurn(createIdleAgentTurn(), { type: 'submit', turnId: 'mixed', at: 1 });
+  const recovered = reduceAgentTurn(state, { type: 'recover', at: 2, serverStatus: 'failed',
+    writeReceipts: [mixedReceipt], recoverable: true, retryMode: 'retry_source' } as any);
+  expect(recovered.resultLabel).toBe('部分已保存，请查看未完成事项');
+  expect(recovered.retryMode).toBe('retry_source');
+});
+
+it.each([true, false])('unknown sibling wins regardless of success ordering %s', successFirst => {
+  let state = reduceAgentTurn(createIdleAgentTurn(), { type: 'submit', turnId: 'mixed', at: 1 });
+  const success = { type: 'tool_finished', at: 2, writes: true, success: true, receiptVerified: true, writeReceipts: [mixedReceipt] } as any;
+  const unknown = { type: 'tool_finished', at: 3, writes: true, success: false, writeOutcome: 'uncertain' } as any;
+  for (const event of successFirst ? [success, unknown] : [unknown, success]) state = reduceAgentTurn(state, event);
+  state = reduceAgentTurn(state, { type: 'done', at: 4, completionStatus: 'error', terminalStatus: 'failed', retryable: true, retryMode: 'retry_source' });
+  expect(state.resultLabel).toBe('部分已保存，其余记录状态待核对');
+  expect(state.retryMode).toBeUndefined();
+  expect(state.recoverable).toBe(false);
+});
+
+it('does not create success from counts, unverified receipts or a prior turn', () => {
+  const state = reduceAgentTurn(createIdleAgentTurn(), { type: 'submit', turnId: 'mixed', at: 1 });
+  const invalid = reduceAgentTurn(state, { type: 'done', at: 2, terminalStatus: 'failed',
+    verifiedReceiptCount: 3, writeReceipts: [{ ...mixedReceipt, verified: false }] } as any);
+  expect(invalid.resultLabel).toBeUndefined();
+  const successful = reduceAgentTurn(state, { type: 'done', at: 2, terminalStatus: 'partial', writeReceipts: [mixedReceipt] } as any);
+  const next = reduceAgentTurn(successful, { type: 'submit', turnId: 'next', at: 3 });
+  expect(next.resultLabel).toBeUndefined();
+  expect(next.verifiedWriteOperationIds).toBeUndefined();
+});
+
+ describe('recovered evidence identity', () => {
+  it.each([[2, 20], [1, 20], [undefined, undefined]])('does not borrow old evidence for %s/%s', (conversationId, messageId) => {
+    const state = { ...createIdleAgentTurn(), phase: 'failed' as const, conversationId: 1, messageId: 10,
+      hadWrite: true, writeVerified: true, verifiedWriteOperationIds: ['old'], writeUncertain: true };
+    const next = reduceAgentTurn(state, { type: 'recover', at: 2, serverStatus: 'failed', conversationId, messageId,
+      recoverable: true, retryMode: 'retry_source' });
+    expect(next.verifiedWriteOperationIds).toEqual([]);
+    expect(next.writeUncertain).toBe(false);
+    expect(next.hadWrite).toBe(false);
+    expect(next.resultLabel).toBeUndefined();
+    expect(next.retryMode).toBe('retry_source');
+  });
+  it('keeps evidence only for the exact recovered message', () => {
+    const state = { ...createIdleAgentTurn(), conversationId: 1, messageId: 10,
+      verifiedWriteOperationIds: ['old'], writeUncertain: true };
+    const next = reduceAgentTurn(state, { type: 'recover', at: 2, serverStatus: 'failed', conversationId: 1, messageId: 10,
+      recoverable: true, retryMode: 'retry_source' });
+    expect(next.verifiedWriteOperationIds).toEqual(['old']);
+    expect(next.writeUncertain).toBe(true);
+    expect(next.retryMode).toBeUndefined();
+  });
+});
+
+ it('retains pending write uncertainty only with an explicit same-turn recovery identity', () => {
+  const state = { ...createIdleAgentTurn(), turnId: 'pending', conversationId: 1,
+    hadWrite: true, writeVerified: false, writeUncertain: true };
+  const recovered = reduceAgentTurn(state, { type: 'recover', at: 2, serverStatus: 'running',
+    conversationId: 1, turnId: 'pending' });
+  expect(recovered.hadWrite).toBe(true);
+  expect(recovered.writeUncertain).toBe(true);
+  expect(recovered.retryMode).toBeUndefined();
+  const different = reduceAgentTurn({ ...state, messageId: 10, verifiedWriteOperationIds: ['old'] },
+    { type: 'recover', at: 3, serverStatus: 'failed', conversationId: 1, messageId: 10, turnId: 'other' });
+  expect(different.verifiedWriteOperationIds).toEqual([]);
+  expect(different.writeUncertain).toBe(false);
+ });

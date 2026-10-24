@@ -460,6 +460,24 @@ describe('streamChat', () => {
     await iter.return?.(undefined as any);
   });
 
+  it.each(['intake_pending_items', 'unknown'])('requires scoped partial retry authorization: %s', async (scope) => {
+    const iter = streamChat('记录补剂和饮食');
+    const first = iter.next();
+    await Promise.resolve();
+    const xhr = MockXMLHttpRequest.instances[0];
+    xhr.responseText = 'data: ' + JSON.stringify({ event: 'done', data: {
+      conversation_id: 42, message_id: 99, completion_status: 'error',
+      turn_outcome: { status: 'partial', retryable: false },
+      recovery_action: { type: 'retry_source_turn', version: 1, status: 'active', scope },
+    } }) + '\n\n';
+    xhr.onprogress?.();
+    await expect(first).resolves.toMatchObject({ value: {
+      terminalStatus: 'partial', terminalRetryable: scope === 'intake_pending_items',
+      ...(scope === 'intake_pending_items' ? { retryMode: 'retry_source' } : {}),
+    } });
+    await iter.return?.(undefined as any);
+  });
+
   it('distinguishes health-manage queries from writes at tool-call time', async () => {
     const queryIter = streamChat('查询饮食');
     const queryEvent = queryIter.next();

@@ -109,3 +109,98 @@ def test_mixed_drink_equivalent_exact_quantities_are_allowed(source, target):
     result = decision(f'记录补剂吃了一粒锌片喝了{source}', 'diet', {'food_items': target, 'meal_type': 'snack'})
     assert result.action == 'allow'
     assert result.normalized_args['data']['food_items'] == target
+
+@pytest.mark.parametrize('text', [
+    '记录一下，喝了一杯豆浆，吃了一粒锌片',
+    '帮我记下：刚吃了锌片一粒，还喝了豆浆一杯',
+    '记录补剂吃了一粒锌片和两粒鱼油喝了一杯豆浆',
+])
+def test_order_independent_intake_plan(text):
+    from app.services.intake_plan import parse_intake_plan
+    plan = parse_intake_plan(text)
+    assert plan.status == 'complete'
+    assert len(plan.items) >= 2
+    for item in plan.items:
+        assert parse_intake_plan(item.canonical_text).status == 'complete'
+        data = ({'supplement_name': item.name, 'dosage': item.amount_text}
+                if item.record_type == 'supplement' else
+                {'food_items': item.amount_text + item.name, 'meal_type': 'snack'})
+        assert decision(text, item.record_type, data).action == 'allow'
+
+@pytest.mark.parametrize('text', [
+    '记录补剂吃了一粒锌片和两粒锌片喝了一杯豆浆',
+    '记录补剂吃了一粒锌片喝了一杯豆浆妈妈喝了一杯牛奶',
+    '记录补剂吃了一粒锌片和未知补剂喝了一杯豆浆',
+    '记录补剂吃了一粒锌片喝了一杯豆浆明天再喝一杯牛奶',
+])
+def test_incomplete_plan_cannot_fall_back_to_partial_authority(text):
+    from app.services.intake_plan import parse_intake_plan
+    assert parse_intake_plan(text).status == 'needs_clarification'
+    assert authorized_health_record_clauses(text) == ()
+
+
+def test_plan_limits_unique_items_and_preserves_source_spans():
+    from app.services.intake_plan import parse_intake_plan
+    source = '记录吃了一粒锌片和一粒钙片和一粒鱼油和一粒甘氨酸镁和一粒褪黑素和一粒复合维生素喝了一杯豆浆和半杯牛奶'
+    plan = parse_intake_plan(source)
+    assert plan.status == 'complete' and len(plan.items) == 8
+    assert all(source[item.source_span[0]:item.source_span[1]] for item in plan.items)
+    assert parse_intake_plan(source + '和一杯酸奶').status == 'needs_clarification'
+    assert authorized_health_record_clauses(source + '和一杯酸奶') == ()
+
+
+@pytest.mark.parametrize('text', [
+    '记录一下，喝了一杯豆浆，妈妈吃了一粒锌片',
+    '记录一下，喝了一杯豆浆，没吃一粒锌片',
+    '记录一下，喝了一杯豆浆，明天吃一粒锌片',
+    '记录一下，昨天喝了一杯豆浆，今天吃了一粒锌片',
+    '记录一下，喝了一杯豆浆，吃了一粒50mg锌片',
+    '记录一下，喝了二三杯豆浆，吃了一粒锌片',
+    '记录一下，喝了一杯豆浆，吃了一粒锌片，这是妈妈的',
+    '记录一下，喝了一杯豆浆，吃了一粒锌片，不要记录',
+])
+def test_plan_extension_does_not_expand_subject_date_or_strength(text):
+    from app.services.intake_plan import parse_intake_plan
+    assert parse_intake_plan(text).status == 'needs_clarification'
+    assert authorized_health_record_clauses(text) == ()
+
+
+def test_each_planned_item_rejects_wrong_owner_date_quantity_and_type():
+    text = '记录一下，喝了一杯豆浆，吃了一粒锌片和两粒鱼油'
+    for kind, data in [
+        ('supplement', {'supplement_name': '鱼油', 'dosage': '1粒'}),
+        ('supplement', {'supplement_name': '鱼油', 'dosage': '2粒', 'record_date': '2001-01-01'}),
+        ('supplement', {'supplement_name': '豆浆', 'dosage': '1杯'}),
+        ('diet', {'food_items': '一粒锌片', 'meal_type': 'snack'}),
+    ]:
+        assert decision(text, kind, data).action == 'block'
+
+
+def test_plan_projection_drops_model_owned_user_id():
+    result = decision('记录一下，喝了一杯豆浆，吃了一粒锌片和两粒鱼油',
+                      'supplement', {'supplement_name': '鱼油', 'dosage': '2粒', 'user_id': 2})
+    assert result.action == 'allow'
+    assert 'user_id' not in result.normalized_args['data']
+    assert 'user_id' not in result.normalized_args
+
+
+def test_shared_intake_matcher_indexes_exact_items_without_mutating_payloads():
+    from copy import deepcopy
+    from app.services.agent_kernel.capability_policy import authorized_intake_item_index
+    text = '记录一下，喝了一杯豆浆，吃了一粒锌片和两粒鱼油'
+    envelope = AgentEnvelope(user_id=1, channel='chat', text=text)
+    context = ExecutionContext.for_test(user_id=1, channel='chat')
+    snapshot = TurnSnapshot(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    for index, kind, data in [
+        (0, 'diet', {'food_items': '豆浆1杯', 'meal_type': 'snack'}),
+        (1, 'supplement', {'supplement_name': '锌片', 'dosage': '1粒'}),
+        (2, 'supplement', {'supplement_name': '鱼油', 'dosage': '2粒'}),
+        (None, 'supplement', {'supplement_name': '鱼油', 'dosage': '1粒'}),
+        (None, 'supplement', {'supplement_name': '鱼油', 'dosage': '2粒', 'record_date': '2001-01-01'}),
+        (None, 'supplement', {'supplement_name': '鱼油', 'dosage': '2粒', 'items': []}),
+        (None, 'diet', {'food_items': '豆浆1.5杯', 'meal_type': 'snack'}),
+    ]:
+        args = {'record_type': kind, 'data': data}
+        before = deepcopy(args)
+        assert authorized_intake_item_index(snapshot, args) == index
+        assert args == before

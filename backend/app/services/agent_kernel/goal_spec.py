@@ -353,6 +353,13 @@ def _compile_simple_health_record_goal(
 ) -> GoalSpec | None:
     """Compile narrow create-only records whose payload is user-owned."""
     del actionable_references
+    from app.services.intake_plan import parse_intake_plan
+
+    intake = parse_intake_plan(envelope.text)
+    if intake.status == "needs_clarification" or len(intake.items) > 1:
+        # A single-target goal rewrites every proposed call to that target.
+        # Mixed facts must retain separate authorization and receipt identities.
+        return None
     text = _normalize(envelope.text)
     illness_target = simple_illness_target(envelope.text)
     explicit_illness_label = SIMPLE_ILLNESS_CREATE_RE.fullmatch(

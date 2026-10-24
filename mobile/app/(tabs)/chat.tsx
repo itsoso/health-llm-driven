@@ -1086,7 +1086,7 @@ export default function ChatScreen() {
     : undefined;
   const turnStatus = activeTurnVisible
     ? {
-        label: activeTurn.label || (
+        label: activeTurn.resultLabel || activeTurn.label || (
           activeTurn.phase === 'blocked' || activeTurn.phase === 'refused'
             ? '本次请求未执行，请查看回复中的说明'
           : activeTurnHasErrorTone
@@ -1102,10 +1102,13 @@ export default function ChatScreen() {
           : 'active' as const,
         retryable: !!(
           activeTurn.recoverable
+          && !activeTurn.writeUncertain
+          && !(activeTurn.verifiedWriteOperationIds?.length && activeTurn.retryMode === 'resubmit')
           && activeTurn.retryMode
           && retryableTextMessage
           && !isStreaming
-          && (activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted')
+          && (activeTurn.phase === 'failed' || activeTurn.phase === 'interrupted'
+            || (activeTurn.phase === 'partial' && activeTurn.retryMode === 'retry_source'))
         ),
       }
     : undefined;
@@ -1124,7 +1127,7 @@ export default function ChatScreen() {
     [messages, timezone],
   );
   const retryLastTextTurn = () => {
-    if (!retryableTextMessage || !activeTurn.retryMode || isStreaming) return;
+    if (!retryableTextMessage || !turnStatus?.retryable || !activeTurn.retryMode || isStreaming) return;
     void sendMessage(
       activeTurn.retryMode === 'retry_source' ? '重试' : retryableTextMessage.content,
       null,

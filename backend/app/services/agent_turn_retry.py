@@ -11,6 +11,9 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, replace
+from datetime import datetime
+
+from app.services.intake_retry import resolve_intake_retry_selection
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -54,16 +57,24 @@ class RetryableTurnRecovery:
     conversation_id: int
     message: str
     image_urls: tuple[str, ...]
+    pending_item_indexes: tuple[int, ...] = ()
+    intake_plan_digest: str | None = None
+    intake_local_date: str | None = None
+    intake_timezone: str | None = None
 
     def user_message_meta(self) -> dict[str, Any]:
         """Return the content-free binding persisted on the retry user turn."""
-        return {
+        result = {
             "version": RETRY_SOURCE_ACTION_VERSION,
             "type": RETRY_SOURCE_ACTION_TYPE,
             "source_message_id": self.source_message_id,
             "root_source_message_id": self.root_source_message_id,
             "trigger_assistant_message_id": self.trigger_assistant_message_id,
         }
+        if self.intake_plan_digest is not None:
+            result.update(scope="intake_pending_items", plan_digest=self.intake_plan_digest,
+                          pending_item_indexes=list(self.pending_item_indexes))
+        return result
 
 
 def is_retry_confirmation(text: Any) -> bool:
@@ -150,10 +161,35 @@ def build_retry_source_action_if_safe(
     write_receipts: Any,
     health_write_requested: bool,
     root_source_message_id: int | None = None,
+    now: datetime | None = None,
 ) -> dict[str, Any] | None:
     """Create an explicit retry action only for a proven no-write failure."""
     if not health_write_requested:
         return None
+    meta = getattr(source_message, "meta", None)
+    if isinstance(meta, dict) and "intake_retry_plan" in meta:
+        # Global resubmission remains disabled for partial writes. A narrowly
+        # scoped action is authorized independently by the complete proof below.
+        if (not isinstance(turn_outcome, dict)
+                or turn_outcome.get("status") not in {None, "failed", "partial"}
+                or not (turn_outcome.get("retryable") is True or turn_outcome.get("status") == "partial")
+                or turn_outcome.get("category") not in {"tool_failed", "execution_error", "action_not_executed", "partial_success"}
+                or write_receipts != meta.get("write_receipts")
+                or getattr(source_message, "image_url", None)
+                or meta.get("retry_source")):
+            return None
+        owner_id = getattr(getattr(source_message, "conversation", None), "user_id", None)
+        selection = resolve_intake_retry_selection(
+            source_text=source_message.content, owner_id=owner_id,
+            conversation_id=source_message.conversation_id, source_message_id=source_message.id,
+            meta=meta, now=now,
+        )
+        if selection is None or (root_source_message_id is not None and root_source_message_id != source_message.id):
+            return None
+        return {**build_retry_source_action(source_message_id=source_message.id,
+                                            reason_code=turn_outcome.get("reason_code")),
+                "scope": "intake_pending_items", "plan_digest": selection.plan_digest,
+                "pending_item_indexes": list(selection.item_indexes)}
     if write_receipts:
         return None
     if not isinstance(turn_outcome, dict) or turn_outcome.get("retryable") is not True:
@@ -219,6 +255,7 @@ def _owned_user_message(
     user_id: int,
     conversation_id: int,
     message_id: int,
+    refresh: bool = False,
 ) -> AgentMessage | None:
     return (
         db.query(AgentMessage)
@@ -232,6 +269,7 @@ def _owned_user_message(
             AgentMessage.role == "user",
             AgentConversation.user_id == int(user_id),
         )
+        .execution_options(populate_existing=refresh)
         .one_or_none()
     )
 
@@ -265,9 +303,32 @@ def _source_message_from_binding(
         conversation_id=conversation_id,
         message_id=source_message_id,
     )
-    if action_source is None or not _write_checkpoint_is_safe_to_retry(
-        action_source.meta
-    ):
+    if action_source is None:
+        return None
+    if binding.get("scope") == "intake_pending_items":
+        if (action_source.id >= int(trigger_assistant_message_id)
+                or root_source_message_id != action_source.id
+                or action_source.image_url
+                or not isinstance(action_source.meta, dict)
+                or action_source.meta.get("retry_source")):
+            return None
+        selection = resolve_intake_retry_selection(
+            source_text=action_source.content, owner_id=user_id,
+            conversation_id=conversation_id, source_message_id=action_source.id,
+            meta=action_source.meta,
+        )
+        if (selection is None or binding.get("plan_digest") != selection.plan_digest
+                or binding.get("pending_item_indexes") != list(selection.item_indexes)):
+            return None
+        return RetryableTurnRecovery(
+            source_message_id=action_source.id, root_source_message_id=action_source.id,
+            action_source_message_id=action_source.id,
+            trigger_assistant_message_id=trigger_assistant_message_id,
+            conversation_id=conversation_id, message=selection.message, image_urls=(),
+            pending_item_indexes=selection.item_indexes, intake_plan_digest=selection.plan_digest,
+            intake_local_date=selection.local_date, intake_timezone=selection.timezone,
+        )
+    if binding.get("scope") is not None or not _write_checkpoint_is_safe_to_retry(action_source.meta):
         return None
     if action_source.id >= int(trigger_assistant_message_id):
         return None
@@ -441,6 +502,9 @@ def restore_retryable_turn_recovery(
         or trigger_root_id != binding_root_id
     ):
         return None
+    for key in ("scope", "plan_digest", "pending_item_indexes"):
+        if trigger_action.get(key) != binding.get(key):
+            return None
     latest_message_id = (
         db.query(AgentMessage.id)
         .filter(AgentMessage.conversation_id == conversation_id)
@@ -463,6 +527,17 @@ def restore_retryable_turn_recovery(
         return None
     if not _write_checkpoint_is_safe_to_retry(getattr(user_message, "meta", None)):
         return None
+    if binding.get("scope") == "intake_pending_items":
+        # A resumed selective attempt needs explicit no-side-effect evidence too.
+        # Legacy failed/planned labels alone cannot authorize another dispatch.
+        retry_operations = meta.get("write_operations", {})
+        if not isinstance(retry_operations, dict) or any(
+            not isinstance(operation, dict) or operation.get("no_side_effect") is not True
+            for operation in retry_operations.values()
+        ):
+            return None
+        if meta.get("write_state") and not retry_operations:
+            return None
     recovery = _source_message_from_binding(
         db,
         user_id=user_id,
@@ -476,3 +551,83 @@ def restore_retryable_turn_recovery(
         recovery,
         action_source_message_id=int(user_message.id),
     )
+
+
+def claim_intake_retry_source(
+    db: Session,
+    *,
+    user_id: int,
+    recovery: RetryableTurnRecovery,
+    retry_message_id: int,
+) -> bool:
+    """Durably assign one selective attempt before dispatch using metadata CAS.
+
+    A different client turn cannot claim the same source. Resuming the same
+    message still requires the original source proof and its immutable binding.
+    No lock, claim, or database failure is treated as successful execution.
+    """
+    from sqlalchemy import exists, update
+    from sqlalchemy.orm import aliased
+
+    if recovery.intake_plan_digest is None or type(retry_message_id) is not int:
+        return False
+    source = _owned_user_message(db, user_id=user_id,
+        conversation_id=recovery.conversation_id, message_id=recovery.source_message_id, refresh=True)
+    retry = _owned_user_message(db, user_id=user_id,
+        conversation_id=recovery.conversation_id, message_id=retry_message_id, refresh=True)
+    if (source is None or retry is None or retry.id <= recovery.trigger_assistant_message_id
+            or source.id != recovery.root_source_message_id
+            or source.image_url or not isinstance(source.meta, dict)
+            or source.meta.get('retry_source')
+            or not isinstance(retry.meta, dict)
+            or retry.meta.get('retry_source') != recovery.user_message_meta()
+            or not is_retry_confirmation(retry.content)):
+        return False
+    if not _write_checkpoint_is_safe_to_retry(retry.meta):
+        return False
+    retry_operations = retry.meta.get("write_operations", {})
+    if (not isinstance(retry_operations, dict)
+            or any(not isinstance(op, dict) or op.get("no_side_effect") is not True
+                   for op in retry_operations.values())
+            or (retry.meta.get("write_state") and not retry_operations)):
+        return False
+    selection = resolve_intake_retry_selection(source_text=source.content, owner_id=user_id,
+        conversation_id=recovery.conversation_id, source_message_id=source.id, meta=source.meta)
+    if (selection is None or selection.plan_digest != recovery.intake_plan_digest
+            or selection.item_indexes != recovery.pending_item_indexes
+            or selection.message != recovery.message
+            or selection.local_date != recovery.intake_local_date
+            or selection.timezone != recovery.intake_timezone):
+        return False
+    claim = {'version': 1, 'retry_message_id': retry_message_id,
+             'plan_digest': selection.plan_digest,
+             'pending_item_indexes': list(selection.item_indexes)}
+    prior = dict(source.meta)
+    if 'intake_retry_claim' in prior and prior['intake_retry_claim'] != claim:
+        return False
+    # Even a same-message resume must CAS fresh source and retry metadata.
+    # This catches dispatch beginning after our read but before this statement.
+    retry_alias = aliased(AgentMessage)
+    statement = (update(AgentMessage)
+        .where(AgentMessage.id == source.id,
+               AgentMessage.conversation_id == recovery.conversation_id,
+               AgentMessage.role == 'user', AgentMessage.meta == prior,
+               AgentMessage.content == source.content, AgentMessage.image_url == source.image_url,
+               exists().where(retry_alias.id == retry.id,
+                              retry_alias.conversation_id == recovery.conversation_id,
+                              retry_alias.role == 'user', retry_alias.meta == dict(retry.meta),
+                              retry_alias.content == retry.content),
+               exists().where(AgentConversation.id == AgentMessage.conversation_id,
+                              AgentConversation.user_id == user_id))
+        .values(meta={**prior, 'intake_retry_claim': claim})
+        .execution_options(synchronize_session=False))
+    try:
+        result = db.execute(statement)
+        if result.rowcount not in (0, 1):
+            raise RuntimeError('intake_retry_claim_rowcount_invalid')
+        db.commit()
+        db.expire(source)
+    except Exception:
+        db.rollback()
+        raise
+    return result.rowcount == 1

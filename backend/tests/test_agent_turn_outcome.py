@@ -264,6 +264,26 @@ def test_unresolved_action_requires_reconciliation_even_without_redundant_flags(
     assert result['retryable'] is False
 
 
+def test_verified_sibling_and_proven_no_write_failure_are_partial():
+    result = classify_agent_turn_outcome(
+        completion_status='error', final_text='部分完成', dispatch_started=True,
+        write_receipts=[{'verified': True}], claimed_write_action_count=1,
+        tool_failure_tools=['health_record'], settled_write_failure_tools=['health_record'],
+        action_outcomes=[{'status': 'verified'}, {'status': 'failed', 'reason_code': 'write_failed'}],
+    )
+    assert result['status'] == 'partial'
+    assert result['retryable'] is False
+
+
+def test_settled_sibling_does_not_hide_unknown_or_unaccounted_failure():
+    for extra in ({'write_reconciliation_required': True}, {'tool_failure_tools': ['health_record', 'unknown']}):
+        kwargs = dict(completion_status='error', final_text='', dispatch_started=True,
+                      write_receipts=[{'verified': True}], tool_failure_tools=['health_record'],
+                      settled_write_failure_tools=['health_record'])
+        kwargs.update(extra)
+        assert classify_agent_turn_outcome(**kwargs)['status'] == 'reconciliation_required'
+
+
 def test_output_protocol_failure_cannot_be_successful():
     result = classify_agent_turn_outcome(
         completion_status='complete', final_text='这次没有完成，请重试。',

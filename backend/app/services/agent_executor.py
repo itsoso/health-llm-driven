@@ -234,6 +234,21 @@ _CLINICIAN_AMBIGUOUS_ACTION_REPLY = (
 )
 
 
+def _settled_intake_failure_tools(source, *, owner_id, now, failed_tools):
+    """Only exhaustive durable proof may settle same-tool partial failures."""
+    from app.services.intake_retry import resolve_intake_retry_selection
+
+    tools = tuple(failed_tools)
+    if not tools or any(tool != "health_record" for tool in tools):
+        return ()
+    selection = resolve_intake_retry_selection(
+        source_text=source.content, owner_id=owner_id,
+        conversation_id=source.conversation_id, source_message_id=source.id,
+        meta=source.meta, now=now,
+    )
+    return ("health_record",) if selection is not None else ()
+
+
 def _clinician_turn_prompt_guidance(decision: Any) -> str:
     """Render content-free turn guidance from the server-owned guard decision."""
     if decision.reason_code == "clinician_feedback_recall":
@@ -5606,11 +5621,12 @@ def _explicit_labeled_supplement_names(raw_message: str) -> tuple[str, ...]:
 
 
 def _explicit_supplement_names_in_current_turn(user_message: Any) -> tuple[str, ...]:
-    from app.services.write_intent_scope import direct_mixed_supplement_food_values
+    from app.services.intake_plan import parse_intake_plan
 
-    mixed = direct_mixed_supplement_food_values(str(user_message or ""))
-    if mixed is not None:
-        return (_normalized_current_turn_entity_text(mixed["supplement_name"]),)
+    intake = parse_intake_plan(str(user_message or ""))
+    if intake.status == "complete":
+        return tuple(_normalized_current_turn_entity_text(item.name)
+                     for item in intake.items if item.record_type == "supplement")
     raw_message = unicodedata.normalize("NFKC", str(user_message or ""))
     names = list(_explicit_labeled_supplement_names(raw_message))
     intent = classify_agent_utterance(raw_message)
@@ -9360,6 +9376,13 @@ def _build_deterministic_supplement_record_tool_calls(
     """Build the exact supplement writes explicitly authorized this turn."""
     if write_receipts or has_attachment:
         return []
+    from app.services.intake_plan import parse_intake_plan
+
+    intake = parse_intake_plan(message)
+    if intake.status == "needs_clarification" or len(intake.items) > 1:
+        # This legacy single-domain repair must not concatenate sibling facts
+        # into a supplement name or replace a correctly scoped model call.
+        return []
 
     item_metadata: dict[str, dict[str, Any]] = {}
     atomic_batch_authorized = False
@@ -10461,8 +10484,22 @@ def _turn_write_identity_args(
     *,
     user_message: str,
     recent_messages: Sequence[dict[str, Any]],
+    snapshot: Any = None,
 ) -> Dict[str, Any]:
     """Use the same grounded event projection for turn-local write identity."""
+    if tool_name == "health_record" and snapshot is not None:
+        from app.services.agent_kernel.capability_policy import authorized_intake_item_index
+        from app.services.intake_plan import parse_intake_plan
+
+        item_index = authorized_intake_item_index(snapshot, parsed_args)
+        if item_index is not None:
+            item = parse_intake_plan(snapshot.envelope.text).items[item_index]
+            # Identity only, never a dispatch payload. Projection may add a
+            # default date or normalize a dose; the authorized fact is stable.
+            return {"record_type": item.record_type, "data": {
+                "intake_item_identity": item.canonical_text,
+                "record_date": snapshot.context.current_time.date().isoformat(),
+            }}
     if tool_name != "health_record" or _fast_record_kind(parsed_args) != "event":
         return parsed_args
     raw_data = parsed_args.get("data")
@@ -14325,6 +14362,7 @@ class AgentExecutor:
         parsed_args: Dict[str, Any],
         receipt: Optional[Dict[str, Any]] = None,
         preserve_dispatch_summary: bool = False,
+        no_side_effect: bool = False,
     ) -> None:
         """Checkpoint a write boundary on the durable user turn.
 
@@ -14337,6 +14375,7 @@ class AgentExecutor:
             parsed_args,
             user_message=self._current_turn_user_message,
             recent_messages=self._current_turn_recent_messages,
+            snapshot=self._agent_kernel_snapshot,
         )
         fingerprint = _write_operation_fingerprint(tool_name, identity_args)
         meta = dict(user_message.meta or {})
@@ -14380,6 +14419,7 @@ class AgentExecutor:
                 "status": status,
                 "tool": tool_name,
                 "updated_at": updated_at,
+                "no_side_effect": bool(no_side_effect and status in {"failed", "rejected"}),
             })
             if receipt:
                 operation["receipt_operation_id"] = receipt.get("operation_id")
@@ -14417,6 +14457,7 @@ class AgentExecutor:
                 parsed_args,
                 user_message=self._current_turn_user_message,
                 recent_messages=self._current_turn_recent_messages,
+                snapshot=self._agent_kernel_snapshot,
             )
             fingerprint = _write_operation_fingerprint(tool_name, identity_args)
             planned_fingerprints.add(fingerprint)
@@ -14425,13 +14466,38 @@ class AgentExecutor:
                     "status": "planned",
                     "tool": tool_name,
                     "updated_at": updated_at,
+                    "no_side_effect": True,
                 }
+            if tool_name == "health_record" and self._agent_kernel_snapshot is not None:
+                from app.services.agent_kernel.capability_policy import authorized_intake_item_index
+
+                item_index = authorized_intake_item_index(self._agent_kernel_snapshot, parsed_args)
+                if item_index is not None:
+                    operations[fingerprint]["intake_item_index"] = item_index
         meta["write_operations"] = operations
         meta["write_plan"] = {
             "fingerprints": sorted(planned_fingerprints),
             "sealed": True,
             "updated_at": updated_at,
         }
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is not None and str(user_message.content or "") == snapshot.envelope.text:
+            from app.services.intake_plan import parse_intake_plan
+            from app.services.intake_retry import build_intake_retry_plan
+
+            intake = parse_intake_plan(snapshot.envelope.text)
+            indexed = [(op.get("intake_item_index"), fp) for fp, op in operations.items()]
+            if (intake.status == "complete" and len(indexed) == len(intake.items)
+                    and {index for index, _ in indexed} == set(range(len(intake.items)))):
+                checkpoint = build_intake_retry_plan(
+                    source_text=snapshot.envelope.text, owner_id=int(self._current_user_id),
+                    conversation_id=int(user_message.conversation_id), source_message_id=int(user_message.id),
+                    local_date=snapshot.context.current_time.date().isoformat(),
+                    timezone=snapshot.context.timezone,
+                    item_fingerprints=[fp for _, fp in sorted(indexed)],
+                )
+                if checkpoint is not None:
+                    meta["intake_retry_plan"] = checkpoint
         user_message.meta = meta
         try:
             self.db.commit()
@@ -14549,7 +14615,55 @@ class AgentExecutor:
         else:
             fully_verified = False
             partially_verified = bool(receipts) or write_state.get("status") == "verified"
-        if fully_verified:
+        # A sealed model response is not proof that it covered the user's
+        # complete typed intake. In particular, a supplement-only response may
+        # omit the drink from a mixed source while all planned writes succeed.
+        from app.services.intake_plan import parse_intake_plan
+        from app.services.intake_retry import build_intake_retry_plan
+
+        intake_plan = parse_intake_plan(str(user_message.content or ""))
+        intake_coverage_proven = intake_plan.status != "needs_clarification"
+        if intake_plan.status == "complete" and len(intake_plan.items) > 1:
+            checkpoint = meta.get("intake_retry_plan")
+            bindings = checkpoint.get("items") if isinstance(checkpoint, dict) else None
+            expected_checkpoint = None
+            if (isinstance(bindings, list)
+                    and all(isinstance(item, dict) and type(item.get("item_index")) is int
+                            for item in bindings)):
+                expected_checkpoint = build_intake_retry_plan(
+                    source_text=user_message.content, owner_id=user_id,
+                    conversation_id=user_message.conversation_id, source_message_id=user_message.id,
+                    local_date=checkpoint.get("local_date"), timezone=checkpoint.get("timezone"),
+                    item_fingerprints=[item.get("fingerprint") for item in bindings],
+                )
+            bound_fingerprints = (
+                [item["fingerprint"] for item in expected_checkpoint["items"]]
+                if expected_checkpoint is not None else []
+            )
+            linked_receipts = [
+                operation.get("receipt_operation_id") for operation in operations.values()
+                if operation.get("status") == "verified"
+            ]
+            intake_coverage_proven = (
+                expected_checkpoint is not None and checkpoint == expected_checkpoint
+                and type(checkpoint.get("version")) is int
+                and write_plan.get("sealed") is True
+                and sorted(planned_fingerprints) == sorted(bound_fingerprints)
+                and set(operations) == set(bound_fingerprints)
+                and len(raw_operations) == len(operations)
+                and meta.get("write_receipts") == receipts
+                and len(receipt_ids) == len(receipts)
+                and all(isinstance(rid, str) and rid for rid in linked_receipts)
+                and sorted(linked_receipts) == sorted(receipt_ids)
+            )
+        if not intake_coverage_proven:
+            content = (
+                "已保留本轮获得的写入回执，但无法证明已覆盖原消息中的全部饮食和补剂。"
+                "我没有自动重试，也不会将本轮标为全部完成；请先核对现有记录。"
+            )
+            completion_status = "error"
+            recovery_reason = "write_checkpoint_intake_coverage_unproven"
+        elif fully_verified:
             content = "写入已完成，已从持久化回执恢复本轮结果，没有重复执行写入。"
             completion_status = "complete"
             recovery_reason = "write_checkpoint_verified"
@@ -14931,6 +15045,7 @@ class AgentExecutor:
                     identity_args = _turn_write_identity_args(
                         name, args, user_message=self._current_turn_user_message,
                         recent_messages=self._current_turn_recent_messages,
+                        snapshot=self._agent_kernel_snapshot,
                     )
                     fingerprint = _write_operation_fingerprint(name, identity_args)
                     operation = (user_msg.meta or {}).get("write_operations", {}).get(fingerprint, {})
@@ -14975,6 +15090,7 @@ class AgentExecutor:
                     parsed_args,
                     user_message=self._current_turn_user_message,
                     recent_messages=self._current_turn_recent_messages,
+                    snapshot=self._agent_kernel_snapshot,
                 )
                 write_fingerprint = (
                     _write_operation_fingerprint(fn, write_identity_args)
@@ -16629,6 +16745,19 @@ class AgentExecutor:
                 run_id=run_id,
             )
 
+            if retry_recovery is not None and retry_recovery.intake_plan_digest is not None:
+                context = self._agent_kernel_snapshot.context
+                if (retry_recovery.intake_timezone != context.timezone
+                        or retry_recovery.intake_local_date != context.current_time.date().isoformat()):
+                    kernel_completion_status = "error"
+                    yield {"event": "token", "data": {"content": "原记录的日期或时区已变化，请核对未完成项目后重新记录。已保存项目无需重记。"}}
+                    yield self._attach_runtime_identity({"event": "done", "data": {
+                        "conversation_id": conversation_id, "message_id": None,
+                        "completion_status": "error", "client_turn_id": client_turn_id,
+                        "request_persisted": False, "recovery_error": "retry_source_time_context_changed",
+                    }})
+                    return
+
             from app.services.agent_read_task_continuation import load_read_task_reference
 
             owned_read_followup = (
@@ -17489,6 +17618,20 @@ class AgentExecutor:
             )
 
         saved_image_urls: List[str] = []
+        if retry_recovery is not None and retry_recovery.intake_plan_digest is not None:
+            from app.services.agent_turn_retry import claim_intake_retry_source
+
+            if not claim_intake_retry_source(
+                self.db, user_id=user_id, recovery=retry_recovery,
+                retry_message_id=int(user_msg.id),
+            ):
+                yield {"event": "token", "data": {"content": "这项补记已被另一条请求接手，请先查看记录状态，不要重复提交。"}}
+                yield self._attach_runtime_identity({"event": "done", "data": {
+                    "conversation_id": conv.id, "message_id": None,
+                    "completion_status": "error", "client_turn_id": client_turn_id,
+                    "recovery_error": "retry_source_already_claimed",
+                }})
+                return
         if user_msg.image_url:
             try:
                 parsed_image_urls = json.loads(user_msg.image_url)
@@ -18543,6 +18686,7 @@ class AgentExecutor:
                 identity_args = _turn_write_identity_args(
                     name, args, user_message=self._current_turn_user_message,
                     recent_messages=self._current_turn_recent_messages,
+                    snapshot=self._agent_kernel_snapshot,
                 )
                 fingerprint = _write_operation_fingerprint(name, identity_args)
                 operation = (user_msg.meta or {}).get("write_operations", {}).get(fingerprint, {})
@@ -18658,6 +18802,7 @@ class AgentExecutor:
                 parsed_tool_args,
                 user_message=self._current_turn_user_message,
                 recent_messages=self._current_turn_recent_messages,
+                snapshot=self._agent_kernel_snapshot,
             )
             write_fingerprint = (
                 _write_operation_fingerprint(
@@ -19102,6 +19247,7 @@ class AgentExecutor:
                         tool_name=func_name,
                         parsed_args=parsed_tool_args,
                         receipt=receipt,
+                        no_side_effect=write_outcome_fields.get("dispatch_started") is False,
                     )
                     if runtime_write_fingerprint:
                         if checkpoint_status == "uncertain":
@@ -20482,6 +20628,30 @@ class AgentExecutor:
                 await self._http_client.aclose()
                 self._http_client = None
 
+        # A model may omit a sibling entirely. Tool success alone must not
+        # collapse a multi-item request into a successful single-item turn.
+        from app.services.intake_plan import parse_intake_plan
+
+        intake = parse_intake_plan(message or "")
+        intake_goal_outcomes = []
+        if intake.status == "complete" and len(intake.items) > 1:
+            receipt_ids = {r.get("operation_id") for r in write_receipts if r.get("verified") is True}
+            operations = (user_msg.meta or {}).get("write_operations", {})
+            verified_indexes = {
+                op.get("intake_item_index") for op in operations.values()
+                if op.get("status") == "verified" and op.get("receipt_operation_id") in receipt_ids
+            }
+            intake_goal_outcomes = [
+                {"goal_id": f"intake:{i}", "kind": "write",
+                 "status": "verified" if i in verified_indexes else "failed",
+                 "evidence_kind": "write_receipt" if i in verified_indexes else "",
+                 "reason_code": "verified_write" if i in verified_indexes else "intake_item_unfinished"}
+                for i in range(len(intake.items))
+            ]
+            if len(verified_indexes) != len(intake.items) and write_receipts and not unverified_write_operations:
+                full_reply = "部分项目已确认保存，其余项目尚未完成。已保存的项目无需重复记录。"
+                final_finish_reason = "error"
+
         # 6. 保存回复
         if is_internal_process_response(full_reply):
             full_reply = "这次没有完成数据查询，因此没有生成可靠回答。请点“重试”重新查询。"
@@ -21135,10 +21305,17 @@ class AgentExecutor:
             }
             for operation_id, reason in unverified_write_operations.items()
         )
+        action_outcomes.extend(
+            {"action_id": str(operation_id), "status": "failed",
+             "reason_code": "write_failed", "receipt_verified": False,
+             "recovery_guidance": "已保存的项目无需重记，请核对未完成事项。"}
+            for operation_id in failed_write_operations
+            if write_receipts
+        )
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
-            goal_outcomes=daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
+            goal_outcomes=intake_goal_outcomes + daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
             + plan_goals
@@ -21157,6 +21334,12 @@ class AgentExecutor:
                 for tool_name in self._agent_kernel_tool_failure_tools
                 if tool_name not in recovered_tool_failures
             ],
+            settled_write_failure_tools=(
+                _settled_intake_failure_tools(
+                    user_msg, owner_id=user_id, now=self._agent_kernel_reference_now(),
+                    failed_tools=failed_write_operations.values(),
+                ) if not unverified_write_operations else ()
+            ),
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
             record_intent_no_tool=record_intent_no_tool,
@@ -21184,6 +21367,7 @@ class AgentExecutor:
             turn_outcome=turn_outcome,
             write_receipts=write_receipts,
             health_write_requested=health_write_requested,
+            now=self._agent_kernel_reference_now(),
             root_source_message_id=(
                 retry_recovery.root_source_message_id
                 if retry_recovery is not None

@@ -2867,6 +2867,31 @@ describe('useChatEngine', () => {
     expect(result.current.activeTurn.messageId).toBeUndefined();
   });
 
+  it.each(['partial', 'failed', 'reconciliation_required'] as const)('restores mixed write %s without losing verified sibling evidence', async status => {
+    mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '323';
+    mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
+      version: 1, phase: 'interrupted', turnId: 'mixed-history', conversationId: 323,
+      startedAt: Date.now() - 1000, recoverable: true, hadWrite: true,
+    });
+    mockGetConversationMessages.mockResolvedValue({ total_messages: 2, messages: [
+      { id: 1, role: 'user', content: '记录补剂和豆浆', meta: { client_turn_id: 'mixed-history' } },
+      { id: 2, role: 'assistant', content: '部分完成', meta: {
+        completion_status: 'error', client_turn_id: 'mixed-history', client_turn_finalized: true,
+        write_receipts: [verifiedDietReceipt], turn_outcome: { status, retryable: status !== 'partial',
+          actions: [{ status: 'verified' }, { status: status === 'failed' ? 'rejected' : status }] },
+        recovery_action: { type: 'retry_source_turn', status: 'active', version: 1, scope: 'intake_pending_items' },
+      } },
+    ] });
+    const { result } = renderHook(() => useChatEngine());
+    await waitFor(() => expect(result.current.activeTurn.turnId).toBe('mixed-history'));
+    await act(async () => { await result.current.loadLatestConversation(); });
+    expect(result.current.activeTurn.resultLabel).toBe(status !== 'reconciliation_required'
+      ? '部分已保存，请查看未完成事项' : '部分已保存，其余记录状态待核对');
+    expect(result.current.activeTurn.verifiedWriteOperationIds).toEqual([verifiedDietReceipt.operationId]);
+    if (status === 'partial') expect(result.current.activeTurn.retryMode).toBe('retry_source');
+    if (status === 'reconciliation_required') expect(result.current.activeTurn.retryMode).toBeUndefined();
+  });
+
   it('fails closed when recovered write history has no verified resource receipt', async () => {
     mockAsyncStorage[scopedStorageKey('chat:last_conversation_id:v1')] = '323';
     mockAsyncStorage[scopedStorageKey('chat:active_turn:v1')] = JSON.stringify({
@@ -4422,6 +4447,27 @@ describe('useChatEngine', () => {
       finishStream?.();
       await Promise.resolve();
     });
+  });
+
+  it.each(['failed', 'blocked', 'reconciliation_required'] as const)('keeps mixed-write receipts and truthful %s header state', async terminalStatus => {
+    mockStreamChat.mockImplementation(async function* () {
+      yield { type: 'start', conversationId: 777 };
+      yield { type: 'done', conversationId: 777, messageId: 82, completionStatus: 'error',
+        terminalStatus, writeReceipts: [verifiedDietReceipt], terminalRetryable: true,
+        retryMode: 'retry_source', actionOutcomes: [
+          { status: 'verified' }, { status: terminalStatus === 'reconciliation_required' ? 'reconciliation_required' : 'rejected' },
+        ] };
+    });
+    const { result } = renderHook(() => useChatEngine());
+    await act(async () => { await result.current.sendMessage('记录补剂和豆浆'); });
+    expect(result.current.messages.find(message => message.role === 'assistant')?.writeReceipts)
+      .toEqual([verifiedDietReceipt]);
+    expect(result.current.activeTurn.resultLabel).toBe(terminalStatus === 'reconciliation_required'
+      ? '部分已保存，其余记录状态待核对' : '部分已保存，请查看未完成事项');
+    if (terminalStatus === 'reconciliation_required') {
+      expect(result.current.activeTurn.retryMode).toBeUndefined();
+      expect(result.current.activeTurn.recoverable).toBe(false);
+    }
   });
 
   it('stores a verified tool write receipt for the following turn', async () => {
