@@ -77,9 +77,37 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
   </section>;
 }
 
+type ReadingBlock = { kind: 'heading' | 'label' | 'meta' | 'paragraph'; title: string; body: string; kicker?: string };
+
+function readingBlocks(text: string, title: string): ReadingBlock[] {
+  return text.split(/\n\s*\n/).filter(part => part.trim()).flatMap<ReadingBlock>(part => {
+    const value = part.trim();
+    if (value === title) return [];
+    const [first, ...rest] = value.split('\n');
+    if (/^(资料日期[：:]|含摘要与思考$|摘要简版$|材料简版$)/.test(first)) {
+      return [{ kind: 'meta', title: '', body: value }];
+    }
+    if (/^(主读|速览|深入解读|深入问题|综合思考|昨日更新|昨日上架|昨日讨论|昨日播客上架|昨日讨论与七日背景)(?:$|[\s｜|·：:])/.test(first) && first.length <= 120) {
+      const separator = first.search(/[｜|]/);
+      return [{ kind: 'heading', title: separator >= 0 ? first.slice(separator + 1).trim() : first,
+        kicker: separator >= 0 ? first.slice(0, separator).trim() : undefined, body: rest.join('\n') }];
+    }
+    const label = value.match(/^【([^【】\n]{1,40})】\s*([\s\S]*)$/);
+    if (label) return [{ kind: 'label', title: label[1], body: label[2] }];
+    return [{ kind: 'paragraph', title: '', body: value }];
+  });
+}
+
 function MorningReader({ report, onClose }: { report: MorningReadingDetail; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const titleId = useId();
+  const blocks = readingBlocks(report.content_text, report.title);
+  const contents = blocks.flatMap((block, index) => block.kind === 'heading' ? [{ ...block, index }] : []);
+  const jumpTo = (index: number) => {
+    const heading = document.getElementById(`${titleId}-section-${index}`);
+    heading?.scrollIntoView({ block: 'start' });
+    heading?.focus({ preventScroll: true });
+  };
   useEffect(() => {
     const element = dialog.current!;
     const trigger = document.activeElement;
@@ -95,17 +123,32 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
   return <dialog ref={dialog} className={css.morningReader} aria-labelledby={titleId}
     onCancel={event => { event.preventDefault(); onClose(); }}>
     <header className={css.readerHeader}>
-      <span className={css.readerBrand}><BookOpen size={17} aria-hidden="true" /> 晨读 <span> / 专注阅读</span></span>
-      <button type="button" className={css.readerClose} aria-label="关闭阅读" onClick={onClose}><X size={19} aria-hidden="true" /></button>
+      <span className={css.readerBrand}><BookOpen size={17} aria-hidden="true" /> 晨读 <span>{report.reading_date.replaceAll('-', '.')}</span></span>
+      <div className={css.readerTools}><a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">原版 <ArrowUpRight size={13} aria-hidden="true" /></a>
+      <button type="button" className={css.readerClose} aria-label="关闭阅读" onClick={onClose}><X size={19} aria-hidden="true" /></button></div>
     </header>
-    <article className={css.readerBody}>
-      <div className={css.readerTitle}><p className={css.readingEyebrow}>MORNING JOURNAL · {report.reading_date}</p><h2 id={titleId}>{report.title}</h2><div className={css.readerRule} /></div>
-      {report.content_text.split(/\n\s*\n/).filter(part => part.trim()).map((part, index) => {
-        const [first, ...rest] = part.trim().split('\n');
-        const heading = /^(速览|深入解读|综合思考|昨日更新|昨日上架|昨日讨论)(?:$|[\s｜|·：:])/.test(first) && first.length <= 80;
-        return heading ? <section className={css.readerSection} key={index}><h3>{first}</h3>{rest.length ? <p>{rest.join('\n')}</p> : null}</section> : <p key={index}>{part}</p>;
-      })}
-      <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">在 Proofroom 查看原版 ↗</a>
-    </article>
+    <div className={`${css.readerLayout} ${contents.length ? '' : css.readerWithoutContents}`}>
+      {contents.length ? <aside className={css.readerSidebar}>
+        <p className={css.readerContentsLabel}>本期目录 <span>{String(contents.length).padStart(2, '0')}</span></p>
+        <nav aria-label="本期目录">{contents.map((block, index) => <button type="button" key={block.index} onClick={() => jumpTo(block.index)}>
+          <span>{String(index + 1).padStart(2, '0')}</span><span>{block.title}</span>
+        </button>)}</nav>
+        <p className={css.readerSideNote}>观点与依据，分开阅读。</p>
+      </aside> : null}
+      <article className={css.readerBody}>
+        <div className={css.readerTitle}><p className={css.readingEyebrow}>MORNING JOURNAL</p><h2 id={titleId}>{report.title}</h2></div>
+        {blocks.map((block, index) => {
+          if (block.kind === 'heading') return <section className={css.readerSection} key={index}>
+            {block.kicker ? <p className={css.readerKicker}>{block.kicker}</p> : null}
+            <h3 id={`${titleId}-section-${index}`} tabIndex={-1}>{block.title}</h3>{block.body ? <p>{block.body}</p> : null}
+          </section>;
+          if (block.kind === 'label') return <section key={index} className={`${css.readerBlock} ${/复算|验证方式|验证方法/.test(block.title) ? css.readerEvidence : ''} ${/来源与时间/.test(block.title) ? css.readerSourceNote : ''}`}>
+            <h4>{block.title}</h4><p>{block.body}</p>
+          </section>;
+          return <p className={block.kind === 'meta' ? css.readerMeta : undefined} key={index}>{block.body}</p>;
+        })}
+        <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">在 Proofroom 查看原版 ↗</a>
+      </article>
+    </div>
   </dialog>;
 }

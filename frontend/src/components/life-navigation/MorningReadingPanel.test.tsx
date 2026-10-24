@@ -101,3 +101,20 @@ it('gives known reading sections hierarchy while keeping source text literal', a
   expect(within(reader).getByText('普通段落保持原样')).toBeTruthy();
   expect(reader.querySelector('script')).toBeNull();
 });
+
+it('renders delivered main readings, evidence labels and a compact contents list', async () => {
+  const content = `${item.title}\n\n资料日期：2026-10-12 — 2026-10-18\n\n含摘要与思考\n\n主读 · 昨日得到上架｜本地 AI 的回本账，先核对分母\n\n【来源与时间】完整来源说明。\n\n【作者主张与依据】作者的论证，不等于事实核验。\n\n【本次复算】50 亿 ÷ 50 ÷ 3600 ÷ 1095。\n\n深入问题｜如何验证结果？\n\n【本次推论】<img src=x onerror=alert(1)>\n\n未识别的原始段落也要保留。`;
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: content });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  expect(within(reader).getByRole('heading', { name: '本地 AI 的回本账，先核对分母' })).toBeTruthy();
+  expect(within(reader).getByRole('heading', { name: '作者主张与依据' })).toBeTruthy();
+  expect(within(reader).getByRole('heading', { name: '本次复算' })).toBeTruthy();
+  expect(within(reader).getByRole('navigation', { name: '本期目录' })).toBeTruthy();
+  expect(within(reader).getByText('完整来源说明。')).toBeTruthy();
+  expect(within(reader).getByText('未识别的原始段落也要保留。')).toBeTruthy();
+  expect(within(reader).getByText('<img src=x onerror=alert(1)>')).toBeTruthy();
+  expect(reader.querySelector('img')).toBeNull();
+  expect(within(reader).getAllByRole('heading', { name: item.title })).toHaveLength(1);
+});
