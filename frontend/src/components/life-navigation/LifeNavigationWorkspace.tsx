@@ -8,9 +8,10 @@ import { getLifeWorkspace, saveLifeWorkspace, getLifeHistory, restoreLifeWorkspa
 import { addDays, mondayOf, localDate, blankWeek, blankTask, copy, tracks, slotLabels, statusLabels, newId, reviewDraft, applyReviewDraft, focusStart, focusPause, focusResume, focusEnd, focusAdvance, parseBackup, weekNumber, weekDayLabel } from './model';
 import css from './workspace.module.css';
 import MorningReadingPanel from './MorningReadingPanel';
-type Tab = '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
+import ExamStudyPanel from './ExamStudyPanel';
+type Tab = '备考学习' | '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
 const navGroups = [
-    { label: '行动与时间', items: [{ title: '今日', icon: Sun }, { title: '周计划', icon: CalendarDays }, { title: '时段导航', icon: Timer }] },
+    { label: '行动与时间', items: [{ title: '今日', icon: Sun }, { title: '周计划', icon: CalendarDays }, { title: '备考学习', icon: BookOpen }, { title: '时段导航', icon: Timer }] },
     { label: '回顾与积累', items: [{ title: '周复盘', icon: BookOpen }, { title: '成果', icon: Award }] },
     { label: '方向与管理', items: [{ title: '方向与季度', icon: Flag }, { title: '机会', icon: Sprout }, { title: '备份', icon: Archive }] },
 ] as const;
@@ -212,6 +213,7 @@ function SessionWorkspace({ owner }: {
   </section>
   {tab === '今日' || tab === '周计划' ? <MorningReadingPanel owner={owner} day={day}/> : null}
   <fieldset className={css.fieldset} disabled={busy}>
+  {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} day={day} edit={edit} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
   {tab === '今日' ? <>
     <nav className={css.quickLinks} aria-label="今日快捷导航"><a href="#life-today-tasks">今日任务</a><a href="#life-today-schedule">时间安排</a><a href="#life-today-notes">日记录</a></nav>
     <section className={css.focusCard} aria-label="今日重点">

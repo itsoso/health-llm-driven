@@ -11,6 +11,7 @@ import pytest
 # working tree can legitimately move to a new native runtime without changing
 # what the old production OTA contract admits.
 REVIEWED_EQUIVALENT_SHA = '25b85536e3722dc111c528b8a915062a3f971397'
+REVIEWED_LOCK_SHA = '59c64cca666d85f3c7b738a508dd197d4ad6c84e'
 GPS_NATIVE_SHA = 'd1780551d17f3314cf401b91c4846c826fe07c5d'
 REVIEWED_LOCK_SHA = '59c64cca666d85f3c7b738a508dd197d4ad6c84e'
 SECURITY_DEPENDENCY_SHA = '20e111d1ba18a21f99ee2611541b083dfddb4916'
@@ -96,14 +97,18 @@ def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tm
     relative = 'mobile/package-lock.json'
     target = tmp_path / relative
     target.parent.mkdir()
-    # A moving main lockfile must not redefine the reviewed OTA exception.
-    target.write_bytes(source_bytes(REVIEWED_LOCK_SHA, relative))
+    reviewed = source_bytes(REVIEWED_LOCK_SHA, relative)
+    import hashlib
+    assert hashlib.sha256(reviewed).hexdigest() == m.REVIEWED_NATIVE_SOURCE[relative]
+    target.write_bytes(reviewed)
     m.validate_runtime_changes([relative], root=tmp_path)
     for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
         monkeypatch.setenv(variable, '1')
         with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
         monkeypatch.delenv(variable)
-    target.write_bytes(target.read_bytes() + b' ')
+    target.write_bytes((root / relative).read_bytes())
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+    target.write_bytes(reviewed + b' ')
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
     target.unlink()
     target.symlink_to(root / relative)

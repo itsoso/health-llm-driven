@@ -11,6 +11,28 @@ const workspace = { schema_version: 'life_navigation.v1' as const, revision: 3, 
 describe('Life navigation saved state and account isolation', () => {
     afterEach(cleanup);
     beforeEach(() => { vi.clearAllMocks(); user = { id: 7 }; (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace); });
+    it('saves study attempts through the authenticated revisioned workspace and reloads them', async () => {
+        let saved = workspace;
+        (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockImplementation(async (owner, revision, data) => {
+            expect(owner).toBe(7); expect(revision).toBe(3);
+            saved = { ...workspace, revision: 4, data }; return saved;
+        });
+        const view = render(<LifeNavigationWorkspace />);
+        await waitFor(() => screen.getByText('备考学习'));
+        fireEvent.click(screen.getByText('备考学习'));
+        fireEvent.click(screen.getByText('练习与错题'));
+        fireEvent.click(screen.getByRole('radio', { name: 'A. cancel permanently' }));
+        fireEvent.click(screen.getByText('核对答案并记录'));
+        expect(saveLifeWorkspace).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole('button', { name: '保存工作区' }));
+        await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalledTimes(1));
+        view.unmount();
+        (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(saved);
+        render(<LifeNavigationWorkspace />);
+        await waitFor(() => screen.getByText('备考学习'));
+        fireEvent.click(screen.getByText('备考学习')); fireEvent.click(screen.getByText('练习与错题'));
+        expect(screen.getByText(/已练 1 \/ 20 题 · 待复练 1 题/)).toBeTruthy();
+    });
     it('keeps local edits on conflict and does not claim saved', async () => {
         (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 409 } });
         render(<LifeNavigationWorkspace />);

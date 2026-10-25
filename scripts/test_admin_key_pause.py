@@ -733,7 +733,16 @@ def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path, mon
         f"Include {tmp_path}/*.conf\nAuthorizedKeysFile {tmp_path / 'operator.pub'}\n"
         f"AuthorizedKeysCommand /usr/bin/echo {keys['target'].decode()}\nAuthorizedKeysCommandUser root\n"
         "PermitRootLogin yes\nAllowUsers root\nUsePAM yes\nPasswordAuthentication no\nKbdInteractiveAuthentication no\nStrictModes yes\nLogLevel ERROR\n")
-    daemon = subprocess.Popen(["/usr/sbin/sshd", "-D", "-e", "-f", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    effective = subprocess.check_output(["/usr/sbin/sshd", "-T", "-f", str(conf)], text=True)
+    if any(line.startswith("persourcepenalties ") for line in effective.splitlines()):
+        # Unsigned public-key offers intentionally never authenticate. Exempt
+        # only this isolated loopback fixture from accumulated source penalties.
+        with conf.open("a") as stream:
+            stream.write("PerSourcePenaltyExemptList 127.0.0.1/32\n")
+        effective = subprocess.check_output(["/usr/sbin/sshd", "-T", "-f", str(conf)], text=True)
+        assert "persourcepenaltyexemptlist 127.0.0.1/32" in effective.splitlines()
+    daemon_log = tmp_path / "sshd.log"
+    daemon = subprocess.Popen(["/usr/sbin/sshd", "-D", "-E", str(daemon_log), "-f", str(conf)], stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     try:
         def offers(expected_target, expected_operator):
             def probe(key, *, timeout):
@@ -744,7 +753,8 @@ def test_native_openssh_dynamic_key_pause_restore_and_missing_file(tmp_path, mon
                 # not a test-only retry loop masking reload races.
                 m.wait_public_offers(probe, (keys["target"], keys["operator"]), (expected_target, expected_operator))
             except m.PauseError:
-                pytest.fail(f"new TCP offer outcomes unproven; isolated client: {diagnostics}")
+                pytest.fail(f"new TCP offer outcomes unproven; isolated client: {diagnostics}; "
+                            f"isolated daemon: {daemon_log.read_text()[-12000:]}")
         offers(True, True)
         m.publish(pub, keys["target"] + b"\n")
         m.publish(drop, f"RevokedKeys {pub}\n".encode())
