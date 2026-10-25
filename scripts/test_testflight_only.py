@@ -305,3 +305,30 @@ def test_ota_prepared_ci_expires_during_local_proof(monkeypatch):
     monkeypatch.setattr(helper, '_prove_local', slow)
     callback = helper.prepare_ota('a' * 40)
     with pytest.raises(helper.PreflightError): callback({})
+
+
+def test_deployed_same_sha_continues_without_rewriting_backend_evidence(monkeypatch, tmp_path):
+    server, workspace = native_state(monkeypatch, tmp_path)
+    receipt = json.dumps({'sha': SHA, 'state': 'SUCCEEDED'}).encode()
+    server._write_private(workspace / 'completed.json', receipt)
+    monkeypatch.setattr(server, 'testflight_backend_proof', lambda _, **kw: {
+        'sha': SHA, 'production_sha': SHA, 'state': 'COMPATIBLE'})
+    for action, state in [('check', 'CHECKED'), ('build', 'CLAIMED'), ('upload', 'CLAIMED')]:
+        assert server.testflight_only(policy(), workspace, action)['state'] == state
+        assert (workspace / 'completed.json').read_bytes() == receipt
+        assert not (workspace / 'testflight-base.json').exists()
+    for action in ('build', 'upload'):
+        with pytest.raises(server.LaunchError):
+            server.testflight_only(policy(), workspace, action)
+
+
+@pytest.mark.parametrize('state', ['STARTED', 'NEEDS_OPERATOR', 'PREPARATION_FAILED', 'SUCCEEDED'])
+def test_backend_state_cannot_authorize_unproven_native_continuation(monkeypatch, tmp_path, state):
+    server, workspace = native_state(monkeypatch, tmp_path)
+    name = 'started.json' if state == 'STARTED' else 'completed.json'
+    server._write_private(workspace / name, json.dumps({'sha': SHA, 'state': state}).encode())
+    # SUCCEEDED must also match the actual live revision, not merely a compatible tree.
+    with pytest.raises(server.LaunchError):
+        server.testflight_only(policy(), workspace, 'build')
+    assert not (workspace / 'build-started.json').exists()
+    assert not (workspace / 'testflight-base.json').exists()

@@ -1583,12 +1583,25 @@ def testflight_only(policy, workspace, action):
         _assert_deployment_window(policy)
         if os.path.lexists(BUSINESS_LEASE):
             raise LaunchError("business release in progress")
-        if read_status(policy["sha"], workspace)["state"] != "READY":
-            raise LaunchError("native-only candidate already has backend state")
+        backend_state = read_status(policy["sha"], workspace)["state"]
+        if backend_state not in {"READY", "SUCCEEDED"}:
+            raise LaunchError("native continuation requires ready or successful backend state")
         check_readiness(policy)
         lease = _acquire_testflight_lease(workspace)
         proof = testflight_backend_proof(policy, lease=lease)
         _assert_testflight_lease(lease, workspace)
+        if backend_state == "SUCCEEDED":
+            if proof["production_sha"] != policy["sha"]:
+                raise LaunchError("successful backend must match the live production revision")
+            # Keep the existing backend lifecycle and its one-shot vendor claims.
+            # A native-only binding would relabel this completed workspace.
+            _native_binding(workspace, None)
+            _assert_deployment_window(policy)
+            if action == "check":
+                return {"sha": policy["sha"], "state": "CHECKED"}
+            if action == "build":
+                return claim_build(policy, workspace)
+            return claim_testflight(policy, workspace)
         binding = workspace / "testflight-base.json"
         if os.path.lexists(binding):
             if _json(_read_private(binding)) != proof:

@@ -396,6 +396,10 @@ lease 不存在；普通 deploy.sh 不持有 launcher flock，必须由同一 mk
 此绑定，run 也拒绝再部署；共享的一次性
 build/native 标记仍防止跨入口重放。锁冲突、授权过期、未知结果或生产漂移即停止。
 原始后端成功审计不改，native-only workspace 绝不标成 backend SUCCEEDED。
+若候选 SHA 本身已有 SUCCEEDED 后端回执，续发在原 launcher 锁和业务 lease 内
+逐次核验实际线上 SHA 必须与候选完全相同，以及原有 CI、服务和健康证明。
+此分支保留后端生命周期，复用原一次性 build/native claim，不创建 testflight-base.json，
+不重部署或改写后端回执。STARTED、失败终态、线上 SHA 不同或已消费 claim 仍拒绝。
 该 workspace 出现 vendor intent 后仍需人工核对精确 EAS/ASC 终态并走独立受审的
 后续收尾；仅下述固定历史收尾可解除对应阻断，未知 native-only 库存仍拒绝，不得删除绑定以强行轮换。
 上传完成不等于 Apple processing、测试可用或正式 App Review 完成。
