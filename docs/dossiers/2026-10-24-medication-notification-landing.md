@@ -2,15 +2,17 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | building |
-| 当前阶段 | S4 实现 |
+| 状态 | shipped |
+| 当前阶段 | G6 发布回执核验；设备更新应用未观察 |
 
-Status: G4 GO; not published
+Status: shipped; backend and OTA verified; device update application unverified
 Updated: 2026-10-26
 
 ## Decision and problem
 
 用户截图显示点击 18:00 通知后打开空聊天并填入未发送问题。源码确认：后端按 owner/date/time 聚合 `medication_ids`，客户端 `medicationReminderRoute` 丢弃 ID 并生成聊天草稿。此次恢复确定性的提醒落地，不依赖模型解释通知。
+
+以下未发布状态为历史阶段记录，当前交付状态以末尾发布核验为准。
 
 ## G1 准入
 
@@ -44,3 +46,12 @@ Updated: 2026-10-26
 ## 2026-10-26 发布续行
 
 完整 CI-mode 暴露本档案缺少机器可识别状态表和 G1 标题；已补齐格式，不改此前安全裁决或发布状态。b01 候选发布不变量 JUnit 4804 项、49 跳过、零失败零错误；档案闸失败不能称完整 CI 通过。用户已确认 c280 TestFlight 来源并授权完成后由本会话接管，GitHub 40158185108 已 completed/success；Apple 处理和新 OTA 基线另行核验。
+
+## 2026-10-26 用户截图复核与发布收口
+
+- 用户再次反馈 18:30 点击提醒仍出现“基于用药提醒”的聊天草稿。旧提交 `845981964` 的 `medicationReminderRoute` 包含截图中的精确文案；修复提交 `89d77ecb0` 已移除该草稿入口，单项进入详情、多项进入只读清单。
+- 祖先校验确认该修复已包含在已发布候选 `03434bcabf39be9394a65098159c0ae9c338e434`。本轮没有新增行为改动，也没有重复发布同一候选。
+- G5: 精确候选完整 CI `40304979855` 成功；backend `40307096244` 和 OTA `40309165168` 成功，后者于 2026-10-26 18:45:40 Asia/Shanghai 完成，晚于截图时间。完整回执见 [本次发布回执](../reviews/2026-10-26-notebook-release-receipt.json)。
+- G6: 本轮 SSH 只读复核生产 HEAD 为 `03434bcabf39be9394a65098159c0ae9c338e434`，后端与两个 Celery 服务 active；原 OTA completed 回执仍为 SUCCEEDED。group `3ed48372-e105-4212-aabd-83ce6688e486`，update `01a177d0-ab37-7612-80ae-8a6d5df049a4`。
+- 新鲜回归：通知路由、冷/热启动点击、通知历史、单项/分组页面、提醒读写服务，共 6 suites / 89 tests passed；System Map check passed。打开通知不写服药记录，日期/时区核对及账号隔离守卫保留。
+- 验收边界：没有读取真实健康记录、没有写入真实服药记录，没有观察用户手机实际下载/应用该 OTA；截图证明旧行为存在，不能单凭截图确定设备当前版本。可在设置 → 检查更新，待“新版本已准备好”后点“立即更新”，再重新点击原通知。
