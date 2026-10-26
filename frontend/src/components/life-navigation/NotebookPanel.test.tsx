@@ -1,0 +1,54 @@
+import React from 'react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, expect, it, vi } from 'vitest';
+import LifeNavigationWorkspace from './LifeNavigationWorkspace';
+import { blankData } from './model';
+import { getLifeWorkspace, saveLifeWorkspace } from '@/services/lifeNavigation';
+let user = { id: 7 };
+vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user, isAuthenticated: true }) }));
+vi.mock('@/services/lifeNavigation', () => ({ getLifeWorkspace: vi.fn(), saveLifeWorkspace: vi.fn(), getLifeHistory: vi.fn(), getLifeBackup: vi.fn(), importLifeBackup: vi.fn(), restoreLifeWorkspace: vi.fn() }));
+const workspace = () => ({ schema_version: 'life_navigation.v1' as const, revision: 2, data: blankData(), updated_at: '2026-10-26T00:00:00Z' });
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
+beforeEach(() => { vi.clearAllMocks(); user = { id: 7 }; vi.mocked(getLifeWorkspace).mockResolvedValue(workspace()); vi.mocked(saveLifeWorkspace).mockImplementation(async (_owner, revision, data) => ({ ...workspace(), revision: revision + 1, data })); });
+async function open() { fireEvent.click(await screen.findByRole('button', { name: '记事本', exact: true })); }
+it('creates, explicitly saves, searches and reopens a plain text note across weeks', async () => {
+  const view = render(<LifeNavigationWorkspace/>); await open();
+  fireEvent.click(screen.getByRole('button', { name: '新建笔记' }));
+  fireEvent.change(screen.getByLabelText('笔记标题'), { target: { value: '阅读想法' } });
+  fireEvent.change(screen.getByLabelText('笔记正文'), { target: { value: '<script>plain text</script>\n下周继续阅读' } });
+  expect(saveLifeWorkspace).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole('button', { name: '保存工作区' }));
+  await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalledWith(7, 2, expect.objectContaining({ notebook: [expect.objectContaining({ title: '阅读想法', body: '<script>plain text</script>\n下周继续阅读' })] })));
+  const saved = vi.mocked(saveLifeWorkspace).mock.calls[0][2];
+  view.unmount(); vi.mocked(getLifeWorkspace).mockResolvedValue({ ...workspace(), revision: 3, data: saved });
+  render(<LifeNavigationWorkspace/>); await open();
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('<script>plain text</script>\n下周继续阅读');
+  fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '不存在' } });
+  expect(screen.getByText('没有匹配的笔记')).toBeVisible();
+  fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '阅读' } });
+  expect(screen.getByRole('button', { name: /阅读想法/ })).toBeVisible();
+  fireEvent.click(screen.getByRole('button', { name: '周计划', exact: true }));
+  fireEvent.click(screen.getByRole('button', { name: '下一周' })); await open();
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('<script>plain text</script>\n下周继续阅读');
+});
+it('keeps conflict text, confirms deletion and allows undo without saving', async () => {
+  vi.mocked(saveLifeWorkspace).mockRejectedValue({ response: { status: 409 } });
+  render(<LifeNavigationWorkspace/>); await open(); fireEvent.click(screen.getByRole('button', { name: '新建笔记' }));
+  fireEvent.change(screen.getByLabelText('笔记正文'), { target: { value: '保留我的草稿' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存工作区' }));
+  await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('版本冲突'));
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('保留我的草稿');
+  vi.spyOn(window, 'confirm').mockReturnValue(false); fireEvent.click(screen.getByRole('button', { name: '删除笔记' }));
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('保留我的草稿');
+  vi.mocked(window.confirm).mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: '删除笔记' }));
+  expect(screen.queryByLabelText('笔记正文')).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole('button', { name: '撤销', exact: true }));
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('保留我的草稿');
+});
+it('clears private notebook drafts on account switch', async () => {
+  const view = render(<LifeNavigationWorkspace/>); await open(); fireEvent.click(screen.getByRole('button', { name: '新建笔记' }));
+  fireEvent.change(screen.getByLabelText('笔记正文'), { target: { value: 'private A' } });
+  user = { id: 8 }; view.rerender(<LifeNavigationWorkspace/>); await open();
+  expect(screen.queryByDisplayValue('private A')).not.toBeInTheDocument();
+  expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});

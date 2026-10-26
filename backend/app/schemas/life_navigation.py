@@ -129,7 +129,14 @@ class Focus(Typed):
             raise ValueError('空闲计时状态不一致')
         return self
 
+class NotebookEntry(Typed):
+    id: UUID
+    title: Annotated[str, Field(max_length=200)] = ''
+    body: Annotated[str, Field(max_length=20000)] = ''
+
+
 class LifeData(Typed):
+    notebook: list[NotebookEntry] = Field(default_factory=list, max_length=100)
     strategy: Strategy = Field(default_factory=Strategy)
     quarters: dict[str, Quarter] = Field(default_factory=dict, max_length=100)
     weeks: dict[str, Week] = Field(default_factory=dict, max_length=200)
@@ -142,6 +149,8 @@ class LifeData(Typed):
         for key in self.quarters:
             if not re.fullmatch(r'[1-9][0-9]{3}-Q[1-4]', key):
                 raise ValueError('季度编号无效')
+        if len({n.id for n in self.notebook}) != len(self.notebook):
+            raise ValueError('笔记编号不可重复')
         tasks = set()
         for key, week in self.weeks.items():
             try:

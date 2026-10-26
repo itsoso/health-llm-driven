@@ -82,7 +82,13 @@ export interface LifeFocus {
     paused_phase: 'focus' | 'rest' | null;
     task_id: string | null;
 }
+export interface NotebookEntry {
+    id: string;
+    title: string;
+    body: string;
+}
 export interface LifeData {
+    notebook?: NotebookEntry[];
     strategy: {
         vision: string;
         annual_goal: string;

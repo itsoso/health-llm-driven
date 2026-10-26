@@ -9,10 +9,11 @@ import { addDays, mondayOf, localDate, blankWeek, blankTask, copy, tracks, slotL
 import css from './workspace.module.css';
 import MorningReadingPanel from './MorningReadingPanel';
 import ExamStudyPanel from './ExamStudyPanel';
-type Tab = '备考学习' | '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
+import NotebookPanel from './NotebookPanel';
+type Tab = '记事本' | '备考学习' | '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
 const navGroups = [
     { label: '行动与时间', items: [{ title: '今日', icon: Sun }, { title: '周计划', icon: CalendarDays }, { title: '备考学习', icon: BookOpen }, { title: '时段导航', icon: Timer }] },
-    { label: '回顾与积累', items: [{ title: '周复盘', icon: BookOpen }, { title: '成果', icon: Award }] },
+    { label: '回顾与积累', items: [{ title: '记事本', icon: BookOpen }, { title: '周复盘', icon: BookOpen }, { title: '成果', icon: Award }] },
     { label: '方向与管理', items: [{ title: '方向与季度', icon: Flag }, { title: '机会', icon: Sprout }, { title: '备份', icon: Archive }] },
 ] as const;
 const reviewLabels: Record<keyof LifeReview, string> = { summary: '本周总结', gap: '执行差距与根因', learning: '本周学习', next_week: '下周调整' };
@@ -207,12 +208,13 @@ function SessionWorkspace({ owner }: {
   </header>
   <div className={css.body}>
   {error ? <div role="alert" className={css.alert}>{error}{error.includes('版本冲突') ? <div>{button('导出本地草稿', () => download({ schema_version: 'life_navigation.backup.v1', workspace: { ...workspace, data: draft }, history: [] }, 'draft'))}</div> : null}</div> : null}
-  <section className={css.datePanel} aria-label="日期导航">
+  {tab !== '记事本' ? <section className={css.datePanel} aria-label="日期导航">
     <div className={css.weekHeader}><div className={css.weekSummary}><span className={css.eyebrow}>第 {weekNumber(day)} 周</span><h2>{monday.slice(0, 4)} 年 {Number(monday.slice(5, 7))} 月 <span>{monday.slice(5)} — {addDays(monday, 6).slice(5)}</span></h2></div><div className={css.row}><button type="button" className={css.iconButton} aria-label="上一周" onClick={() => selectDay(addDays(day, -7))}><ChevronLeft size={18} aria-hidden="true"/></button><button type="button" className={css.button} aria-label="回到今天" onClick={() => selectDay(localDate())}>今天</button><button type="button" className={css.iconButton} aria-label="下一周" onClick={() => selectDay(addDays(day, 7))}><ChevronRight size={18} aria-hidden="true"/></button><label className={css.datePicker}>查看日期<input className={css.input} type="date" value={day} onChange={e => { if (e.target.value) selectDay(e.target.value); }}/></label></div></div>
     <div className={css.dayStrip}>{days.map(date => <button type="button" className={`${css.dayButton} ${day === date ? css.selectedDay : ''}`} aria-label={`${date} ${weekDayLabel(date)}`} aria-pressed={day === date} key={date} onClick={() => selectDay(date)}><span>{weekDayLabel(date)}</span><strong>{Number(date.slice(8))}</strong><span className={css.dayDot} aria-label={date === localDate() ? '今天' : undefined}>{date === localDate() ? '今天' : week.tasks.some(t => t.date === date) ? '·' : ' '}</span></button>)}</div>
-  </section>
+  </section> : null}
   {tab === '今日' || tab === '周计划' ? <MorningReadingPanel owner={owner} day={day}/> : null}
   <fieldset className={css.fieldset} disabled={busy}>
+  {tab === '记事本' ? <NotebookPanel notes={draft.notebook ?? []} onChange={notes => edit(d => { d.notebook = notes; })}/> : null}
   {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} day={day} edit={edit} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
   {tab === '今日' ? <>
     <nav className={css.quickLinks} aria-label="今日快捷导航"><a href="#life-today-tasks">今日任务</a><a href="#life-today-schedule">时间安排</a><a href="#life-today-notes">日记录</a></nav>

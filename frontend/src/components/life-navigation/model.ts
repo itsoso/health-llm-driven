@@ -65,7 +65,17 @@ function keys(value: unknown, allowed: string[]): Record<string, unknown> { cons
 function texts(value: unknown, allowed: string[]): void { const item = keys(value, allowed); if (allowed.some(k => typeof item[k] !== 'string' || (item[k] as string).length > 4000))
     throw Error('文本字段无效'); }
 export function validateData(value: unknown): void {
-    const d = keys(value, ['strategy', 'quarters', 'weeks', 'opportunities', 'focus']);
+    const d = keys(value, ['strategy', 'quarters', 'weeks', 'opportunities', 'focus', 'notebook']);
+    if (d.notebook !== undefined) {
+        if (!Array.isArray(d.notebook) || d.notebook.length > 100) throw Error('笔记数量无效');
+        const ids = new Set<string>();
+        for (const raw of d.notebook) {
+            const note = keys(raw, ['id', 'title', 'body']);
+            if (typeof note.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(note.id) || ids.has(note.id)
+                || typeof note.title !== 'string' || note.title.length > 200 || typeof note.body !== 'string' || note.body.length > 20000) throw Error('笔记格式无效');
+            ids.add(note.id);
+        }
+    }
     if (new TextEncoder().encode(JSON.stringify(d)).length > 256 * 1024)
         throw Error('工作区正文超过 256 KiB');
     if (Object.keys(object(d.quarters)).length > 100 || Object.keys(object(d.weeks)).length > 200)

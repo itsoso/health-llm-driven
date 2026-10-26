@@ -28487,6 +28487,8 @@ export interface components {
         };
         /** LifeData */
         "LifeData-Input": {
+            /** Notebook */
+            notebook?: components["schemas"]["NotebookEntry"][];
             strategy?: components["schemas"]["Strategy"];
             /** Quarters */
             quarters?: {
@@ -28502,6 +28504,8 @@ export interface components {
         };
         /** LifeData */
         "LifeData-Output": {
+            /** Notebook */
+            notebook?: components["schemas"]["NotebookEntry"][];
             strategy?: components["schemas"]["Strategy"];
             /** Quarters */
             quarters?: {
@@ -30176,6 +30180,24 @@ export interface components {
              * @default
              */
             learning: string;
+        };
+        /** NotebookEntry */
+        NotebookEntry: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /**
+             * Title
+             * @default
+             */
+            title: string;
+            /**
+             * Body
+             * @default
+             */
+            body: string;
         };
         /**
          * NotificationSettingsUpdate
