@@ -4,7 +4,7 @@
 |---|---|
 | slug | illness-recovery-continuation |
 | 状态 | parked |
-| 当前阶段 | 本地实现验证与独立安全评审；发布等待主干整合 |
+| 当前阶段 | 本地实现及安全评审通过；发布等待主干整合 |
 | 反馈环 | backend |
 
 ## G1 准入
@@ -29,7 +29,7 @@ PASS。修复截图中的已有病症状态更新流程：先前要求确认两�
 - System Map：新服务计数生成物已同步；完整检查 PASS，`/tmp/reva-illness-confirm-system-map.log`。
 - CI shard 与 Dossier 回归：41 passed / exit 0，`/tmp/reva-illness-confirm-governance.log`；Dossier consistency 全量检查通过。
 - G4 独立安全评审：固定提交 `87ee1a912c5c52066b5e8d887143f1031d341015` 获独立 code safety GO。Reviewer 独立跑31 passed / 1 PG-only skipped，再加6项对抗检查（跨会话、日期来源篡改、选择来源篡改、时区改变、取消、执行后版本改变）全部通过；`/tmp/reva-independent-recovery-safety.log`、`/tmp/reva-independent-recovery-adversarial.log`。PostgreSQL 为 producer 执行、reviewer 读证，不冒充独立重跑。
-- 后续收窄：无关对话/无上下文的“都好了”应回原流程；新增测试先2 failed后通过，`/tmp/reva-illness-confirm-unrelated-red.log`。最终补丁待独立复核。
+- 后续收窄：无关对话/无上下文的“都好了”应回原流程；新增测试先2 failed后通过，`/tmp/reva-illness-confirm-unrelated-red.log`。最终代码 `1ca9984d742ec04fed916b0cd51044d8914b34ba` 获同一独立 reviewer 再审 GO；独立定向32 passed / 1 PG-only skipped / exit 0，`/tmp/reva-independent-recovery-safety-final.log`。收窄不改变原有身份、签名、日期、预览、事务和运行控制校验；截图的既有确认文本仍满足入口条件。
 - 合成数据、固定时钟；真实 AgentExecutor 使用禁止调用 provider 的断言。未执行真实模型、模拟器或线上健康写入，不宣称线上通过。
 
 ## 发布边界
@@ -37,3 +37,5 @@ PASS。修复截图中的已有病症状态更新流程：先前要求确认两�
 本地 main 与 origin/main 已分叉，且共享工作树存在其他任务改动。遵循 AGENTS.md §7，停止 push/merge/deploy 等外部写入，保留其他提交及 dirty files。既有睡眠语序修复也仍未发布。当前缺少本候选精确远端 CI、CI-mode 和生产验收，不能用旧主干绿色证明本候选可发布；不创建备份或恢复副本。
 
 最新只读核对（2026-10-26）：origin/main 与生产均为 `c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf`，remote CI `40274525250` success；本候选主干仍 ahead 6 / behind 7。该远端版不包含本次续接代码，也不包含睡眠修复。生产 backend、celery-worker、celery-beat active，health HTTP 200；另一个候选的 OTA publish `40281092624` 正在进行。首次服务探针误用了 health-worker/health-beat 名称并报告 inactive，随后按 deploy.sh 核实正确 celery 单元，三项均 active；不将错误单元名解释成服务故障。未干预其他发布。
+
+收尾：最终代码提交 `1ca9984d7`，本任务基线 `25ef987e0`；最终代码核对时 local ahead 7 / behind 7，后续仅补本 Dossier 的评审结果。没有 push/merge/deploy/OTA；发布状态 BLOCK。
