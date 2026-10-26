@@ -51,3 +51,6 @@ PASS：复用现有账号隔离、版本冲突、草稿离页提醒。字段有�
 - UI: 仅合成数据独立预览；desktop 与 390px，scrollWidth=390；无真实账号读取。截图 `/tmp/reva-notebook-desktop.png`。不冒充线上验收。
 - Trace: `docs/_generated/harness-runs/27629a5680b0.jsonl`。
 - 未完成：G4、精确候选完整 CI / CI-mode、发布交接、G5/G6。未发布。
+
+## G4 第一轮反馈
+363a1c29a NO-GO：搜索失配会切换编辑对象，可能误编辑另一条笔记。已固定编辑对象独立于搜索结果；唯一匹配及两项匹配回归覆盖，等待新提交复审。保留原 NO-GO，不覆盖。

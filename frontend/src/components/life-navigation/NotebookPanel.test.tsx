@@ -52,3 +52,32 @@ it('clears private notebook drafts on account switch', async () => {
   expect(screen.queryByDisplayValue('private A')).not.toBeInTheDocument();
   expect(saveLifeWorkspace).not.toHaveBeenCalled();
 });
+it('keeps the open editor stable when an edit stops matching the search', async () => {
+  render(<LifeNavigationWorkspace/>); await open(); fireEvent.click(screen.getByRole('button', { name: '新建笔记' }));
+  fireEvent.change(screen.getByLabelText('笔记标题'), { target: { value: '查找此标题' } });
+  fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '查找' } });
+  fireEvent.change(screen.getByLabelText('笔记标题'), { target: { value: '已改名' } });
+  expect(screen.getByLabelText('笔记标题')).toHaveValue('已改名');
+  fireEvent.change(screen.getByLabelText('笔记正文'), { target: { value: '继续编辑同一条' } });
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('继续编辑同一条');
+});
+it('does not redirect continued editing or deletion to another search match', async () => {
+  const data = blankData();
+  data.notebook = [
+    { id: '00000000-0000-4000-8000-000000000001', title: '匹配 A', body: '' },
+    { id: '00000000-0000-4000-8000-000000000002', title: '匹配 B', body: 'B must stay unchanged' },
+  ];
+  vi.mocked(getLifeWorkspace).mockResolvedValue({ ...workspace(), data });
+  render(<LifeNavigationWorkspace/>); await open();
+  fireEvent.change(screen.getByLabelText('搜索笔记'), { target: { value: '匹配' } });
+  fireEvent.change(screen.getByLabelText('笔记标题'), { target: { value: 'A renamed' } });
+  fireEvent.change(screen.getByLabelText('笔记正文'), { target: { value: 'A continues' } });
+  fireEvent.click(screen.getByRole('button', { name: '保存工作区' }));
+  await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalled());
+  expect(vi.mocked(saveLifeWorkspace).mock.calls[0][2].notebook).toEqual([
+    { ...data.notebook[0], title: 'A renamed', body: 'A continues' }, data.notebook[1],
+  ]);
+  await waitFor(() => expect(screen.getByRole('button', { name: '删除笔记' })).toBeEnabled());
+  vi.spyOn(window, 'confirm').mockReturnValue(true); fireEvent.click(screen.getByRole('button', { name: '删除笔记' }));
+  expect(screen.getByLabelText('笔记正文')).toHaveValue('B must stay unchanged');
+});

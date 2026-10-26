@@ -10,7 +10,8 @@ export default function NotebookPanel({ notes, onChange }: { notes: NotebookEntr
   const [query, setQuery] = useState('');
   const titleRef = useRef<HTMLInputElement>(null);
   const matching = notes.filter(note => `${note.title}\n${note.body}`.toLocaleLowerCase().includes(query.trim().toLocaleLowerCase()));
-  const current = matching.find(note => note.id === selected) ?? matching[0];
+  // Searching filters the list, never switches the document under an active editor.
+  const current = notes.find(note => note.id === selected) ?? notes[0];
   const update = (patch: Partial<Pick<NotebookEntry, 'title' | 'body'>>) => {
     if (current) onChange(notes.map(note => note.id === current.id ? { ...note, ...patch } : note));
   };
