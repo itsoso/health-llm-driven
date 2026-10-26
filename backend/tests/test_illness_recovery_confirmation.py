@@ -93,7 +93,10 @@ def test_context_cannot_expand_or_reuse_stale_selection(db, auth_user_and_header
         db.query(AgentMessage).filter_by(conversation_id=conv.id).delete()
     db.commit()
     first = turn(db, user, conv, '都好了')
-    if change in {'owner', 'duplicate', 'no_context'}:
+    if change == 'no_context':
+        assert first is None
+        return
+    if change in {'owner', 'duplicate'}:
         assert first['status'] == 'clarification' and not first.get('meta')
         return
     if change == 'changed':
@@ -308,3 +311,15 @@ async def test_api_confirmation_enforces_owner_and_returns_safe_conflict(db, aut
     assert error.value.status_code == 409
     assert rows[0].name not in error.value.detail
     assert all(row.status != 'resolved' for row in rows)
+
+
+def test_collective_reply_does_not_hijack_unrelated_conversation(db, auth_user_and_headers):
+    from app.models.agent_conversation import AgentMessage
+    from app.models.write_intent import WriteIntent
+    user, _ = auth_user_and_headers
+    conv, _ = seed(db, user)
+    previous = db.query(AgentMessage).order_by(AgentMessage.id.desc()).first()
+    previous.content = '请确认，你的两项日程都处理好了吗？'
+    db.commit()
+    assert turn(db, user, conv, '都好了') is None
+    assert db.query(WriteIntent).count() == 0
