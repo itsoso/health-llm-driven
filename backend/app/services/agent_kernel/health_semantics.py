@@ -568,9 +568,19 @@ HEALTH_READ_LEADING_SCOPE_RE = re.compile(
     r"(?:测|测量)?(?:的)?"
 )
 
+# Ownership-only grammar: keep this bounded rather than reusing the permissive
+# ``过去.+`` / ``近.+`` scope alternatives, which could consume a foreign owner.
+# Calendar validity and read authority are still resolved by the gateway.
+CURRENT_USER_CALENDAR_PREFIX_RE = re.compile(
+    r"(?:今天|今日|昨日|昨天|前天|昨晚|昨夜|前一晚|前一夜|前晚|前夜|"
+    r"(?:本周|这周|上周)(?:[一二三四五六日天])?|"
+    r"\d{4}[-/年]\d{1,2}[-/月]\d{1,2}(?:日|号)?)"
+    r"(?:的)?"
+)
+
 
 def _is_current_user_scope_owner(owner: str) -> bool:
-    """Recognize an explicit self owner followed only by a read scope."""
+    """Recognize self ownership before a scope or after a bounded calendar."""
     normalized = str(owner or "").strip()
     if re.fullmatch(
         r"(?:(?:只|仅)?属于(?:我|我自己|我本人|我个人|本人)|"
@@ -587,6 +597,9 @@ def _is_current_user_scope_owner(owner: str) -> bool:
     )
     for prefix in self_prefixes:
         if normalized == prefix:
+            return True
+        if (normalized.endswith(prefix)
+                and CURRENT_USER_CALENDAR_PREFIX_RE.fullmatch(normalized[:-len(prefix)])):
             return True
         if not normalized.startswith(prefix):
             continue
