@@ -86,7 +86,17 @@ function validTimestamp(value: unknown): boolean { return typeof value === 'stri
 function uuid(value: unknown): boolean { return typeof value === 'string' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value); }
 function unique(values: unknown[]): boolean { return new Set(values).size === values.length; }
 export function validateData(value: unknown): void {
-    const d = keys(value, ['strategy', 'quarters', 'weeks', 'opportunities', 'focus']);
+    const d = keys(value, ['strategy', 'quarters', 'weeks', 'opportunities', 'focus', 'notebook']);
+    if (d.notebook !== undefined) {
+        if (!Array.isArray(d.notebook) || d.notebook.length > 100) throw Error('笔记数量无效');
+        const ids = new Set<string>();
+        for (const raw of d.notebook) {
+            const note = keys(raw, ['id', 'title', 'body']);
+            if (typeof note.id !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(note.id) || ids.has(note.id)
+                || typeof note.title !== 'string' || note.title.length > 200 || typeof note.body !== 'string' || note.body.length > 20000) throw Error('笔记格式无效');
+            ids.add(note.id);
+        }
+    }
     if (utf8Size(JSON.stringify(d)) > 256 * 1024)
         throw Error('工作区正文超过 256 KiB');
     if (Object.keys(object(d.quarters)).length > 100 || Object.keys(object(d.weeks)).length > 200)

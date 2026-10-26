@@ -84,6 +84,10 @@ def save_workspace(db, user_id, payload):
     # Revalidate before obtaining write locks; callers cannot bypass typed rules.
     document = LifeData.model_validate(payload.data.model_dump(mode='json'))
     row = _lock(db, user_id, payload.expected_revision)
+    # Older clients can omit unknown fields. Never erase saved notes implicitly.
+    if row and row.data.get('notebook') and 'notebook' not in payload.data.model_fields_set:
+        db.rollback()
+        raise HTTPException(409, '记事本已有内容，请刷新到最新版本后保存')
     return _save(db, user_id, row, payload.expected_revision, [document])
 
 

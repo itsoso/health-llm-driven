@@ -1,4 +1,4 @@
-import { blankData, blankWeek, blankTask, parseBackup, focusStart, focusAdvance, reviewDraft, applyReviewDraft, utf8Size } from '../lifeNavigationModel';
+import { blankData, blankWeek, blankTask, parseBackup, focusStart, focusAdvance, reviewDraft, applyReviewDraft, utf8Size, validateData } from '../lifeNavigationModel';
 const backup = (): import('../../types/lifeNavigation').LifeBackup => ({ schema_version: 'life_navigation.backup.v1', workspace: { schema_version: 'life_navigation.v1', revision: 0, data: blankData(), updated_at: null }, history: [] });
 it('rejects health references and invalid calendar dates before preview', () => {
     const b = backup();
@@ -46,4 +46,13 @@ it('only fills empty review fields from recorded evidence', () => {
     expect(generated.summary).toContain('不能生成执行结论');
     expect(applyReviewDraft({ ...week.review, summary: '自己的复盘' }, generated).summary).toBe('自己的复盘');
     expect(parseBackup(JSON.stringify(backup())).workspace.revision).toBe(0);
+});
+
+it('preserves notebook import compatibility and rejects duplicate or oversized notes', () => {
+  const data = blankData();
+  const note = { id: '00000000-0000-4000-8000-000000000001', title: 'Synthetic', body: 'Private text' };
+  data.notebook = [note];
+  expect(() => validateData(data)).not.toThrow();
+  expect(() => validateData({ ...data, notebook: [note, note] })).toThrow();
+  expect(() => validateData({ ...data, notebook: [{ ...note, body: 'x'.repeat(20001) }] })).toThrow();
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { blankData, ensureWeek, reviewDraft, applyReviewDraft, focusStart, focusPause, focusResume, focusAdvance, parseBackup } from './model';
+import { blankData, ensureWeek, reviewDraft, applyReviewDraft, focusStart, focusPause, focusResume, focusAdvance, parseBackup, validateData } from './model';
 import { weekNumber, weekDayLabel } from './model';
 describe('calendar navigation at year boundaries', () => {
     it('uses ISO week numbers for dates that belong to the adjacent week year', () => {
@@ -77,4 +77,13 @@ describe('Backup round trip bounds', () => {
         data.focus.focus_minutes = 181;
         expect(() => parseBackup(JSON.stringify({ schema_version: 'life_navigation.backup.v1', workspace: { schema_version: 'life_navigation.v1', revision: 1, data, updated_at: '2026-10-09T00:00:00Z' }, history: [] }))).toThrow('计时参数无效');
     });
+});
+
+it('accepts private notebook data in imports and rejects malformed or duplicate entries', () => {
+  const data = blankData();
+  const note = { id: '00000000-0000-4000-8000-000000000001', title: '合成标题', body: '合成正文' };
+  data.notebook = [note];
+  expect(() => validateData(data)).not.toThrow();
+  expect(() => validateData({ ...data, notebook: [note, note] })).toThrow();
+  expect(() => validateData({ ...data, notebook: [{ ...note, body: 'x'.repeat(20001) }] })).toThrow();
 });
