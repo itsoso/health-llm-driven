@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | building |
-| 当前阶段 | S5 验证 |
+| 状态 | shipped |
+| 当前阶段 | G6 后端回执核验；登录态重试未观察 |
 
 ## G1 准入
 
@@ -22,3 +22,13 @@
 - 修复前以真实 Pi 循环和模拟估算超时复现两例失败：`/tmp/reva-dried-dates-red-corrected.log`。最初测试夹具属性名错误已纠正，重新在原实现复现，未把夹具失败当行为证据。
 - 新测试覆盖超时后的成功补全、不完整补全、食物身份改变、午夜本地日期和相同 turn 重放。所有健康数据均为隔离测试数据；线上记录未更改。
 - 相关回归、PostgreSQL、独立安全审查、真实模型闸、精确 SHA CI 与生产发布待完成。
+
+## G4–G6 发布结果
+
+- 独立 Safety GO：`d47aea05be1d5c77632a52636776b0b478dd1fdd`；reviewer 214 项测试通过，另验取消传播、暂停跳过和一次估算。
+- 本地相关回归 460 passed / 1 skipped，最终定向 10 passed；隔离 PostgreSQL 最终 265 passed，进程退出与数据库停止均为 0。
+- 真实模型闸通过：orchestrator 5/5（平均评分 0.96），invariants 12/12，health_agent_core 50/50，trajectory contracts/goldens 通过；仅合成数据与内存测试库。不能据此宣称截图对应线上模型响应已复测。
+- 完整精确 SHA CI `40358356587` success；CI-mode 发布集成检查 4710 passed / 47 skipped / 127 subtests passed。System Map、secret scan 和 Dossier 检查通过。
+- 发布前 validate `40360963520` success；后端发布 `40361139424` success。生产版本、SUCCEEDED 回执、COMMITTED/finalized/code-only-no-backup、三个 active 服务、无发布租约及公网 health 200 / 匿名 POST diet API 401 均独立回读。详见本任务 release receipt。
+- 首次短期只读 GitHub token mint 响应超时，发生在远程 SSH 前；旧凭据与生产状态未变。保留可能存在未返回短期 token 的不确定性。新的固定 attempt2 经独立 GO 后续期成功，未重放原操作。
+- 无 Mobile/Web 代码变更，OTA 不适用。未创建备份、未补写截图记录、未读写真实健康记录。手机登录态下重新发送或点击重试的验收未执行，不冒充已替用户保存。

@@ -1,0 +1,158 @@
+{
+  "production_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+  "backend": {
+    "sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+    "state": "SUCCEEDED"
+  },
+  "runtime_terminal": {
+    "candidate_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+    "old_sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+    "phase": "COMMITTED",
+    "mode": "code-only-no-backup",
+    "result": "finalized"
+  },
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active"
+  },
+  "business_lease_released": true,
+  "verified_at": "2026-10-26T16:45:51.038715+00:00",
+  "workflows": {
+    "ci": {
+      "run_id": 40358356587,
+      "conclusion": "success",
+      "headSha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40358356587"
+    },
+    "backend_validate": {
+      "run_id": 40360963520,
+      "conclusion": "success",
+      "headSha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40360963520"
+    },
+    "backend": {
+      "run_id": 40361139424,
+      "conclusion": "success",
+      "headSha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40361139424"
+    }
+  },
+  "public_probes": {
+    "/api/v1/health": 200,
+    "/api/v1/diet/records": 401
+  },
+  "validation": {
+    "sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+    "targeted_passed": 10,
+    "related_passed": 460,
+    "related_skipped": 1,
+    "system_map": "passed",
+    "secret_scan": "passed",
+    "dossier_consistency": "passed",
+    "independent_review": "GO",
+    "independent_tests_passed": 214,
+    "live_gate": {
+      "status": "passed",
+      "llm_cost": "possible",
+      "suites": [
+        {
+          "suite": "invariants",
+          "total_cases": 12,
+          "passed": 12,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "health_agent_core",
+          "total_cases": 50,
+          "passed": 50,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "orchestrator",
+          "total_cases": 5,
+          "passed": 5,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 0.96,
+          "avg_latency_ms": 7395,
+          "regression": []
+        }
+      ],
+      "failed_suites": [],
+      "errors": [],
+      "trajectory_contract": {
+        "status": "passed",
+        "total_cases": 12,
+        "failed_cases": []
+      },
+      "trajectory_goldens": {
+        "status": "passed",
+        "fixture_version": 1,
+        "total_cases": 9,
+        "covered_scenarios": [
+          "duplicate_client_turn_side_effect",
+          "duplicate_same_record_side_effect",
+          "idempotent_client_turn_replay",
+          "meal_context_reestimate",
+          "missing_identity_receipt",
+          "read_only_delete_side_effect",
+          "simple_fruit_write",
+          "simple_water_write",
+          "uncertain_receipt_false_success"
+        ],
+        "failed_cases": []
+      }
+    },
+    "postgresql_passed": 265,
+    "postgresql_shutdown_exit": 0,
+    "credential_refresh": {
+      "first_attempt": "mint response timed out before remote SSH; no server mutation observed; possible unreturned read-only token remains until expiry",
+      "first_attempt_preserved": true,
+      "attempt2": {
+        "repository": "itsoso/health-llm-driven",
+        "app_id": 5376682,
+        "installation_id": 172918270,
+        "before_sha256": "4a37e80f9645b064c392278d323b977dcda198f05ea8fe91557de942a10f5749",
+        "after_sha256": "6811bba356ced96b7817e90ab079336d8e3bd6ebbb55d55f1ae13efa83abfea2",
+        "expires_at": 1793035460,
+        "state": "CREDENTIAL_REFRESHED"
+      },
+      "attempt2_independent_review": "GO"
+    },
+    "ci_mode_release_invariants": {
+      "passed": 4710,
+      "skipped": 47,
+      "subtests_passed": 127,
+      "run_id": 40358356587,
+      "job_id": 121697018408
+    }
+  },
+  "scope": {
+    "backend_only": true,
+    "mobile_ota": "not applicable; no mobile changes",
+    "schema_migration": false,
+    "backups_created": false,
+    "real_health_records_accessed": false,
+    "diagnostics": "redacted operational categories and timing only",
+    "historical_records_modified": false,
+    "screenshotted_record_replayed": false,
+    "signed_in_device_acceptance": "not performed; isolated Pi/API/PostgreSQL tests cover save and replay"
+  },
+  "public_probe_methods": {
+    "/api/v1/health": "GET",
+    "/api/v1/diet/records": "POST, empty JSON, no credentials"
+  },
+  "probe_correction": "Initial GET on the POST-only diet write endpoint returned 405; corrected anonymous POST returned 401. No authenticated write was made."
+}
