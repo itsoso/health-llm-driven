@@ -1,0 +1,94 @@
+{
+  "production_sha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+  "receipt": {
+    "sha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "state": "SUCCEEDED"
+  },
+  "receipt_path": "/var/lib/reva-release/e502d4c483f29d52afca112fa3e925338b4eda12/completed.json",
+  "runtime_terminal": {
+    "candidate_sha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "old_sha": "512205ab039d6440382f36c8d58cbdb3ae915909",
+    "phase": "COMMITTED",
+    "mode": "code-only-no-backup",
+    "result": "finalized"
+  },
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active"
+  },
+  "business_lease_released": true,
+  "verified_at": "2026-10-26T09:11:10.369358+00:00",
+  "public_probes": {
+    "health": {
+      "status": 200,
+      "authenticated": false
+    },
+    "write-intents": {
+      "status": 401,
+      "authenticated": false
+    }
+  },
+  "ci": {
+    "run_id": 40294529889,
+    "conclusion": "success",
+    "headSha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "status": "completed",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40294529889"
+  },
+  "validate": {
+    "run_id": 40296636063,
+    "conclusion": "success",
+    "headSha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "status": "completed",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40296636063"
+  },
+  "backend": {
+    "run_id": 40296706489,
+    "conclusion": "success",
+    "headSha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "status": "completed",
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40296706489"
+  },
+  "validation": {
+    "postgresql": {
+      "passed": 67,
+      "exit_code": 0,
+      "temporary_database_stopped": true
+    },
+    "independent_candidate_review": {
+      "verdict": "GO",
+      "passed": 66,
+      "postgresql_only_skipped": 1
+    },
+    "ci_release_invariants": {
+      "passed": 4710,
+      "skipped": 47,
+      "subtests_passed": 127,
+      "job_id": 121477391588
+    },
+    "live_model": {
+      "synthetic_only": true,
+      "exit_code": 0,
+      "invariants": "12/12",
+      "health_agent_core": "50/50",
+      "live_orchestrator": "5/5",
+      "trajectory": "12/12",
+      "goldens": "9/9"
+    },
+    "local_ci_mode": {
+      "initial": "failed due to macOS temp-directory group mismatch",
+      "isolated_environment_recheck": "passed",
+      "full_duplicate": "cancelled after same-path Linux CI gate passed"
+    }
+  },
+  "scope": {
+    "backend_only": true,
+    "ota_required": false,
+    "schema_migration": false,
+    "production_health_records_accessed_or_changed_for_testing": false,
+    "signed_in_production_conversation": "not performed",
+    "backups_created": false,
+    "original_shared_checkout": "preserved"
+  }
+}
