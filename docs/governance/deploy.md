@@ -555,6 +555,17 @@ vendor 回执、未知文件、活跃发布进程或租约身份变化均拒绝�
 
 `151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90` 与 `f2022e10027bcf35c4225bf1cc898a9001161ecc` 的领取前失败，使用该入口的固定 `--failed-sha` profile 绑定官方失败运行和审计制品；默认历史 profile 保持不变。选择仅限源码内受审的精确 SHA，不接受调用方提供制品摘要或替换流程阶段。历史消费者按原操作目录选择独立 profile，禁止跨 profile 复用证据。已验证的固定演示维护收尾仍保留 UNKNOWN，OTA 预检只在完整退休历史验证成功后接受其固定版本和操作绑定，不将其标记为演示数据成功。
 
+`c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf` 的新增固定 profile 只接受
+run `40281092624`、attempt `1`、job `121434341485` 和官方 artifact `12633145149`
+（2532 bytes）的领取前失败；ZIP、原控制流与三项审计 JSON 的摘要固定在源码内。
+必须以新的精确绿色 reviewed SHA 执行收尾，原 c29d 的后端成功状态、原 intent/lease
+与未进入 vendor 的证据仍须逐项通过；不修改历史 profile，不复用 c29d 重发。
+本入口先严格读取有界私有 stdin JSON 的唯一 `github_token` 字段，再核验 canonical
+root 源码；同一凭据经 `trusted_release_gate.py --token-stdin --target full` 的 stdin
+传给精确 CI 闸，并用于官方审计制品读取。凭据不进入 argv/env/输出，空、非法或
+读取失败立即阻断，不回退到过期的服务器凭据或环境变量；root、源码、原双锁和
+领取前失败证明不豁免。inspect 返回的证据摘要仍是执行收尾的必需绑定。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的

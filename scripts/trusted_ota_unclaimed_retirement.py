@@ -66,7 +66,8 @@ class ClosureError(Exception):
 LEGACY_FAILED_SHA = FAILED_SHA
 CURRENT_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
 F202_FAILED_SHA = 'f2022e10027bcf35c4225bf1cc898a9001161ecc'
-SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA)
+C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
+SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA, C29D_FAILED_SHA)
 _SELECTED_PROFILE = None
 
 
@@ -118,6 +119,24 @@ def select_profile(failed_sha):
             'scripts/trusted_ota_publish.py': 'd3cba2e115f9b14bd0ac02a120b3007e5b17cb68d24ab1f73bcb1aa3afee8db6',
             'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
             'scripts/trusted_ota.py': '6cdb0b1353675215d5660d0b39ac4b347273066aa0ce9fdbb656f45e6ab25abb',
+        }
+    elif failed_sha == C29D_FAILED_SHA:
+        FAILED_SHA = C29D_FAILED_SHA
+        RUN_ID = 40281092624
+        JOB_ID = 121434341485
+        ARTIFACT_ID = 12633145149
+        ARTIFACT_SIZE = 2532
+        ARTIFACT_ZIP_SHA256 = 'cdd4b16985fd2a7672b8ad270f2e22a21018e390f698d70e90d55a15cb5cdfe4'
+        ENTRY_DIGESTS = {
+            'ota-diagnostic.json': '41397c0f02c972d269e894961b5d3a53add5298f23acee85e1099c9c042bd2b4',
+            'ota-claim.json': '10cbfd6a886285891762d5dbbd6edf8f3ffda58c08ea040f1fef28f5bda36776',
+            'ota-preflight.json': '842135a82961b73bcfda724ebab1b1432abe3642efb5e8fca612798e89fcd468',
+        }
+        SOURCE_HASHES = {
+            '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+            'scripts/trusted_ota_publish.py': 'd8a509e114fae2509fd93d157d713ed61b61c97b97aa358ea61f3a3ce566f63d',
+            'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+            'scripts/trusted_ota.py': '2e0c9c20f779e9fb09afb8a2c8625710d1d05265a4886b8a2a43602ac1dd2d56',
         }
     _SELECTED_PROFILE = failed_sha
 
@@ -558,7 +577,30 @@ def validate_closed_history(server, operation):
     return {'sha': FAILED_SHA, 'state': TERMINAL, 'closure_sha256': digest(intent)}
 
 
-def context(sha):
+def private_github_token(raw):
+    if not isinstance(raw, bytes) or len(raw) > 8192:
+        raise ClosureError('private read-only GitHub credential required')
+    try:
+        credentials = parsed(raw)
+    except (ValueError, UnicodeError):
+        raise ClosureError('private read-only GitHub credential required') from None
+    if (not isinstance(credentials, dict) or set(credentials) != {'github_token'}
+            or not isinstance(credentials['github_token'], str)
+            or re.fullmatch(r'[A-Za-z0-9_.-]{1,4096}', credentials['github_token']) is None):
+        raise ClosureError('private read-only GitHub credential required')
+    return credentials['github_token']
+
+
+def verify_closing_ci(source, sha, token):
+    if not isinstance(token, str) or re.fullmatch(r'[A-Za-z0-9_.-]{1,4096}', token) is None:
+        raise ClosureError('private read-only GitHub credential required')
+    subprocess.run(['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'scripts/trusted_release_gate.py'),
+        '--sha', sha, '--workflow-sha', sha, '--target', 'full', '--token-stdin'],
+        env=ENV, input=token.encode('ascii'), stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL, check=True, timeout=90)
+
+
+def context(sha, token):
     if (os.geteuid() != 0 or not sys.flags.isolated or not sys.flags.no_site
             or not sys.flags.dont_write_bytecode or sys.executable != '/usr/bin/python3.12'
             or re.fullmatch(r'[a-f0-9]{40}', sha) is None or sha == FAILED_SHA):
@@ -587,9 +629,7 @@ def context(sha):
     checked, server = b.reviewed_source(sha)
     if checked != source:
         raise ClosureError('closing canonical source differs')
-    subprocess.run(['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'scripts/trusted_release_gate.py'),
-        '--sha', sha, '--workflow-sha', sha], env=ENV, stdin=subprocess.DEVNULL,
-        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True, timeout=90)
+    verify_closing_ci(source, sha, token)
     return b, server, source
 
 
@@ -600,13 +640,11 @@ def main():
     parser.add_argument('--evidence-sha256')
     args = parser.parse_args()
     select_profile(args.failed_sha)
-    b, server, source = context(args.sha)
+    # One explicit private credential authorizes both exact CI verification and
+    # official artifact readback. Invalid stdin never falls back to disk or env.
     os.umask(0o077)
-    credentials = parsed(sys.stdin.buffer.read(8193))
-    if (not isinstance(credentials, dict) or set(credentials) != {'github_token'}
-            or not isinstance(credentials['github_token'], str) or not credentials['github_token']
-            or len(credentials['github_token']) > 4096 or any(c.isspace() for c in credentials['github_token'])):
-        raise ClosureError('private read-only GitHub credential required')
+    token = private_github_token(sys.stdin.buffer.read(8193))
+    b, server, source = context(args.sha, token)
     launcher = server.STATE / 'launcher.lock'
     server.secure_path(launcher, private=True)
     fd = os.open(launcher, os.O_RDWR | os.O_NOFOLLOW)
@@ -620,7 +658,7 @@ def main():
             b._assert_original_lock(launcher, fd)
             b._assert_original_lock(server.STATE / FAILED_SHA / 'build.lock', build_fd)
         result = close_transaction(Adapter(b, server, source, args.sha,
-            credentials['github_token'], check), args.evidence_sha256)
+            token, check), args.evidence_sha256)
         check()
         print(json.dumps(result, sort_keys=True))
     finally:

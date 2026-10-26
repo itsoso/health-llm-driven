@@ -689,6 +689,7 @@ def _persistent_cloud_successor(sha, public):
             or hashlib.sha256(INSTALLED.read_bytes()).hexdigest() != digest):
         raise BootstrapError("reused cloud identity differs from canonical successor")
     seen = set()
+    recovery = _native_rotation_recovery()
     while sha != policy["sha"]:
         if sha in seen or len(seen) >= 10000:
             raise BootstrapError("invalid cloud identity succession chain")
@@ -703,7 +704,6 @@ def _persistent_cloud_successor(sha, public):
             raise BootstrapError("cloud identity reuse lacks completed succession audit")
         if _retired_public_keys(sha, intent)['cloud.pub'] != public:
             raise BootstrapError("cloud identity changed within succession chain")
-        recovery = _native_rotation_recovery()
         if sha == NATIVE_ROTATION_OLD and recovery is not None:
             next_sha = recovery['publisher_sha']
         sha = next_sha

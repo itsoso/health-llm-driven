@@ -580,6 +580,35 @@ def test_same_cloud_key_survives_consecutive_versions_without_rewriting_history(
             bootstrap.rotate(third, used, 0, PUBLIC)
 
 
+def test_successor_validates_native_recovery_once_per_proof_and_rechecks_next_call(monkeypatch, tmp_path):
+    b, _ = rotation_fixture(monkeypatch, tmp_path)
+    b.rotate(SHA, NEW_SHA, 0, PUBLIC)
+    b.revoke(NEW_SHA)
+    (b.CONFIG / 'loopback.key').unlink()
+    run = b._run
+    def next_keys(args, **kwargs):
+        result = run(args, **kwargs)
+        if args[0] == '/usr/bin/ssh-keygen' and '-q' in args:
+            (b.CONFIG / 'loopback.key.pub').write_text(LEGACY_PUBLIC + '\n')
+        return result
+    monkeypatch.setattr(b, '_run', next_keys)
+    b.rotate(NEW_SHA, 'd' * 40, 0, PUBLIC)
+    original = b._native_rotation_recovery
+    calls = []
+    def observed():
+        calls.append(True)
+        return original()
+    monkeypatch.setattr(b, '_native_rotation_recovery', observed)
+    b._persistent_cloud_successor(SHA, PUBLIC)
+    assert len(calls) == 1
+    b._persistent_cloud_successor(SHA, PUBLIC)
+    assert len(calls) == 2
+    (b.STATE / 'native-rotation-finalization').mkdir(mode=0o700)
+    with pytest.raises(b.BootstrapError):
+        b._persistent_cloud_successor(SHA, PUBLIC)
+    assert len(calls) == 3
+
+
 @pytest.mark.parametrize("fault", ["bare-key", "duplicate", "executor", "policy-sha", "finite", "reuse-audit", "loopback"])
 def test_history_does_not_accept_unproven_persistent_identity(monkeypatch, tmp_path, fault):
     bootstrap, _calls = rotation_fixture(monkeypatch, tmp_path)

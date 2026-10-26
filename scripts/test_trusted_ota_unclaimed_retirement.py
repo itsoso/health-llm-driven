@@ -37,7 +37,8 @@ def test_requires_exact_failed_profile_and_no_mutation_on_changed_inspection(tmp
 
 @pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
                                       '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
-                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc'])
+                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc',
+                                      'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'])
 def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch, failed_sha):
     m = load()
     m.select_profile(failed_sha)
@@ -90,7 +91,8 @@ def metadata(m):
                                   'wrong_job', 'step', 'expired', 'digest', 'artifact_run'])
 @pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
                                       '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
-                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc'])
+                                      'f2022e10027bcf35c4225bf1cc898a9001161ecc',
+                                      'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'])
 def test_official_metadata_failures_are_closed(fault, failed_sha):
     m = load(); m.select_profile(failed_sha)
     run, jobs, artifact = metadata(m)
@@ -110,7 +112,8 @@ def test_official_metadata_failures_are_closed(fault, failed_sha):
 
 @pytest.fixture(params=('da91b5de303313f1fb014bbe045e8f1597d15229',
                         '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
-                        'f2022e10027bcf35c4225bf1cc898a9001161ecc'))
+                        'f2022e10027bcf35c4225bf1cc898a9001161ecc',
+                        'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'))
 def transaction(tmp_path, monkeypatch, request):
     m = load()
     m.select_profile(request.param)
@@ -254,7 +257,7 @@ def test_nonroot_checkout_context_never_runs_network_or_mutations(monkeypatch):
     m=load()
     monkeypatch.setattr(m.os,'geteuid',lambda:501)
     monkeypatch.setattr(m.subprocess,'run',lambda *a,**kw:pytest.fail('untrusted process'))
-    with pytest.raises(m.ClosureError):m.context('c'*40)
+    with pytest.raises(m.ClosureError):m.context('c'*40, 'synthetic-token')
 
 
 @pytest.mark.parametrize('fault', ['none', 'completion', 'audit', 'original', 'revive', 'lock'])
@@ -428,3 +431,105 @@ def test_f202_rejects_foreign_profile_and_preserves_loaded_history(foreign_sha):
     assert metadata(old) == old_values and old.ENTRY_DIGESTS == old_entries
     with pytest.raises(old.ClosureError): old.select_profile(F202_FAILED_SHA)
     assert metadata(old) == old_values and old.ENTRY_DIGESTS == old_entries
+
+
+C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
+
+
+def test_c29d_fixed_official_profile():
+    m = load(); m.select_profile(C29D_FAILED_SHA)
+    assert (m.RUN_ID,m.RUN_ATTEMPT,m.WORKFLOW_ID,m.JOB_ID,m.ARTIFACT_ID,m.ARTIFACT_SIZE) == (
+        40281092624,1,370218159,121434341485,12633145149,2532)
+    assert m.ARTIFACT_ZIP_SHA256 == 'cdd4b16985fd2a7672b8ad270f2e22a21018e390f698d70e90d55a15cb5cdfe4'
+    assert m.ENTRY_DIGESTS == {
+        'ota-diagnostic.json': '41397c0f02c972d269e894961b5d3a53add5298f23acee85e1099c9c042bd2b4',
+        'ota-claim.json': '10cbfd6a886285891762d5dbbd6edf8f3ffda58c08ea040f1fef28f5bda36776',
+        'ota-preflight.json': '842135a82961b73bcfda724ebab1b1432abe3642efb5e8fca612798e89fcd468'}
+    assert m.validate_official_metadata(*metadata(m))['run']['head_sha'] == C29D_FAILED_SHA
+
+
+@pytest.mark.parametrize('raw', [b'', b'{}', b'{"github_token":""}', b'{"github_token":1}',
+    b'{"github_token":"bad token"}', b'{"github_token":"bad\\nvalue"}',
+    b'{"github_token":"bad\\u0000value"}', b'{"github_token":"bad/value"}',
+    b'{"github_token":"one","github_token":"two"}',
+    b'{"github_token":"good","extra":"field"}',
+    json.dumps({'github_token':'a'*4097}).encode(), b' '*8193])
+def test_private_credentials_invalid_never_reach_context_or_fallback(monkeypatch,raw):
+    m=load()
+    monkeypatch.setattr(m.sys,'argv',['closure','--sha','c'*40])
+    monkeypatch.setattr(m.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(raw)))
+    monkeypatch.setenv('GH_TOKEN','must-not-fallback')
+    monkeypatch.setattr(m,'context',lambda *a:pytest.fail('invalid stdin reached trusted context'))
+    monkeypatch.setattr(m.subprocess,'run',lambda *a,**kw:pytest.fail('invalid stdin reached process'))
+    with pytest.raises(m.ClosureError):m.main()
+
+
+def test_same_private_stdin_token_reaches_context_before_any_gate(monkeypatch):
+    m=load();token='ghs_synthetic-token.not-secret'
+    monkeypatch.setattr(m.sys,'argv',['closure','--sha','c'*40])
+    monkeypatch.setattr(m.sys,'stdin',SimpleNamespace(buffer=io.BytesIO(json.dumps({'github_token':token}).encode())))
+    class Inspected(Exception):pass
+    def context(sha, github_token):
+        assert sha=='c'*40 and github_token==token
+        raise Inspected
+    monkeypatch.setattr(m,'context',context)
+    with pytest.raises(Inspected):m.main()
+
+
+def test_closing_ci_token_is_stdin_only_and_explicit_full_gate(monkeypatch):
+    m=load();token='ghs_synthetic-token.not-secret';calls=[]
+    monkeypatch.setenv('GH_TOKEN','must-not-fallback')
+    def run(args,**kw):
+        calls.append((args,kw))
+        assert '--token-stdin' in args
+        assert args[args.index('--target')+1]=='full'
+        assert token not in ' '.join(args) and token not in str(kw['env'])
+        assert kw['input']==token.encode() and 'stdin' not in kw
+        assert kw['stdout']==m.subprocess.DEVNULL and kw['stderr']==m.subprocess.DEVNULL
+        assert kw['check'] is True
+    monkeypatch.setattr(m.subprocess,'run',run)
+    m.verify_closing_ci(Path('/canonical'), 'c'*40, token)
+    assert len(calls)==1
+
+
+def test_closing_ci_failure_does_not_retry_another_credential(monkeypatch):
+    m=load();calls=[]
+    def run(*args,**kw):
+        calls.append(args)
+        raise m.subprocess.CalledProcessError(1,args[0])
+    monkeypatch.setattr(m.subprocess,'run',run)
+    with pytest.raises(m.subprocess.CalledProcessError):
+        m.verify_closing_ci(Path('/canonical'),'c'*40,'ghs_fixture')
+    assert len(calls)==1
+
+
+@pytest.mark.parametrize('foreign_sha', [
+    'da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA, F202_FAILED_SHA])
+def test_c29d_does_not_change_or_accept_historical_profiles(foreign_sha):
+    import copy
+    old=load();old.select_profile(foreign_sha)
+    old_metadata=copy.deepcopy(metadata(old));old_entries=copy.deepcopy(old.ENTRY_DIGESTS)
+    new=load();new.select_profile(C29D_FAILED_SHA)
+    for index in range(3):
+        mixed=list(metadata(new));mixed[index]=old_metadata[index]
+        with pytest.raises(new.ClosureError):new.validate_official_metadata(*mixed)
+    with pytest.raises(new.ClosureError):new.select_profile(foreign_sha)
+    with pytest.raises(old.ClosureError):old.select_profile(C29D_FAILED_SHA)
+    assert metadata(old)==old_metadata and old.ENTRY_DIGESTS==old_entries
+    assert new.FAILED_SHA==C29D_FAILED_SHA
+
+
+@pytest.mark.parametrize('token', ['', None, 'bad token', 'bad\x00value', 'nonascii-你好', 'a'*4097])
+def test_direct_ci_credential_rejection_never_spawns_or_falls_back(monkeypatch,token):
+    m=load()
+    monkeypatch.setattr(m.subprocess,'run',lambda *a,**kw:pytest.fail('invalid credential reached gate process'))
+    with pytest.raises(m.ClosureError):m.verify_closing_ci(Path('/canonical'),'c'*40,token)
+
+
+def test_c29d_original_source_hashes_are_fixed():
+    m=load();m.select_profile(C29D_FAILED_SHA)
+    assert m.SOURCE_HASHES == {
+        '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+        'scripts/trusted_ota_publish.py': 'd8a509e114fae2509fd93d157d713ed61b61c97b97aa358ea61f3a3ce566f63d',
+        'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+        'scripts/trusted_ota.py': '2e0c9c20f779e9fb09afb8a2c8625710d1d05265a4886b8a2a43602ac1dd2d56'}
