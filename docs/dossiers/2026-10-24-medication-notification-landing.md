@@ -1,13 +1,20 @@
 # 用药通知直接落到本次提醒
 
+| 字段 | 值 |
+|---|---|
+| 状态 | building |
+| 当前阶段 | S4 实现 |
+
 Status: G4 GO; not published
-Updated: 2026-10-24
+Updated: 2026-10-26
 
 ## Decision and problem
 
 用户截图显示点击 18:00 通知后打开空聊天并填入未发送问题。源码确认：后端按 owner/date/time 聚合 `medication_ids`，客户端 `medicationReminderRoute` 丢弃 ID 并生成聊天草稿。此次恢复确定性的提醒落地，不依赖模型解释通知。
 
-## Requirement admission
+## G1 准入
+
+裁决: PASS。以下准入与既有用药提醒详情契约一致；新增分组页仅读取，由用户逐项确认。
 
 - Classification: bug fix with grouped reminder surface.
 - First user fit/core loop: 降低服用记录操作负担，HealthAgendaItem → 用户核对 → ExecutionEvent。
@@ -33,3 +40,7 @@ Updated: 2026-10-24
 ## Delivery boundary
 
 不改生产、演示账号或真实健康记录；保留工作树其他修改。已有用药明细写入流程不变，通知点击和分组页均无 POST/model call。
+
+## 2026-10-26 发布续行
+
+完整 CI-mode 暴露本档案缺少机器可识别状态表和 G1 标题；已补齐格式，不改此前安全裁决或发布状态。b01 候选发布不变量 JUnit 4804 项、49 跳过、零失败零错误；档案闸失败不能称完整 CI 通过。用户已确认 c280 TestFlight 来源并授权完成后由本会话接管，GitHub 40158185108 已 completed/success；Apple 处理和新 OTA 基线另行核验。
