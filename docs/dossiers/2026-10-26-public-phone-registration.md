@@ -15,7 +15,7 @@
 - **裁决：PASS。** 不代替 G4、CI 或生产验证。
 
 - Request: remove invitation-only access; permit verified-phone signup and direct administrator account creation.
-- Baseline: `cf080ee99` from freshly fetched origin/main.
+- Initial baseline: `cf080ee99`; rebased onto `184d2205f` to retain the concurrent native UUID fix.
 - Workspace: isolated worktree to preserve the shared checkout's unrelated changes.
 - Controller: health-harness-orchestrator; safety-gate overlay.
 - Spec: `docs/specs/active/2026-10-26-public-phone-registration.md`.
@@ -37,7 +37,10 @@
 - Web phone registration, cookie session, admin and navigation: 23 passed; TypeScript and focused ESLint passed.
 - Backend integration plus self-registration/WeChat compatibility: 30 passed.
 - System Map drift gate passed after changes.
-- Release activation and related existing publisher suites: 270 passed before native systemctl-format follow-up; final follow-up verification required.
+- Release activation and publisher regression run: 268 passed; dedicated activation suite: 45 passed, including the actual multi-line systemctl EnvironmentFiles format.
+- Web full suite: 609 passed, 1 skipped; production Next build passed.
+- Independent G4: GO on `4ee08597a433d009a7ee0ee4ff4f9ce8730441ba`; follow-up stale invitation restoration fix requires incremental review.
+- Production auto-approval env has no override; deployed source default is true. Recheck effective value after activation.
 
 ## Remaining gates
 

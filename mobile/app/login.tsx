@@ -150,10 +150,7 @@ export default function LoginScreen({
   const [remember, setRemember] = useState(true);
   const previousInvitationLinkToken = useRef(invitationLinkToken);
 
-  const restoredPending = Boolean(
-    pendingRegistration && pendingRegistration.expiresAt > Date.now(),
-  );
-  const showInvite = !ticketExpiredMessage && (inviteVerified || restoredPending);
+  const showInvite = !ticketExpiredMessage && inviteVerified;
   const displayMaskedPhone = pendingRegistration?.phoneMasked
     || (sentPhone ? maskPhone(sentPhone) : '已验证手机号');
   const secureLinkReady = Boolean(invitationLinkToken) && !useManualCredential;

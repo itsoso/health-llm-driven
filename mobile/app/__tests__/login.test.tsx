@@ -376,12 +376,13 @@ describe('LoginScreen invitation-gated phone auth', () => {
       .toHaveBeenCalledWith({ linkToken: secondToken }));
   });
 
-  it('restores an unexpired pending registration directly to invite entry after restart', () => {
+  it('starts a fresh phone verification instead of restoring the retired invitation step', () => {
     mockPendingRegistration = { expiresAt: Date.now() + 60_000, phoneMasked: '+86 139****1234' };
     const view = render(<LoginScreen />);
 
-    expect(view.getByText('输入邀请码')).toBeTruthy();
-    expect(view.getByText('+86 139****1234')).toBeTruthy();
+    expect(view.queryByText('输入邀请码')).toBeNull();
+    expect(view.getByLabelText('手机号输入框')).toBeTruthy();
+    expect(view.queryByText('+86 139****1234')).toBeNull();
     expect(view.queryByLabelText('验证码输入框')).toBeNull();
   });
 
