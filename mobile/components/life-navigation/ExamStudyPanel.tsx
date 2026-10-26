@@ -2,20 +2,23 @@ import React, { useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import type { LifeData, LifeTask } from '../../services/lifeNavigation';
 import { localDate } from '../../utils/lifeNavigationModel';
-import { addStudyDay, dailyStudy, daysUntil, examDate, phaseFor, questions, questionHistory, recordAnswer, studyTask, wrongQuestions } from '../../utils/examStudy';
+import { addStudyDay, dailyStudy, daysUntil, examDate, phaseFor, questions, questionHistory, recordAnswer, studyTask, wrongQuestions, practiceQuestions, practiceModes, comprehensiveSubject, type Subject, type PracticeMode } from '../../utils/examStudy';
 import { useLifeControls } from './Controls';
 
 type Props = {data:LifeData; day:string; disabled:boolean; edit:(change:(data:LifeData)=>void)=>void; focus:(task:LifeTask)=>void};
 export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
  const {c,text,button,field}=useLifeControls(disabled);
- const [section,setSection]=useState('一小时计划'),[subject,setSubject]=useState('英语'),[onlyWrong,setOnlyWrong]=useState(false);
- const [selected,setSelected]=useState(questions[0].id),[choice,setChoice]=useState<number|null>(null);
+ const [section,setSection]=useState('一小时计划'),[subject,setSubject]=useState<Subject>('英语'),[mode,setMode]=useState<PracticeMode>('next');
+ const [selected,setSelected]=useState(''),[choice,setChoice]=useState<number|null>(null);
  const [feedback,setFeedback]=useState<{id:string;correct:boolean}|null>(null),[error,setError]=useState(''),[writingHint,setWritingHint]=useState(false);
- const plan=dailyStudy(day),wrong=wrongQuestions(data),remaining=daysUntil(localDate());
- const available=questions.filter(q=>q.subject===subject&&(!onlyWrong||wrong.some(w=>w.id===q.id)||feedback?.id===q.id));
- const q=available.find(item=>item.id===selected)??available[0];
+ const plan=dailyStudy(day),wrong=wrongQuestions(data,day),remaining=daysUntil(localDate());
+ const available=practiceQuestions(data,day,subject,mode);
+ const pinned=feedback?questions.find(item=>item.id===feedback.id&&item.subject===subject):undefined;
+ const q=pinned??available.find(item=>item.id===selected)??available[0];
  const answer=feedback?.id===q?.id?feedback:null;
  const reset=()=>{setChoice(null);setFeedback(null);};
+ const startPractice=(s:Subject,nextMode:PracticeMode='next')=>{setSubject(s);setMode(nextMode);setSelected('');reset();setSection('练习与错题');};
+ const nextQuestion=()=>{const index=available.findIndex(item=>item.id===q?.id);setSelected((available[index+1]??available[0])?.id??'');reset();};
  const mutate=(change:(d:LifeData)=>void)=>{if(disabled)return;try{edit(change);setError('');}catch(e){setError(e instanceof Error?e.message:'修改失败，请重试。');}};
  const open=async(url:string)=>{try{await Linking.openURL(url);}catch{setError('无法打开资料，请检查网络后重试。');}};
  const heading=(title:string)=><Text accessibilityRole="header" style={{fontSize:20,lineHeight:28,fontWeight:'600',color:c.labelPrimary}}>{title}</Text>;
@@ -28,7 +31,7 @@ export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
   {section==='一小时计划'&&<>
    {heading(phaseFor(day))}{text(`${day} · 已完成 ${plan.filter(t=>studyTask(data,day,t.key)?.status==='done').reduce((n,t)=>n+t.minutes,0)} / ${plan.length?60:0} 分钟计划`)}
    {plan.length?button('加入当日计划',()=>mutate(d=>addStudyDay(d,day))):text('初试日及之后不再生成冲刺计划，请关注准考证、成绩和复试通知。')}
-   {plan.map(t=>{const saved=studyTask(data,day,t.key);return <View key={t.key} style={card}>{heading(`${t.title} · ${t.minutes} 分钟`)}{text(t.detail)}{saved?<>
+   {plan.map(t=>{const saved=studyTask(data,day,t.key);return <View key={t.key} style={card}>{heading(`${t.title} · ${t.minutes} 分钟`)}{text(t.detail)}{t.key==='english'?button('练习英语',()=>startPractice('英语')):t.key==='review'?button('复练错题',()=>startPractice(wrong[0]?.subject??'英语','wrong')):comprehensiveSubject(day)!=='写作'?button(`练习${comprehensiveSubject(day)}`,()=>startPractice(comprehensiveSubject(day) as Subject)):button('选择写作真题',()=>setSection('真题与路线'))}{saved?<>
     <Pressable accessibilityRole="checkbox" accessibilityLabel={`完成${t.title}`} accessibilityState={{checked:saved.status==='done',disabled}} disabled={disabled} onPress={()=>mutate(d=>{const task=studyTask(d,day,t.key);if(task)task.status=task.status==='done'?'planned':'done';})} style={{minHeight:44,justifyContent:'center'}}>{text(`${saved.status==='done'?'☑':'□'} 我已完成这项训练`)}</Pressable>
     {field(`学习结果 · ${t.title}`,saved.result,v=>mutate(d=>{const task=studyTask(d,day,t.key);if(task)task.result=v;}))}
     {button(`专注${t.title}并保存`,()=>focus(saved))}
@@ -36,15 +39,16 @@ export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
    {text('先用旧年真题分段摸底，记录正确数和耗时；分段结果不折算整卷成绩。')}
   </>}
   {section==='练习与错题'&&<>
-   {heading('基础热身与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(data,item).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
+   {heading('基础热身与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(data,item,day).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
    {text('原创基础题，不是历年真题，也不代表联考难度。首次作答和当日最近一次复练保存在任务记录中。')}
-   {button(onlyWrong?'显示全部练习':'只看待复练',()=>{setOnlyWrong(!onlyWrong);reset();})}
-   <View style={{flexDirection:'row',gap:8}}>{['英语','数学','逻辑'].map(s=>button(s,()=>{setSubject(s);reset();},subject===s))}</View>
+   <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{practiceModes.map(m=>button(m.label,()=>startPractice(subject,m.key),mode===m.key))}</View>
+   {text(`${day} · 先复练往日错题，再练未做题；今天答过的题可主动重做。当前管综安排：${comprehensiveSubject(day)}。`)}
+   <View style={{flexDirection:'row',gap:8}}>{(['英语','数学','逻辑'] as const).map(s=>button(s,()=>startPractice(s,mode),subject===s))}</View>
    <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled"><View style={{flexDirection:'row',gap:8}}>{available.map(item=>button(item.topic,()=>{setSelected(item.id);reset();},q?.id===item.id))}</View></ScrollView>
    {q?<View style={card}>{heading(q.topic)}{text(q.prompt)}{q.options.map((option,i)=><Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||!!answer}} disabled={disabled||!!answer} onPress={()=>setChoice(i)} style={{padding:14,minHeight:48,borderWidth:1,borderRadius:10,borderColor:choice===i?c.brand:c.separator}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
-    {answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':'本次答错，已加入待复练')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{button('重新作答',reset)}</View>:button('核对答案并记录',()=>{if(choice===null||disabled)return;try{edit(d=>recordAnswer(d,day,q,choice));setFeedback({id:q.id,correct:choice===q.answer});setError('');}catch(e){setError(e instanceof Error?e.message:'作答记录失败');}},choice===null)}
-   </View>:text('本科目暂无待复练题，可以显示全部练习或继续真题训练。')}
-   <View style={card}>{heading('写作专项')}{text('企业试行四天工作制后销售额增长，管理者认为应全面推广。用20分钟列出论证漏洞并写一段分析。')}{button(writingHint?'收起分析提示':'展开分析提示',()=>setWritingHint(!writingHint))}{writingHint&&text('检查同期营销、季节性和人员变化；试点是否代表所有部门；销售额是否等于效率或利润。说明每个漏洞怎样削弱结论。此练习不自动评分。')}</View>
+    {answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':'本次答错，已加入待复练')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{button('下一题',nextQuestion)}{button('重新作答',()=>{setMode('all');reset();})}</View>:button('核对答案并记录',()=>{if(choice===null||disabled)return;try{edit(d=>recordAnswer(d,day,q,choice));setSelected(q.id);setFeedback({id:q.id,correct:choice===q.answer});setError('');}catch(e){setError(e instanceof Error?e.message:'作答记录失败');}},choice===null)}
+   </View>:<View style={{gap:8}}>{text(mode==='next'?'本科目当前没有待安排的热身题。已练题不会自动重置；这20道基础题不会每日新增。':'本科目暂无待复练题。')}{button('进入真题训练',()=>setSection('真题与路线'))}</View>}
+   <View style={card}>{heading('固定写作示例')}{text('企业试行四天工作制后销售额增长，管理者认为应全面推广。用20分钟列出论证漏洞并写一段分析。')}{button(writingHint?'收起分析提示':'展开分析提示',()=>setWritingHint(!writingHint))}{writingHint&&text('检查同期营销、季节性和人员变化；试点是否代表所有部门；销售额是否等于效率或利润。说明每个漏洞怎样削弱结论。此练习不自动评分。')}</View>
   </>}
   {section==='真题与路线'&&<>
    <View style={card}>{heading('历年真题')}{text('2022年卷用于分段摸底，较早年份练专项，保留2023—2025年卷用于模考。作文需另行批改。')}{button('北理工 · 真题与答案',()=>{void open('https://pdc.bit.edu.cn/xs%26xy/bkq/d044e07614714a44a98f6a6d9ebf0ba7.htm');})}{button('中国石油大学 · 真题解析',()=>{void open('https://mba.upc.edu.cn/_t1664/2024/0723/c19452a258464/page.psp');})}</View>

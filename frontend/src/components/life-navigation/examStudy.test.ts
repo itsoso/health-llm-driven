@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { blankData, mondayOf } from './model';
-import { dailyStudy, addStudyDay, recordAnswer, wrongQuestions, studyId, questions, phaseFor } from './examStudy';
+import { dailyStudy, addStudyDay, recordAnswer, wrongQuestions, studyId, questions, phaseFor, practiceQuestions } from './examStudy';
 describe('exam preparation on the private LifeNav task ledger', () => {
  it('allocates exactly one hour and never schedules after the exam', () => {
   expect(dailyStudy('2026-10-24').reduce((sum, t) => sum+t.minutes, 0)).toBe(60);
@@ -33,5 +33,37 @@ describe('exam preparation on the private LifeNav task ledger', () => {
   const d=blankData();addStudyDay(d,'2026-10-24');const w=d.weeks[mondayOf('2026-10-24')];
   while(w.tasks.length<99)w.tasks.push({...w.tasks[0],id:crypto.randomUUID()});
   expect(()=>addStudyDay(d,'2026-10-25')).toThrow('100');expect(w.tasks).toHaveLength(99);
+ });
+});
+
+describe('practice selection follows dated study history', () => {
+ it('prioritizes earlier mistakes and skips correct answers without rewriting history', () => {
+  const data=blankData();
+  recordAnswer(data,'2026-10-24',questions[0],questions[0].answer);
+  recordAnswer(data,'2026-10-24',questions[3],0);
+  const before=JSON.stringify(data);
+  const queue=practiceQuestions(data,'2026-10-26','英语');
+  expect(queue[0].id).toBe('e04');
+  expect(queue.map(q=>q.id)).not.toContain('e01');
+  expect(queue[1].id).toBe('e02');
+  expect(JSON.stringify(data)).toBe(before);
+ });
+ it('does not repeatedly assign mistakes from the same day but permits explicit review', () => {
+  const data=blankData();recordAnswer(data,'2026-10-26',questions[0],0);
+  expect(practiceQuestions(data,'2026-10-26','英语').map(q=>q.id)).not.toContain('e01');
+  expect(practiceQuestions(data,'2026-10-26','英语','wrong').map(q=>q.id)).toEqual(['e01']);
+  expect(practiceQuestions(data,'2026-10-27','英语')[0].id).toBe('e01');
+ });
+ it('uses only records on or before the selected day, including across weeks', () => {
+  const data=blankData();recordAnswer(data,'2026-10-25',questions[0],0);
+  recordAnswer(data,'2026-10-27',questions[0],questions[0].answer);
+  expect(practiceQuestions(data,'2026-10-26','英语')[0].id).toBe('e01');
+  expect(practiceQuestions(data,'2026-10-27','英语').map(q=>q.id)).not.toContain('e01');
+ });
+ it('does not recycle exhausted questions, while allowing access to the full bank', () => {
+  const data=blankData();const english=questions.filter(q=>q.subject==='英语');
+  english.forEach(q=>recordAnswer(data,'2026-10-25',q,q.answer));
+  expect(practiceQuestions(data,'2026-10-26','英语')).toEqual([]);
+  expect(practiceQuestions(data,'2026-10-26','英语','all')).toEqual(english);
  });
 });
