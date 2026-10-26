@@ -15,8 +15,9 @@ def test_default_limit_applies_to_undecorated_route(client):
     assert responses[-1] == 429
 
 
-def test_self_registration_requires_explicit_opt_in():
+def test_self_registration_default_is_open_but_remains_configurable():
     from app.config import Settings
 
     configured = Settings(_env_file=None)
-    assert configured.auth_phone_self_registration_enabled is False
+    assert configured.auth_phone_self_registration_enabled is True
+    assert Settings(_env_file=None, auth_phone_self_registration_enabled=False).auth_phone_self_registration_enabled is False

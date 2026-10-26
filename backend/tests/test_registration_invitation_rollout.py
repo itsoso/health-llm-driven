@@ -481,7 +481,7 @@ def test_safe_rollback_closes_new_registration_but_keeps_existing_login(
     assert existing_response.json()["outcome"] == "authenticated"
     assert existing_response.json()["user"]["id"] == existing.id
     assert unknown_response.status_code == 403
-    assert unknown_response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    assert unknown_response.json()["detail"]["code"] == "REGISTRATION_CLOSED"
     for response in (inspect_response, register_response):
         assert response.status_code == 403
         assert response.json()["detail"]["code"] == "REGISTRATION_CLOSED"

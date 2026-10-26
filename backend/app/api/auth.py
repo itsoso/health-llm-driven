@@ -112,6 +112,9 @@ def _require_legacy_registration_open() -> None:
 
     from app.config import settings
 
+    if settings.auth_phone_self_registration_enabled:
+        raise _auth_error(403, "PHONE_REGISTRATION_REQUIRED", "请通过手机号验证码注册")
+
     if settings.registration_invitation_enforcement_enabled:
         raise _auth_error(
             status.HTTP_403_FORBIDDEN,
@@ -462,6 +465,9 @@ async def send_phone_code(
         if existing_user is not None:
             if not (existing_user.is_active and existing_user.is_approved):
                 raise _auth_error(403, "REGISTRATION_INVITATION_REQUIRED", "该手机号尚未开通，请联系管理员")
+        elif (not settings.auth_phone_self_registration_enabled
+              and not settings.registration_invitation_rollout_enabled):
+            raise _auth_error(403, "REGISTRATION_CLOSED", "新用户注册暂时关闭，已注册用户仍可登录")
         elif (settings.registration_invitation_enforcement_enabled
               and not settings.auth_phone_self_registration_enabled):
             if not (settings.registration_invitation_rollout_enabled
@@ -525,6 +531,11 @@ async def login_by_phone_code(
     is_new_user = False
     if user is None:
         from app.config import settings
+
+        if (not settings.auth_phone_self_registration_enabled
+                and not settings.registration_invitation_rollout_enabled):
+            db.commit()
+            raise _auth_error(403, "REGISTRATION_CLOSED", "新用户注册暂时关闭，已注册用户仍可登录")
 
         if (settings.registration_invitation_enforcement_enabled
                 and not settings.auth_phone_self_registration_enabled):

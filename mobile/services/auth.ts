@@ -364,12 +364,12 @@ export async function verifyPhoneCode(
 }
 
 export function registrationAuthErrorCode(error: unknown): string | null {
-  const localCode = (error as { code?: unknown } | null)?.code;
-  if (typeof localCode === 'string') return localCode;
   const code = (
     error as { response?: { data?: { detail?: { code?: unknown } } } } | null
   )?.response?.data?.detail?.code;
-  return typeof code === 'string' ? code : null;
+  if (typeof code === 'string') return code;
+  const localCode = (error as { code?: unknown } | null)?.code;
+  return typeof localCode === 'string' ? localCode : null;
 }
 
 export async function completeInvitedRegistration(

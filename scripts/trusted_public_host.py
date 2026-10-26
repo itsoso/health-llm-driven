@@ -58,9 +58,10 @@ def require_backend_receipt(sha, value):
 
 
 def verify_runtime(guard, *, check_network=True):
-    required = {'AUTH_PHONE_SELF_REGISTRATION_ENABLED': 'false',
-                'REGISTRATION_INVITATION_ENFORCEMENT_ENABLED': 'true',
-                'REGISTRATION_INVITATION_ROLLOUT_ENABLED': 'true'}
+    admission = ('AUTH_PHONE_SELF_REGISTRATION_ENABLED',
+                 'REGISTRATION_INVITATION_ENFORCEMENT_ENABLED',
+                 'REGISTRATION_INVITATION_ROLLOUT_ENABLED')
+    observed_policy = None
     for name in ('health-backend', 'celery-worker', 'celery-beat'):
         values = dict(line.split('=', 1) for line in guard.run('/usr/bin/systemctl', 'show', name,
             '-p', 'User,ActiveState,MainPID,NoNewPrivileges,ProtectSystem,ProtectHome,MemoryMax,CPUQuotaPerSecUSec,InaccessiblePaths').splitlines())
@@ -72,8 +73,12 @@ def verify_runtime(guard, *, check_network=True):
             raise RuntimeError('backend sandbox readback failed')
         pid = int(values['MainPID'])
         env = dict(item.split(b'=', 1) for item in Path(f'/proc/{pid}/environ').read_bytes().split(b'\0') if b'=' in item)
-        if any(env.get(key.encode(), b'').decode().lower() != value for key, value in required.items()):
+        policy = tuple(env.get(key.encode(), b'').decode().lower() for key in admission)
+        if policy not in (('false', 'true', 'true'), ('true', 'false', 'false')):
             raise RuntimeError('running admission policy differs')
+        if observed_policy is not None and policy != observed_policy:
+            raise RuntimeError('running services disagree on admission policy')
+        observed_policy = policy
     if check_network:
         guard.network_guard()
 

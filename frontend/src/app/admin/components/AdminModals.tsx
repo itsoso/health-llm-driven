@@ -276,7 +276,8 @@ export default function AdminModals({
               <div>
                 <label className="block text-purple-200 text-sm mb-1">密码（至少6位）</label>
                 <input
-                  type="text"
+                  type="password"
+                  autoComplete="new-password"
                   value={createUserForm.password}
                   onChange={(e) => setCreateUserForm((f: any) => ({ ...f, password: e.target.value }))}
                   placeholder="初始密码"

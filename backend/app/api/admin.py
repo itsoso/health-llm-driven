@@ -24,17 +24,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def _require_legacy_admission_open() -> None:
-    if settings.registration_invitation_enforcement_enabled:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={
-                "code": "REGISTRATION_INVITATION_REQUIRED",
-                "message": "新用户需要管理员发送的手机号注册邀请",
-            },
-        )
-
-
 # ========== 响应模型 ==========
 
 class AdminUserResponse(BaseModel):
@@ -498,8 +487,6 @@ async def approve_user(
     db: Session = Depends(get_db)
 ):
     """审核通过或拒绝用户"""
-    if request.is_approved:
-        _require_legacy_admission_open()
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(
@@ -590,7 +577,6 @@ async def admin_create_user(
     db: Session = Depends(get_db)
 ):
     """管理员直接创建用户（无需邀请码）"""
-    _require_legacy_admission_open()
     from app.services.auth import AuthService
 
     # 检查用户名和邮箱是否已存在
@@ -1101,7 +1087,7 @@ async def admin_merge_users(
         "target_approved": bool(target.is_approved),
     }
 
-    if settings.registration_invitation_enforcement_enabled and not all((
+    if not all((
         source.is_active,
         source.is_approved,
         target.is_active,
@@ -1141,9 +1127,7 @@ async def admin_merge_users(
             db=db,
             source_user_id=request.source_user_id,
             target_user_id=request.target_user_id,
-            require_active_approved=(
-                settings.registration_invitation_enforcement_enabled
-            ),
+            require_active_approved=True,
         )
         return {
             "message": (

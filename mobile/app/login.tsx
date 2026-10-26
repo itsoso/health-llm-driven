@@ -79,7 +79,7 @@ const INVITATION_ERROR_MESSAGES: Record<string, string> = {
   REGISTRATION_USER_ALREADY_EXISTS: '该手机号已注册，请返回使用手机号登录。',
 };
 const PHONE_VERIFICATION_ERROR_MESSAGES: Record<string, string> = {
-  REGISTRATION_CLOSED: '该手机号尚未开通，请联系管理员',
+  REGISTRATION_CLOSED: '新用户注册暂时关闭，已注册用户仍可登录',
   REGISTRATION_INVITATION_REQUIRED: '该手机号尚未开通，请联系管理员',
 };
 
@@ -375,7 +375,7 @@ export default function LoginScreen({
             <Text style={styles.title}>{showInvite ? '输入邀请码' : '登录小巴'}</Text>
             <Text style={styles.subtitle}>
               {showInvite
-                ? '小巴目前采用邀请制，请输入管理员发送的邀请码。'
+                ? '请输入与当前手机号匹配的历史邀请码。'
                 : '新用户验证手机号后即可注册'}
             </Text>
           </View>
@@ -608,19 +608,6 @@ export default function LoginScreen({
                   handleRequestCode,
                   loading || normalizeInternationalPhone(phone) === null,
                 )}
-                <Pressable
-                  disabled={loading}
-                  onPress={() => Alert.alert(
-                    '先验证手机号',
-                    '邀请码需与手机号匹配，请先获取并验证短信验证码。',
-                  )}
-                  style={styles.secondaryButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="我有邀请码"
-                  accessibilityState={{ disabled: loading }}
-                >
-                  <Text style={styles.secondaryText}>我有邀请码</Text>
-                </Pressable>
               </>
             )}
           </View>

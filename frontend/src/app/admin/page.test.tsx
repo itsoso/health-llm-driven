@@ -71,4 +71,30 @@ describe('AdminPage access gate', () => {
     render(<QueryClientProvider client={queryClient}><AdminPage /></QueryClientProvider>);
     expect(screen.getByRole('heading', { name: '意图决策服务' })).toBeInTheDocument();
   });
+  it('offers direct registration and admin creation without an invitation navigation entry', () => {
+    mocks.useAuth.mockReturnValue({ user: { id: 1, is_admin: true }, isAuthenticated: true, isLoading: false });
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><AdminPage /></QueryClientProvider>);
+    expect(screen.queryByRole('button', { name: /邀请码管理/ })).not.toBeInTheDocument();
+    expect(screen.getByText('用户可用手机号验证码直接注册；管理员也可直接创建账号。')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '+ 创建用户' }));
+    expect(screen.getByPlaceholderText('初始密码')).toHaveAttribute('type', 'password');
+  });
+
+  it('shows structured creation errors as a readable message', async () => {
+    mocks.useAuth.mockReturnValue({ user: { id: 1, is_admin: true }, isAuthenticated: true, isLoading: false });
+    vi.mocked(api.post).mockRejectedValue({ response: { data: { detail: { code: 'INPUT_INVALID', message: '邮箱已存在' } } } });
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
+    render(<QueryClientProvider client={queryClient}><AdminPage /></QueryClientProvider>);
+    fireEvent.click(screen.getByRole('button', { name: '+ 创建用户' }));
+    fireEvent.change(screen.getByPlaceholderText('用户名（登录用）'), { target: { value: 'synthetic' } });
+    fireEvent.change(screen.getByPlaceholderText('邮箱地址'), { target: { value: 'synthetic@example.com' } });
+    fireEvent.change(screen.getByPlaceholderText('显示名称'), { target: { value: 'Synthetic' } });
+    fireEvent.change(screen.getByPlaceholderText('初始密码'), { target: { value: 'synthetic-password' } });
+    fireEvent.click(screen.getByRole('button', { name: '确认创建' }));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith('❌ 邮箱已存在'));
+    alert.mockRestore();
+  });
+
 });

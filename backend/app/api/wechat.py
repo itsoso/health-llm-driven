@@ -132,6 +132,11 @@ async def wechat_login(
     merged_user_id = None
 
     if not user:
+        if settings.auth_phone_self_registration_enabled:
+            raise HTTPException(status_code=403, detail={
+                "code": "PHONE_REGISTRATION_REQUIRED",
+                "message": "请先通过手机号验证码注册，再绑定微信",
+            })
         if settings.registration_invitation_enforcement_enabled:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

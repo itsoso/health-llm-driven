@@ -1221,3 +1221,18 @@ describe('services/auth', () => {
     });
   });
 });
+
+
+describe('registration error reporting', () => {
+  it('prefers a server business error to Axios transport classification', () => {
+    expect(registrationAuthErrorCode({
+      code: 'ERR_BAD_REQUEST',
+      response: { data: { detail: { code: 'REGISTRATION_CLOSED' } } },
+    })).toBe('REGISTRATION_CLOSED');
+  });
+  it('preserves local registration and network errors without a business code', () => {
+    expect(registrationAuthErrorCode({ code: 'VERIFIED_PHONE_TICKET_EXPIRED' }))
+      .toBe('VERIFIED_PHONE_TICKET_EXPIRED');
+    expect(registrationAuthErrorCode({ code: 'ERR_NETWORK' })).toBe('ERR_NETWORK');
+  });
+});
