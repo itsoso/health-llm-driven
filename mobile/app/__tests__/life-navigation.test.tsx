@@ -342,7 +342,7 @@ it('saves the native study plan and answers through owner-scoped revision CAS',a
  await waitFor(()=>view.getByText('已保存个人安排'));
  const [owner,revision,data]=(saveLifeWorkspace as jest.Mock).mock.calls[0];expect(owner).toBe(1);expect(revision).toBe(0);
  expect(data.weeks[mondayOf(localDate())].tasks).toHaveLength(4);
- fireEvent.press(view.getByLabelText('只看待复练'));fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ fireEvent.press(view.getByLabelText('待复练'));fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
  expect(view.getByText('本次答对')).toBeTruthy();expect(view.getByText('正确答案 B')).toBeTruthy();
  expect(errors.mock.calls.some(args=>args.some(value=>String(value).includes('same key')))).toBe(false);errors.mockRestore();
 });
