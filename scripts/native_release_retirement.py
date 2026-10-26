@@ -1,6 +1,6 @@
 """Close the audited legacy native-only upload without inventing backend success.
 
-The two fixed native profiles are deliberately narrow. A root operator at a reviewed,
+The fixed native profiles are deliberately narrow. A root operator at a reviewed,
 CI-green canonical source performs inspect -> matching digest -> durable intent
 and completion. Old claims, locks and installation bytes are never rewritten.
 A consumed or interrupted closure is never resumed. This certifies a completed
@@ -108,6 +108,24 @@ PROFILES = {
             "scripts/trusted_release_server.py": "00817f271df303cf9a683d1b95a3b4757c183c04f00e2173651434adffc8a00b",
         },
     },
+    "c28050786c1e9aa70cca33d7e3d5c093652aeb26": {'run_id': 40158185108,
+     'run_attempt': 1,
+     'log_host': 'productionresultssa3.blob.core.windows.net',
+     'job_ids': {'preflight': 121063946273,
+                 'build-permission': 121063975307,
+                 'retained-testflight': 121063975771,
+                 'ios-build': 121064551547,
+                 'backend': 121064552902,
+                 'testflight': 121066456066,
+                 'release-result': 121067585025},
+     'build_id': '1faa3a05-2385-44fd-bf84-296cc68e84c2',
+     'submission_id': '0491eb1a-3f04-4488-8996-91f65e5b2932',
+     'log_sha256': '8b997234f06a7c52847342c6fb449e6f25c01031066ce786e532ccbf05ecea0a',
+     'jobs_sha256': 'dd71698733c718d13a67cbb4281ae041e9b28de0c5da9644585c195bce22ef1f',
+     'canonical_hashes': {'.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
+                          'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
+                          'scripts/trusted_release_server.py': 'e044933bc130589bde49d6b2294683ec6f424a1c3b6de2d133a0c8d5370a762a'},
+     'skipped_jobs': ['backend', 'retained-testflight']},
 }
 
 
@@ -140,17 +158,18 @@ def json_value(raw):
     return json.loads(raw, object_pairs_hook=unique)
 
 
-def jobs_map(value):
+def jobs_map(value, *, native_sha=OLD_SHA):
+    expected_names = set(profile_for(native_sha)["job_ids"])
     if (
         not isinstance(value, dict)
-        or value.get("total_count") != 6
+        or value.get("total_count") != len(expected_names)
         or not isinstance(value.get("jobs"), list)
-        or len(value["jobs"]) != 6
+        or len(value["jobs"]) != len(expected_names)
         or any(not isinstance(j, dict) for j in value["jobs"])
     ):
         raise RetirementError("incomplete native workflow jobs")
     jobs = {j.get("name"): j for j in value["jobs"]}
-    if set(jobs) != JOB_NAMES or len(jobs) != 6:
+    if set(jobs) != expected_names or len(jobs) != len(expected_names):
         raise RetirementError("unexpected native workflow jobs")
     if any(j.get("status") != "completed" for j in jobs.values()):
         raise RetirementError("native workflow jobs not terminal")
@@ -189,13 +208,13 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         )
     ):
         raise RetirementError("exact native workflow terminal required")
-    current = jobs_map(jobs)
+    current = jobs_map(jobs, native_sha=native_sha)
     if profile["run_attempt"] == 1 and prior is not None:
         raise RetirementError("unexpected earlier native attempt evidence")
-    first = jobs_map(prior) if profile["run_attempt"] == 2 else None
+    first = jobs_map(prior, native_sha=native_sha) if profile["run_attempt"] == 2 else None
     for name, job in current.items():
         if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != (
-            "skipped" if name == "backend" else "success"
+            "skipped" if name in profile.get("skipped_jobs", ("backend",)) else "success"
         ):
             raise RetirementError("native-only job identity or terminal differs")
         steps = steps_map(job)

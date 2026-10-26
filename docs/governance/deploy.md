@@ -426,6 +426,14 @@ run 36877321184 attempt 1、build `20d5e73a-a6b9-4c70-ad69-e63d31e058f2`、
 submission `fcfbb57d-4804-4a36-9c57-eab062bf321e`。该 profile 另绑定完整 jobs 摘要，
 拒绝虚构 prior attempt、新旧 profile 混用和任意调用方提供的 ID/摘要。未知 SHA 拒绝。
 
+TestFlight 280 的固定 profile 为 `c28050786c1e9aa70cca33d7e3d5c093652aeb26`，
+GitHub run `40158185108` attempt 1、build `1faa3a05-2385-44fd-bf84-296cc68e84c2`、
+submission `0491eb1a-3f04-4488-8996-91f65e5b2932`。完整 job 集含明确 skipped 的
+`retained-testflight` 和 `backend`，其他 job 必须成功；job 身份、源码、完整 jobs
+与上传日志摘要均固定绑定。不得据此承认任意新 job 或原生 SHA，也不改变旧 profile。
+用户已确认该发布由其另一处启动并在完成后交接本会话；收尾仍保留撤权、私钥销毁、
+进程互斥、只读 inspect→摘要绑定 execute 和原消费记录不变的全部前置。
+
 当前活跃授权不满足收尾 inspect 前置条件：操作者必须先获得生产授权变更许可，
 按 canonical contract 撤销精确旧身份并销毁旧 loopback 私钥；不能为只读取证放宽
 这一检查。受审 canonical root staging

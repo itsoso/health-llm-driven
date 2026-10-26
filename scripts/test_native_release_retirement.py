@@ -699,3 +699,42 @@ def test_second_profile_inspection_preserves_installation_revocation_guard(tmp_p
     with pytest.raises(b.BootstrapError, match='authorized|inventory'):
         adapter.inspect()
     assert not adapter.record.exists()
+
+NATIVE_280_SHA = 'c28050786c1e9aa70cca33d7e3d5c093652aeb26'
+
+def native_280_metadata(m):
+    run, jobs, _prior, log = metadata(m)
+    p = m.profile_for(NATIVE_280_SHA)
+    run.update(id=40158185108, run_attempt=1, head_sha=NATIVE_280_SHA)
+    for job in jobs['jobs']:
+        job['id'] = p['job_ids'][job['name']]
+    jobs['jobs'].append(dict(id=121063975771, name='retained-testflight', status='completed', conclusion='skipped', steps=[]))
+    jobs['total_count'] = 7
+    log = log.replace(m.BUILD_ID.encode(), b'1faa3a05-2385-44fd-bf84-296cc68e84c2').replace(m.SUBMISSION_ID.encode(), b'0491eb1a-3f04-4488-8996-91f65e5b2932')
+    return run, jobs, None, log
+
+def test_native_280_success_proves_upload_only():
+    m = load()
+    proof = m.validate_vendor(*native_280_metadata(m), native_sha=NATIVE_280_SHA)
+    assert proof['state'] == 'VENDOR_UPLOAD_SUCCEEDED'
+    assert proof['build_id'] == '1faa3a05-2385-44fd-bf84-296cc68e84c2'
+    assert 'backend' not in proof
+    assert m.validate_vendor(*metadata(m))['run_id'] == m.RUN_ID
+
+@pytest.mark.parametrize('mutation', ['extra_job', 'retained_ran', 'missing_retained', 'wrong_id', 'earlier_attempt', 'wrong_upload'])
+def test_native_280_rejects_changed_vendor_evidence(mutation):
+    m = load(); run, jobs, prior, log = native_280_metadata(m)
+    if mutation == 'extra_job': jobs['jobs'].append(dict(jobs['jobs'][0])); jobs['total_count'] += 1
+    if mutation == 'retained_ran': jobs['jobs'][-1]['conclusion'] = 'success'
+    if mutation == 'missing_retained': jobs['jobs'].pop(); jobs['total_count'] -= 1
+    if mutation == 'wrong_id': jobs['jobs'][-1]['id'] += 1
+    if mutation == 'earlier_attempt': prior = copy.deepcopy(jobs)
+    if mutation == 'wrong_upload': log = log.replace(b'0491eb1a-3f04-4488-8996-91f65e5b2932', b'other')
+    with pytest.raises(m.RetirementError): m.validate_vendor(run, jobs, prior, log, native_sha=NATIVE_280_SHA)
+
+def test_native_280_closure_roundtrip_preserves_old_claims(tmp_path, monkeypatch):
+    m = load()
+    b, workspace, record, receipt = completed_fixture(m, tmp_path, monkeypatch, NATIVE_280_SHA)
+    before = {p.name: p.read_bytes() for p in workspace.iterdir()}
+    assert m.closed_evidence(b, NATIVE_280_SHA, receipt)['state'] == m.TERMINAL
+    assert {p.name: p.read_bytes() for p in workspace.iterdir()} == before
