@@ -4,7 +4,7 @@
 |---|---|
 | slug | `agenda-notebook` |
 | 创建日期 | 2026-10-26 |
-| 当前阶段 | G4 安全审查 |
+| 当前阶段 | S6 部署待交接 |
 | 状态 | building |
 | 反馈环 | Web / backend |
 
@@ -36,7 +36,7 @@ PASS：复用现有账号隔离、版本冲突、草稿离页提醒。字段有�
 ## S4 / S5
 - [x] T1 DTO 与持久化兼容、双端类型
 - [x] T2 记事本列表/编辑/搜索与 workspace 集成
-- [ ] T3 合成测试与独立安全审查
+- [x] T3 合成测试与独立安全审查
 - RED: UI 3 failures (missing notebook entry); backend 2 failures (unknown notebook field).
 
 ## G3 / G4 / G5 / G6
@@ -54,3 +54,6 @@ PASS：复用现有账号隔离、版本冲突、草稿离页提醒。字段有�
 
 ## G4 第一轮反馈
 363a1c29a NO-GO：搜索失配会切换编辑对象，可能误编辑另一条笔记。已固定编辑对象独立于搜索结果；唯一匹配及两项匹配回归覆盖，等待新提交复审。保留原 NO-GO，不覆盖。
+
+## G4 复审
+09bc0ae2191286d1646eae21957a469fa6857ba4：独立 all_release_safety GO，原误编辑风险已解除。仍待完整候选 CI/CI-mode、操作者停止交接、部署与线上验收。未 push、未部署、未发布 OTA。
