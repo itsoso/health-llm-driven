@@ -1,3 +1,4 @@
+import { uuid } from 'expo-modules-core';
 import * as SecureStore from 'expo-secure-store';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
@@ -179,7 +180,25 @@ describe('registrationInviteStorage', () => {
     }
   });
 
+  it('uses bundled native UUIDs when Hermes has no Web Crypto', async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
+    Object.defineProperty(globalThis, 'crypto', { configurable: true, value: undefined });
+    const nativeUuid = jest.spyOn(uuid, 'v4').mockReturnValue('5ad63f10-743a-4073-a6ef-662d40817066');
+    try {
+      const pending = await createPendingRegistration({
+        verifiedPhoneTicket: 'E'.repeat(32), expiresInSeconds: 300,
+      });
+      expect(pending.idempotencyKey).toBe('registration-5ad63f10-743a-4073-a6ef-662d40817066');
+      expect(await loadPendingRegistration()).toEqual(pending);
+    } finally {
+      nativeUuid.mockRestore();
+      if (descriptor) Object.defineProperty(globalThis, 'crypto', descriptor);
+      else delete (globalThis as { crypto?: Crypto }).crypto;
+    }
+  });
+
   it('fails loudly when the native runtime exposes no secure random source', async () => {
+    const nativeUuid = jest.spyOn(uuid, 'v4').mockImplementation(() => { throw new Error('unavailable'); });
     const cryptoDescriptor = Object.getOwnPropertyDescriptor(globalThis, 'crypto');
     Object.defineProperty(globalThis, 'crypto', {
       configurable: true,
@@ -191,6 +210,7 @@ describe('registrationInviteStorage', () => {
         expiresInSeconds: 300,
       })).rejects.toThrow('设备无法生成安全的注册请求标识');
     } finally {
+      nativeUuid.mockRestore();
       if (cryptoDescriptor) {
         Object.defineProperty(globalThis, 'crypto', cryptoDescriptor);
       } else {

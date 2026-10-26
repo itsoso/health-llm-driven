@@ -1,3 +1,4 @@
+import { uuid } from 'expo-modules-core';
 import * as SecureStore from 'expo-secure-store';
 
 export const PENDING_REGISTRATION_KEY = 'pending_invited_registration_v1';
@@ -62,7 +63,11 @@ function defaultIdempotencyKey(): string {
     const hex = Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('');
     return `registration-${hex}`;
   }
-  throw new Error('设备无法生成安全的注册请求标识，请重启后重试');
+  try {
+    return `registration-${uuid.v4()}`;
+  } catch {
+    throw new Error('设备无法生成安全的注册请求标识，请重启后重试');
+  }
 }
 
 function isPendingRegistration(value: unknown): value is PendingRegistration {

@@ -173,7 +173,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     beginOtp(view);
     await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
     fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
-    mockVerifyPhoneCode.mockRejectedValueOnce(new Error('expired'));
+    mockVerifyPhoneCode.mockRejectedValueOnce({ response: { status: 400, data: { detail: '验证码无效或已过期' } } });
     fireEvent.press(view.getByText('验证并登录'));
     await view.findByText('验证码无效或已过期，请重新获取。');
 
@@ -246,6 +246,22 @@ describe('LoginScreen invitation-gated phone auth', () => {
     expect(await view.findByText('该手机号尚未开通，请联系管理员')).toBeTruthy();
     expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
     expect(view.queryByText('SERVER_DETAIL_MUST_NOT_RENDER')).toBeNull();
+  });
+
+  it.each([
+    ['待注册状态无法安全保存，请解锁设备后重试', '待注册状态无法安全保存，请解锁设备后重试'],
+    ['设备无法生成安全的注册请求标识，请重启后重试', '设备无法生成安全的注册请求标识，请重启后重试'],
+    ['PRIVATE_INTERNAL_DETAIL', '登录暂时无法完成，请稍后重试。'],
+  ])('does not report a post-OTP local failure as an expired code', async (message, expected) => {
+    mockVerifyPhoneCode.mockRejectedValueOnce(new Error(message));
+    const view = render(<LoginScreen />);
+    beginOtp(view);
+    await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
+    fireEvent.press(view.getByText('验证并登录'));
+    expect(await view.findByText(expected)).toBeTruthy();
+    expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
+    expect(view.queryByText('PRIVATE_INTERNAL_DETAIL')).toBeNull();
   });
 
   it('keeps the phone step and shows the invitation-list message before sending an OTP', async () => {
