@@ -1365,3 +1365,22 @@ def test_native_finalizer_partial_failure_never_retries(monkeypatch, tmp_path, p
     with pytest.raises(b.BootstrapError):
         b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
     assert (b.STATE / 'native-rotation-finalization/intent.json').read_bytes() == saved
+
+
+def test_native_finalization_history_survives_following_rotation(monkeypatch, tmp_path):
+    b, _, candidate = native_finalizer_fixture(monkeypatch, tmp_path)
+    ready = b.finalize_native_rotation(candidate)
+    b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
+    b.revoke(candidate)
+    (b.CONFIG / 'loopback.key').unlink()
+    run = b._run
+    def next_keys(args, **kwargs):
+        result = run(args, **kwargs)
+        if args[0] == '/usr/bin/ssh-keygen' and '-q' in args:
+            (b.CONFIG / 'loopback.key.pub').write_text(LEGACY_PUBLIC + '\n')
+        return result
+    monkeypatch.setattr(b, '_run', next_keys)
+    future = 'f' * 40
+    assert b.rotate(candidate, future, 0, PUBLIC)['state'] == 'INSTALLED'
+    b._persistent_cloud_successor(SHA, PUBLIC)
+    assert set(b._retired_history()) == {SHA, candidate}
