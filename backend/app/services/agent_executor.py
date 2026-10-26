@@ -10113,6 +10113,7 @@ async def _enrich_simple_diet_goal_tool_calls(
     *,
     estimation_attempted: bool,
     runtime_write_blocked: bool,
+    estimate_observation: Optional[Dict[str, Any]] = None,
 ) -> tuple[List[Dict[str, Any]], bool]:
     """Fill a canonical simple-diet call once when its nutrition is missing.
 
@@ -10173,8 +10174,29 @@ async def _enrich_simple_diet_goal_tool_calls(
 
     if canonical_nutrition is None:
         food_items = str(candidates[0][4]["food_items"]).strip()
-        estimate = await _estimate_simple_diet_nutrition(food_items)
         estimation_attempted = True
+        started = time.monotonic()
+        timed_out = False
+        try:
+            estimate = await _estimate_simple_diet_nutrition(food_items)
+        except TimeoutError:
+            # Estimation has no write side effects. Keep the incomplete call
+            # for the existing validator and bounded model-repair loop; never
+            # send missing/zero nutrition directly to persistence.
+            timed_out = True
+            estimate = None
+            logger.warning(
+                "[agent_executor] simple diet nutrition estimate timed out; "
+                "continuing through validated repair"
+            )
+        finally:
+            if estimate_observation is not None:
+                estimate_observation.update(
+                    elapsed_ms=max(0, int((time.monotonic() - started) * 1000)),
+                    calls=1,
+                    timed_out=timed_out,
+                    model=_simple_diet_nutrition_estimator_model_name(),
+                )
         if estimate is None:
             return tool_calls, estimation_attempted
         canonical_nutrition = dict(estimate)
@@ -18651,6 +18673,7 @@ class AgentExecutor:
         simple_diet_nutrition_estimate_calls = 0
         simple_diet_nutrition_estimate_timed_out = False
         simple_diet_nutrition_estimate_model: Optional[str] = None
+        simple_diet_nutrition_observation: Dict[str, Any] = {}
         diet_writing_emitted = False
         diet_verified_emitted = False
         deterministic_goal_lookup_attempted = False
@@ -20351,6 +20374,7 @@ class AgentExecutor:
                                         self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                                         estimation_attempted=simple_diet_nutrition_estimation_attempted,
                                         runtime_write_blocked=bool(self._runtime_write_block_reason),
+                                        estimate_observation=simple_diet_nutrition_observation,
                                     )
                                 )
                                 if (
@@ -21172,6 +21196,10 @@ class AgentExecutor:
             0,
             int((time.time() - request_started_at) * 1000),
         )
+        simple_diet_nutrition_estimate_ms = simple_diet_nutrition_observation.get("elapsed_ms")
+        simple_diet_nutrition_estimate_calls = simple_diet_nutrition_observation.get("calls", 0)
+        simple_diet_nutrition_estimate_timed_out = simple_diet_nutrition_observation.get("timed_out", False)
+        simple_diet_nutrition_estimate_model = simple_diet_nutrition_observation.get("model")
         llm_ms_total = sum(llm_rounds_ms)
         model_wait_ms = llm_ms_total + (
             simple_diet_nutrition_estimate_ms or 0
