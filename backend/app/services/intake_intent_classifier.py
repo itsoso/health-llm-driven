@@ -155,7 +155,8 @@ NON_INTAKE_REASONS = frozenset({"intake_question", "intake_reflection", "intake_
 
 _MEDICATION_READ_INSTRUCTION_RE = re.compile(
     r"^(?:(?:请|麻烦|帮我|替我|先|只|仅|我想|我需要|提醒)[，,：:]*)*"
-    r"(?:查询|查阅|查看|核实|核对|检查|分析).*(?:用药|服药|药品|药物|记录状态)"
+    r"(?:查询|查阅|查看|查一下|查下|看看|核实|核对|检查|分析)(?:一下)?"
+    r"(?P<subject>[^，,。；;]*)"
 )
 _NO_MEDICATION_RECORD_RE = re.compile(
     r"(?:不要|不用|别|请勿|不需要|无需)(?:再|自动|帮我)?记录(?:本次|这次|我的)?(?:服药|用药)"
@@ -172,8 +173,15 @@ def is_medication_instruction_text(value: Any) -> bool:
     if not isinstance(value, str):
         return False
     normalized = _normalize(value)
-    return bool(_MEDICATION_READ_INSTRUCTION_RE.search(normalized)
-                or _NO_MEDICATION_RECORD_RE.search(normalized))
+    if _NO_MEDICATION_RECORD_RE.search(normalized):
+        return True
+    match = _MEDICATION_READ_INSTRUCTION_RE.match(normalized)
+    if match is None:
+        return False
+    subject = match['subject']
+    # Bind the read verb to its own clause and recognize named drugs as well
+    # as generic medication terms. A later intake is not the read's object.
+    return _looks_like_medication(subject, subject)
 
 
 def classify_intake_intent(query: Any) -> IntakeIntent:

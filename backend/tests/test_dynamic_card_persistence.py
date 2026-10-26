@@ -1,4 +1,5 @@
 from datetime import UTC, date, datetime, timedelta
+import pytest
 
 from app.models.daily_health import DietPhotoAsset, DietPhotoDraft, DietRecord
 from app.services.dynamic_card_persistence import (
@@ -564,11 +565,16 @@ def test_capture_session_never_recovers_another_owners_asset(db):
     data = delivered[0]["cards"][0]["data"]
     assert data["photo_asset_ids"] == []
     assert data["media_stage"] == "unavailable"
-def test_legacy_instruction_medication_cards_are_removed_on_delivery_without_mutation():
+@pytest.mark.parametrize('name', [
+    '提醒 先查询核实药品、计划时间和记录状态 不要记录服药',
+    '请帮我查一下今天的用药记录', '查询奥美拉唑的记录',
+    '查看奥美拉唑的服用记录', '核对阿司匹林1片',
+])
+def test_legacy_instruction_medication_cards_are_removed_on_delivery_without_mutation(name):
     from copy import deepcopy
     from app.services.dynamic_card_persistence import message_metas_for_delivery
 
-    invalid = {'type': 'medication_draft', 'data': {'medication_name': '提醒 先查询核实药品、计划时间和记录状态 不要记录服药'}, 'actions': [{'action': 'route.open'}]}
+    invalid = {'type': 'medication_draft', 'data': {'medication_name': name}, 'actions': [{'action': 'route.open'}]}
     valid = {'type': 'medication_draft', 'data': {'medication_name': '奥美拉唑', 'dose': '20mg'}}
     meta = {'cards': [invalid, valid, {'type': 'cards_group', 'data': {'cards': [invalid, valid]}}]}
     original = deepcopy(meta)

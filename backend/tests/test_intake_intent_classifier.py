@@ -19,6 +19,8 @@ from app.services.intake_intent_classifier import (
     '查看今天奥美拉唑的用药记录',
     '请核实药品和计划时间',
     '我吃了奥美拉唑，但不要记录服药',
+    '请帮我查一下今天的用药记录', '查询奥美拉唑的记录',
+    '查看奥美拉唑的服用记录', '核对阿司匹林1片',
 ])
 def test_medication_read_instructions_never_become_intake_or_draft(query):
     from app.services.intake_intent_classifier import non_intake_reason
@@ -37,6 +39,7 @@ def test_medication_read_instructions_never_become_intake_or_draft(query):
 @pytest.mark.parametrize('query', [
     '记录刚吃了奥美拉唑20mg', '阿司匹林 1片',
     '刚吃了奥美拉唑，帮我核对今天的用药记录',
+    '检查结果正常，今天服药奥美拉唑20mg',
 ])
 def test_read_guard_preserves_explicit_intake_first_clause(query):
     assert classify_intake_intent(query).kind == 'medication'
