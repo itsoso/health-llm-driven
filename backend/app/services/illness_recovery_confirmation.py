@@ -236,6 +236,10 @@ def resolve_turn(db, *, user_id, source_message_id, reference_now, timezone_name
     selection = meta.get('illness_recovery_selection')
     if not collective and intent_id is None and selection is None:
         return None
+    # A generic completion reply in another workflow is not an illness turn.
+    if collective and (previous is None or previous.role != 'assistant'
+                       or '确认' not in previous.content or '痊愈' not in previous.content):
+        return None
     # Uncertain, quoted, negative or extra clauses cannot borrow this context.
     if not is_control(text):
         return None
