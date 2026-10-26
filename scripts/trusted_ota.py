@@ -41,13 +41,17 @@ def read_json(stream, bound=2000000):
     return json.loads(raw, object_pairs_hook=unique)
 
 
-# Build279 is the native baseline. Only this exact reviewed lockfile delta
-# (Node HTTP redirect helper and development editor) is admitted; no native
-# configuration/plugin exceptions from runtime1.3.5 carry forward.
+# Build279 remains the oldest compatible native host. The exact 280 tooling
+# patch delta changes only Expo CLI MCP/Zod JS; 286 other EAS fingerprint
+# sources are identical. Keep this closed byte set, never a directory exception.
 REVIEWED_NATIVE_SOURCE = {
-    "mobile/package-lock.json": "332dab4a865dc2ba3f549c8492bb495ae234362c34212ec9a964089f61bed44e"
+    "mobile/package-lock.json": "67d904e88b8281dd80b4d5557ae3abb8d2ad84da0db939b1ca6c701b938128ff",
+    "mobile/package.json": "bb79d63ae1df54f0fd72a66084e2ddb76e16debbcfdb2b6f78ff4d34721c2e47",
+    "mobile/patches/README.md": "6f29d7e280799a8b087c9acdeaaec111ef8557cbecfac22ab74ff6dd1e4a2e26",
+    "mobile/patches/expo++@expo+cli+55.0.33.patch": "44d57d89a089b7208c542b1039ff4d4fa98f6d8f2300bedc61ff60d84412f3bb",
+    "mobile/patches/zod+4.6.6.patch": "33390b357702fb46b88d6b66fdd60f4bcb02c086d81584f067a1e8db1ef10c84",
+    "mobile/scripts/security-dependency-compat.node.cjs": "4f1be9b511770eea3af2cc7e08ec6b39252531c84727cd9d350fb6fcb6d97689"
 }
-
 
 def validate_production_environment():
     if os.environ.get('APP_VARIANT', 'production') != 'production' or any(

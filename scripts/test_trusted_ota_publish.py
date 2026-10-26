@@ -72,7 +72,9 @@ def update(m):
 
 
 def reviewed_cohort(m):
-    return [build(m)]
+    newer = build(m, identifier='1faa3a05-2385-44fd-bf84-296cc68e84c2', sha='c28050786c1e9aa70cca33d7e3d5c093652aeb26')
+    newer['fingerprint'] = {'hash': '2c29cc641498ac6653d89d54f986dc12fe22e9e0'}
+    return [build(m), newer]
 
 def test_native_fingerprint_cohort_must_be_exact_reviewed_builds():
     m = load()
@@ -1225,7 +1227,7 @@ def test_old_runtime_build_is_not_in_new_279_cohort():
 
 def test_fixed_cohort_evidence_matches_implementation():
     m=load()
-    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-21-ota-runtime136-baseline.json').read_text())
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-26-ota-runtime136-tooling-equivalence.json').read_text())
     assert {b['id']:(b['git_sha'],b['fingerprint']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
 
 
@@ -1416,3 +1418,15 @@ def test_github_token_reader_uses_one_bounded_read():
     source=Source()
     assert m.read_github_token(source) == b'x'*4096
     assert source.calls == [4097]
+
+
+def test_actual_280_build_is_required_with_279_and_exact_fingerprint():
+    m = load()
+    base = build(m)
+    newer = build(m, identifier='1faa3a05-2385-44fd-bf84-296cc68e84c2', sha='c28050786c1e9aa70cca33d7e3d5c093652aeb26')
+    newer['fingerprint'] = {'hash': '2c29cc641498ac6653d89d54f986dc12fe22e9e0'}
+    assert m.validate_builds(base, [base, newer]) == base['fingerprint']['hash']
+    for incomplete in ([base], [newer]):
+        with pytest.raises(m.PublishError): m.validate_builds(base, incomplete)
+    newer['fingerprint'] = base['fingerprint']
+    with pytest.raises(m.PublishError): m.validate_builds(base, [base, newer])

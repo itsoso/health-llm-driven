@@ -1,0 +1,49 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+  "builds": [
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70"
+    },
+    {
+      "id": "1faa3a05-2385-44fd-bf84-296cc68e84c2",
+      "git_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+      "fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0"
+    }
+  ],
+  "candidate_source_exceptions": {
+    "mobile/package-lock.json": "67d904e88b8281dd80b4d5557ae3abb8d2ad84da0db939b1ca6c701b938128ff",
+    "mobile/package.json": "bb79d63ae1df54f0fd72a66084e2ddb76e16debbcfdb2b6f78ff4d34721c2e47",
+    "mobile/patches/README.md": "6f29d7e280799a8b087c9acdeaaec111ef8557cbecfac22ab74ff6dd1e4a2e26",
+    "mobile/patches/expo++@expo+cli+55.0.33.patch": "44d57d89a089b7208c542b1039ff4d4fa98f6d8f2300bedc61ff60d84412f3bb",
+    "mobile/patches/zod+4.6.6.patch": "33390b357702fb46b88d6b66fdd60f4bcb02c086d81584f067a1e8db1ef10c84",
+    "mobile/scripts/security-dependency-compat.node.cjs": "4f1be9b511770eea3af2cc7e08ec6b39252531c84727cd9d350fb6fcb6d97689"
+  },
+  "evidence_command": "eas-cli 23.2.0 fingerprint:compare --build-id 399eb452-402e-47cd-a0e3-18dff2d1ca51 --build-id 1faa3a05-2385-44fd-bf84-296cc68e84c2 --json",
+  "raw_evidence_sha256": "21c3fe7ff25a97b72b31b333fb781d2b5505a02de762c2e987d539d6b3e99291",
+  "source_count_each": 287,
+  "changed_sources": [
+    {
+      "before": {
+        "type": "dir",
+        "filePath": "patches",
+        "reasons": [
+          "patchPackage"
+        ],
+        "hash": "52834f9ab40a995c41bbbbcf04706c0dfebef9b5"
+      },
+      "after": {
+        "type": "dir",
+        "filePath": "patches",
+        "reasons": [
+          "patchPackage"
+        ],
+        "hash": "af4f619f48361071b9780d61f2e1333f3ba92fa9"
+      }
+    }
+  ],
+  "unchanged_sources_sha256": "cb322830e5e1cc3ca32bf4c81c11c023c2c958b5ee1d35e865adf046c56adab5",
+  "scope": "Exact tooling-equivalence admission; production export, host startup and live cohort recheck required. Not publication evidence."
+}

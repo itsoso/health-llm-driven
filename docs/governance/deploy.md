@@ -509,6 +509,15 @@ launch-editor 的 Node/开发工具更新；不允许任意 lockfile 或原生�
 此次迁移不解除 279 的送审 OTA 冻结，不代表已发布。正式操作仍须实时核对完整 cohort、
 同 SHA 完整 CI、后端部署与 trusted validate/publish；旧 runtime1.3.5 不接收1.3.6更新。
 
+2026-10-26 工具补丁等价更新：最老宿主仍固定为 279，同时精确纳入 production
+STORE 280（`1faa3a05-2385-44fd-bf84-296cc68e84c2`、源码 `c28050786c1e9aa70cca33d7e3d5c093652aeb26`）。
+官方 EAS 的两份 fingerprint 各 287 项，仅 patches 目录不同；该差异为 Expo CLI MCP、
+Zod v3 的 JS 补丁及说明，其余 286 项完全一致。准入只接受受审 package/lock、两项补丁、
+README 与兼容测试脚本的精确字节，覆盖此前单 lockfile 例外；第三个构建、未知来源、
+指纹或文件漂移仍拒绝。见 [工具等价证据](../reviews/2026-10-26-ota-runtime136-tooling-equivalence.json)。
+用户已明确解除送审前冻结；这不豁免精确 CI、后端回执、实时 cohort 与制品校验，
+也不把模拟器启动当作两个 Store 包的真机验证。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，

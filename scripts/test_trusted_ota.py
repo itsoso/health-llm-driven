@@ -1,6 +1,7 @@
 """OTA claims bind bytes; unknown native changes and manifests fail closed."""
 import importlib.util
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -11,9 +12,8 @@ import pytest
 # working tree can legitimately move to a new native runtime without changing
 # what the old production OTA contract admits.
 REVIEWED_EQUIVALENT_SHA = '25b85536e3722dc111c528b8a915062a3f971397'
-REVIEWED_LOCK_SHA = '59c64cca666d85f3c7b738a508dd197d4ad6c84e'
 GPS_NATIVE_SHA = 'd1780551d17f3314cf401b91c4846c826fe07c5d'
-REVIEWED_LOCK_SHA = '59c64cca666d85f3c7b738a508dd197d4ad6c84e'
+REVIEWED_LOCK_SHA = 'c28050786c1e9aa70cca33d7e3d5c093652aeb26'
 SECURITY_DEPENDENCY_SHA = '20e111d1ba18a21f99ee2611541b083dfddb4916'
 
 
@@ -106,7 +106,7 @@ def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tm
         monkeypatch.setenv(variable, '1')
         with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
         monkeypatch.delenv(variable)
-    target.write_bytes((root / relative).read_bytes())
+    target.write_bytes(source_bytes('59c64cca666d85f3c7b738a508dd197d4ad6c84e', relative))
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
     target.write_bytes(reviewed + b' ')
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
@@ -115,12 +115,12 @@ def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tm
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
 
 
-def test_new_dependency_lock_does_not_inherit_old_ota_exception(tmp_path):
+def test_unreviewed_dependency_lock_does_not_inherit_ota_exception(tmp_path):
     m = module()
     relative = 'mobile/package-lock.json'
     target = tmp_path / relative
     target.parent.mkdir()
-    target.write_bytes(source_bytes(SECURITY_DEPENDENCY_SHA, relative))
+    target.write_bytes(source_bytes(SECURITY_DEPENDENCY_SHA, relative) + b' ')
     with pytest.raises(ValueError, match='native or unknown mobile input changed'):
         m.validate_runtime_changes([relative], root=tmp_path)
 
@@ -128,9 +128,9 @@ def test_new_dependency_lock_does_not_inherit_old_ota_exception(tmp_path):
 def test_current_baseline_evidence_has_no_old_native_exceptions():
     m = module()
     root = Path(__file__).resolve().parents[1]
-    evidence = json.loads((root/'docs/reviews/2026-10-21-ota-runtime136-baseline.json').read_text())
+    evidence = json.loads((root/'docs/reviews/2026-10-26-ota-runtime136-tooling-equivalence.json').read_text())
     assert evidence['candidate_source_exceptions'] == m.REVIEWED_NATIVE_SOURCE
-    assert set(m.REVIEWED_NATIVE_SOURCE) == {'mobile/package-lock.json'}
+    assert set(m.REVIEWED_NATIVE_SOURCE) == {'mobile/scripts/security-dependency-compat.node.cjs', 'mobile/patches/README.md', 'mobile/patches/expo++@expo+cli+55.0.33.patch', 'mobile/package-lock.json', 'mobile/package.json', 'mobile/patches/zod+4.6.6.patch'}
 
 
 @pytest.mark.parametrize('relative', [
@@ -157,18 +157,44 @@ def test_old_runtime_manifest_is_rejected_by_279_contract():
         m.validate_manifest(payload, ident, proof)
 
 
-@pytest.mark.parametrize('sha,allowed', [(REVIEWED_LOCK_SHA, True), (SECURITY_DEPENDENCY_SHA, False)])
+@pytest.mark.parametrize('sha,allowed', [(REVIEWED_LOCK_SHA, True), (SECURITY_DEPENDENCY_SHA, True), ('59c64cca666d85f3c7b738a508dd197d4ad6c84e', False)])
 def test_279_migration_contract_admits_only_reviewed_source(tmp_path, sha, allowed):
     m = module()
     assert (m.RUNTIME, m.NATIVE_SHA, m.NATIVE_BUILD) == (
         '1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3',
         '399eb452-402e-47cd-a0e3-18dff2d1ca51')
     source = tmp_path / 'source'
+    # Source admission compares committed paths/bytes, not Android APK payloads.
+    # A shared Git clone has no LFS object store; never download unrelated assets.
+    source_env = {**os.environ, 'GIT_LFS_SKIP_SMUDGE': '1'}
     subprocess.run(['git', 'clone', '--quiet', '--shared', '--no-checkout',
-                    str(Path(__file__).resolve().parents[1]), str(source)], check=True)
-    subprocess.run(['git', '-C', str(source), 'checkout', '--quiet', '--detach', sha], check=True)
+                    str(Path(__file__).resolve().parents[1]), str(source)], check=True, env=source_env)
+    subprocess.run(['git', '-C', str(source), 'checkout', '--quiet', '--detach', sha], check=True, env=source_env)
     if allowed:
         m.validate_source(source, sha)
     else:
         with pytest.raises(ValueError, match='native or unknown mobile input changed'):
             m.validate_source(source, sha)
+
+
+@pytest.mark.parametrize('relative', [
+    'mobile/package.json', 'mobile/package-lock.json', 'mobile/patches/README.md',
+    'mobile/patches/expo++@expo+cli+55.0.33.patch', 'mobile/patches/zod+4.6.6.patch', 'mobile/scripts/security-dependency-compat.node.cjs',
+])
+def test_reviewed_280_tooling_bytes_only_are_ota_compatible(tmp_path, relative):
+    m = module()
+    materialize_sources(tmp_path, 'c28050786c1e9aa70cca33d7e3d5c093652aeb26', [relative])
+    m.validate_runtime_changes([relative], root=tmp_path)
+    target = tmp_path / relative
+    target.write_bytes(target.read_bytes() + b' ')
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+    target.unlink()
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+
+
+def test_unknown_patch_still_requires_native_review(tmp_path):
+    relative = 'mobile/patches/unknown.patch'
+    target = tmp_path / relative
+    target.parent.mkdir(parents=True)
+    target.write_text('unreviewed')
+    with pytest.raises(ValueError): module().validate_runtime_changes([relative], root=tmp_path)

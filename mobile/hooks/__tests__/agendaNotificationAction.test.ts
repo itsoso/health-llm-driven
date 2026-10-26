@@ -435,14 +435,14 @@ describe('medication notification body tap', () => {
     { kind: 'medication_reminder', reminder_type: 'medication', screen: 'home' },
     { category: 'MEDICATION_REMINDER', reminder_type: 'medication', deep_link: '/(tabs)/record' },
     { category: 'AGENDA_ACTION', reminder_type: 'pre_event', kind: 'medication', deep_link: '/(tabs)/record' },
-  ])('opens a landing page without recording a dose: %j', async (data) => {
+  ])('opens read-only invalid-reminder recovery when occurrence IDs are missing: %j', async (data) => {
     jest.clearAllMocks();
     const response = {
       actionIdentifier: Notifications.DEFAULT_ACTION_IDENTIFIER,
       notification: { date: 0, request: { identifier: `landing-${data.kind ?? data.category}`, content: { data } } },
     } as unknown as Notifications.NotificationResponse;
     await expect(consumeNotificationResponse(response)).resolves.toBe(true);
-    expect(router.push).toHaveBeenCalledWith(expect.stringMatching(/^\/\(tabs\)\/chat\?prompt=/));
+    expect(router.push).toHaveBeenCalledWith('/medication-reminder?invalid=1');
     expect(mockLogMedication).not.toHaveBeenCalled();
     expect(mockCompleteAgendaItem).not.toHaveBeenCalled();
   });

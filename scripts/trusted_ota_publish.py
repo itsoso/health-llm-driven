@@ -148,6 +148,8 @@ def identifier(value):
 REVIEWED_NATIVE_COHORT = {
     "399eb452-402e-47cd-a0e3-18dff2d1ca51": (
         "1ba724dcb62ac389a72e41eecf40fea7aaca27e3", "cfb1606da3744f6df32d89364535e307d3f2ed70"),
+    "1faa3a05-2385-44fd-bf84-296cc68e84c2": (
+        "c28050786c1e9aa70cca33d7e3d5c093652aeb26", "2c29cc641498ac6653d89d54f986dc12fe22e9e0"),
 }
 
 
