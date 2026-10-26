@@ -1595,3 +1595,16 @@ quiesce intent、restore intent、固定 continuation intent/completed 四份真
 事务撤销旧发布身份、移动原 lease 到固定退休位置，并生成单次受保护 rotation
 回执。canonical bootstrap 按固定失败 SHA 分派该 profile，旧 ae49 profile 保持不变；
 历史消费者只接受完整四段恢复与收尾链。任一步已消费后失败，仍禁止自动重放。
+
+#### 固定 native 授权轮换收尾
+
+`bootstrap_trusted_release.py finalize-native-rotation --sha <current-main>` 仅处理
+c280 native-only 授权已退休、ace 后继尚未安装的固定事件。原 retirement 两份审计
+由固定摘要绑定，原 closure/receipt、生产版本与原锁继续校验。默认只读，返回
+`evidence_sha256`；显式传回该摘要才执行一次安装。配置、执行器、业务 workspace、
+租约或收尾记录已存在均拒绝。新发布者必须是当前精确绿色 canonical 源码。
+
+收尾保留原审计，在独立 `native-rotation-finalization` 记录新发布者、原审计摘要、
+原授权文件身份、closure 与锁。先写 intent，再安装并核验严格公钥授权行与执行器，
+最后写完成记录并读回完整继承链。任一步失败不得重试、删除记录或重建旧授权。
+该记录只修复发布授权，不代表业务部署或 Edu 登录验收完成。

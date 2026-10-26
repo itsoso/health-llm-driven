@@ -617,11 +617,26 @@ def closed_evidence(b, sha, receipt, *, historical=False):
         or re.fullmatch("[a-f0-9]{40}", intent["production_sha"]) is None
     ):
         raise RetirementError("original native workspace changed")
-    config, library = b._archives(sha)
-    if not os.path.lexists(config) and not os.path.lexists(library):
-        config, library = b.CONFIG, b.INSTALLED.parent
-    if b._installation_evidence(sha, config, library) != intent["installation"]:
-        raise RetirementError("native installation or revocation changed")
+    retirement = b.STATE / 'retired' / sha
+    if historical and os.path.lexists(retirement):
+        b._inventory(retirement, {'intent.json', 'completed.json'})
+        saved = b._read_json(retirement / 'intent.json')
+    else:
+        saved = None
+    if isinstance(saved, dict) and saved.get('retirement_policy') == 'no-backup-v1':
+        if (saved.get('old_sha') != sha or not isinstance(saved.get('new_sha'), str)
+                or re.fullmatch('[a-f0-9]{40}', saved['new_sha']) is None
+                or saved['new_sha'] == sha
+                or saved.get('installation') != intent['installation']
+                or b._read_json(retirement / 'completed.json') != {
+                    'old_sha': sha, 'new_sha': saved['new_sha'], 'state': 'RETIRED'}):
+            raise RetirementError('retired native installation audit differs')
+    else:
+        config, library = b._archives(sha)
+        if not os.path.lexists(config) and not os.path.lexists(library):
+            config, library = b.CONFIG, b.INSTALLED.parent
+        if b._installation_evidence(sha, config, library) != intent["installation"]:
+            raise RetirementError("native installation or revocation changed")
     if {
         "launcher": b._recovery_file_identity(b.STATE / "launcher.lock"),
         "build": b._recovery_file_identity(b.STATE / sha / "build.lock"),

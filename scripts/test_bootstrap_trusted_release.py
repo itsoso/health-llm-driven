@@ -1240,3 +1240,128 @@ def test_rotation_rechecks_real_no_copy_closure_after_discard(monkeypatch, tmp_p
     assert not bootstrap.CONFIG.exists() and not bootstrap.INSTALLED.parent.exists()
     retirement = bootstrap.STATE / 'retired' / SHA
     assert json.loads((retirement / 'completed.json').read_text())['state'] == 'RETIRED'
+
+
+def test_native_rotation_recovery_has_fixed_event_and_rejects_missing_completion(monkeypatch, tmp_path):
+    b = load_bootstrap()
+    monkeypatch.setattr(b, 'STATE', tmp_path)
+    monkeypatch.setattr(b, 'secure', lambda *a, **k: None)
+    assert b._native_rotation_recovery() is None
+    root = tmp_path / 'native-rotation-finalization'
+    root.mkdir()
+    (root / 'intent.json').write_text('{}')
+    with pytest.raises(b.BootstrapError):
+        b._native_rotation_recovery()
+
+
+def native_finalizer_fixture(monkeypatch, tmp_path):
+    b, calls = rotation_fixture(monkeypatch, tmp_path)
+    install = b._install_locked
+    def interrupted(*a, **k):
+        raise RuntimeError('post retirement installation not started')
+    monkeypatch.setattr(b, '_install_locked', interrupted)
+    with pytest.raises(RuntimeError):
+        b.rotate(SHA, NEW_SHA, 0, PUBLIC)
+    monkeypatch.setattr(b, '_install_locked', install)
+    monkeypatch.setattr(b, 'NATIVE_ROTATION_OLD', SHA)
+    monkeypatch.setattr(b, 'NATIVE_ROTATION_ABANDONED', NEW_SHA)
+    retirement = b.STATE / 'retired' / SHA
+    audit = {p.name: json.loads(p.read_text()) for p in retirement.iterdir()}
+    monkeypatch.setattr(b, 'NATIVE_ROTATION_AUDIT', b._digest_json(audit))
+    original_workspace = audit['intent.json']['workspace']
+    workspace_evidence = b._workspace_evidence
+    monkeypatch.setattr(b, '_workspace_evidence', lambda sha, **kw:
+                        original_workspace if sha == SHA else workspace_evidence(sha, **kw))
+    closure = b.STATE / 'native-only-closures' / SHA
+    closure.mkdir(parents=True)
+    for name in ('intent.json', 'completed.json'):
+        (closure / name).write_text('{}')
+        (closure / name).chmod(0o600)
+    monkeypatch.setattr(b, '_recovery_process_proof', lambda: None)
+    monkeypatch.setattr(b, '_recovery_production_proof', lambda *a: None)
+    # Existing native closure retains its original build lock.
+    (b.STATE / SHA / 'build.lock').touch(mode=0o600)
+    return b, retirement, 'e' * 40
+
+
+def test_native_finalizer_inspect_then_apply_preserves_original_audits(monkeypatch, tmp_path):
+    b, retirement, candidate = native_finalizer_fixture(monkeypatch, tmp_path)
+    before = {p.name: p.read_bytes() for p in retirement.iterdir()}
+    ready = b.finalize_native_rotation(candidate)
+    assert ready['state'] == 'READY'
+    assert not (b.STATE / 'native-rotation-finalization').exists()
+    assert not b.CONFIG.exists()
+    assert b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256']) == {
+        'state': 'AUTHORIZATION_INSTALLED', 'sha': candidate}
+    assert {p.name: p.read_bytes() for p in retirement.iterdir()} == before
+    assert b._native_rotation_recovery()['publisher_sha'] == candidate
+    b._persistent_cloud_successor(SHA, PUBLIC)
+    assert b.AUTHORIZED.read_text().count(PUBLIC) == 1
+    with pytest.raises(b.BootstrapError):
+        b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
+    with pytest.raises(b.BootstrapError):
+        b._assert_fresh_sha(candidate, b._retired_history())
+
+
+@pytest.mark.parametrize('fault', ['config', 'library', 'abandoned-workspace', 'lease', 'retirement', 'key', 'candidate-used'])
+def test_native_finalizer_blocks_unsafe_start_before_intent(monkeypatch, tmp_path, fault):
+    b, retirement, candidate = native_finalizer_fixture(monkeypatch, tmp_path)
+    if fault == 'config':
+        b.CONFIG.mkdir()
+    elif fault == 'library':
+        b.INSTALLED.parent.mkdir()
+    elif fault == 'abandoned-workspace':
+        (b.STATE / NEW_SHA).mkdir()
+    elif fault == 'lease':
+        b.BUSINESS_LEASE.mkdir()
+    elif fault == 'retirement':
+        (retirement / 'completed.json').write_text('{}')
+    elif fault == 'key':
+        b.AUTHORIZED.write_text(PUBLIC + '\n')
+    else:
+        (b.STATE / candidate).mkdir()
+    with pytest.raises((b.BootstrapError, FileNotFoundError)):
+        b.finalize_native_rotation(candidate)
+    assert not (b.STATE / 'native-rotation-finalization').exists()
+
+
+def test_native_finalizer_rejects_inspection_drift(monkeypatch, tmp_path):
+    b, _, candidate = native_finalizer_fixture(monkeypatch, tmp_path)
+    ready = b.finalize_native_rotation(candidate)
+    b.AUTHORIZED.write_text(b.AUTHORIZED.read_text() + '# unrelated change\n')
+    with pytest.raises(b.BootstrapError, match='inspection changed'):
+        b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
+    assert not b.CONFIG.exists()
+
+
+@pytest.mark.parametrize('point', ['intent', 'keygen', 'policy', 'authorization', 'completed'])
+def test_native_finalizer_partial_failure_never_retries(monkeypatch, tmp_path, point):
+    b, _, candidate = native_finalizer_fixture(monkeypatch, tmp_path)
+    ready = b.finalize_native_rotation(candidate)
+    write = b._write
+    run = b._run
+    replace = b._replace_authorized
+    def fail_write(path, data):
+        write(path, data)
+        if ((point == 'intent' and path.name == 'intent.json')
+                or (point == 'policy' and path.name == 'authorized-release.json')
+                or (point == 'completed' and path.name == 'completed.json')):
+            raise RuntimeError('injected write failure')
+    def fail_run(args, **kw):
+        result = run(args, **kw)
+        if point == 'keygen' and args[0] == '/usr/bin/ssh-keygen' and '-q' in args:
+            raise RuntimeError('injected keygen failure')
+        return result
+    def fail_replace(data):
+        replace(data)
+        if point == 'authorization':
+            raise RuntimeError('injected authorization failure')
+    monkeypatch.setattr(b, '_write', fail_write)
+    monkeypatch.setattr(b, '_run', fail_run)
+    monkeypatch.setattr(b, '_replace_authorized', fail_replace)
+    with pytest.raises(RuntimeError):
+        b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
+    saved = (b.STATE / 'native-rotation-finalization/intent.json').read_bytes()
+    with pytest.raises(b.BootstrapError):
+        b.finalize_native_rotation(candidate, evidence_sha256=ready['evidence_sha256'])
+    assert (b.STATE / 'native-rotation-finalization/intent.json').read_bytes() == saved
