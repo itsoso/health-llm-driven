@@ -10,6 +10,7 @@
  * 入口: settings → 用药管理
  */
 import React, { useMemo, useState } from 'react';
+import { isMedicationInstructionName as isInstructionName } from '../utils/medicationInstruction';
 import {
   View, Text, ScrollView, StyleSheet, TouchableOpacity, TextStyle, ActivityIndicator,
   RefreshControl, Alert,
@@ -274,10 +275,6 @@ export default function MedicationsScreen() {
 }
 
 // Route parameters may contain old assistant prose. They are not a medication identity.
-function isInstructionName(name: string) {
-  return /(?:不要|不用|别|请勿|不需要|无需).{0,12}(?:记录|服药|停药|换药|剂量)|(?:查询|核实|查看).{0,20}(?:药品|用药|计划|记录)|(?:记录状态|用药提醒|计划时间)/.test(name);
-}
-
 function formatFrequency(value: string) {
   const labels: Record<string, string> = { daily: '每日', bid: '每日两次', tid: '每日三次', qd: '每日一次', weekly: '每周', 'once daily': '每日一次', 'twice daily': '每日两次' };
   return labels[value.trim().toLowerCase()] ?? value;

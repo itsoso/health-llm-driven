@@ -33,6 +33,7 @@ import { ScoreCardSpec } from './ScoreCard';
 import { RecordCardSpec } from './RecordCard';
 import { RecordQualityCardSpec } from './RecordQualityCard';
 import { MedicationDraftCardSpec } from './MedicationDraftCard';
+import { isMedicationInstructionName } from '../../../utils/medicationInstruction';
 import { SupplementDraftCardSpec } from './SupplementDraftCard';
 import { DietCardSpec } from './DietCard';
 import { DietDraftCardSpec } from './DietDraftCard';
@@ -374,6 +375,13 @@ export function renderServerCards(cards?: ServerCardDescriptor[] | null): Server
 }
 
 function isRenderableServerCard(descriptor: ServerCardDescriptor): boolean {
+  if (descriptor.type === 'medication_draft') {
+    const names: unknown[] = [descriptor.data?.medication_name];
+    if (Array.isArray(descriptor.data?.items)) {
+      names.push(...descriptor.data.items.map((item: any) => item?.medication_name));
+    }
+    return !names.some(name => typeof name === 'string' && isMedicationInstructionName(name));
+  }
   if (descriptor.type !== 'diet_draft') return true;
   const foodItems = foodItemsValue(descriptor.data?.food_items);
   return !looksLikeDietManagementIntent(foodItems) && !looksLikeUiFoodText(foodItems);

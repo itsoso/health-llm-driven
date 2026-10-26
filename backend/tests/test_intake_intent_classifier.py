@@ -12,6 +12,36 @@ from app.services.intake_intent_classifier import (
 )
 
 
+@pytest.mark.parametrize('query', [
+    '请帮我查看 2026-10-26 18:00 （北京时间） 的用药提醒，先查询核实药品、计划时间和记录状态，不要记录服药。',
+    '提醒 先查询核实药品、计划时间和记录状态 不要记录服药',
+    '请帮我核对提醒 先查询核实药品、计划时间和记录状态 不要记录服药的用药记录，不要建议我自行停药、换药或改剂量。',
+    '查看今天奥美拉唑的用药记录',
+    '请核实药品和计划时间',
+    '我吃了奥美拉唑，但不要记录服药',
+])
+def test_medication_read_instructions_never_become_intake_or_draft(query):
+    from app.services.intake_intent_classifier import non_intake_reason
+    from app.services.inline_cards import _build_medication_draft
+    from app.api.quick_record import _parse_quick_record
+
+    result = classify_intake_intent(query)
+    assert result.kind == 'unknown'
+    assert result.reason in NON_INTAKE_REASONS
+    assert non_intake_reason(query, named=True) in NON_INTAKE_REASONS
+    assert classify_intake_subject(query).kind == 'medication'
+    assert _build_medication_draft(None, 1, query) is None
+    assert _parse_quick_record(query) == (None, None)
+
+
+@pytest.mark.parametrize('query', [
+    '记录刚吃了奥美拉唑20mg', '阿司匹林 1片',
+    '刚吃了奥美拉唑，帮我核对今天的用药记录',
+])
+def test_read_guard_preserves_explicit_intake_first_clause(query):
+    assert classify_intake_intent(query).kind == 'medication'
+
+
 @pytest.mark.parametrize(("query", "kind"), [
     ("记录午餐吃了牛肉面", "diet"),
     ("午餐吃了煎牛肉能量碗 770kcal", "diet"),
