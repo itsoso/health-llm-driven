@@ -7,6 +7,7 @@ user_id 一律取自 token(不信任客户端)。
 import logging
 
 from app.services.water_backfill import WaterBackfillConflict
+from app.services.illness_recovery_confirmation import RecoveryConflict
 from app.services.photo_supplement_intake import PhotoSupplementConflict
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, Field
@@ -133,6 +134,9 @@ async def confirm_write_intent(
         return svc.confirm(db, current_user.id, intent_id)
     except LookupError:
         raise HTTPException(status_code=404, detail="写意图不存在")
+    except RecoveryConflict as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail="病症确认计划已过期、尚未展示或记录已变化，请重新核对") from exc
     except PhotoSupplementConflict as exc:
         db.rollback()
         raise HTTPException(

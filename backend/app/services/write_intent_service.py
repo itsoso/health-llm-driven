@@ -525,6 +525,12 @@ def confirm(
     )
     if wi is None:
         raise LookupError("write_intent not found")  # 端点 → 404(含 IDOR)
+    if wi.kind == "illness_recovery":
+        if trust_tier not in (None, "manual_confirm"):
+            raise ValueError("illness recovery requires manual confirmation")
+        from app.services.illness_recovery_confirmation import confirm as confirm_recovery
+
+        return confirm_recovery(db, user_id, intent_id)
     if wi.kind == "photo_supplement_intake":
         if trust_tier not in (None, "manual_confirm"):
             raise ValueError("photo supplement intake requires manual confirmation")
@@ -821,7 +827,7 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
 
         return dismiss_photo(db, user_id, intent_id)
     if wi.status != "pending":
-        if wi.kind in {"medication_intake_batch", "water_backfill"} and wi.status == "executed":
+        if wi.kind in {"medication_intake_batch", "water_backfill", "illness_recovery"} and wi.status == "executed":
             # Confirm won the race. Return the same verifiable terminal result
             # instead of forcing clients to guess from a bare status.
             return confirm(db, user_id, intent_id)
@@ -846,7 +852,7 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
                 "status": "dismissed",
                 **(
                     {"decision_status": "dismissed"}
-                    if wi.kind == "medication_intake_batch"
+                    if wi.kind in {"medication_intake_batch", "illness_recovery"}
                     else {}
                 ),
                 "decided_at": datetime.now(timezone.utc),
@@ -877,7 +883,7 @@ def dismiss(db: Session, user_id: int, intent_id: int) -> Dict[str, Any]:
     )
     if current is None:
         raise LookupError("write_intent not found")
-    if current.kind in {"medication_intake_batch", "water_backfill"} and current.status == "executed":
+    if current.kind in {"medication_intake_batch", "water_backfill", "illness_recovery"} and current.status == "executed":
         return confirm(db, user_id, intent_id)
     result = {"id": current.id, "status": current.status}
     if current.kind == "medication_intake_batch":

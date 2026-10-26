@@ -29,6 +29,7 @@ from sqlalchemy.orm import Session
 
 from app.config import settings
 from app.services.agent_context_statement import ContextStatement
+from app.services.illness_recovery_confirmation import is_control as is_illness_recovery_control
 from app.services.notification.detail import (
     NOTIFICATION_REVIEW_PROMPT, selected_notification_id,
     read_notification_detail, notification_review_context, notification_review_safe_explanation,
@@ -17311,6 +17312,7 @@ class AgentExecutor:
                 )
             )
             and not _is_water_backfill_turn(message, self._agent_kernel_reference_now())
+            and not is_illness_recovery_control(message)
             and not _has_fast_record_write_intent(message or "")
             # 面板有自己的发布点与回显式记录兜底: 危机回合走普通路径拿热线兜底。
             and not contains_crisis_language(message or "")
@@ -17850,6 +17852,24 @@ class AgentExecutor:
             if water_result is not None:
                 async for evt in self._run_water_backfill_result(
                     water_result, svc=svc, conv=conv, user_id=user_id,
+                    client_turn_id=client_turn_id, start_time=start_time,
+                ):
+                    yield evt
+                return
+
+        if (health_evidence_turn is None and not self._has_isolated_report_scope()
+                and not read_only_tools and not self._read_only_turn and not images and not file_base64):
+            from app.services.illness_recovery_confirmation import resolve_turn as resolve_recovery_turn
+
+            recovery_result = resolve_recovery_turn(
+                self.db, user_id=user_id, source_message_id=user_msg.id,
+                reference_now=self._agent_kernel_reference_now(),
+                timezone_name=self._ensure_agent_kernel_turn().context.timezone,
+                runtime_write_block_reason=self._runtime_write_block_reason,
+            )
+            if recovery_result is not None:
+                async for evt in self._run_illness_recovery_result(
+                    recovery_result, svc=svc, conv=conv, user_id=user_id,
                     client_turn_id=client_turn_id, start_time=start_time,
                 ):
                     yield evt
@@ -22128,6 +22148,37 @@ class AgentExecutor:
         yield {"event": "done", "data": {
             **meta, "conversation_id": conv.id, "message_id": assistant.id,
         }}
+
+    async def _run_illness_recovery_result(
+        self, result, *, svc, conv, user_id, client_turn_id, start_time,
+    ):
+        """Save bounded continuation state and actual receipts before delivery."""
+        status = result["status"]
+        receipts = result.get("write_receipts", [])
+        outcome = classify_agent_turn_outcome(
+            completion_status="error" if status == "error" else "complete",
+            final_text=result["reply"], write_receipts=receipts,
+            runtime_control_unavailable=result.get("runtime_control_unavailable", False),
+            pending_confirmation_tools=["illness_recovery"] if status in {"pending", "clarification"} else [],
+        )
+        if status == "clarification":
+            outcome.update(status="waiting_for_user", category="clarification_required",
+                           reason_code="illness_recovery_missing_context_or_date")
+        meta = {
+            **result.get("meta", {}), "mode": "illness_recovery_confirmation",
+            "llm_rounds": 0, "llm_ms": 0, "model_call_count": 0,
+            "elapsed_ms": int((time.time() - start_time) * 1000),
+            "write_receipts": receipts, "tools_used": [], "cards": [],
+            "client_turn_finalized": True, "record_intent_no_tool": False,
+            "turn_outcome": outcome,
+            **agent_completion_metadata("error" if status == "error" else "complete", outcome),
+            **({"client_turn_id": client_turn_id} if client_turn_id else {}),
+        }
+        conv.updated_at = datetime.now(UTC)
+        assistant = svc.save_message(conv.id, "assistant", result["reply"], meta=meta,
+                                     client_turn_id=client_turn_id, client_turn_user_id=user_id)
+        yield {"event": "token", "data": {"content": result["reply"]}}
+        yield {"event": "done", "data": {**meta, "conversation_id": conv.id, "message_id": assistant.id}}
 
     async def _run_water_backfill_result(
         self, result, *, svc, conv, user_id, client_turn_id, start_time,
