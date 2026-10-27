@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "measurement": "Local functional pilot; same-corpus timing comparison pending, not CI wall time.",
+  "source_base_sha": "5b45d4ca0017fc16ae87a086539bfdcdb2462c30",
+  "environment": "macOS Python 3.12.13 hash-locked project environment; synthetic data, in-memory SQLite, disabled local Redis",
+  "pilot_results": [
+    {
+      "module": "display-format",
+      "exit_code": 0,
+      "wall_seconds": 35.743
+    },
+    {
+      "module": "prompt-cache",
+      "exit_code": 0,
+      "wall_seconds": 10.007
+    }
+  ],
+  "failed_experiments": [
+    {
+      "variant": "Named coverage source modules",
+      "outcome": "Collection failed after early package import caused duplicate SQLAlchemy registration; rejected."
+    },
+    {
+      "variant": "Display direct tests only",
+      "outcome": "67 tests passed but module coverage 75.12% failed required 80%; added existing consumer tests, threshold unchanged."
+    }
+  ],
+  "limitations": [
+    "Not full impact analysis or release qualification.",
+    "Module coverage is not global application coverage.",
+    "No change to main CI selection, fixtures or application code."
+  ]
+}

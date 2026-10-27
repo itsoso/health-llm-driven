@@ -63,6 +63,54 @@ def safe_job(name):
     return 'other'
 
 
+def step_category(name):
+    """Fixed labels only; untrusted step names never enter exported evidence."""
+    if not isinstance(name, str):
+        return 'other_steps'
+    if name in STEP_CATEGORIES:
+        return STEP_CATEGORIES[name]
+    if (re.fullmatch(r'Run isolated shards \(balanced-[0-9]{2}\)', name)
+            or name == 'Run Runtime and medication PostgreSQL semantics'
+            or name == 'Run deployment and rollback invariants'
+            or name == 'Test (vitest)' or name.startswith('Test (jest ')
+            or name.startswith('Test stateful ')):
+        return 'test_execution'
+    if name in {'Build', 'Build (swift build)'}:
+        return 'build'
+    if name in {'Set up job', 'Initialize containers', 'Install and verify official Pi kernel',
+                'Install official Pi for PostgreSQL integration'} or re.fullmatch(
+                    r'Run actions/(checkout|setup-python|setup-node)@v[0-9]+', name):
+        return 'environment_setup'
+    return 'other_steps'
+
+
+def job_breakdown(run, job):
+    """Partition a completed job; do not mistake dependency delay for queue time."""
+    start, end = timestamp(job['started_at']), timestamp(job['completed_at'])
+    seconds = duration(job['started_at'], job['completed_at'])
+    intervals, totals = [], defaultdict(float)
+    for step in job.get('steps', []):
+        if step.get('conclusion') == 'skipped':
+            continue
+        if not step.get('started_at') or not step.get('completed_at'):
+            continue  # Unmeasured time stays explicitly unattributed.
+        left, right = timestamp(step['started_at']), timestamp(step['completed_at'])
+        if not start <= left <= right <= end:
+            raise ValueError('step outside job timing interval')
+        intervals.append((left, right))
+        totals[step_category(step.get('name'))] += (right-left).total_seconds()
+    previous = start
+    for left, right in sorted(intervals):
+        if left < previous:
+            raise ValueError('overlapping step timing intervals')
+        previous = right
+    return {'job': safe_job(job.get('name')),
+            'start_delay_seconds': duration(run['createdAt'], job['started_at']),
+            'execution_seconds': seconds,
+            'step_seconds': {k: round(v, 2) for k, v in sorted(totals.items())},
+            'unattributed_job_seconds': round(seconds-sum(totals.values()), 2)}
+
+
 def observation(run, inventory):
     rid, sha = run.get('databaseId'), run.get('headSha')
     if not positive(rid) or not isinstance(sha, str) or not re.fullmatch('[0-9a-f]{40}', sha):
@@ -110,6 +158,11 @@ def observation(run, inventory):
     last = max(completed, key=lambda j: timestamp(j['completed_at'])) if completed else None
     work = [j for j in completed if j['name'] not in {'backend-tests', 'backend-release-ready-v1', 'release-tests', 'release-result'}]
     critical = max(work, key=lambda j: timestamp(j['completed_at'])) if work else last
+    breakdowns = [job_breakdown(run, job) for job in completed]
+    critical_path = None
+    if finished and critical:
+        critical_path = job_breakdown(run, critical)
+        critical_path['after_critical_job_seconds'] = duration(critical['completed_at'], last['completed_at'])
     return {
         'run_id': rid, 'sha': sha, 'workflow': workflow, 'kind': kind, 'attempt': next(iter(attempts)),
         'conclusion': run.get('conclusion') if run.get('conclusion') in STATES else 'pending',
@@ -118,6 +171,7 @@ def observation(run, inventory):
         'attempt_execution_span_seconds': duration(min(j['started_at'] for j in completed), last['completed_at']) if finished else None,
         'runner_seconds': round(sum(duration(j['started_at'], j['completed_at']) for j in completed), 2) if finished else None,
         'critical_job': safe_job(critical['name']) if critical else None, 'phases': phases,
+        'job_breakdown': breakdowns, 'critical_path_breakdown': critical_path,
         'production_state': 'unverified', 'apple_processing_seconds': None, 'tester_availability': 'unverified',
     }
 
@@ -144,6 +198,8 @@ def summarize(runs, inventories):
                             'max_seconds': max(times) if times else None}})
     return {'schema_version': 'release_performance.v1', 'release_authority': False,
             'limitations': ['observed sample; not a stable latency guarantee',
+                            'start delay includes dependencies and scheduling; not pure queue time',
+                            'critical breakdown partitions the last work job timeline; not a complete dependency-graph reconstruction',
                             'job metadata does not prove vendor, server receipt, Apple processing or user acceptance',
                             'wall includes initial scheduling and prior attempts; retry runs excluded from first-attempt summaries',
                             'native vendor steps combine queue, execution and polling; no invented subphase timings'],
