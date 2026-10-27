@@ -216,10 +216,10 @@ def test_pregen_rejects_health_query_before_cache_lookup_when_runtime_flag_off(
     )
 
 
-def test_pregen_v2_namespaces_invalidate_legacy_health_entries():
-    assert starter_pregen._ENTRY_PREFIX.endswith(":v2")
-    assert starter_pregen._INFLIGHT_PREFIX.endswith(":v2")
-    assert starter_pregen._INDEX_PREFIX.endswith(":v2")
+def test_pregen_v3_namespaces_invalidate_legacy_health_and_brand_entries():
+    assert starter_pregen._ENTRY_PREFIX.endswith(":v3")
+    assert starter_pregen._INFLIGHT_PREFIX.endswith(":v3")
+    assert starter_pregen._INDEX_PREFIX.endswith(":v3")
 
 
 def test_pregen_writer_rejects_health_query_and_health_metadata(monkeypatch):
