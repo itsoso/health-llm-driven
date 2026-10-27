@@ -209,10 +209,13 @@ class CredentialStore:
             with os.fdopen(fd, 'wb') as stream:
                 fd = None
                 stream.write(raw); stream.flush(); os.fsync(stream.fileno())
-            written, _ = directory.read(temporary)
-            need(written == raw, 'incoming credential temporary readback differs')
+            written, temporary_identity = directory.read(temporary)
+            need(written == raw and temporary_identity['st_dev'] == created.st_dev and
+                 temporary_identity['st_ino'] == created.st_ino, 'incoming credential temporary readback differs')
             check()
             need(self.original() == expected, 'original credential changed before replacement')
+            final_temporary, final_identity = directory.read(temporary)
+            need(final_temporary == raw and final_identity == temporary_identity, 'incoming credential temporary changed')
             directory.check()
             os.replace(temporary, self.path.name, src_dir_fd=directory.fd, dst_dir_fd=directory.fd)
             os.fsync(directory.fd)

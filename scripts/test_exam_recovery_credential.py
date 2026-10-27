@@ -220,3 +220,11 @@ def test_actual_low_level_fsync_failure_consumes_attempt_without_secret_diagnost
     assert path.read_bytes()==b'original-expired-credential\n'
     assert {p.name for p in path.parent.iterdir()}=={'credential.json'}
     assert json.loads((audit/'failure.json').read_text())['state']=='NEEDS_OPERATOR'
+
+
+def test_temp_change_during_final_incident_guard_cannot_replace_original(storage):
+    m,root,path,store=storage; before=store.original()
+    temporary=path.parent/('.credential.'+m.ATTEMPT+'.tmp')
+    def change_temporary(): temporary.write_bytes(b'altered-temporary-secret')
+    with pytest.raises(m.CredentialError): store.replace(incoming(),before,change_temporary)
+    assert path.read_bytes()==b'original-expired-credential\n'
