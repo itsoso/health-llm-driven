@@ -8,26 +8,35 @@ import css from './exam-study.module.css';
 import { useNavigationParam } from './useNavigationParam';
 const studySections = { plan: 'plan', practice: 'practice', resources: 'resources' } as const;
 
-type Props = { data: LifeData; day: string; edit: (change: (draft: LifeData) => void) => void; saveAnswer: (change: (draft: LifeData) => void) => Promise<void>; focus: (task: LifeTask) => void };
-export default function ExamStudyPanel({data,day,edit,saveAnswer,focus}:Props) {
+type Props = { data: LifeData; persistedData?: LifeData; day: string; edit: (change: (draft: LifeData) => void) => void; saveAnswer: (change: (draft: LifeData) => void) => Promise<void>; focus: (task: LifeTask) => void };
+export default function ExamStudyPanel({data,persistedData=data,day,edit,saveAnswer,focus}:Props) {
  const [section,setSection]=useNavigationParam<'plan'|'practice'|'resources'>('study', studySections, 'plan');
  const [subject,setSubject]=useState<Subject>('英语');const [mode,setMode]=useState<PracticeMode>('next');
  const [selected,setSelected]=useState('');const [choice,setChoice]=useState<number|null>(null);
  const [feedback,setFeedback]=useState<{id:string;day:string;correct:boolean}|null>(null);const [error,setError]=useState('');
  const [persistence,setPersistence]=useState<'idle'|'saving'|'saved'|'failed'>('idle');
  const submitting=useRef(false);
+ const [trail,setTrail]=useState<string[]>([]);
+ const [reviewing,setReviewing]=useState(false);
+ const [retryId,setRetryId]=useState('');
  const assignment=paperAssignment(day);
- const plan=dailyStudy(day);const wrong=wrongQuestions(data,day);const days=daysUntil(localDate());
- const attempts=questions.filter(q=>questionHistory(data,q,day).length>0).length;
+ const plan=dailyStudy(day);const wrong=wrongQuestions(persistedData,day);const days=daysUntil(localDate());
+ const attempts=questions.filter(q=>questionHistory(persistedData,q,day).length>0).length;
  const completed=plan.filter(t=>studyTask(data,day,t.key)?.status==='done').reduce((n,t)=>n+t.minutes,0);
- const available=practiceQuestions(data,day,subject,mode);
+ const available=practiceQuestions(persistedData,day,subject,mode);
  const pinned=feedback?.day===day?questions.find(q=>q.id===feedback.id&&q.subject===subject):undefined;
- const question=pinned??available.find(q=>q.id===selected)??available[0];
+ const question=pinned??questions.find(q=>q.id===selected&&q.subject===subject)??available[0];
  const currentFeedback=feedback&&feedback.id===question?.id&&feedback.day===day?feedback:null;
+ const records=question?questionHistory(persistedData,question,day):[];
+ const readOnly=records.length>0&&!currentFeedback&&retryId!==question?.id&&(reviewing||mode==='history'||mode==='mistakes');
+ const savedQuestions=questions.filter(q=>q.subject===subject&&q.id!==question?.id&&questionHistory(persistedData,q,day).length>0);
+ const previousId=trail.at(-1)??savedQuestions.at(-1)?.id;
+ const clearAnswer=()=>{setChoice(null);setFeedback(null);setPersistence('idle');setRetryId('');};
  const mutate=(fn:(d:LifeData)=>void)=>{try {edit(fn);setError('');}catch(e){setError(e instanceof Error?e.message:'修改未完成，请重试。');}};
- const pick=(q:StudyQuestion)=>{setSelected(q.id);setChoice(null);setFeedback(null);};
- const startPractice=(s:Subject,nextMode:PracticeMode='next')=>{setSubject(s);setMode(nextMode);setSelected('');setChoice(null);setFeedback(null);setSection('practice');};
- const nextQuestion=()=>{const index=available.findIndex(q=>q.id===question?.id);const next=available[index+1]??available[0];setSelected(next?.id??'');setChoice(null);setFeedback(null);};
+ const pick=(q:StudyQuestion)=>{if(question&&question.id!==q.id)setTrail(t=>[...t,question.id]);setSelected(q.id);clearAnswer();setReviewing(false);};
+ const startPractice=(s:Subject,nextMode:PracticeMode='next')=>{setSubject(s);setMode(nextMode);setSelected('');clearAnswer();setTrail([]);setReviewing(false);setSection('practice');};
+ const nextQuestion=()=>{const index=available.findIndex(q=>q.id===question?.id);const next=available[index+1]??available[0];if(next&&next.id!==question?.id)pick(next);};
+ const previousQuestion=()=>{if(!previousId)return;setTrail(t=>t.slice(0,-1));setSelected(previousId);clearAnswer();setReviewing(true);};
  const submit=async()=>{
   if(choice===null||!question||submitting.current)return;
   submitting.current=true;setPersistence('saving');setError('');
@@ -56,12 +65,13 @@ export default function ExamStudyPanel({data,day,edit,saveAnswer,focus}:Props) {
    <div className={css.sectionTitle}><div><h3>每日专项与错题回看</h3><p>已练 {attempts} / {questions.length} 题 · 待复练 {wrong.length} 题</p></div></div>
    <p className={css.hint}>原创专项题库 · 英语、数学、逻辑。与上方历年真题训练配合使用；首次答案与最近复练结果分别保留。</p>
    <div className={css.filters} aria-label="选题方式">{practiceModes.map(m=><button type="button" key={m.key} aria-pressed={mode===m.key} onClick={()=>startPractice(subject,m.key)}>{m.label}</button>)}</div>
-   <p className={css.hint}>{day} · {mode==='all'?'全部题库包含已做旧题，可主动重做。想继续新题，请切换「按进度练习」。':mode==='wrong'?'这里仅列出仍需复练的错题。':'优先安排未做专项题，每次展示最多6题；做完会继续补入未做题。次日顺序更新，已做记录不会清零。'}</p>
+   <p className={css.hint}>{day} · {mode==='all'?'全部题库包含已做旧题，可主动重做。想继续新题，请切换「按进度练习」。':mode==='history'?'回看已保存的首次答案、最近复练与解析；仅查看不会改写记录。':mode==='mistakes'?'保留有错误记录的题，复练答对后仍可回看。历史数据只保留每日首次和最近复练，被后续复练覆盖的中间尝试无法恢复。':mode==='wrong'?'这里仅列出仍需复练的错题；复练答对后仍可在「错题本」回看。':'优先安排未做专项题，每次展示最多6题；做完会继续补入未做题。次日顺序更新，已做记录不会清零。'}</p>
    <div className={css.filters}>{(['英语','数学','逻辑'] as const).map(s=><button type="button" key={s} aria-pressed={subject===s} onClick={()=>startPractice(s,mode)}>{s}</button>)}</div>
-   <div className={css.questionLayout}><nav className={css.questionList} aria-label="选择练习题">{available.map((q,i)=><button type="button" key={q.id} aria-pressed={question?.id===q.id} onClick={()=>pick(q)}>{i+1}. {q.topic}{wrong.some(w=>w.id===q.id)?' · 待复练':questionHistory(data,q,day).length?' · 已做':' · 未做'}</button>)}</nav>
-   {question?<article className={css.card}><span className={css.kicker}>{question.subject} / {question.topic}</span><h3 className={css.prompt}>{question.prompt}</h3>{!currentFeedback&&questionHistory(data,question,day).at(-1)&&<p className={css.hint}>上次作答：{questionHistory(data,question,day).at(-1)!.date} · {questionHistory(data,question,day).at(-1)!.status==='done'?'答对':'待复练'}。当前为主动再练。</p>}<fieldset className={css.answers} disabled={!!currentFeedback}><legend>选择答案</legend>{question.options.map((text,i)=><label key={text}><input type="radio" name={`answer-${question.id}`} checked={choice===i} onChange={()=>setChoice(i)}/><span>{String.fromCharCode(65+i)}. {text}</span></label>)}</fieldset>
-    {!currentFeedback?<button type="button" className={css.primary} disabled={choice===null||persistence==='saving'} onClick={()=>{void submit();}}>核对答案并记录</button>:<div role="status" className={css.callout}><strong>{currentFeedback.correct?'本次答对':'本次答错，已加入待复练'} · 正确答案 {String.fromCharCode(65+question.answer)}</strong><p>{question.explanation}</p><p>{persistence==='saving'?'正在保存作答…':persistence==='saved'?'作答已保存，可刷新或继续下一题':'作答尚未保存'}</p>{persistence==='failed'&&<button type="button" onClick={()=>{void submit();}}>重试保存作答</button>}<button type="button" disabled={persistence!=='saved'} onClick={nextQuestion}>下一题</button><button type="button" disabled={persistence!=='saved'} onClick={()=>{setMode('all');setChoice(null);setFeedback(null);}}>重新作答</button></div>}
-   </article>:<p>{mode==='next'?'本科目当前没有未做题。题库是有限的，不会把旧题冒充新题；可复练错题或继续上方真题安排。':'本科目暂无待复练题。'}<button type="button" onClick={()=>setSection('resources')}>进入真题训练</button></p>}</div>
+   <div className={css.questionLayout}><nav className={css.questionList} aria-label="选择练习题">{available.map((q,i)=><button type="button" key={q.id} aria-pressed={question?.id===q.id} onClick={()=>pick(q)}>{i+1}. {q.topic}{wrong.some(w=>w.id===q.id)?' · 待复练':questionHistory(persistedData,q,day).length?' · 已做':' · 未做'}</button>)}</nav>
+   {question?<article className={css.card}><span className={css.kicker}>{question.subject} / {question.topic}</span><h3 className={css.prompt}>{question.prompt}</h3>{!readOnly&&!currentFeedback&&questionHistory(persistedData,question,day).at(-1)&&<p className={css.hint}>上次作答：{questionHistory(persistedData,question,day).at(-1)!.date} · {questionHistory(persistedData,question,day).at(-1)!.status==='done'?'答对':'待复练'}。当前为主动再练。</p>}<fieldset className={css.answers} disabled={!!currentFeedback||readOnly}><legend>选择答案</legend>{question.options.map((text,i)=><label key={text}><input type="radio" name={`answer-${question.id}`} checked={choice===i} onChange={()=>setChoice(i)}/><span>{String.fromCharCode(65+i)}. {text}</span></label>)}</fieldset>
+    {readOnly?<section aria-label="已保存作答记录" className={css.callout}><strong>{records.at(-1)?.status==='done'?(records.length>1||records[0].improvement?'已复练答对':'首次答对'):'待复练'} · 正确答案 {String.fromCharCode(65+question.answer)}</strong>{records.map(record=><div key={record.id}><p>{record.date} · 首次作答</p><p style={{whiteSpace:'pre-wrap'}}>{record.result}</p>{record.improvement&&<><p>最近复练</p><p style={{whiteSpace:'pre-wrap'}}>{record.improvement}</p></>}</div>)}<button type="button" onClick={()=>{setRetryId(question.id);setChoice(null);}}>重新作答</button></section>:!currentFeedback?<button type="button" className={css.primary} disabled={choice===null||persistence==='saving'} onClick={()=>{void submit();}}>核对答案并记录</button>:<div role="status" className={css.callout}><strong>{currentFeedback.correct?'本次答对':'本次答错，已加入待复练'} · 正确答案 {String.fromCharCode(65+question.answer)}</strong><p>{question.explanation}</p><p>{persistence==='saving'?'正在保存作答…':persistence==='saved'?'作答已保存，可刷新或继续下一题':'作答尚未保存'}</p>{persistence==='failed'&&<button type="button" onClick={()=>{void submit();}}>重试保存作答</button>}<button type="button" disabled={persistence!=='saved'} onClick={()=>{setRetryId(question.id);setChoice(null);setFeedback(null);}}>重新作答</button></div>}
+    <nav className={css.filters} aria-label="题目翻页"><button type="button" disabled={!previousId||persistence==='saving'||persistence==='failed'} onClick={previousQuestion}>上一题</button><button type="button" disabled={persistence==='saving'||persistence==='failed'||!available.some(q=>q.id!==question.id)} onClick={nextQuestion}>下一题</button></nav>
+   </article>:<p>{mode==='next'?'本科目当前没有未做题。题库是有限的，不会把旧题冒充新题；可复练错题或继续上方真题安排。':mode==='history'?'本科目暂无已保存答题记录。':mode==='mistakes'?'本科目暂无已保存错题。':'本科目暂无待复练题。'}<button type="button" onClick={()=>setSection('resources')}>进入真题训练</button></p>}</div>
    <article className={css.card}><h3>补充热身：固定写作示例</h3><p>一家企业试行四天工作制后销售额增长，管理者认为应在所有部门推广。用20分钟列出论证漏洞，并写一段分析。</p><details><summary>完成后展开分析提示</summary><p>检查同期营销、季节性和人员变化等其他解释；试点样本是否代表所有部门；销售额是否等于效率或利润。指出漏洞后还要说明它为什么削弱结论。此练习没有自动作文评分。</p></details></article>
   </>}
   {section==='resources'&&<>

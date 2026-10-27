@@ -72,13 +72,15 @@ export function recordAnswer(data:LifeData,day:string,q:StudyQuestion,choice:num
 export function questionHistory(data:LifeData,q:StudyQuestion,day?:string){return Object.values(data.weeks).flatMap(w=>w.tasks).filter(t=>(!day||t.date<=day)&&t.id===studyId(t.date,q.id)).sort((a,b)=>a.date.localeCompare(b.date));}
 export function wrongQuestions(data:LifeData,day?:string){return questions.filter(q=>questionHistory(data,q,day).at(-1)?.status==='doing');}
 
-export type PracticeMode = 'next' | 'wrong' | 'all';
+export type PracticeMode = 'next' | 'wrong' | 'all' | 'history' | 'mistakes';
 export const practiceModes: {key:PracticeMode;label:string}[] = [
- {key:'next',label:'按进度练习'}, {key:'wrong',label:'待复练'}, {key:'all',label:'全部题库'},
+ {key:'next',label:'按进度练习'}, {key:'wrong',label:'待复练'}, {key:'history',label:'答题历史'}, {key:'mistakes',label:'错题本'}, {key:'all',label:'全部题库'},
 ];
 export function practiceQuestions(data:LifeData,day:string,subject:Subject,mode:PracticeMode='next'):StudyQuestion[] {
  const pool=questions.filter(q=>q.subject===subject);
  if(mode==='all')return pool;
+ if(mode==='history')return pool.filter(q=>questionHistory(data,q,day).length>0);
+ if(mode==='mistakes')return pool.filter(q=>questionHistory(data,q,day).some(t=>t.status==='doing'||[t.result,t.improvement].some(result=>{const match=/作答：([A-D])；正确答案：([A-D])/.exec(result);return match&&match[1]!==match[2];})));
  const history=pool.map(question=>({question,last:questionHistory(data,question,day).at(-1)}));
  if(mode==='wrong')return history.filter(({last})=>last?.status==='doing').map(({question})=>question);
  if(day>='2026-10-27') {
