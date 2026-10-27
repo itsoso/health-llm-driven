@@ -40,6 +40,7 @@ class ComposedReadCompletion:
     complete: bool
     verified_evidence: dict | None = None
     symptom_record_review: bool = False
+    body_measurement_review: bool = False
 
 
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
@@ -540,6 +541,10 @@ def enforce_composed_synthesis_boundaries(text: str, completion, *, require_advi
         _unsupported_medical_html_presentation,
     )
 
+    if completion is not None and getattr(completion, 'body_measurement_review', False):
+        # Measurement records do not attest a metabolic assessment. Keep this
+        # closed for partial reads too; a model disclaimer is not a safety gate.
+        return GuidanceValidationResult(text=completion.trusted_fact_summary)
     if completion is not None and completion.symptom_record_review:
         # Even a partial read must not publish arbitrary provider diagnosis,
         # reassurance or treatment. Stream and persisted content share this gate.
@@ -779,6 +784,10 @@ def project_composed_answer_quality(quality, completion, *, require_advice_bound
     Call only after checking the complete unfiltered model answer. An audit flag
     distinguishes this presentation correction from a medical/task failure.
     """
+    if completion is not None and getattr(completion, 'body_measurement_review', False):
+        from app.services.agent_output_quality import AgentOutputQualityResult, enforce_agent_output_quality
+        trusted = enforce_agent_output_quality(completion.trusted_fact_summary).text
+        return AgentOutputQualityResult(trusted, quality.flags, quality.original_length, len(trusted))
     if (completion is None or not completion.complete or not completion.verified_evidence
             or (len(completion.verified_evidence["queries"]) < 2 and not require_advice_boundary)):
         return quality
@@ -1003,6 +1012,13 @@ def _facts(dimension: str, payload: dict) -> str:
             text += '最近记录缺少有效读数。'
         if len({row['record_date'] for row in rows}) < 2:
             text += '不足两个测量日期，不能判断趋势。'
+        else:
+            first = min(rows, key=lambda row: (row['record_date'], row.get('id', 0)))
+            first_value = _summary_decimal(first.get(field))
+            if value is not None and first_value is not None:
+                text += (f"相较首条记录（{first['record_date']}，{_summary_display(first_value)} {unit}），"
+                         f"差值{_summary_display(value - first_value)} {unit}。"
+                         '这仅是两条记录的差值，不代表持续变化或因果关系；测量条件尚未核验。')
         return text
     if dimension == "diet":
         text = f"饮食：已记录{count}条。"
@@ -1078,6 +1094,12 @@ def _facts(dimension: str, payload: dict) -> str:
 
 
 def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> str:
+    if 'body_measurement_review' in scope.limitations:
+        return ('\n[体重腰围复盘证据边界]\n'
+                '先完成服务端绑定的体重、腰围、饮食和运动只读查询。'
+                '最终答复由已核验记录生成，包含日期、测量差值、数据限制和用户要求的后续记录建议。'
+                '不得用模型生成的趋势、代谢风险分级、诊断或治疗替代记录证据；缺数据不代表正常。'
+                '未来记录建议只是建议，不创建记录、提醒或计划。')
     if "symptom_analysis_current_input" in scope.limitations:
         return (
             "\n[症状分析的证据边界]\n"
@@ -1368,6 +1390,15 @@ def evaluate_composed_read_completion(
     evidence = _verified_evidence(bounds, verified, scope.limitations) if not missing else None
     if evidence is not None:
         lines.extend(_evidence_gap_notices(evidence))
+    body_review = 'body_measurement_review' in scope.limitations
+    if body_review:
+        lines.append('代谢风险：本次记录不足以评估个体代谢风险高低，不能据此确诊或排除代谢疾病。'
+                     '若需要风险评估，应结合既往病史、测量条件和医生对相关检查的判断。')
+        lines.append('调整建议：先保持体重、腰围的测量条件一致，结合连续记录观察变化；'
+                     '不根据今天的片段记录设定减重目标、热量缺口或训练强度。')
+        lines.append('后续记录建议：体重和腰围的测量日期、时间与测量条件；'
+                     '饮食的食物和大致份量；运动的类型、时长与主观感受。'
+                     '只记录实际发生的情况，不补造缺失数据；这些建议不会自动创建记录。')
     symptom_review = 'symptom_record_review' in scope.limitations
     if symptom_review:
         if not missing:
@@ -1397,7 +1428,7 @@ def evaluate_composed_read_completion(
                      '若突然剧痛，或伴呕血、黑便、便血、晕倒或呼吸困难，应立即寻求急救。'
                      '通用参考：[NHS 腹痛就医提示](https://www.nhs.uk/symptoms/stomach-ache/)')
     return ComposedReadCompletion(
-        tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence, symptom_review,
+        tuple(goals.values()), missing, "\n\n".join(lines), not missing, evidence, symptom_review, body_review,
     )
 
 

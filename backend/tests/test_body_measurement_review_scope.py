@@ -126,7 +126,8 @@ async def test_gateway_executor_reads_owned_rows_and_keeps_no_data(db):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('has_data', [True, False])
-async def test_product_review_saved_reply(db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, has_data):
+@pytest.mark.parametrize('answer', ['记录不足，暂不能判断趋势或代谢风险。', '你的代谢风险很高，已经患上代谢综合征。你的体重持续上升，腰围明显增加。'])
+async def test_product_review_saved_reply(db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, has_data, answer):
     from datetime import datetime
     from app.models.weight import WeightRecord
     from app.models.waist import WaistRecord
@@ -155,7 +156,7 @@ async def test_product_review_saved_reply(db, auth_user_and_headers, isolated_ag
                 'name':'health_query_batch','arguments':json.dumps({'queries':[{'dimension':d} for d in DIMENSIONS]})}}]}
             yield {'type':'finish','finish_reason':'tool_calls'}
         else:
-            yield {'type':'content','text':'记录不足，暂不能判断趋势或代谢风险。建议后续保持同样条件测量，记录饮食和运动。'}
+            yield {'type':'content','text':answer}
             yield {'type':'finish','finish_reason':'stop'}
     async def observe(request, token):
         result = await dispatch(request, token)
@@ -172,6 +173,11 @@ async def test_product_review_saved_reply(db, auth_user_and_headers, isolated_ag
     assert not done.get('write_receipts')
     assert len(results) == 1
     assert '只能查询当前登录用户' not in saved.content
+    assert '已经患上代谢综合征' not in json.dumps(events, ensure_ascii=False)
+    assert '体重持续上升' not in json.dumps(events, ensure_ascii=False)
+    assert '已经患上代谢综合征' not in saved.content
+    assert '体重持续上升' not in saved.content
+    assert '后续记录建议' in saved.content
     assert '最近30天' in saved.content
     assert '今天' in saved.content
     if has_data:
@@ -212,3 +218,55 @@ def test_tool_schema_and_validator_expose_waist():
     assert 'waist' in schema['parameters']['properties']['dimension']['enum']
     result = validate_tool_call('health_query', expected('waist'))
     assert result["error"] is None, result
+
+
+@pytest.mark.parametrize('complete', [False, True])
+@pytest.mark.parametrize('claim', ['你的代谢风险很高，已经患上代谢综合征。',
+                                  '你的代谢风险低，可以排除糖尿病。',
+                                  '你的体重持续上升，腰围明显增加。'])
+def test_body_review_never_publishes_model_diagnosis_or_invented_trend(complete, claim):
+    from app.services.agent_composed_read_completion import (
+        evaluate_composed_read_completion, enforce_composed_synthesis_boundaries,
+        project_composed_answer_quality,
+    )
+    from app.services.agent_kernel.types import CapabilityDecision, ToolExecutionResult
+    from app.services.agent_output_quality import enforce_agent_output_quality
+    scope = resolve_owned_read_scope(snapshot(REQUEST))
+    results = []
+    if complete:
+        for d in DIMENSIONS:
+            query = expected(d)
+            data = {'dimension': d, 'window': {k:v for k,v in query.items() if k != 'dimension'},
+                    'availability': 'no_data', 'records': []}
+            if d == 'workout':
+                data['source_scope'] = 'owned_actual_workout_records'
+            results.append(ToolExecutionResult('health_query', data,
+                           decision=CapabilityDecision('allow', 'owned', 'health_query', query)))
+    completion = evaluate_composed_read_completion(scope, results)
+    assert completion.complete == complete
+    projected = enforce_composed_synthesis_boundaries(claim, completion, require_advice_boundary=True)
+    assert claim not in projected.text
+    quality = project_composed_answer_quality(enforce_agent_output_quality(claim), completion, require_advice_boundary=True)
+    assert claim not in quality.text
+    assert '后续记录建议' in projected.text and '后续记录建议' in quality.text
+
+
+def test_body_measurement_record_difference_is_not_a_clinical_trend():
+    from app.services.agent_composed_read_completion import _facts
+    result = _facts('weight', {'records': [
+        {'id': 1, 'record_date': '2026-10-01', 'weight': 73.12},
+        {'id': 2, 'record_date': '2026-10-26', 'weight': 72.346},
+    ]})
+    assert '-0.77 kg' in result
+    assert '不代表持续变化' in result
+
+
+def test_body_review_grammar_contract_and_nontext_inputs():
+    from app.services.agent_kernel.body_measurement_review_scope import (
+        is_body_measurement_review_request, body_measurement_review_scope_contract_payload,
+    )
+    assert not is_body_measurement_review_request(None)
+    assert not is_body_measurement_review_request({'text': REQUEST})
+    contract = body_measurement_review_scope_contract_payload()
+    assert contract['version'] == 'body-measurement-review-v1'
+    assert contract['grammar'] and contract['behavior']
