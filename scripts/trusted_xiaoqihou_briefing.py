@@ -315,7 +315,10 @@ def make_adapter(source,b,server,readers,core,shared,reset,closure,sha,launcher_
             if (self.record/'database-started.json').exists() and not (self.record/'completed.json').exists(): return
             self.check()
             if {p.name for p in b.BUSINESS_LEASE.iterdir()}!={'token'}: raise BriefingError('unexpected lease inventory')
-            (b.BUSINESS_LEASE/'token').unlink(); b.BUSINESS_LEASE.rmdir(); readers.sync(b.BUSINESS_LEASE.parent)
+            # _lease_identity has validated the fixed /var/lock -> /run/lock
+            # alias. sync deliberately refuses symlinks, so use its real parent.
+            parent=b.BUSINESS_LEASE.parent.resolve(strict=True)
+            (b.BUSINESS_LEASE/'token').unlink(); b.BUSINESS_LEASE.rmdir(); readers.sync(parent)
             self.lease=None
     return Adapter()
 

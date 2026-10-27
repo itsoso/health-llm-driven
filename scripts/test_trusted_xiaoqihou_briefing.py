@@ -117,8 +117,11 @@ def test_inherited_proof_and_live_parent_lease(tmp_path,monkeypatch,fault):
 def test_actual_adapter_intent_lease_and_cleanup(tmp_path,monkeypatch,unknown):
     m=load();core=core_load();m.STATE=tmp_path
     shared=m.load(Path(__file__).with_name('trusted_review_briefing_repair.py'),'test_xiao_adapter')
-    readers=SimpleNamespace(sync=lambda *a:None,write_json=lambda p,v:p.write_text(json.dumps(v)))
-    b=SimpleNamespace(STATE=tmp_path,BUSINESS_LEASE=tmp_path/'lease',secure=lambda *a,**k:None,
+    actual_readers=m.load(Path(__file__).with_name('review_maintenance_retirement.py'),'xiao_actual_sync')
+    readers=SimpleNamespace(sync=actual_readers.sync,write_json=lambda p,v:p.write_text(json.dumps(v)))
+    (tmp_path/'run-lock').mkdir()
+    (tmp_path/'var-lock').symlink_to(tmp_path/'run-lock',target_is_directory=True)
+    b=SimpleNamespace(STATE=tmp_path,BUSINESS_LEASE=tmp_path/'var-lock'/'lease',secure=lambda *a,**k:None,
         _write=lambda p,v:p.write_bytes(v),_read_json=lambda p:json.loads(p.read_text()),_assert_original_lock=lambda *a:None,
         _recovery_process_proof=lambda:None)
     reset=SimpleNamespace(_lease_identity=lambda *a:tuple((p.stat().st_dev,p.stat().st_ino) for p in (b.BUSINESS_LEASE,b.BUSINESS_LEASE/'token')))
