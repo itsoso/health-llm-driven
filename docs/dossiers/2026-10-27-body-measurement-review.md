@@ -65,3 +65,9 @@ GO 不代替发布 Gate：主干分叉及无关脏工作树的阻断保持；真
 用户明确要求“部署和OTA”。本地已将远端 `b99d631023d6ced7762e89611f403efde8022faa` 整合为 `6b8c66628fc68f27e36eeb99b461acb30707d76b`；唯一业务冲突保留体重与睡眠的两条独立范围说明，地图重新生成，未提交工作摘要逐一保持一致。此前“分叉、未合并”的描述为历史断点；当前仍未部署。
 
 整合后相关后端274项、移动端68项通过；独立 integrated_release_safety 对上述精确候选累计diff给出GO，独立后端97+158项、移动端52项通过。System Map、secret scan通过。此次补齐本任务Dossier的可解析状态与G1裁决，随后重新运行一致性闸；不以文档修复替代精确SHA完整CI。生产只读核对为4f8fffed3、三个服务active、发布lease不存在；版本授权、trusted后端validate/deploy及OTA validate/publish待执行。
+
+### CI 发现与修正
+
+最终整合候选 `f94abc2319acffd5eca4000a34150ffcbec2ca76` 已推送，累计独立安全审查 GO。CI `40458513886` 检出真实模型证明缺失，以及 `test_genui_table` 仍期待旧“脂肪偏高”观察的过时断言。仅更新该测试为精确已知小计、记录覆盖及空观察列表，保留流事件顺序、数据来源与持久化检查；产品代码不变。相关 GenUI 回归77项通过，独立 reviewer 对测试修正 GO、独立9项通过。
+
+在 f94 的干净源码运行标准 `harness_llm_regression_gate.py --include-live-llm --json`：12项invariants、50项health_agent_core、5项真实orchestrator、12项trajectory contract和9项golden均通过，无基线回归。首轮未加载模型配置导致调用失败；使用项目既有模型配置后重新运行通过。全程仅使用仓库合成夹具及内存SQLite，不访问生产健康数据。真实评测不是截图原记录补算验收。新提交仍须精确CI通过后才能发布。

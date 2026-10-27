@@ -1094,8 +1094,14 @@ async def test_diet_cap_on_emits_diet_summary_card(db, auth_user_and_headers, mo
     assert rendered.index("reva-ui") < rendered.index("结论")
     # 数值/文本来自工具结果具名字段 (fence 用 separators=(",",":"))
     assert '"calories":400' in rendered and "山药小米粥·蒸蛋羹" in rendered
-    # 确定性派生观察落卡 (脂肪 49g/980kcal≈45%>35% → 脂肪偏高 caution)
-    assert "脂肪偏高" in rendered
+    # 已记录两餐不证明全天完整；卡片保留已知小计与覆盖信息，不推断营养充足。
+    card = json.loads(rendered.split("```reva-ui\n", 1)[1].split("\n```", 1)[0])
+    assert card["data"]["totals"] == {
+        "calories": 980, "protein": 55, "carbs": 66, "fat": 49, "fiber": 3,
+    }
+    assert card["data"]["nutrition_coverage"]["record_count"] == 2
+    assert card["data"]["nutrition_coverage"]["incomplete_records"] == 0
+    assert card["data"]["observations"] == []
     # 持久化的 assistant 消息也带 diet fence
     from app.models.agent_conversation import AgentMessage
     assistant = (
