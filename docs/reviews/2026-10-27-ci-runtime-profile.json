@@ -1,0 +1,577 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "kind": "Local cProfile diagnostic, not CI benchmark",
+  "source_sha": "ea55da9c01c50154f460bd208666e3f76686dbb5",
+  "python": "Python 3.12.13",
+  "requirements_lock_sha256": "1dff2a6d77a296c0dc26b42f7c40e290f3e027a8e138a9e2f64c73f654c82fc5",
+  "selector": "tests/test_agent_composed_synthesis_projection.py::test_verified_four_domain_provider_projection[batch-True]",
+  "result": {
+    "passed": 1,
+    "skipped": 0,
+    "pytest_seconds": 6.73,
+    "profile_total_seconds": 14.120065
+  },
+  "environment": "Local macOS, isolated hash-locked Python environment, synthetic provider, SQLite in-memory; no live health data or network provider",
+  "application_functions_by_cumulative_seconds": [
+    {
+      "path": "backend/app/api/main.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 0.000231,
+      "cumulative_seconds": 5.848251
+    },
+    {
+      "path": "backend/app/services/agent_kernel/read_task_scope.py",
+      "line": 292,
+      "function": "resolve_owned_read_scope",
+      "primitive_calls": 34,
+      "total_calls": 34,
+      "self_seconds": 0.001037,
+      "cumulative_seconds": 2.496162
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 873,
+      "function": "_request",
+      "primitive_calls": 170,
+      "total_calls": 170,
+      "self_seconds": 0.005016,
+      "cumulative_seconds": 2.289138
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 16452,
+      "function": "run_stream",
+      "primitive_calls": 50,
+      "total_calls": 50,
+      "self_seconds": 0.000468,
+      "cumulative_seconds": 2.02785
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 17072,
+      "function": "_run_stream_impl",
+      "primitive_calls": 49,
+      "total_calls": 49,
+      "self_seconds": 0.000392,
+      "cumulative_seconds": 1.904409
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 14826,
+      "function": "_run_multi_model_stream",
+      "primitive_calls": 49,
+      "total_calls": 49,
+      "self_seconds": 0.002643,
+      "cumulative_seconds": 1.851553
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 1003,
+      "function": "longitudinal_read_limitations",
+      "primitive_calls": 68,
+      "total_calls": 68,
+      "self_seconds": 0.000573,
+      "cumulative_seconds": 1.842935
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 837,
+      "function": "longitudinal_read_projection_text",
+      "primitive_calls": 376,
+      "total_calls": 376,
+      "self_seconds": 0.003548,
+      "cumulative_seconds": 1.837629
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 695,
+      "function": "_restricted_read_text",
+      "primitive_calls": 376,
+      "total_calls": 376,
+      "self_seconds": 0.008748,
+      "cumulative_seconds": 1.718808
+    },
+    {
+      "path": "backend/app/api/medical_exams.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 0.000171,
+      "cumulative_seconds": 1.512366
+    },
+    {
+      "path": "backend/app/services/pdf_parser.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 3.7e-05,
+      "cumulative_seconds": 1.465492
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 969,
+      "function": "resolve_longitudinal_read_queries",
+      "primitive_calls": 102,
+      "total_calls": 102,
+      "self_seconds": 0.00178,
+      "cumulative_seconds": 1.378323
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 12990,
+      "function": "_composed_read_completion",
+      "primitive_calls": 15,
+      "total_calls": 15,
+      "self_seconds": 0.000221,
+      "cumulative_seconds": 1.106599
+    },
+    {
+      "path": "backend/app/api/auth.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 0.000295,
+      "cumulative_seconds": 0.968162
+    },
+    {
+      "path": "backend/app/services/agent_longitudinal_read.py",
+      "line": 482,
+      "function": "_record_domains",
+      "primitive_calls": 923,
+      "total_calls": 923,
+      "self_seconds": 0.00766,
+      "cumulative_seconds": 0.937864
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1722,
+      "function": "active_health_read_clause",
+      "primitive_calls": 7815,
+      "total_calls": 7815,
+      "self_seconds": 0.008195,
+      "cumulative_seconds": 0.914617
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 26825,
+      "function": "_execute_tool",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_seconds": 9.4e-05,
+      "cumulative_seconds": 0.903562
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 26911,
+      "function": "_execute_tool_impl",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_seconds": 0.000188,
+      "cumulative_seconds": 0.828294
+    },
+    {
+      "path": "backend/app/services/agent_kernel/tool_gateway.py",
+      "line": 95,
+      "function": "execute",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_seconds": 4e-05,
+      "cumulative_seconds": 0.800469
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1806,
+      "function": "resolve_illness_entity",
+      "primitive_calls": 7278,
+      "total_calls": 8603,
+      "self_seconds": 0.225983,
+      "cumulative_seconds": 0.796863
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1579,
+      "function": "resolve_health_read_act",
+      "primitive_calls": 9317,
+      "total_calls": 9317,
+      "self_seconds": 0.114379,
+      "cumulative_seconds": 0.689529
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1450,
+      "function": "active_health_read_authority_text",
+      "primitive_calls": 22117,
+      "total_calls": 22117,
+      "self_seconds": 0.074366,
+      "cumulative_seconds": 0.657477
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 14987,
+      "function": "_guard_panel_narrative",
+      "primitive_calls": 4,
+      "total_calls": 4,
+      "self_seconds": 0.000218,
+      "cumulative_seconds": 0.654279
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 2676,
+      "function": "health_read_has_nonself_subject",
+      "primitive_calls": 549,
+      "total_calls": 549,
+      "self_seconds": 0.014226,
+      "cumulative_seconds": 0.562493
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 0.000748,
+      "cumulative_seconds": 0.511614
+    },
+    {
+      "path": "backend/app/models/__init__.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 0.00036,
+      "cumulative_seconds": 0.509416
+    },
+    {
+      "path": "backend/app/services/agent_kernel/tool_gateway.py",
+      "line": 77,
+      "function": "preflight",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_seconds": 9.1e-05,
+      "cumulative_seconds": 0.483475
+    },
+    {
+      "path": "backend/app/services/agent_kernel/capability_policy.py",
+      "line": 2670,
+      "function": "decide_tool_capability",
+      "primitive_calls": 3,
+      "total_calls": 3,
+      "self_seconds": 0.000302,
+      "cumulative_seconds": 0.482599
+    },
+    {
+      "path": "backend/app/services/agent_kernel/read_task_scope.py",
+      "line": 103,
+      "function": "_owned_active",
+      "primitive_calls": 183,
+      "total_calls": 183,
+      "self_seconds": 0.001553,
+      "cumulative_seconds": 0.455573
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1344,
+      "function": "active_health_instruction_text",
+      "primitive_calls": 39867,
+      "total_calls": 39867,
+      "self_seconds": 0.073686,
+      "cumulative_seconds": 0.442595
+    },
+    {
+      "path": "backend/app/services/agent_kernel/health_semantics.py",
+      "line": 1995,
+      "function": "_health_read_entity_expression",
+      "primitive_calls": 4431,
+      "total_calls": 4431,
+      "self_seconds": 0.006159,
+      "cumulative_seconds": 0.414954
+    },
+    {
+      "path": "backend/app/services/agent_daily_read_execution.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 2.8e-05,
+      "cumulative_seconds": 0.379047
+    },
+    {
+      "path": "backend/app/services/agent_kernel/capability_policy.py",
+      "line": 1622,
+      "function": "_query_scope_text",
+      "primitive_calls": 1882,
+      "total_calls": 1882,
+      "self_seconds": 0.000848,
+      "cumulative_seconds": 0.359713
+    },
+    {
+      "path": "backend/app/services/agent_executor.py",
+      "line": 13463,
+      "function": "_composed_synthesis_messages",
+      "primitive_calls": 2,
+      "total_calls": 2,
+      "self_seconds": 9.8e-05,
+      "cumulative_seconds": 0.359014
+    },
+    {
+      "path": "backend/app/services/agent_kernel/__init__.py",
+      "line": 1,
+      "function": "<module>",
+      "primitive_calls": 1,
+      "total_calls": 1,
+      "self_seconds": 1.3e-05,
+      "cumulative_seconds": 0.344393
+    }
+  ],
+  "limitations": [
+    "Instrumentation overhead means profiled wall time is not a normal request or CI latency.",
+    "Cumulative times overlap and must not be added.",
+    "One case is a diagnostic lead, not evidence all parser calls are redundant.",
+    "No application optimization, authorization caching or test bypass was applied."
+  ],
+  "repeated_input_diagnostic": {
+    "kind": "Local synthetic test diagnostic; original functions executed every time",
+    "pytest_exit_code": 0,
+    "calls": {
+      "resolve_illness_entity": {
+        "calls": 8603,
+        "distinct_input_signatures": 45
+      },
+      "resolve_health_read_act": {
+        "calls": 9317,
+        "distinct_input_signatures": 9
+      },
+      "active_health_read_authority_text": {
+        "calls": 22117,
+        "distinct_input_signatures": 10
+      },
+      "active_health_instruction_text": {
+        "calls": 39867,
+        "distinct_input_signatures": 10
+      }
+    },
+    "limitations": [
+      "Counts include collection and fixture execution.",
+      "Repeated input alone does not prove memoization is safe; context, mutation and exceptions require separate review.",
+      "No inputs, results or health records are exported. No caching or production modification."
+    ]
+  },
+  "diagnostic_script_sha256": "098f9fb319afba008ad175e63962253de0b30623e9bc3dd52dbc6f55411e4b22",
+  "next_experiment": {
+    "scope": "Investigate reuse of pure text parsing within a single immutable request context; no authorization decision cache.",
+    "required_checks": [
+      "Current owner/date restrictions, denied third-party requests and quoted instructions remain identical.",
+      "No process-global health-text cache or cross-request result reuse.",
+      "Recheck context changes, concurrency, cancellation, errors and mutable return values.",
+      "Compare the same full test corpus and genuine CI before claiming speedup."
+    ],
+    "status": "investigation_only_no_runtime_change"
+  },
+  "full_ci_module_costs": {
+    "run_id": 40468093798,
+    "head_sha": "38be6d970f7973c878057bb708a3a13d6939f2f1",
+    "attempt": 1,
+    "processes": 64,
+    "testcase_results": 35788,
+    "total_testcase_seconds": 5366.651999999972,
+    "top_modules": [
+      {
+        "module": "tests.test_agent_composed_synthesis_projection",
+        "testcase_seconds": 1191.608,
+        "results": 1116
+      },
+      {
+        "module": "tests.test_running_analysis_runtime",
+        "testcase_seconds": 106.245,
+        "results": 74
+      },
+      {
+        "module": "tests.test_agent_stream_no_false_record_claim",
+        "testcase_seconds": 100.773,
+        "results": 156
+      },
+      {
+        "module": "tests.test_agent_executor_fast_routing",
+        "testcase_seconds": 92.232,
+        "results": 192
+      },
+      {
+        "module": "tests.test_illness_recovery_turn",
+        "testcase_seconds": 86.364,
+        "results": 285
+      },
+      {
+        "module": "tests.test_agent_executor_completion_status",
+        "testcase_seconds": 79.516,
+        "results": 178
+      },
+      {
+        "module": "tests.test_agent_kernel_tool_gateway",
+        "testcase_seconds": 79.282,
+        "results": 3566
+      },
+      {
+        "module": "tests.test_supplement_gateway_adversarial",
+        "testcase_seconds": 68.048,
+        "results": 204
+      },
+      {
+        "module": "tests.test_agent_read_repair_round_budget",
+        "testcase_seconds": 63.853,
+        "results": 35
+      },
+      {
+        "module": "tests.test_agent_executor_food_vision",
+        "testcase_seconds": 58.267,
+        "results": 252
+      },
+      {
+        "module": "tests.test_guidance_appended_administration",
+        "testcase_seconds": 57.198,
+        "results": 2593
+      },
+      {
+        "module": "tests.test_agent_diet_evaluation",
+        "testcase_seconds": 56.87,
+        "results": 74
+      },
+      {
+        "module": "tests.test_agent_runtime_api",
+        "testcase_seconds": 55.68,
+        "results": 43
+      },
+      {
+        "module": "tests.test_supplement_record_autocreate",
+        "testcase_seconds": 54.621,
+        "results": 175
+      },
+      {
+        "module": "tests.test_full_task_prompt_benchmark",
+        "testcase_seconds": 53.464,
+        "results": 71
+      },
+      {
+        "module": "tests.test_agent_symptom_status_observation",
+        "testcase_seconds": 49.187,
+        "results": 165
+      },
+      {
+        "module": "tests.test_supplement_safety_knowledge",
+        "testcase_seconds": 46.534,
+        "results": 11
+      },
+      {
+        "module": "tests.test_owned_read_preplanning_runtime",
+        "testcase_seconds": 42.808,
+        "results": 44
+      },
+      {
+        "module": "tests.test_composed_read_failure_terminal",
+        "testcase_seconds": 38.588,
+        "results": 38
+      },
+      {
+        "module": "tests.test_agent_coherence_pi_trajectories",
+        "testcase_seconds": 37.648,
+        "results": 29
+      }
+    ],
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40468093798",
+    "junit_sha256": {
+      "live-run-api": "a1aba8597d0cdd8bb111a026b08ba1f1ab6e7756ff0d48eb594b755f07f4edb2",
+      "s-l-z": "d18e8d7fd2f1c81186b26ea9e26f13732569f3160d58f902b032f2da792000ab",
+      "a-early-rest": "81433f8c7854d408d81fc40b16aba1939c7ad95cb0cb9a6b88bba4c867093101",
+      "agent-composed-synthesis-03": "2a8e03a198a54eceaf2e690c8348a36be04db204867dced0aaa0fd2357929c06",
+      "voice": "c3963ad6e9f790aee940b161fd0c94c74880f8ab429159ce2b27b512f88a6fed",
+      "agent-composed-synthesis-04": "f83b1f19ebcf9eca00937f77af733bb99b4db81643b548d781aeb5e65374b5cc",
+      "agent-e-core": "8afe19b1b5f20df27918aa081cefcb63766622af616a8e64154b176bebee73a6",
+      "q": "15ff02838d489be08c06c51b34465a3cf41044b2f13e17fde62f25fd0f2c36fd",
+      "agent-composed-synthesis-02": "bea8cbce671ae50bf8b4cd1045efe35870e32dce65ae4b96521c50cf5e4f32e9",
+      "agent-executor-food": "91cf5ee9f30788531573ccf0756238c57f129faed49ee5526bfaefcf8ff3ed9b",
+      "t-f-v-rest": "d0f37cea5c2d95ef708a00b0ffecf14c28d18a98a3c7bc577a31b545d2b0c32c",
+      "a-action": "e5e6567c1d9e22516e34e9b22b119ea6a4ba0ff7aa42cc493da079b2962664e5",
+      "agent-f-h": "8c648375eea2b880acb53342ab9881d47cfed39a8dd586675dc1eb8e9661ef1c",
+      "h-j": "61a56e7d76192497fe1e2bf30f0b6391b78006f2f531b4a071ee5de38c4855e2",
+      "live-run-events": "6b556e107820a46dbbdedd4866e7b40325368dbfc5feaeffcf1f3dd432e3d83e",
+      "app-store-demo-account": "ec5b49bd4445b5ed3a07ee5bee000be14d14e850d9d734c33758f521f0146543",
+      "b": "4870131d1ca09b64e8d168ca7e983a7bea107e6ceae308ac78c09ae246c43bca",
+      "k-m-rest": "c38a72f4a1c58a9515cdb2af3ebf6f4e1a90378e2e3975b6f2e7532b92c9712c",
+      "s-c-k": "91b520c3578c8ede206511dcd494e8b56e7d6e3da2140221c0e37c8cc0815ffc",
+      "d-data-device": "07196ba4e1f5d34a92b96a984d61a860e09774455497d747ece794dd6e652a15",
+      "g": "94c19a8d1e39ab518c68364f863888ffb7d44258426a5ea8f952fea0123b4b75",
+      "r-runtime-recovery": "b9ade517692db500a78477fa578f9e1ba896baa3a8a55e503eb23965d3fefec9",
+      "twin-api": "0d1e416f64edbfc3ada1b59a9577467b7ed44e0ebcfec2d25a40d0a168905865",
+      "agent-executor-g-h": "f31afb4f63f67e39e07705285ae52a72b9643d1af2fbb5d5ee65e4269e7c04fe",
+      "agent-i-l": "18ab68a8af55cce35c41d9da4afbfe5f8777ef0da30c286fe96e2b8ca730b100",
+      "agent-w-z": "a8102e7fb335bab82b4e43a9a835e221253ee2345cc29040a530a50ee366cdcd",
+      "today-timeline": "3e5d677c215d7dfbc0039f5f6ac7b35b0c1c4e5f110d9fec4829e29dd6a30a72",
+      "agent-composed-synthesis-01": "4357b82a402b63472b634373841cb075f556681244687962f79790c1b00836e4",
+      "agent-executor-error-fast": "7782c0fea40d427c548ca5e7fcb63bf1a924a13eb480ce56014073d6908cbb6a",
+      "timeline-medications": "cc49c2acc0c81b85fd4c323bdbb578ffdca1fd23180441fc3d9702b27e6277dc",
+      "u": "cb607d2d328aa22102bde785372dcfc7dd53492ec30c9d670d02897901ba7857",
+      "a-late": "646f412a460682797863dde2e01eb0d50c65bc45d9e2482f88780b988f6c43fe",
+      "r-other": "9bc4686e0833c430229b20b434fca69d1fbab9638d393b7ee5ec39d3ef9217e8",
+      "s-a-b": "c0347c0607d9519ea19baac225737aa48cdc1188d4e60ff527d2adc7a7f9f9ef",
+      "services": "cc8978874c11cfb95abe6b9443437a43e9b757479e52bf09b28f81384e663012",
+      "timeline-core": "cd4980e76dfb3c70a07310a6f6bae97b70fcfda86e20d53a1855cac140a9bb43",
+      "agent-executor-i-z": "c8b54ca11bf48ec7ebb18c6ac3ea855fe9a4803c85f4fa65fd766e16bbd21f49",
+      "agent-r": "c1d35ea11e71951a494e4e4037678a4c497cf38da21a610d10cd9c6028bb9105",
+      "d-dedao": "49583e531d35e61fbfc4d33a94e7949e9dcdfca3d4bc211bca7b0784d9d0ac58",
+      "d-rest": "10c7eb60ea33f1e38721e01af354fb20cf3aa036e33f819496f4abb2914944a4",
+      "agent-executor-a-d": "598b0c51fe79ae72404846e1abb089b8a9cadba4a471e3d332d124cd1ac6ef23",
+      "c-composed": "b3237a64d3925704b5e6aabfbf3a52ccead607c7e74abf7ad689f464ed3f9dcb",
+      "c-conversational": "c3a9ed8f30d085ca07830bb111cbb1d32f2be7bd90243a90fd1be5e9de1c38ed",
+      "c-rest": "3fa93247113b136ba6e3b6ea8c9971b2656ae908e0f1a97099ebac0d4d61c6ef",
+      "t-a-e": "c624039305800b5150e4fc2424b26ed0535501437ca47b3b8a4e568aca82e7ce",
+      "wearable-reports": "0d232355bd8f799f6ed97e5168ce12e6e2be0b58783e45fd6f2c358caea19b47",
+      "f": "6358aa5a951cf89e13dc9cbab3037d61bf7ca2dd64ce7666174311f37b88da68",
+      "p": "16d92254a7255b5c6e127fc0837bc41cb52d1e6906ff76fcc55fc2f16cae9127",
+      "r-record-registration": "7d623ebba8681393dd91eb7b7aefc7b6fc1aca34d3a1c9634c1da71c7236a332",
+      "today-core": "672db6aea154761e906b456b7c28303196805240f865b129eac482e5f135aa69",
+      "d-diet": "b7224c3e0b46353fd09fa7d2167e9a3d9208dc8b1233f611dfbbff81952fb1fb",
+      "e": "41387b02f01fe60e1050ea0877e621ead9145db07b592d44caef5719db67ccec",
+      "watch": "43c67ddb998af2033ef731ed5eb67cb7b1714ccfcbe2126ff52e16f41bef86b0",
+      "workday-workout": "04c7ecee8a05f394164991f6b2823589c306f4350d2cbf6f17287b76a6667b20",
+      "agent-s-v-rest": "6b0d7b106211ee518b0a9472c42b8c8170aff4f620dff63233523b4490272dea",
+      "agent-s-v-stream": "0a03c6ba4df03b3bbdcdcfa55340ef227858fa9d154c374624ee8adacc0a528b",
+      "agent-s-v-symptom": "1abea2b371fd6aa3f5db72f927da29beefa8e01cb94f08faefc01ef0358ba8bb",
+      "n": "88cc620b17d6298096a7b01833696c03b5d96634c3d2572aeb87cbfc068c4ccb",
+      "o": "0ea44eb780b63fe27cbb0b26ec2500aa8a98e3ba8e0373f65e964f55dcf680ef",
+      "t-w-z": "a35e4b516d2c7d33b1f93dd0df14b1cdaa210812df67240f8e582f3da088eb18",
+      "a-agenda": "12a36a64effb10a2682b65f7018cb30f780fbaead2c076d03c38cb8cfa19718c",
+      "agent-a-d-rest": "ff2a6a0dba5c0f23940bddac494b3814645ec7ba31e85fb9c41ed967c6a3f9f4",
+      "agent-m-p": "336f8f8c4710a0c7790414c111400e22f271002586930da1c2ba6b179fda7be8",
+      "write-z": "dffe21c9591712ce6a3b5168af7a784e4be7b18067a584f4bd22323290f43f8f"
+    },
+    "measurement": "Cumulative testcase setup/call/teardown across 64 processes; parallel sums are not pipeline wall time.",
+    "jobs_export_sha256": "a2dee2d0864d86e9302d13ef35be0faa36389e08d8beca460a04761a88b7ec68"
+  },
+  "reproduction": {
+    "working_directory": "backend",
+    "environment": {
+      "DATABASE_URL": "sqlite:///:memory:",
+      "REDIS_URL": "redis://127.0.0.1:1/0"
+    },
+    "profile_invocation": [
+      "python",
+      "-m",
+      "cProfile",
+      "-o",
+      "/tmp/reva-composed.prof",
+      "-m",
+      "pytest",
+      "tests/test_agent_composed_synthesis_projection.py::test_verified_four_domain_provider_projection[batch-True]",
+      "--no-cov",
+      "-q"
+    ],
+    "call_counter_source": "\"\"\"Count synthetic-test inputs; execute original functions without memoization.\"\"\"\nimport functools\nimport json\nimport sys\nfrom pathlib import Path\n\nsys.path.insert(0, str(Path.cwd()))\nfrom app.services.agent_kernel import health_semantics\n\nnames = ('resolve_illness_entity', 'resolve_health_read_act',\n         'active_health_read_authority_text', 'active_health_instruction_text')\nstats = {name: {'calls': 0, 'inputs': set()} for name in names}\noriginals = {name: getattr(health_semantics, name) for name in names}\nwrappers = {}\nfor name, original in originals.items():\n    def make_wrapper(name, original):\n        @functools.wraps(original)\n        def wrapped(*args, **kwargs):\n            stats[name]['calls'] += 1\n            # Only aggregate counts leave memory; synthetic test inputs only.\n            stats[name]['inputs'].add(repr((args, sorted(kwargs.items()))))\n            return original(*args, **kwargs)\n        return wrapped\n    wrappers[name] = make_wrapper(name, original)\n\n# Existing imports keep aliases; instrument them as well as subsequent imports.\nfor module_name, module in list(sys.modules.items()):\n    if not module_name.startswith('app.') or module is None:\n        continue\n    for attr, value in list(vars(module).items()):\n        for name, original in originals.items():\n            if value is original:\n                setattr(module, attr, wrappers[name])\n\nimport pytest\ncode = pytest.main(['tests/test_agent_composed_synthesis_projection.py::test_verified_four_domain_provider_projection[batch-True]', '--no-cov', '-q'])\nsummary = {'kind': 'Local synthetic test diagnostic; original functions executed every time',\n    'pytest_exit_code': int(code), 'calls': {name: {'calls': row['calls'],\n        'distinct_input_signatures': len(row['inputs'])} for name, row in stats.items()},\n    'limitations': ['Counts include collection and fixture execution.',\n        'Repeated input alone does not prove memoization is safe; context, mutation and exceptions require separate review.',\n        'No inputs, results or health records are exported. No caching or production modification.']}\nPath('/tmp/reva-phase5-semantic-calls.json').write_text(json.dumps(summary, indent=2)+'\\n')\nraise SystemExit(code)\n",
+    "dependencies": "Python 3.12; backend/requirements.lock with --require-hashes, then backend/requirements-dev.txt in an isolated environment."
+  }
+}

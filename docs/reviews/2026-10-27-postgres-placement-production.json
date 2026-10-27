@@ -1,0 +1,2521 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "candidate_sha": "ea55da9c01c50154f460bd208666e3f76686dbb5",
+  "measurement": "Actual first-attempt full CI before and after PostgreSQL test selector placement; all case identities/outcomes and selectors independently compared.",
+  "runs": [
+    {
+      "run_id": 40460622845,
+      "sha": "9fd15d602dc34be3f0a30146f76909c65233bbe6",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 586.0,
+      "attempt_execution_span_seconds": 584.0,
+      "runner_seconds": 8688.0,
+      "critical_job": "backend-test-balanced-09",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 37.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 32.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 18.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 11.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 18.0
+        }
+      ],
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40460622845",
+      "jobs_export_sha256": "f2b2662d9c897f084bc661bf64787ea0a6795b004a4cf844cce676d790086005",
+      "job_count": 32,
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 15.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 7.0,
+            "Classify changed paths": 0.0,
+            "Build timing-balanced pytest matrix": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 11.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 5.0,
+            "Verify actual target systemd 249 containment with synthetic fixtures": 3.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 174.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 7.0,
+            "Run maxim-lobanov/setup-xcode@v1": 0.0,
+            "Run actions/setup-python@v6": 1.0,
+            "Exercise release shell contracts with macOS Bash 3": 19.0,
+            "Build (swift build)": 99.0,
+            "Test (logic suite only)": 42.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 18.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install lightweight documentation dependencies": 5.0,
+            "Scan tracked files for high-confidence secrets": 3.0,
+            "Check System Map and doc drift": 1.0,
+            "Test System Map harness": 1.0,
+            "Check dossier consistency": 0.0,
+            "Check Agent Skill governance": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 243.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 37.0,
+            "Audit production Python dependencies": 16.0,
+            "Health MCP tool contracts": 1.0,
+            "Independent WeChat bridge audit and isolated tests": 18.0,
+            "Lint (ruff, non-blocking warnings)": 5.0,
+            "Lint (ruff, blocking \u2014 undefined names / syntax)": 0.0,
+            "LLM live-change regression gate": 1.0,
+            "LLM synthesis regression gate": 2.0,
+            "Eval Golden Set (safety + insight + retrieval, no LLM cost)": 4.0,
+            "System KB retrieval eval (observation mode)": 146.0,
+            "Upload System KB eval metrics": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 447.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 15.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install official Pi for PostgreSQL integration": 3.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 32.0,
+            "Verify live-run task publishing on isolated Redis": 9.0,
+            "Verify isolated review closure PostgreSQL boundary": 1.0,
+            "Verify old-target rollback closure PostgreSQL boundary": 15.0,
+            "Verify bounded no-backup daily journey migration on PostgreSQL": 1.0,
+            "Verify journey preflight closure catalog on isolated PostgreSQL": 1.0,
+            "Verify Runtime migration upgrade and idempotency": 0.0,
+            "Verify PostgreSQL shard database isolation": 1.0,
+            "Run Runtime and medication PostgreSQL semantics": 352.0,
+            "Preserve PostgreSQL shard evidence": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Stop containers": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 369.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 6.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-05)": 323.0,
+            "Upload pytest timing (balanced-05)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 351.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 5.0,
+            "Install dependencies": 14.0,
+            "Run isolated shards (balanced-02)": 309.0,
+            "Upload pytest timing (balanced-02)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 504.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-13)": 462.0,
+            "Upload pytest timing (balanced-13)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 431.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 14.0,
+            "Run isolated shards (balanced-01)": 392.0,
+            "Upload pytest timing (balanced-01)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 528.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 19.0,
+            "Run isolated shards (balanced-14)": 483.0,
+            "Upload pytest timing (balanced-14)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 454.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 18.0,
+            "Run isolated shards (balanced-06)": 409.0,
+            "Upload pytest timing (balanced-06)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 297.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 6.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 13.0,
+            "Run isolated shards (balanced-03)": 255.0,
+            "Upload pytest timing (balanced-03)": 8.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 514.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 19.0,
+            "Run isolated shards (balanced-10)": 464.0,
+            "Upload pytest timing (balanced-10)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 284.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 5.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 11.0,
+            "Run isolated shards (balanced-15)": 251.0,
+            "Upload pytest timing (balanced-15)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 554.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 19.0,
+            "Run isolated shards (balanced-09)": 505.0,
+            "Upload pytest timing (balanced-09)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 525.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 11.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 19.0,
+            "Run isolated shards (balanced-11)": 473.0,
+            "Upload pytest timing (balanced-11)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 480.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-04)": 436.0,
+            "Upload pytest timing (balanced-04)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 297.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 6.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-07)": 258.0,
+            "Upload pytest timing (balanced-07)": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 33.0,
+          "execution_seconds": 440.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-16)": 401.0,
+            "Upload pytest timing (balanced-16)": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 414.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 8.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-12)": 370.0,
+            "Upload pytest timing (balanced-12)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 372.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-08)": 331.0,
+            "Upload pytest timing (balanced-08)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 40.0,
+          "execution_seconds": 288.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Verify installed release-tool consumers before publishing": 8.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install release-test dependencies": 34.0,
+            "Verify real application network boundary in isolated namespace": 27.0,
+            "Verify synthetic WeChat systemd containment on disposable runner": 2.0,
+            "Verify real retained runner filesystem and canonical startup": 1.0,
+            "Run deployment and rollback invariants": 197.0,
+            "Verify isolated OpenSSH single-key pause and restore": 1.0,
+            "Verify frontend builder uses a private mount namespace and dynamic UID": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 263.0,
+          "execution_seconds": 43.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install only the credential-free test adapter dependencies": 3.0,
+            "Materialize exact retained startup pipeline without release admission": 3.0,
+            "First publisher Node setup on this fresh runner": 4.0,
+            "Exercise actual retained dependency installation and patches": 26.0,
+            "Exercise actual isolated retained startup CLI without credentials": 1.0,
+            "Post First publisher Node setup on this fresh runner": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 305.0,
+          "execution_seconds": 165.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install isolated artifact test dependencies": 3.0,
+            "Reject real Linux bind mounts before frontend deletion": 0.0,
+            "Build and consume a real frontend artifact without recompiling": 148.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 196.0,
+          "execution_seconds": 149.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 7.0,
+            "Run actions/setup-node@v5": 3.0,
+            "Check frontend page freeze (Phase 0-4)": 0.0,
+            "Install dependencies": 13.0,
+            "Audit production dependencies": 2.0,
+            "Test OSV dependency audit gate": 0.0,
+            "Test (vitest)": 57.0,
+            "Build": 35.0,
+            "Lint": 28.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 318.0,
+          "execution_seconds": 54.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install backend deps": 30.0,
+            "Run actions/setup-node@v5": 1.0,
+            "Regenerate client types + assert no drift": 15.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 308.0,
+          "execution_seconds": 92.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install credential-free OTA test adapter dependencies": 3.0,
+            "Materialize actual OTA startup without release admission": 7.0,
+            "Fixed OTA publisher Node toolchain": 5.0,
+            "Exercise actual OTA dependencies and patches": 22.0,
+            "Exercise actual isolated OTA preflight": 0.0,
+            "Export and verify real iOS artifact without publishing": 46.0,
+            "Post Fixed OTA publisher Node toolchain": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 318.0,
+          "execution_seconds": 165.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-node@v5": 3.0,
+            "Install dependencies": 18.0,
+            "Verify installed signature backport": 2.0,
+            "Test security dependency compatibility and collection limits": 0.0,
+            "Test patched image parser denial-of-service guards": 0.0,
+            "Audit production dependencies": 3.0,
+            "Test OSV dependency audit gate": 0.0,
+            "TypeScript check": 23.0,
+            "Design token gate (\u590d\u5143 Reva ratchet)": 0.0,
+            "Test (jest main suite)": 67.0,
+            "Test stateful chat input (isolated)": 10.0,
+            "Test stateful chat screen (isolated)": 10.0,
+            "Test stateful auth hook (isolated)": 13.0,
+            "Test stateful GPS prompt hook (isolated)": 10.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 402.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Enforce release-only gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 576.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Enforce backend test and quality gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 582.0,
+          "execution_seconds": 4.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Require every backend release dependency to have actually passed": 0.0,
+            "Complete job": 0.0
+          }
+        }
+      ],
+      "postgres_job_seconds": 447.0,
+      "postgres_test_step_seconds": 352.0,
+      "max_backend_test_step_seconds": 505.0,
+      "postgres_evidence": {
+        "group_testcase_seconds": [
+          243.192,
+          335.449
+        ],
+        "junit_sha256": {
+          "shard-1.xml": "6902f4b221638f6dd9d611cba0fe1be779da8b6536d6ef0d02e99baf57418f96",
+          "shard-2.xml": "2a38db1b493a37ae067f64d94cb19ba607567a8125383584ab77579e4bf53e72"
+        },
+        "testcase_results": 499,
+        "skipped": 0,
+        "manifest_sha256": "143fcc66884df82522b09ddb0d5766700422b72caa6f828956def9ae0fe63d55",
+        "process_wall_seconds": 351.671,
+        "selectors": [
+          [
+            "tests/test_agent_runtime_tool_operations.py",
+            "tests/test_remote_health_transport.py",
+            "tests/test_agent_runtime_reconciliation.py",
+            "tests/test_agent_supplement_persistence_postgres.py",
+            "tests/test_pi_kernel_executor.py",
+            "tests/test_latest_meal_correction.py",
+            "tests/test_daily_journey.py",
+            "tests/test_daily_journey_postgres.py",
+            "tests/test_life_navigation.py",
+            "tests/test_health_navigation_concurrency.py"
+          ],
+          [
+            "tests/test_agent_runtime_concurrency.py",
+            "tests/test_supplement_taken_count_drop_migration.py",
+            "tests/test_supplement_groups.py",
+            "tests/test_diet_spoken_fraction_correction.py",
+            "tests/test_pi_kernel_write_reconciliation.py",
+            "tests/test_medication_intake_batch.py",
+            "tests/test_write_intent_medication_batch_schema.py",
+            "tests/test_medication_intake_batch_postgres.py",
+            "tests/test_medication_reminder_single_delivery.py",
+            "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss",
+            "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract",
+            "tests/test_invited_phone_registration_postgres.py",
+            "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner",
+            "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
+            "tests/test_remote_health_oauth.py",
+            "tests/test_remote_health_queries.py",
+            "tests/test_health_week_navigation.py",
+            "tests/test_lifenav_grants.py"
+          ]
+        ]
+      }
+    },
+    {
+      "run_id": 40468093798,
+      "sha": "38be6d970f7973c878057bb708a3a13d6939f2f1",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 576.0,
+      "attempt_execution_span_seconds": 574.0,
+      "runner_seconds": 8636.0,
+      "critical_job": "backend-test-balanced-09",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 35.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 24.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 18.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 11.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 20.0
+        }
+      ],
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40468093798",
+      "jobs_export_sha256": "a2dee2d0864d86e9302d13ef35be0faa36389e08d8beca460a04761a88b7ec68",
+      "job_count": 32,
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 10.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Classify changed paths": 0.0,
+            "Build timing-balanced pytest matrix": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 10.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Verify actual target systemd 249 containment with synthetic fixtures": 2.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 184.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run maxim-lobanov/setup-xcode@v1": 0.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Exercise release shell contracts with macOS Bash 3": 16.0,
+            "Build (swift build)": 108.0,
+            "Test (logic suite only)": 49.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 21.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install lightweight documentation dependencies": 6.0,
+            "Scan tracked files for high-confidence secrets": 3.0,
+            "Check System Map and doc drift": 1.0,
+            "Test System Map harness": 2.0,
+            "Check dossier consistency": 0.0,
+            "Check Agent Skill governance": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 407.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 19.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install official Pi for PostgreSQL integration": 2.0,
+            "Run actions/setup-python@v6": 5.0,
+            "Install dependencies": 35.0,
+            "Verify live-run task publishing on isolated Redis": 9.0,
+            "Verify isolated review closure PostgreSQL boundary": 1.0,
+            "Verify old-target rollback closure PostgreSQL boundary": 12.0,
+            "Verify bounded no-backup daily journey migration on PostgreSQL": 1.0,
+            "Verify journey preflight closure catalog on isolated PostgreSQL": 1.0,
+            "Verify Runtime migration upgrade and idempotency": 1.0,
+            "Verify PostgreSQL shard database isolation": 1.0,
+            "Run Runtime and medication PostgreSQL semantics": 302.0,
+            "Preserve PostgreSQL shard evidence": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Stop containers": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 145.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 24.0,
+            "Audit production Python dependencies": 12.0,
+            "Health MCP tool contracts": 0.0,
+            "Independent WeChat bridge audit and isolated tests": 12.0,
+            "Lint (ruff, non-blocking warnings)": 2.0,
+            "Lint (ruff, blocking \u2014 undefined names / syntax)": 1.0,
+            "LLM live-change regression gate": 0.0,
+            "LLM synthesis regression gate": 1.0,
+            "Eval Golden Set (safety + insight + retrieval, no LLM cost)": 2.0,
+            "System KB retrieval eval (observation mode)": 78.0,
+            "Upload System KB eval metrics": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 488.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-11)": 448.0,
+            "Upload pytest timing (balanced-11)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 336.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 6.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 13.0,
+            "Run isolated shards (balanced-14)": 300.0,
+            "Upload pytest timing (balanced-14)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 486.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 1.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-07)": 446.0,
+            "Upload pytest timing (balanced-07)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 512.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-01)": 470.0,
+            "Upload pytest timing (balanced-01)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 487.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 18.0,
+            "Run isolated shards (balanced-02)": 439.0,
+            "Upload pytest timing (balanced-02)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 499.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-05)": 453.0,
+            "Upload pytest timing (balanced-05)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 552.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-09)": 509.0,
+            "Upload pytest timing (balanced-09)": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 275.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 6.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 13.0,
+            "Run isolated shards (balanced-03)": 239.0,
+            "Upload pytest timing (balanced-03)": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 256.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 5.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 11.0,
+            "Run isolated shards (balanced-08)": 225.0,
+            "Upload pytest timing (balanced-08)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 498.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 6.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-04)": 446.0,
+            "Upload pytest timing (balanced-04)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 486.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-10)": 446.0,
+            "Upload pytest timing (balanced-10)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 387.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 5.0,
+            "Install dependencies": 14.0,
+            "Run isolated shards (balanced-06)": 344.0,
+            "Upload pytest timing (balanced-06)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 468.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-16)": 425.0,
+            "Upload pytest timing (balanced-16)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 542.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-15)": 502.0,
+            "Upload pytest timing (balanced-15)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 25.0,
+          "execution_seconds": 292.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 5.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 13.0,
+            "Run isolated shards (balanced-13)": 259.0,
+            "Upload pytest timing (balanced-13)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 373.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 8.0,
+            "Run actions/setup-python@v6": 5.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-12)": 330.0,
+            "Upload pytest timing (balanced-12)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 37.0,
+          "execution_seconds": 254.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Verify installed release-tool consumers before publishing": 6.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install release-test dependencies": 23.0,
+            "Verify real application network boundary in isolated namespace": 27.0,
+            "Verify synthetic WeChat systemd containment on disposable runner": 1.0,
+            "Verify real retained runner filesystem and canonical startup": 1.0,
+            "Run deployment and rollback invariants": 176.0,
+            "Verify isolated OpenSSH single-key pause and restore": 2.0,
+            "Verify frontend builder uses a private mount namespace and dynamic UID": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 161.0,
+          "execution_seconds": 68.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install backend deps": 38.0,
+            "Run actions/setup-node@v5": 1.0,
+            "Regenerate client types + assert no drift": 20.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 291.0,
+          "execution_seconds": 154.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-node@v5": 3.0,
+            "Check frontend page freeze (Phase 0-4)": 0.0,
+            "Install dependencies": 14.0,
+            "Audit production dependencies": 1.0,
+            "Test OSV dependency audit gate": 1.0,
+            "Test (vitest)": 59.0,
+            "Build": 36.0,
+            "Lint": 30.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 272.0,
+          "execution_seconds": 43.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install only the credential-free test adapter dependencies": 4.0,
+            "Materialize exact retained startup pipeline without release admission": 2.0,
+            "First publisher Node setup on this fresh runner": 5.0,
+            "Exercise actual retained dependency installation and patches": 26.0,
+            "Exercise actual isolated retained startup CLI without credentials": 0.0,
+            "Post First publisher Node setup on this fresh runner": 0.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 200.0,
+          "execution_seconds": 114.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install isolated artifact test dependencies": 2.0,
+            "Reject real Linux bind mounts before frontend deletion": 1.0,
+            "Build and consume a real frontend artifact without recompiling": 101.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 231.0,
+          "execution_seconds": 102.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install credential-free OTA test adapter dependencies": 4.0,
+            "Materialize actual OTA startup without release admission": 6.0,
+            "Fixed OTA publisher Node toolchain": 5.0,
+            "Exercise actual OTA dependencies and patches": 25.0,
+            "Exercise actual isolated OTA preflight": 1.0,
+            "Export and verify real iOS artifact without publishing": 54.0,
+            "Post Fixed OTA publisher Node toolchain": 0.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 293.0,
+          "execution_seconds": 179.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 10.0,
+            "Install dependencies": 20.0,
+            "Verify installed signature backport": 1.0,
+            "Test security dependency compatibility and collection limits": 1.0,
+            "Test patched image parser denial-of-service guards": 0.0,
+            "Audit production dependencies": 3.0,
+            "Test OSV dependency audit gate": 0.0,
+            "TypeScript check": 25.0,
+            "Design token gate (\u590d\u5143 Reva ratchet)": 0.0,
+            "Test (jest main suite)": 67.0,
+            "Test stateful chat input (isolated)": 12.0,
+            "Test stateful chat screen (isolated)": 10.0,
+            "Test stateful auth hook (isolated)": 12.0,
+            "Test stateful GPS prompt hook (isolated)": 10.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 335.0,
+          "execution_seconds": 2.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Enforce release-only gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 568.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Enforce backend test and quality gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 573.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Require every backend release dependency to have actually passed": 0.0,
+            "Complete job": 0.0
+          }
+        }
+      ],
+      "postgres_job_seconds": 407.0,
+      "postgres_test_step_seconds": 302.0,
+      "max_backend_test_step_seconds": 509.0,
+      "postgres_evidence": {
+        "group_testcase_seconds": [
+          202.378,
+          285.083
+        ],
+        "junit_sha256": {
+          "shard-1.xml": "98df0f00ca7ce801f18c6a411eb07c95ea4015569f285fbb89b4051ccfa8fdc4",
+          "shard-2.xml": "6c079a96c87982e5330357c9e81b21b6b68c06f86ca280a1a029aa71a18c6692"
+        },
+        "testcase_results": 499,
+        "skipped": 0,
+        "manifest_sha256": "143fcc66884df82522b09ddb0d5766700422b72caa6f828956def9ae0fe63d55",
+        "process_wall_seconds": 301.703,
+        "selectors": [
+          [
+            "tests/test_agent_runtime_tool_operations.py",
+            "tests/test_remote_health_transport.py",
+            "tests/test_agent_runtime_reconciliation.py",
+            "tests/test_agent_supplement_persistence_postgres.py",
+            "tests/test_pi_kernel_executor.py",
+            "tests/test_latest_meal_correction.py",
+            "tests/test_daily_journey.py",
+            "tests/test_daily_journey_postgres.py",
+            "tests/test_life_navigation.py",
+            "tests/test_health_navigation_concurrency.py"
+          ],
+          [
+            "tests/test_agent_runtime_concurrency.py",
+            "tests/test_supplement_taken_count_drop_migration.py",
+            "tests/test_supplement_groups.py",
+            "tests/test_diet_spoken_fraction_correction.py",
+            "tests/test_pi_kernel_write_reconciliation.py",
+            "tests/test_medication_intake_batch.py",
+            "tests/test_write_intent_medication_batch_schema.py",
+            "tests/test_medication_intake_batch_postgres.py",
+            "tests/test_medication_reminder_single_delivery.py",
+            "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss",
+            "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract",
+            "tests/test_invited_phone_registration_postgres.py",
+            "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner",
+            "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
+            "tests/test_remote_health_oauth.py",
+            "tests/test_remote_health_queries.py",
+            "tests/test_health_week_navigation.py",
+            "tests/test_lifenav_grants.py"
+          ]
+        ]
+      }
+    },
+    {
+      "run_id": 40469166838,
+      "sha": "ea55da9c01c50154f460bd208666e3f76686dbb5",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 573.0,
+      "attempt_execution_span_seconds": 571.0,
+      "runner_seconds": 8756.0,
+      "critical_job": "backend-test-balanced-15",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 37.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 35.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 10.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 12.0
+        }
+      ],
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40469166838",
+      "jobs_export_sha256": "88774daeea93c5390c1e072200febb8c698b42d253e60e4108d4c53d56d5401f",
+      "job_count": 32,
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 10.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 7.0,
+            "Classify changed paths": 0.0,
+            "Build timing-balanced pytest matrix": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 10.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Verify actual target systemd 249 containment with synthetic fixtures": 2.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 476.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Initialize containers": 14.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install official Pi for PostgreSQL integration": 3.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 37.0,
+            "Verify live-run task publishing on isolated Redis": 11.0,
+            "Verify isolated review closure PostgreSQL boundary": 1.0,
+            "Verify old-target rollback closure PostgreSQL boundary": 16.0,
+            "Verify bounded no-backup daily journey migration on PostgreSQL": 2.0,
+            "Verify journey preflight closure catalog on isolated PostgreSQL": 0.0,
+            "Verify Runtime migration upgrade and idempotency": 1.0,
+            "Verify PostgreSQL shard database isolation": 1.0,
+            "Run Runtime and medication PostgreSQL semantics": 373.0,
+            "Preserve PostgreSQL shard evidence": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Stop containers": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 17.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install lightweight documentation dependencies": 5.0,
+            "Scan tracked files for high-confidence secrets": 2.0,
+            "Check System Map and doc drift": 0.0,
+            "Test System Map harness": 1.0,
+            "Check dossier consistency": 0.0,
+            "Check Agent Skill governance": 0.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 131.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run maxim-lobanov/setup-xcode@v1": 1.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Exercise release shell contracts with macOS Bash 3": 13.0,
+            "Build (swift build)": 71.0,
+            "Test (logic suite only)": 37.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 206.0,
+          "steps": {
+            "Set up job": 3.0,
+            "Run actions/checkout@v5": 10.0,
+            "Run actions/setup-python@v6": 6.0,
+            "Install dependencies": 35.0,
+            "Audit production Python dependencies": 15.0,
+            "Health MCP tool contracts": 1.0,
+            "Independent WeChat bridge audit and isolated tests": 18.0,
+            "Lint (ruff, non-blocking warnings)": 4.0,
+            "Lint (ruff, blocking \u2014 undefined names / syntax)": 0.0,
+            "LLM live-change regression gate": 0.0,
+            "LLM synthesis regression gate": 2.0,
+            "Eval Golden Set (safety + insight + retrieval, no LLM cost)": 3.0,
+            "System KB retrieval eval (observation mode)": 105.0,
+            "Upload System KB eval metrics": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 373.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 8.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-16)": 333.0,
+            "Upload pytest timing (balanced-16)": 1.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 520.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-13)": 471.0,
+            "Upload pytest timing (balanced-13)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 448.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 7.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-12)": 402.0,
+            "Upload pytest timing (balanced-12)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 473.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-02)": 433.0,
+            "Upload pytest timing (balanced-02)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 26.0,
+          "execution_seconds": 299.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 2.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 5.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 10.0,
+            "Run isolated shards (balanced-10)": 266.0,
+            "Upload pytest timing (balanced-10)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 485.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-03)": 442.0,
+            "Upload pytest timing (balanced-03)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 393.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 5.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-11)": 350.0,
+            "Upload pytest timing (balanced-11)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 547.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-15)": 499.0,
+            "Upload pytest timing (balanced-15)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 483.0,
+          "steps": {
+            "Set up job": 2.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 19.0,
+            "Run isolated shards (balanced-07)": 434.0,
+            "Upload pytest timing (balanced-07)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 534.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 7.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-14)": 485.0,
+            "Upload pytest timing (balanced-14)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 529.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 10.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 17.0,
+            "Run isolated shards (balanced-05)": 488.0,
+            "Upload pytest timing (balanced-05)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 418.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 3.0,
+            "Install dependencies": 14.0,
+            "Run isolated shards (balanced-09)": 377.0,
+            "Upload pytest timing (balanced-09)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 483.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 9.0,
+            "Run actions/setup-python@v6": 4.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-04)": 437.0,
+            "Upload pytest timing (balanced-04)": 2.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 1.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 289.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 13.0,
+            "Run isolated shards (balanced-01)": 254.0,
+            "Upload pytest timing (balanced-01)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 385.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 6.0,
+            "Install and verify official Pi kernel": 8.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 16.0,
+            "Run isolated shards (balanced-06)": 344.0,
+            "Upload pytest timing (balanced-06)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 1.0
+          }
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 348.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Install and verify official Pi kernel": 7.0,
+            "Run actions/setup-python@v6": 2.0,
+            "Install dependencies": 15.0,
+            "Run isolated shards (balanced-08)": 310.0,
+            "Upload pytest timing (balanced-08)": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 34.0,
+          "execution_seconds": 287.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-node@v5": 4.0,
+            "Verify installed release-tool consumers before publishing": 8.0,
+            "Run actions/setup-python@v6": 1.0,
+            "Install release-test dependencies": 32.0,
+            "Verify real application network boundary in isolated namespace": 27.0,
+            "Verify synthetic WeChat systemd containment on disposable runner": 2.0,
+            "Verify real retained runner filesystem and canonical startup": 2.0,
+            "Run deployment and rollback invariants": 199.0,
+            "Verify isolated OpenSSH single-key pause and restore": 2.0,
+            "Verify frontend builder uses a private mount namespace and dynamic UID": 1.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 147.0,
+          "execution_seconds": 114.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 5.0,
+            "Run actions/setup-node@v5": 5.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install isolated artifact test dependencies": 2.0,
+            "Reject real Linux bind mounts before frontend deletion": 0.0,
+            "Build and consume a real frontend artifact without recompiling": 98.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 326.0,
+          "execution_seconds": 163.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-node@v5": 7.0,
+            "Install dependencies": 17.0,
+            "Verify installed signature backport": 1.0,
+            "Test security dependency compatibility and collection limits": 1.0,
+            "Test patched image parser denial-of-service guards": 0.0,
+            "Audit production dependencies": 2.0,
+            "Test OSV dependency audit gate": 1.0,
+            "TypeScript check": 22.0,
+            "Design token gate (\u590d\u5143 Reva ratchet)": 0.0,
+            "Test (jest main suite)": 62.0,
+            "Test stateful chat input (isolated)": 11.0,
+            "Test stateful chat screen (isolated)": 10.0,
+            "Test stateful auth hook (isolated)": 12.0,
+            "Test stateful GPS prompt hook (isolated)": 10.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 223.0,
+          "execution_seconds": 122.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 6.0,
+            "Run actions/setup-node@v5": 3.0,
+            "Check frontend page freeze (Phase 0-4)": 0.0,
+            "Install dependencies": 12.0,
+            "Audit production dependencies": 1.0,
+            "Test OSV dependency audit gate": 0.0,
+            "Test (vitest)": 44.0,
+            "Build": 28.0,
+            "Lint": 23.0,
+            "Post Run actions/setup-node@v5": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 263.0,
+          "execution_seconds": 91.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 4.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install credential-free OTA test adapter dependencies": 3.0,
+            "Materialize actual OTA startup without release admission": 6.0,
+            "Fixed OTA publisher Node toolchain": 6.0,
+            "Exercise actual OTA dependencies and patches": 21.0,
+            "Exercise actual isolated OTA preflight": 1.0,
+            "Export and verify real iOS artifact without publishing": 45.0,
+            "Post Fixed OTA publisher Node toolchain": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 323.0,
+          "execution_seconds": 74.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-python@v6": 6.0,
+            "Install backend deps": 38.0,
+            "Run actions/setup-node@v5": 0.0,
+            "Regenerate client types + assert no drift": 22.0,
+            "Post Run actions/setup-node@v5": 0.0,
+            "Post Run actions/setup-python@v6": 0.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 305.0,
+          "execution_seconds": 38.0,
+          "steps": {
+            "Set up job": 1.0,
+            "Run actions/checkout@v5": 3.0,
+            "Run actions/setup-python@v6": 0.0,
+            "Install only the credential-free test adapter dependencies": 3.0,
+            "Materialize exact retained startup pipeline without release admission": 3.0,
+            "First publisher Node setup on this fresh runner": 4.0,
+            "Exercise actual retained dependency installation and patches": 20.0,
+            "Exercise actual isolated retained startup CLI without credentials": 0.0,
+            "Post First publisher Node setup on this fresh runner": 0.0,
+            "Post Run actions/setup-python@v6": 1.0,
+            "Post Run actions/checkout@v5": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 356.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Enforce release-only gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 564.0,
+          "execution_seconds": 3.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Enforce backend test and quality gates": 0.0,
+            "Complete job": 0.0
+          }
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 569.0,
+          "execution_seconds": 4.0,
+          "steps": {
+            "Set up job": 0.0,
+            "Require every backend release dependency to have actually passed": 0.0,
+            "Complete job": 0.0
+          }
+        }
+      ],
+      "postgres_job_seconds": 476.0,
+      "postgres_test_step_seconds": 373.0,
+      "max_backend_test_step_seconds": 499.0,
+      "postgres_evidence": {
+        "group_testcase_seconds": [
+          329.573,
+          353.702
+        ],
+        "junit_sha256": {
+          "shard-1.xml": "938bc98a8aa984150149049124346ac511eb8e2f93e231c8b7ed0c43186a14cc",
+          "shard-2.xml": "23293439b6418a5df28e7c47c26987624384f59800dd42f6a89116db4c6ee41f"
+        },
+        "testcase_results": 499,
+        "skipped": 0,
+        "manifest_sha256": "143fcc66884df82522b09ddb0d5766700422b72caa6f828956def9ae0fe63d55",
+        "process_wall_seconds": 372.826,
+        "selectors": [
+          [
+            "tests/test_agent_runtime_tool_operations.py",
+            "tests/test_remote_health_transport.py",
+            "tests/test_agent_runtime_reconciliation.py",
+            "tests/test_agent_supplement_persistence_postgres.py",
+            "tests/test_pi_kernel_executor.py",
+            "tests/test_latest_meal_correction.py",
+            "tests/test_daily_journey.py",
+            "tests/test_daily_journey_postgres.py",
+            "tests/test_life_navigation.py",
+            "tests/test_health_navigation_concurrency.py",
+            "tests/test_remote_health_oauth.py"
+          ],
+          [
+            "tests/test_agent_runtime_concurrency.py",
+            "tests/test_supplement_taken_count_drop_migration.py",
+            "tests/test_supplement_groups.py",
+            "tests/test_diet_spoken_fraction_correction.py",
+            "tests/test_pi_kernel_write_reconciliation.py",
+            "tests/test_medication_intake_batch.py",
+            "tests/test_write_intent_medication_batch_schema.py",
+            "tests/test_medication_intake_batch_postgres.py",
+            "tests/test_medication_reminder_single_delivery.py",
+            "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss",
+            "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract",
+            "tests/test_invited_phone_registration_postgres.py",
+            "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner",
+            "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
+            "tests/test_remote_health_queries.py",
+            "tests/test_health_week_navigation.py",
+            "tests/test_lifenav_grants.py"
+          ]
+        ]
+      }
+    }
+  ],
+  "postgres_cases_and_outcomes_equal": true,
+  "postgres_selectors_equal": true,
+  "limitations": [
+    "One candidate cannot establish P95/P99 or stable causal speedup.",
+    "PostgreSQL group testcase sums exclude process startup and resource contention.",
+    "No application deployment or OTA for this CI-only change."
+  ],
+  "backend_coverage": {
+    "baseline_run_id": 40468093798,
+    "candidate_run_id": 40469166838,
+    "processes": 64,
+    "testcase_results": 35788,
+    "skipped": 155,
+    "per_process_identity_and_outcome_multisets_equal": true,
+    "manifest_sha256": "5eebeeb76ba159b93631d0ed65b294498f736fd9b99368ba536afd5cf24ff507",
+    "baseline_junit_sha256": {
+      "live-run-api": "a1aba8597d0cdd8bb111a026b08ba1f1ab6e7756ff0d48eb594b755f07f4edb2",
+      "s-l-z": "d18e8d7fd2f1c81186b26ea9e26f13732569f3160d58f902b032f2da792000ab",
+      "a-early-rest": "81433f8c7854d408d81fc40b16aba1939c7ad95cb0cb9a6b88bba4c867093101",
+      "agent-composed-synthesis-03": "2a8e03a198a54eceaf2e690c8348a36be04db204867dced0aaa0fd2357929c06",
+      "voice": "c3963ad6e9f790aee940b161fd0c94c74880f8ab429159ce2b27b512f88a6fed",
+      "agent-composed-synthesis-04": "f83b1f19ebcf9eca00937f77af733bb99b4db81643b548d781aeb5e65374b5cc",
+      "agent-e-core": "8afe19b1b5f20df27918aa081cefcb63766622af616a8e64154b176bebee73a6",
+      "q": "15ff02838d489be08c06c51b34465a3cf41044b2f13e17fde62f25fd0f2c36fd",
+      "agent-composed-synthesis-02": "bea8cbce671ae50bf8b4cd1045efe35870e32dce65ae4b96521c50cf5e4f32e9",
+      "agent-executor-food": "91cf5ee9f30788531573ccf0756238c57f129faed49ee5526bfaefcf8ff3ed9b",
+      "t-f-v-rest": "d0f37cea5c2d95ef708a00b0ffecf14c28d18a98a3c7bc577a31b545d2b0c32c",
+      "a-action": "e5e6567c1d9e22516e34e9b22b119ea6a4ba0ff7aa42cc493da079b2962664e5",
+      "agent-f-h": "8c648375eea2b880acb53342ab9881d47cfed39a8dd586675dc1eb8e9661ef1c",
+      "h-j": "61a56e7d76192497fe1e2bf30f0b6391b78006f2f531b4a071ee5de38c4855e2",
+      "live-run-events": "6b556e107820a46dbbdedd4866e7b40325368dbfc5feaeffcf1f3dd432e3d83e",
+      "app-store-demo-account": "ec5b49bd4445b5ed3a07ee5bee000be14d14e850d9d734c33758f521f0146543",
+      "b": "4870131d1ca09b64e8d168ca7e983a7bea107e6ceae308ac78c09ae246c43bca",
+      "k-m-rest": "c38a72f4a1c58a9515cdb2af3ebf6f4e1a90378e2e3975b6f2e7532b92c9712c",
+      "s-c-k": "91b520c3578c8ede206511dcd494e8b56e7d6e3da2140221c0e37c8cc0815ffc",
+      "d-data-device": "07196ba4e1f5d34a92b96a984d61a860e09774455497d747ece794dd6e652a15",
+      "g": "94c19a8d1e39ab518c68364f863888ffb7d44258426a5ea8f952fea0123b4b75",
+      "r-runtime-recovery": "b9ade517692db500a78477fa578f9e1ba896baa3a8a55e503eb23965d3fefec9",
+      "twin-api": "0d1e416f64edbfc3ada1b59a9577467b7ed44e0ebcfec2d25a40d0a168905865",
+      "agent-executor-g-h": "f31afb4f63f67e39e07705285ae52a72b9643d1af2fbb5d5ee65e4269e7c04fe",
+      "agent-i-l": "18ab68a8af55cce35c41d9da4afbfe5f8777ef0da30c286fe96e2b8ca730b100",
+      "agent-w-z": "a8102e7fb335bab82b4e43a9a835e221253ee2345cc29040a530a50ee366cdcd",
+      "today-timeline": "3e5d677c215d7dfbc0039f5f6ac7b35b0c1c4e5f110d9fec4829e29dd6a30a72",
+      "agent-composed-synthesis-01": "4357b82a402b63472b634373841cb075f556681244687962f79790c1b00836e4",
+      "agent-executor-error-fast": "7782c0fea40d427c548ca5e7fcb63bf1a924a13eb480ce56014073d6908cbb6a",
+      "timeline-medications": "cc49c2acc0c81b85fd4c323bdbb578ffdca1fd23180441fc3d9702b27e6277dc",
+      "u": "cb607d2d328aa22102bde785372dcfc7dd53492ec30c9d670d02897901ba7857",
+      "a-late": "646f412a460682797863dde2e01eb0d50c65bc45d9e2482f88780b988f6c43fe",
+      "r-other": "9bc4686e0833c430229b20b434fca69d1fbab9638d393b7ee5ec39d3ef9217e8",
+      "s-a-b": "c0347c0607d9519ea19baac225737aa48cdc1188d4e60ff527d2adc7a7f9f9ef",
+      "services": "cc8978874c11cfb95abe6b9443437a43e9b757479e52bf09b28f81384e663012",
+      "timeline-core": "cd4980e76dfb3c70a07310a6f6bae97b70fcfda86e20d53a1855cac140a9bb43",
+      "agent-executor-i-z": "c8b54ca11bf48ec7ebb18c6ac3ea855fe9a4803c85f4fa65fd766e16bbd21f49",
+      "agent-r": "c1d35ea11e71951a494e4e4037678a4c497cf38da21a610d10cd9c6028bb9105",
+      "d-dedao": "49583e531d35e61fbfc4d33a94e7949e9dcdfca3d4bc211bca7b0784d9d0ac58",
+      "d-rest": "10c7eb60ea33f1e38721e01af354fb20cf3aa036e33f819496f4abb2914944a4",
+      "agent-executor-a-d": "598b0c51fe79ae72404846e1abb089b8a9cadba4a471e3d332d124cd1ac6ef23",
+      "c-composed": "b3237a64d3925704b5e6aabfbf3a52ccead607c7e74abf7ad689f464ed3f9dcb",
+      "c-conversational": "c3a9ed8f30d085ca07830bb111cbb1d32f2be7bd90243a90fd1be5e9de1c38ed",
+      "c-rest": "3fa93247113b136ba6e3b6ea8c9971b2656ae908e0f1a97099ebac0d4d61c6ef",
+      "t-a-e": "c624039305800b5150e4fc2424b26ed0535501437ca47b3b8a4e568aca82e7ce",
+      "wearable-reports": "0d232355bd8f799f6ed97e5168ce12e6e2be0b58783e45fd6f2c358caea19b47",
+      "f": "6358aa5a951cf89e13dc9cbab3037d61bf7ca2dd64ce7666174311f37b88da68",
+      "p": "16d92254a7255b5c6e127fc0837bc41cb52d1e6906ff76fcc55fc2f16cae9127",
+      "r-record-registration": "7d623ebba8681393dd91eb7b7aefc7b6fc1aca34d3a1c9634c1da71c7236a332",
+      "today-core": "672db6aea154761e906b456b7c28303196805240f865b129eac482e5f135aa69",
+      "d-diet": "b7224c3e0b46353fd09fa7d2167e9a3d9208dc8b1233f611dfbbff81952fb1fb",
+      "e": "41387b02f01fe60e1050ea0877e621ead9145db07b592d44caef5719db67ccec",
+      "watch": "43c67ddb998af2033ef731ed5eb67cb7b1714ccfcbe2126ff52e16f41bef86b0",
+      "workday-workout": "04c7ecee8a05f394164991f6b2823589c306f4350d2cbf6f17287b76a6667b20",
+      "agent-s-v-rest": "6b0d7b106211ee518b0a9472c42b8c8170aff4f620dff63233523b4490272dea",
+      "agent-s-v-stream": "0a03c6ba4df03b3bbdcdcfa55340ef227858fa9d154c374624ee8adacc0a528b",
+      "agent-s-v-symptom": "1abea2b371fd6aa3f5db72f927da29beefa8e01cb94f08faefc01ef0358ba8bb",
+      "n": "88cc620b17d6298096a7b01833696c03b5d96634c3d2572aeb87cbfc068c4ccb",
+      "o": "0ea44eb780b63fe27cbb0b26ec2500aa8a98e3ba8e0373f65e964f55dcf680ef",
+      "t-w-z": "a35e4b516d2c7d33b1f93dd0df14b1cdaa210812df67240f8e582f3da088eb18",
+      "a-agenda": "12a36a64effb10a2682b65f7018cb30f780fbaead2c076d03c38cb8cfa19718c",
+      "agent-a-d-rest": "ff2a6a0dba5c0f23940bddac494b3814645ec7ba31e85fb9c41ed967c6a3f9f4",
+      "agent-m-p": "336f8f8c4710a0c7790414c111400e22f271002586930da1c2ba6b179fda7be8",
+      "write-z": "dffe21c9591712ce6a3b5168af7a784e4be7b18067a584f4bd22323290f43f8f"
+    },
+    "candidate_junit_sha256": {
+      "live-run-api": "3a519078346a007d808491422ab031e5e5ce58e6b50598323bb2d503e0adfe43",
+      "s-l-z": "599c2d0252bbf39893e832e3dee8ab2561bc625769100524b965c4817e2c1b2f",
+      "a-early-rest": "d55a0899b2805cd010328ec759d47e3ef5bd71fa6c67c29aa3d1369bf0c857e3",
+      "agent-composed-synthesis-03": "5f12cabf7f1a131d7bb876f742572895c2a56126d4f1b98938b44f484023d4f2",
+      "voice": "c3742f3cebc58fa08a6b061e8464bcf7360ef907f3e8def92d3e36616d4f5395",
+      "agent-composed-synthesis-04": "2b79c17da204c4c81ddb420d0e1d51186c08974bf9d600408bb9d413258fdd81",
+      "agent-e-core": "d03feaed4eb1cb97d458771ad2614803b227736760ae950fcdabbe4ef43b3e69",
+      "q": "3a03209f362b95df822401e13a2f1baef0b642638ed44589cef6a399723fe745",
+      "agent-composed-synthesis-02": "b5a3b5a1dceaf5243597448d8a572ef9e0a6f9d48986be8facb1b6e85df1cd7c",
+      "agent-executor-food": "7d21bd18c09e899d8dad389b63115972caf90f8fdd86005f62bf9d9b86bbcc6c",
+      "t-f-v-rest": "ab73be79155ad9340cfedb04a1244e19d149b3f62fb59e93ef3d50b763bcebbe",
+      "a-action": "a72f49baf62fe0e449abbcf4d45e45a39d7745ec8b85ade289f8e20a2449a2ed",
+      "agent-f-h": "e6fcd681110cf922ecbf3613d5715fbb27bd2de2fe19e0ab8c8b81b8dcf025bb",
+      "h-j": "18722d1e3e14c91401e98d898ed41bdad7524254f10543a83764d715ee6afa91",
+      "live-run-events": "76953136171d3cba85e9defb6c6f57bee560c7fbdc1a8f8409fd6881737f7e6e",
+      "app-store-demo-account": "d9a8bbe7355b62cb61e939bf41e1a6bf9f62810967af5fcfabd7b6940c7cf01b",
+      "b": "a7b88357ee97d01b0596b5885c5d476f691bce7dd3ddb184b171dbddcf09f092",
+      "k-m-rest": "943e9d1756f7de03409cc04a083363aef96ce20c2aff367294b9f89f6572cb1b",
+      "s-c-k": "94fc140c6189aaa74e22f7d58f93dc2a7b47a5b28f35e8d7bb37d129582c0c4a",
+      "d-data-device": "a371de9e39ee80b7a6300e7de6e96ac8e7fff614b37cd81d574617c7f71ab9b7",
+      "g": "42f37358a8f7fbf3cb222f863829661b9c5a0243e24eb350c050847d23c0eefc",
+      "r-runtime-recovery": "1632515c38fc668c0f4d0af0c90d61247384fdd74205cbb038b9ae5c298c9a71",
+      "twin-api": "fc90a691296e59a548f97ee3cfd2d99bf158fbee2c8ecdcdcb5e9e9dbe1448b7",
+      "agent-executor-g-h": "77c423d42aae8c11e5e6f7e4647cb125fd626dee0c46138b0ae28a941e8d9f7f",
+      "agent-i-l": "6262c0815903884a7c4b4de111ef18b26f54f204fd2caebafcc4fdb1b39783fa",
+      "agent-w-z": "4244fc890ab1fd4f4a57a3e58627685b8e6b6cf809aa92466b753046233ff2cc",
+      "today-timeline": "644d788d4ad2a99071015ca843933814649f11312396b94578637ea202e1b1a3",
+      "agent-composed-synthesis-01": "88b9b036aee18557ce16564b61c3c8b07166f26ecc6ec00af65cd851bfe49acb",
+      "agent-executor-error-fast": "47ef8b73e7718e9752dd324f1a705b965ac0556f003b58f0fc68f91ac1bf21fe",
+      "timeline-medications": "5a9c0e67857c4453e8cfd198a9bbc2bc0f47bf2a858bc6a23af188cd448dfd05",
+      "u": "b7bad3cdc6f49d72ff588a59d2f3445bf2f394753ff1369b479c57c3dc337203",
+      "a-late": "d21267ae4941a856183c028017024c7c7c1204fa36db1364fe4926d80b43edb6",
+      "r-other": "1787129ebfbaff86e76f66b56388f92bb40ccc3bf43045766daee05f24716e50",
+      "s-a-b": "16a3624fa0f0a6d353f86ec17c800ed579a404fdea7fe59f0730e53ee47c35e9",
+      "services": "6d36797f235e78e04b025bd64598857ad6cd5f73de9813f5e4173136b0217516",
+      "timeline-core": "d45d29d540ca2f9b1fe4b87ddc203dc1a4f69162b31dbecf6d9a3b387da38ed7",
+      "agent-executor-i-z": "0fa1f5b21f9915112e087813588486e358aed8fb25a88e5323788f5dc7240c91",
+      "agent-r": "2a145d026de97814fc77c5a29d437c55fc8dea75047ae5257eb14bf432e001cf",
+      "d-dedao": "9ccc08922905b64066d76be6071ab00aca260c577ca35bd1aa9bca5d12af3370",
+      "d-rest": "3f849d0e2b26825bc324447bf73130fe40a198feee93e72a4af686fe9644781a",
+      "agent-executor-a-d": "077384f538a2459f365005024fbb125bff764bea4c37aa3c2779c7c295163da3",
+      "c-composed": "456ed9a857b05c615d9d9438b0e78caddd2fb3bb6a864f85c2c41e003ba089e0",
+      "c-conversational": "a11217fd967e0fa54a3700e451e260237fd7aa6556fb8582d9cf41598cefca3f",
+      "c-rest": "b09af366ecedcaf49e784640860815f076740723d302c20a508731bdaf336a24",
+      "t-a-e": "8786c7853eca6b520c47c616107c970606c414933192e9434ce7711c150b2016",
+      "wearable-reports": "0e70ded3fbe0126694b429dbf162a2674799bfe90243b4e5eb57aae079a39d4d",
+      "f": "8c33222b99b8bffe4c67b869eecbb81f2a0e43f53cb546e6ffba241d0467591d",
+      "p": "b5b978dbdf1bfa5bea3d5155b58224df49e514b279e17212f189fab8d127508b",
+      "r-record-registration": "070ffa40da3aa10963896dc0ba7c323015f300eff57a8730704b4dc2a3759d19",
+      "today-core": "daf21432d0717a181f8df0d767d230b9b978df2e9c5d8e36d658510d14b19e31",
+      "d-diet": "6f80fad8aa4ae0f407c2b2597eb12854db4d8cefab7127a8c8136de222c94e05",
+      "e": "b436279cd51a7871c3de0ed042bec67bf0ea6b57622bd21e2309fb0d62824b32",
+      "watch": "e0e2d95a423002c6d92b22b1a69fded17b9f0cf9763cfbe5c3e67b46d4e811fe",
+      "workday-workout": "88d8106b36fe6a5929d3c106ab6d100f32ed1a343b0b3ee9858006d3d7783180",
+      "agent-s-v-rest": "e1649e5cf7e955fd250cecaae5bf2cb03a526e0751fe38d8e21fcae7d6e2456e",
+      "agent-s-v-stream": "e732e42a1c0a7f955793eb069187f8f4937154eab4cb672dcebc1562b9d1f285",
+      "agent-s-v-symptom": "02b9794677b921566ec22f2ec8e95a6633050b8c005201afd6cab7f3261f65e6",
+      "n": "c4a461d5695aaf922e15fcda1d5da3cd9af3608b7ec3204743675b904f518fc7",
+      "o": "61fd239576762f3d7d5548de2c82bbfaf2e45d9282cb7a7a8b81d26cf91950b2",
+      "t-w-z": "b1c3f313e4157a8be7cbff52c0f51fe03cacb48db60beb2cd40819eda7410b50",
+      "a-agenda": "fc291dfd3f4539a6e01552bcc41bb9750e5d43658d4e4f19f19a4685e5faf1da",
+      "agent-a-d-rest": "f5554bba62b647da128778814a7ecf515c51885e061bc464092131d1dc0bbb68",
+      "agent-m-p": "e880874f4da0c602251ad9cfef206171e087df795ef91dc5345f9c3566d141a6",
+      "write-z": "df52e89c22c60ca84afdd8c8173d82dc4dad69467e688f96f021cbf5c5d0dd32"
+    }
+  },
+  "assessment": {
+    "quality_gate": "passed",
+    "candidate_first_attempt": 1,
+    "candidate_jobs_success": 32,
+    "postgres_load_balance_improved": true,
+    "postgres_step_speed_target": "not_met",
+    "postgres_step_delta_vs_parent_seconds": 71,
+    "ci_wall_delta_vs_parent_seconds": -3,
+    "ci_wall_delta_vs_predeclared_baseline_seconds": -13,
+    "stop_threshold_seconds": 644.6,
+    "stop_threshold_triggered": false,
+    "conclusion": "Full CI is effectively flat; do not claim meaningful end-to-end acceleration or PostgreSQL speedup. Continue profiling the backend execution critical path."
+  }
+}
