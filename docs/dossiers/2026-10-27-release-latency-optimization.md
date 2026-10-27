@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | completed |
-| 当前阶段 | G6 已独立核验生产；同版本由并行任务完成发布 |
+| 状态 | in_progress |
+| 当前阶段 | 第二阶段 CI 启动顺序优化：G3 通过，待 G4 与真实 CI |
 
 ## G1 范围
 
@@ -53,3 +53,20 @@ PASS。基线 f1b0d12421b0a0eb573d3b0280e7aa16306683f0。最近两轮完整 CI 4
 并发记录：本任务 stage 在发现其他流程已建立同候选 canonical 目录后，于 intent 之前拒绝；未重试、覆盖或轮换授权。用户随后要求等待另一任务完成再接管。本任务独立读回成功回执及健康状态完成核验，不重放已成功发布。后续 Web 发布也已完成：独立读回 operation `a9aa1cc0e069434d9040dc012df96ce8` 为 FRONTEND_SUCCEEDED，publisher 为 2ce44daedc3bb80386fea7dd54bbdddf74a27ed6，保留后端 4f8fffed；生产 BUILD_ID 与其回执一致，前端 active，lease 不存在。用户确认接管后，本任务同步核验记录，不重复生产发布。
 
 仍需优化的主要方向是统一发布归属、减少重复 validate 和 runner 排队；后续相同分片策略的完整 CI 40442091206 为 707 秒，关键后端 job 延迟 139 秒启动；两个优化后样本均未证明整轮 CI 稳定加快。启动延迟混合调度与 runner 可用性，不能据此断言账户配额。减少 worker 可能延长串行执行，故本轮不做未经对照验证的并发或超时变更，也不能建立 P95 或保证固定发布时长。机器可读证据见 `docs/reviews/2026-10-27-release-latency-production.json`。
+
+
+## 第二阶段：CI 启动顺序（2026-10-27）
+
+用户继续授权优化。沿用本 Dossier、Harness trace 与 implementation / safety 流程；发布目标为 GitHub CI 工作流，无应用、Mobile 或发布器字节变化，不触发应用重启、授权轮换或重复 OTA。
+
+G1/G2 PASS。基线 `1c78b9b800db4a35de9daa68ba0526f477d0e905`。最近两轮完整 CI 40438974052 / 40442091206 耗时 702 / 707 秒，关键后端 job 延迟 140 / 139 秒启动。短辅助任务与长测试同时申请 runner，启动顺序存在优化空间；没有把观察到的同时运行数量当成账户配额。
+
+方案只为 frontend-artifact-integration、retained-runner-startup、ota-runner-startup、frontend-build、mobile-typecheck、type-drift 加入既有 docs-quality 依赖。后端分片、质量与 PostgreSQL 继续只依赖分类 job。所有 steps、条件、权限、制品、测试选择、worker 数、时限、聚合闸和发布准入保持原字节/结构。文档闸成功才放行辅助检查，失败/跳过/取消均由现有 always 聚合闸明确失败；成功候选的完整检查不减少。代价是辅助诊断稍晚返回。
+
+GitHub 的 needs 成功依赖语义参见 [官方文档](https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-jobs)。没有用 always 绕过新依赖，也没有把跳过的检查视为通过。
+
+同批真实作业耗时的离线依赖回放见 `docs/reviews/2026-10-27-ci-admission-replay.json`。在模拟 20 个共享 runner 槽位时，两轮预计减少 104 / 26 秒；这不是 GitHub 实测或配额证明。16 槽位敏感性场景反而增加 21 / 40 秒，说明收益依赖排队形态，不能保证所有负载都加速。真实验收目标：首轮完整 CI 全绿，尽量低于 660 秒，后端启动长尾缩短；若总时长比原两轮中位数增加超过 10% 或发生遗漏/失败，停止继续推广并调查，不削减测试或延长超时。
+
+G3 PASS：先新增契约测试，旧工作流 admission 测试 RED；新增依赖后 99 项 CI 合约、范围及准入回归通过。真实执行聚合 shell，覆盖文档闸 success/failure/skipped/cancelled 与是否选择 backend/release 两种范围，失败不能伪装为绿色。扩展工作流/发布准入回归 271 passed、7 个平台专属测试本地 skipped；这些检查仍保留真实 CI 入口。更新既有前端制品并行契约后，相关 31 项通过。已逐 job 比较，除六条 needs 依赖外所有属性相同。
+
+G4/G5/G6：待固定提交独立评审与精确候选真实完整 CI。完成后记录实际排队、执行及完整耗时，不能使用离线回放替代结果。
