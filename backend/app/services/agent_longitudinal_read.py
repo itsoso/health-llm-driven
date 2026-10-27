@@ -918,7 +918,9 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
         active,
     ):
         return None
-    active = longitudinal_read_projection_text(snapshot)
+    # The snapshot and projection are unchanged within this synchronous call.
+    # Reuse only this local value; every public operation revalidates its input.
+    active = projected
     if active is None:
         return None
     # Identify subjects at each requested domain, including names without 的.
@@ -967,7 +969,11 @@ def _request(snapshot) -> tuple[str, int, bool] | None:
 
 
 def resolve_longitudinal_read_queries(snapshot) -> tuple[dict, ...] | None:
-    request = _request(snapshot)
+    return _queries_for_request(snapshot, _request(snapshot))
+
+
+def _queries_for_request(snapshot, request: tuple[str, int, bool] | None) -> tuple[dict, ...] | None:
+    """Build the window from this call's validated request, never cached authority."""
     if request is None:
         return None
     text, days, _ = request
@@ -1001,9 +1007,10 @@ def resolve_longitudinal_read_queries(snapshot) -> tuple[dict, ...] | None:
 
 
 def longitudinal_read_limitations(snapshot) -> tuple[str, ...]:
-    if resolve_longitudinal_read_queries(snapshot) is None:
+    request = _request(snapshot)
+    if _queries_for_request(snapshot, request) is None:
         return ()
-    text, _, defaulted = _request(snapshot)
+    text, _, defaulted = request
     result = ["default_recent_7_days"] if defaulted else []
     if project_recent_health_overview(snapshot.envelope.text) is not None:
         result.append("health_overview_lifestyle_only")

@@ -61,6 +61,47 @@ def window():
     return parse_query_window({'start_date': '2031-03-29', 'end_date': '2031-04-04', 'timezone': 'Asia/Shanghai'})
 
 
+@pytest.mark.parametrize('operation', ['resolve_longitudinal_read_queries', 'longitudinal_read_limitations'])
+def test_each_read_operation_projects_its_immutable_input_once(monkeypatch, operation):
+    from app.services import agent_longitudinal_read as reads
+
+    actual = reads.longitudinal_read_projection_text
+    inputs = []
+
+    def counted(current, **kwargs):
+        inputs.append(current)
+        return actual(current, **kwargs)
+
+    monkeypatch.setattr(reads, 'longitudinal_read_projection_text', counted)
+    current = snapshot()
+    result = getattr(reads, operation)(current)
+    assert result
+    assert inputs == [current]
+
+
+def test_read_projection_reuse_never_survives_a_public_call(monkeypatch):
+    from app.services import agent_longitudinal_read as reads
+
+    current = snapshot()
+    first = reads.resolve_longitudinal_read_queries(current)
+    first[0]['end_date'] = '2000-01-01'
+    assert reads.resolve_longitudinal_read_queries(current)[0]['end_date'] == '2031-04-04'
+    wrong_owner = replace(current, context=replace(current.context, user_id=18))
+    assert reads.resolve_longitudinal_read_queries(wrong_owner) is None
+    assert reads.longitudinal_read_limitations(wrong_owner) == ()
+    next_day = replace(current, context=replace(current.context,
+        current_time=datetime.fromisoformat('2031-04-04T17:10:00+00:00')))
+    assert reads.resolve_longitudinal_read_queries(next_day)[0]['end_date'] == '2031-04-05'
+
+    def failed_projection(*args, **kwargs):
+        raise RuntimeError('synthetic projection failure')
+
+    monkeypatch.setattr(reads, 'longitudinal_read_projection_text', failed_projection)
+    for operation in (reads.resolve_longitudinal_read_queries, reads.longitudinal_read_limitations):
+        with pytest.raises(RuntimeError, match='synthetic projection failure'):
+            operation(current)
+
+
 def test_background_diagnosis_does_not_hijack_recent_personal_read():
     s = snapshot()
     result = resolve_longitudinal_read_queries(s)

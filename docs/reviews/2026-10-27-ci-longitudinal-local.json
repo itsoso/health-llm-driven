@@ -1,0 +1,80 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "base_sha": "0852c0eab93a9fac2e5f63b88db874435e81e3c6",
+  "candidate_source_sha256": "123b2669535fad4add8c53c13398f916e381d3610bdf4847f4c383e3b536c722",
+  "environment": "macOS Python 3.12.13 locked environment; synthetic owned data, SQLite in-memory, no live provider",
+  "initial_pytest_seconds": {
+    "baseline": 31.69,
+    "candidate": 13.4
+  },
+  "repeat_process_wall": [
+    {
+      "mode": "baseline",
+      "wall_seconds": 25.439,
+      "exit_code": 0
+    },
+    {
+      "mode": "candidate",
+      "wall_seconds": 20.856,
+      "exit_code": 0
+    }
+  ],
+  "results": [
+    {
+      "label": "baseline",
+      "testcases": 10,
+      "skipped": 0,
+      "manifest_sha256": "0d7550db10aad6ae464dc79390963302b3b5dca1dc10d25d72036099b16898ec",
+      "junit_sha256": "a43536271072bda42b31b92910b9d0c0c730aac56708f0f9ad4b98443720a3b1",
+      "junit_suite_seconds": 31.688
+    },
+    {
+      "label": "candidate",
+      "testcases": 10,
+      "skipped": 0,
+      "manifest_sha256": "0d7550db10aad6ae464dc79390963302b3b5dca1dc10d25d72036099b16898ec",
+      "junit_sha256": "831644504ac2ef35f4a5eecf0fc9d6575c529c8a0275c2ccbf39a900017a565b",
+      "junit_suite_seconds": 13.402
+    },
+    {
+      "label": "repeat-baseline",
+      "testcases": 10,
+      "skipped": 0,
+      "manifest_sha256": "0d7550db10aad6ae464dc79390963302b3b5dca1dc10d25d72036099b16898ec",
+      "junit_sha256": "41493fd4cc8d4b0d00cd80f0153b7522a745e4aa428e2926910cb9cc8cb00599",
+      "junit_suite_seconds": 20.079
+    },
+    {
+      "label": "repeat-candidate",
+      "testcases": 10,
+      "skipped": 0,
+      "manifest_sha256": "0d7550db10aad6ae464dc79390963302b3b5dca1dc10d25d72036099b16898ec",
+      "junit_sha256": "875acf4023aa588ec82df6c1cf6846405703dd5455dbfd818f3eab936f5e3b00",
+      "junit_suite_seconds": 14.267
+    }
+  ],
+  "repeat_recipe": "import importlib, os, subprocess, sys, time, json\nfrom pathlib import Path\nroot=Path('/tmp/reva-sleep-recovery-release-20261026')\nselectors=['tests/test_agent_composed_synthesis_projection.py','-k','verified_four_domain_provider_projection or continuation_provider_keeps_only_exact_previous_owned_answer or continuity_reference_cannot_expose_other_owner_or_conversation','--no-cov','-q']\nif len(sys.argv)>1:\n    sys.path.insert(0,str(root/'backend'))\n    import app.services.agent_longitudinal_read as reads\n    if sys.argv[1]=='baseline':\n        source=subprocess.check_output(['git','show','0852c0eab:backend/app/services/agent_longitudinal_read.py'],cwd=root,text=True)\n        exec(compile(source,str(root/'backend/app/services/agent_longitudinal_read.py'),'exec'),reads.__dict__)\n    import pytest\n    raise SystemExit(pytest.main(selectors+['--junitxml=/tmp/reva-phase7-repeat-'+sys.argv[1]+'.xml']))\nenv=dict(os.environ)\nfor key in tuple(env):\n    if key.startswith('PG') or key in {'TEST_DATABASE_URL','PYTEST_ADDOPTS','PYTEST_PLUGINS','TEST_LIVE_RUN_BROKER_URL'}: env.pop(key,None)\nenv.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',REDIS_URL='redis://127.0.0.1:1/0')\nrows=[]\nfor mode in ('baseline','candidate'):\n    start=time.monotonic()\n    with open('/tmp/reva-phase7-repeat-'+mode+'.log','w') as log:\n        result=subprocess.run([sys.executable,__file__,mode],cwd=root/'backend',env=env,stdout=log,stderr=subprocess.STDOUT,timeout=180)\n    rows.append(dict(mode=mode,wall_seconds=round(time.monotonic()-start,3),exit_code=result.returncode))\n    print(json.dumps(rows[-1]),flush=True)\n    if result.returncode: raise SystemExit(result.returncode)\nPath('/tmp/reva-phase7-repeat.json').write_text(json.dumps(rows,indent=2)+'\\n')\n",
+  "limitations": [
+    "Small local samples, not full CI or stable latency guarantee.",
+    "Initial baseline has a slow first case; repeated pair retained rather than selecting the largest improvement.",
+    "Repeated pair changes only implementation in memory from exact base Git source; no checkout/reset, no cross-request cache.",
+    "No test selection, fixture, timeout or retry changes in CI."
+  ],
+  "regressions": [
+    {
+      "kind": "regressions",
+      "cases": 383,
+      "failures": 0,
+      "skipped": 0,
+      "junit_sha256": "5834678bbdeab129dcb50f5b576103a1850c23fc7deb20f4e3f0fb10c89bc289"
+    },
+    {
+      "kind": "postgres",
+      "cases": 179,
+      "failures": 0,
+      "skipped": 0,
+      "junit_sha256": "54fbbd7af182b765c694054c965f6534379c173aadfdd2ca271acc3d71d83c4d"
+    }
+  ]
+}
