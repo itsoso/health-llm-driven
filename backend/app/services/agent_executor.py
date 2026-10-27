@@ -17319,10 +17319,12 @@ class AgentExecutor:
         # 多模型综合分析 (商用三强 panel)。仅纯文本分析回合走此路径;
         # 带图片/附件时回退普通单模型路径 (panel 是文本综合, 不处理多模态)。
         from app.services.diet_photo_correction import is_photo_nutrition_repair
+        from app.services.diet_leftover_correction import is_leftover_correction_request
 
         if (
             _extract_multi_model_flag(extra_context)
             and not is_photo_nutrition_repair(message)
+            and not is_leftover_correction_request(message)
             and not read_only_tools
             and self._turn_daily_read_plan is None
             and not _has_destructive_or_sync_intent(message or "")

@@ -15,15 +15,22 @@ def test_leftover_instruction_is_not_a_food_description():
 
 
 @pytest.mark.asyncio
-async def test_dinner_caption_clarification_does_not_suggest_lunch():
-    from app.services.diet_leftover_correction import build_leftover_proposal
-    class NoReads:
-        def query(self, *_):
-            pytest.fail('clarification cannot read records')
-    result = await build_leftover_proposal(NoReads(), 1, 1, 1,
-        '记录这餐 剩余这么多 计算下今晚真正摄入量', [{}], NOW, 'Asia/Shanghai')
-    assert '根据剩菜照片修正今天晚餐记录' in result['reply']
-    assert '午餐' not in result['reply']
+@pytest.mark.parametrize('text', [
+    '记录这餐 剩余这么多 计算下今晚真正摄入量',
+    '记录这餐，剩余这么多，计算下今晚真正摄入量',
+    '今天晚餐的剩菜照片，请计算实际摄入量',
+])
+async def test_explicit_dinner_caption_proposes_without_reasking_meal(db, context, monkeypatch, text):
+    from app.models.daily_health import DietRecord
+    context[4].meal_type = 'dinner'
+    db.commit()
+    result, vision = await run_proposal(db, context, monkeypatch, text=text)
+    assert result['reason'] == 'leftover_confirmation_required'
+    assert result['cards'][0]['data']['adjust_record']['record_id'] == context[4].id
+    assert result['cards'][0]['data']['adjust_record']['proposed_food_items'] == '米饭 约0.5碗 + 鸡肉 约75克'
+    assert context[4].calories == 450
+    assert db.query(DietRecord).filter_by(user_id=context[0].id).count() == 1
+    vision.assert_awaited_once()
 
 
 @pytest.fixture
@@ -98,7 +105,17 @@ async def test_retry_uses_original_baseline_not_current_consumed_amount(db, cont
 
 @pytest.mark.parametrize('text', ['不要'+REQUEST, '朋友说'+REQUEST, '假如'+REQUEST,
     REQUEST+'，删掉晚餐', REQUEST.replace('午餐','昨天午餐'), '剩菜照片',
-    '根据剩菜照片修改妈妈的午餐'])
+    '根据剩菜照片修改妈妈的午餐',
+    '记录这餐 剩余这么多 计算实际摄入量',
+    '今晚剩菜照片', '这是今天晚餐的剩菜照片',
+    '记录妈妈晚餐剩余这么多计算实际摄入量',
+    '记录昨晚晚餐剩余这么多计算实际摄入量',
+    '记录这餐剩余这么多计算明晚真正摄入量',
+    '记录今天午餐剩余这么多计算下今晚真正摄入量',
+    '记录这餐剩余这么多计算下今晚真正摄入量，不要查询',
+    '不要记录这餐剩余这么多计算下今晚真正摄入量',
+    '假如记录这餐剩余这么多计算下今晚真正摄入量',
+    '他说“记录这餐剩余这么多计算下今晚真正摄入量”'])
 @pytest.mark.asyncio
 async def test_non_authorizing_text_never_reads_records(text):
     from app.services.diet_leftover_correction import build_leftover_proposal
@@ -140,7 +157,11 @@ async def test_unbound_or_ambiguous_baselines_never_reach_model(db, context, mon
 
 
 @pytest.mark.asyncio
-async def test_stream_short_circuits_generic_capture_and_returns_no_saved_receipt(db,context,monkeypatch):
+@pytest.mark.parametrize('text,meal', [
+    (REQUEST, 'lunch'),
+    ('记录这餐 剩余这么多 计算下今晚真正摄入量', 'dinner'),
+])
+async def test_stream_short_circuits_generic_capture_and_returns_no_saved_receipt(db,context,monkeypatch,text,meal):
     from app.services.agent_executor import AgentExecutor
     from app.services import diet_leftover_correction as subject
     monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
@@ -149,15 +170,16 @@ async def test_stream_short_circuits_generic_capture_and_returns_no_saved_receip
             {'index':0,'remaining_fraction':.5,'confidence':.9},
             {'index':1,'remaining_fraction':.25,'confidence':.9}]}))
     executor=AgentExecutor(db)
+    context[4].meal_type = meal
+    db.commit()
     monkeypatch.setattr(executor,'_agent_kernel_reference_now',lambda:NOW)
     monkeypatch.setattr(executor,'_upload_chat_image',lambda *_a,**_k:'/synthetic/leftover.jpg')
     async def no_capture(*_a,**_k):
         pytest.fail('leftovers must not enter normal food recognition/capture')
     monkeypatch.setattr(executor,'_analyze_image_with_vision',no_capture)
     monkeypatch.setattr(executor,'_call_llm_stream',no_capture)
-    monkeypatch.setattr(executor,'_should_preprocess_attached_images',lambda *_:True)
     events=[event async for event in executor.run_stream(user_id=context[0].id,
-        conversation_id=context[1].id,message=REQUEST,images=[{'base64':'c3ludGhldGlj','type':'jpeg'}],channel='typed')]
+        conversation_id=context[1].id,message=text,images=[{'base64':'c3ludGhldGlj','type':'jpeg'}],channel='typed')]
     done=next(event['data'] for event in events if event.get('event')=='done')
     assert done['write_receipts']==[]
     assert done['turn_outcome']['status']=='waiting_for_user'
@@ -264,11 +286,17 @@ async def test_unbound_leftover_followup_never_calls_vision(db, context, monkeyp
 
 
 @pytest.mark.asyncio
-async def test_text_followup_stream_stays_in_confirmation_flow(db, context, monkeypatch):
+@pytest.mark.parametrize('panel', [False, True])
+@pytest.mark.parametrize('request_text,meal', [
+    ('根据剩菜照片修正今天午餐记录', 'lunch'),
+    ('今天晚餐的剩菜照片，请计算实际摄入量', 'dinner'),
+])
+async def test_text_followup_stream_stays_in_confirmation_flow(db, context, monkeypatch, panel, request_text, meal):
     from app.services.agent_executor import AgentExecutor
     from app.services import diet_leftover_correction as subject
     source, answer, current = _clarification_followup(db, context)
     db.delete(current)
+    context[4].meal_type = meal
     db.commit()
     monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
     monkeypatch.setattr(subject, 'estimate_leftovers', AsyncMock(return_value={
@@ -279,9 +307,12 @@ async def test_text_followup_stream_stays_in_confirmation_flow(db, context, monk
     monkeypatch.setattr(executor, '_agent_kernel_reference_now', lambda:NOW)
     async def no_generic(*_a, **_kw):
         pytest.fail('explicit leftover followup must not enter generic read/write inference')
+        yield  # preserve the stream interface so a wrong route fails at the sentinel
     monkeypatch.setattr(executor, '_call_llm_stream', no_generic)
+    monkeypatch.setattr(executor, '_run_multi_model_stream', no_generic)
     events = [e async for e in executor.run_stream(user_id=context[0].id,
-        conversation_id=context[1].id, message='根据剩菜照片修正今天午餐记录', channel='typed')]
+        conversation_id=context[1].id, message=request_text, channel='typed',
+        extra_context='{"multi_model": true}' if panel else None)]
     done = next(e['data'] for e in events if e.get('event') == 'done')
     assert done['write_receipts'] == []
     assert done['turn_outcome']['reason_code'] == 'leftover_confirmation_required'

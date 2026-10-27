@@ -36,10 +36,10 @@ _NUMBERS = dict(zip('一二两三四五六七八九十半', (1,2,2,3,4,5,6,7,8,9
 # Full source-caption grammar: unrecognized dates, subjects, cancellation and
 # hypothetical clauses cannot become today's owned photo by omission.
 _SOURCE_CAPTION = re.compile(
-    rf'(?:请)?(?:帮我|给我)?(?:记录(?:一下)?|这是)?(?:我(?:的)?)?(?:今天(?:的)?)?'
+    rf'(?:请)?(?:帮我|给我)?(?:(?P<record>记录(?:一下)?)|这是)?(?:我(?:的)?)?(?:今天(?:的)?)?'
     rf'(?:这餐|这一餐|这顿饭|这顿|{_MEAL}|今早|今中午|今晚)?(?:的)?'
     r'(?:剩菜(?:照片)?|剩余(?:部分|这么多|照片)?|剩下(?:部分|这么多|照片)?|没吃完(?:的部分)?)'
-    r'(?:照片)?(?:请?(?:计算(?:一下|下)?|算(?:一下|下)?|估算(?:一下|下)?)'
+    r'(?:照片)?(?:(?P<calculate>请?(?:计算(?:一下|下)?|算(?:一下|下)?|估算(?:一下|下)?))'
     r'(?:今天|今早|今中午|今晚)?(?:真正|实际)?(?:摄入量|吃下的份量))?'
 )
 
@@ -61,7 +61,20 @@ def _requested_meal(text):
             meal = _MEALS[match['meal']]
             same = match.groupdict().get('same')
             return meal if same is None or _MEALS[same] == meal else None
-    return None
+    return _caption_meal(text, require_operation=True)
+
+
+def _caption_meal(text, *, require_operation=False):
+    """A full current-day caption can bind one meal, never a bare image alone."""
+    compact = re.sub(r'[\s，,。.!！]', '', str(text or ''))
+    match = _SOURCE_CAPTION.fullmatch(compact)
+    if match is None or (require_operation and not (match['record'] or match['calculate'])):
+        return None
+    meals = {_MEALS[label] for label in _MEALS if label in compact}
+    for label, meal in (('今晚', 'dinner'), ('今早', 'breakfast'), ('今中午', 'lunch')):
+        if label in compact:
+            meals.add(meal)
+    return next(iter(meals)) if len(meals) == 1 else None
 
 
 def _clarify(detail, *, reason='leftover_details_required', cards=None):
@@ -224,13 +237,9 @@ async def build_leftover_proposal(db,user_id,conversation_id,current_message_id,
     images = images or []
     meal=_requested_meal(text)
     if meal is None:
-        compact = re.sub(r'[\s，,。.!！]', '', str(text or ''))
-        labels = {_MEALS[label] for label in _MEALS if label in compact}
-        for label, value in (('今晚','dinner'), ('今早','breakfast'), ('今中午','lunch')):
-            if label in compact:
-                labels.add(value)
-        if _SOURCE_CAPTION.fullmatch(compact) and len(labels) == 1:
-            label = {'breakfast':'早餐','lunch':'午餐','dinner':'晚餐','snack':'加餐'}[labels.pop()]
+        caption_meal = _caption_meal(text)
+        if caption_meal is not None:
+            label = {'breakfast':'早餐','lunch':'午餐','dinner':'晚餐','snack':'加餐'}[caption_meal]
             detail = f'请明确要修正的餐次，例如“根据剩菜照片修正今天{label}记录”。'
         else:
             detail = '请在“根据剩菜照片修正今天…记录”中补上实际餐次（早餐、午餐、晚餐或加餐）。'
