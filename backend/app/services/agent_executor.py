@@ -13221,7 +13221,6 @@ class AgentExecutor:
 
     async def _reinterpret_selected_notification(self) -> tuple[Optional[str], int]:
         """One bounded, tool-free attempt from owned source, never the unsafe draft."""
-        started_at = time.monotonic()
         messages = [
             {"role": "system", "content": (
                 "重新解读用户选中的历史推送。上一份回答未通过来源或医疗边界检查，"
@@ -13236,6 +13235,18 @@ class AgentExecutor:
             )},
             {"role": "user", "content": notification_review_context(self._turn_notification_detail)},
         ]
+        candidate, finish, elapsed = await self._collect_selected_notification_answer(messages)
+        if candidate is None or finish != "stop":
+            return None, elapsed
+        try:
+            return render_notification_review(candidate, self._turn_notification_detail), elapsed
+        except ValueError:
+            self._record_model_fallback_reason("notification_review_source_invalid")
+            return None, elapsed
+
+    async def _collect_selected_notification_answer(self, messages: list[dict]) -> tuple[Optional[str], str, int]:
+        """Shared strict event contract for first and corrective historical answers."""
+        started_at = time.monotonic()
         events: list[dict[str, Any]] = []
         size = 0
         try:
@@ -13243,32 +13254,31 @@ class AgentExecutor:
                 async for event in stream:
                     if (not isinstance(event, dict) or (events and events[-1].get("type") == "finish")
                             or event.get("type") not in {"content", "reasoning", "finish"}
-                            or (event.get("type") in {"content", "reasoning"} and not isinstance(event.get("text"), str))):
+                            or (event.get("type") in {"content", "reasoning"} and not isinstance(event.get("text"), str))
+                            or (event.get("type") == "finish" and event.get("finish_reason")
+                                not in {"stop", "length", "error", "content_filter"})):
                         self._record_model_fallback_reason("notification_review_reinterpretation_incomplete")
-                        return None, int((time.monotonic() - started_at) * 1000)
+                        return None, "error", int((time.monotonic() - started_at) * 1000)
                     events.append(event)
                     size += len(event.get("text") or "")
                     if size > 12000 or len(events) > 2000:
                         self._record_model_fallback_reason("notification_review_reinterpretation_limit")
-                        return None, int((time.monotonic() - started_at) * 1000)
+                        return None, "error", int((time.monotonic() - started_at) * 1000)
         except Exception as exc:  # noqa: BLE001 - preserve original block, never expose partial output
             self._record_model_fallback_reason("notification_review_reinterpretation_failed")
             logger.warning("[agent_executor] notification reinterpretation failed error_type=%s", type(exc).__name__)
-            return None, int((time.monotonic() - started_at) * 1000)
+            return None, "error", int((time.monotonic() - started_at) * 1000)
         elapsed = int((time.monotonic() - started_at) * 1000)
         if ([event.get("finish_reason") for event in events if event.get("type") == "finish"] != ["stop"]
                 or any(event.get("type") not in {"content", "reasoning", "finish"} for event in events)):
             self._record_model_fallback_reason("notification_review_reinterpretation_incomplete")
-            return None, elapsed
+            finish = events[-1].get("finish_reason", "error") if events and events[-1].get("type") == "finish" else "error"
+            return None, finish, elapsed
         candidate = "".join(str(event.get("text") or "") for event in events if event.get("type") == "content").strip()
         if not candidate:
             self._record_model_fallback_reason("notification_review_reinterpretation_incomplete")
-            return None, elapsed
-        try:
-            return render_notification_review(candidate, self._turn_notification_detail), elapsed
-        except ValueError:
-            self._record_model_fallback_reason("notification_review_source_invalid")
-            return None, elapsed
+            return None, "error", elapsed
+        return candidate, "stop", elapsed
 
     async def _repair_incidental_medical_boundary(
         self,
@@ -20020,6 +20030,12 @@ class AgentExecutor:
                                 finish_reason = "stop"
                                 server_preplanned_round = True
                                 self._record_model_fallback_reason("garmin_review_deterministic_facts")
+                            elif self._turn_notification_detail is not None:
+                                # Fixed source meanings need no public or personal tools.
+                                # First and corrective candidates share the same bounded
+                                # stream contract; malformed streams cannot become stop.
+                                candidate, finish_reason, _ = await self._collect_selected_notification_answer(messages)
+                                candidate = candidate or ""
                             else:
                                 async for event in self._call_llm_stream(messages, round_tools):
                                     if event.get("type") == "content":

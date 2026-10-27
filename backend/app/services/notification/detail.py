@@ -70,17 +70,16 @@ _REVIEW_TOPICS = {
 
 
 def notification_review_sources(detail: dict) -> list[dict]:
-    """Whole source sentences only; no date arithmetic or isolated number matching."""
-    content = detail.get('content') or ''
-    if not isinstance(content, str) or len(content) > 16000:
+    """Keep all title/body context, including negation and example introductions."""
+    content, title = detail.get('content') or '', detail.get('title') or ''
+    if not isinstance(content, str) or not isinstance(title, str):
         return []
-    # Keep punctuation/negation with the source. A decimal point is not a split.
-    sentences = [part.strip() for part in re.split(r'(?<=[。！？\n])|(?<=[.!?])\s+', content) if part.strip()]
-    if len(sentences) > 80:
+    text = '\n'.join(part for part in (title, content) if part)
+    if not text.strip() or len(text) > 16000:
         return []
-    return [{'source_index': index, 'text': sentence,
-             'topics': [key for key, (pattern, _, _) in _REVIEW_TOPICS.items() if re.search(pattern, sentence, re.I)]}
-            for index, sentence in enumerate(sentences)]
+    return [{'source_index': 0, 'text': text,
+             'topics': [key for key, (pattern, _, _) in _REVIEW_TOPICS.items() if re.search(pattern, text, re.I)]}]
+
 
 
 def _unique_review_object(pairs: list) -> dict:
@@ -95,7 +94,7 @@ def _unique_review_object(pairs: list) -> dict:
 def render_notification_review(candidate: str, detail: dict) -> str:
     """Accept only a source selection; all factual prose stays server-owned.
 
-    A topic must match the complete quoted sentence. Arbitrary model prose,
+    A topic must match the complete quoted title and body. Arbitrary model prose,
     supplied numbers/dates, partial coverage and unsupported notices fail closed.
     The ordinary medical boundary still checks the entire rendered answer.
     """
@@ -177,7 +176,7 @@ def notification_review_context(detail: dict) -> str:
         '若本轮内容被截断，说明范围，不能补造全文。\n'
         '最终只输出 JSON，不输出自然语言或 Markdown。格式：'
         '{"items":[{"source_index":0,"topics":["sleep"]}]}。'
-        '从 review_sources 选择所有 topics 非空的完整句子，逐项原样复制 source_index 和 topics；'
+        '从 review_sources 选择所有 topics 非空的完整原文，逐项原样复制 source_index 和 topics；'
         '不要添加字段、日期、数值、解释或建议。无匹配时返回 {"items":[]}。'
         '系统会按原文和已定义的指标释义生成回答。\n'
         + json.dumps(evidence, ensure_ascii=False)

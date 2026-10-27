@@ -88,3 +88,5 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - RED：来源契约和畸形流 11 failed / 3 passed；GREEN 第一轮 49 passed，相邻综合 149 passed。最终供应商 reasoning 兼容修正后真实模型双路径探针通过：正常初稿和强制坏初稿后的单次修复均 complete，原文数字保留、无猜测日期/推导数值、无写回执、通知状态未变。证据 `/tmp/xiaoqihou-notification-live-probe-v3-result.json`；前两轮失败保留。样本均为隔离合成数据，不能冒充真实账号在线验收。
 - 此变更仅后端解读，不改 Mobile/API/schema，不增加推送出口。继续现有发布控制器与 safety overlay；固定提交 G4、最终 PostgreSQL/集成/完整精确 CI、上线和验收仍待完成。已构建的 838 / Store 282 原生包保留，正式送审暂缓至后端修复通过。
 - 最终局部验证：59 项通知回归通过；同组隔离 PostgreSQL 59 项通过（仅使用本任务 55438 端口测试库）；System Map 检查通过。机器未提供全局 python3.12/ruff，地图使用现有 .venv/bin/python3.12，Python 编译检查通过；Ruff 缺失不冒充已通过。
+- `84359d05d` 固定复审 NO-GO：换行拆句会遗失“未记录到”等无指标前导；初稿的通用 Pi 收集器未约束重复终止/终止后内容。新增合成 RED 6 failed 后改为完整标题+正文单一引用，所有前导一并保留，主动标记检查覆盖全部引用；首轮与修复轮共用同一有界收集器。新鲜综合 161 passed，真实模型 v4 双路径通过；先前失败和 NO-GO 均保留。
+- 干净 843 归档集成出现 23 个 Pi runtime unavailable 失败，定位为未安装该归档的 backend/pi-runtime 锁定 Node 依赖；主工作区测试有依赖而正常。这是验证环境缺项，最终冻结归档会先安装锁定运行时再重跑；不把旧归档失败或主工作区结果当最终候选集成通过。

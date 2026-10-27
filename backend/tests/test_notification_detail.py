@@ -456,3 +456,66 @@ async def test_notification_retry_discards_provider_reasoning_without_releasing_
     monkeypatch.setattr(executor, '_call_llm_stream', stream)
     text, _ = await executor._reinterpret_selected_notification()
     assert '睡眠7小时。' in text and 'PRIVATE_PROVIDER_REASONING' not in text
+
+
+@pytest.mark.parametrize('title,content,expected', [
+    ('合成推送', '并不是\n睡眠7小时。', '并不是\n> 睡眠7小时。'),
+    ('未记录到', '血氧92%。', '未记录到\n> 血氧92%。'),
+    ('合成推送', '下面只是示例。\n血氧92%。', '下面只是示例。\n> 血氧92%。'),
+])
+def test_notification_quote_keeps_negation_and_nonmetric_prefix(title, content, expected):
+    from app.services.notification.detail import render_notification_review
+    topic = 'sleep' if '睡眠' in content else 'oxygen'
+    text = render_notification_review(_review_plan((0, topic)),
+        {'title': title, 'content': content, 'content_source': 'saved_full_text'})
+    assert expected in text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('bad_events', [
+    [{'type': 'content', 'text': 'AFTER_FINISH'}],
+    [{'type': 'finish', 'finish_reason': 'stop'}],
+    [{'type': 'unknown'}],
+])
+async def test_notification_first_stream_rejects_events_after_finish(db, auth_user_and_headers, monkeypatch, bad_events):
+    from app.services.agent_executor import AgentExecutor
+    user, _ = auth_user_and_headers
+    row = _notice(db, user.id, data={'full_content': '睡眠7小时。'})
+    executor = AgentExecutor(db)
+    calls = 0
+    async def stream(messages, tools):
+        nonlocal calls
+        calls += 1
+        yield {'type': 'content', 'text': _review_plan((0, 'sleep'))}
+        yield {'type': 'finish', 'finish_reason': 'stop'}
+        for event in bad_events:
+            yield event
+    monkeypatch.setattr(executor, '_call_llm_stream', stream)
+    events = [e async for e in executor.run_stream(user_id=user.id, message=PROMPT,
+        extra_context=json.dumps({'from': f'notification/{row.id}'}))]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['turn_outcome']['status'] != 'complete'
+    assert done['finish_reason'] != 'stop'
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('events', [
+    [], [{'type': 'content', 'text': True}], [{'type': 'finish', 'finish_reason': True}],
+    [{'type': 'finish', 'finish_reason': 'length'}, {'type': 'finish', 'finish_reason': 'stop'}],
+    [{'type': 'finish', 'finish_reason': 'stop'}, {'type': 'reasoning', 'text': 'late'}],
+])
+async def test_notification_shared_collector_closes_invalid_stream(db, monkeypatch, events):
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(db)
+    closed = []
+    async def stream(messages, tools):
+        try:
+            for event in events:
+                yield event
+        finally:
+            closed.append(True)
+    monkeypatch.setattr(executor, '_call_llm_stream', stream)
+    text, finish, _ = await executor._collect_selected_notification_answer([])
+    assert text is None and finish != 'stop'
+    assert closed == [True]
