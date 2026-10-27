@@ -34,13 +34,19 @@ status: local-feedback-pilot
 
 Web/Mobile 的启动延迟很长，但这一轮都没有决定最终完成时间。只优化它们无法直接把 573 秒降到五分钟。即使完全消除最后后端 job 的安装阶段，理论上也只省 16 秒；测试执行必须成为重点。
 
+## 本轮候选完整 CI 验证
+
+[40478780352](https://github.com/itsoso/health-llm-driven/actions/runs/40478780352) 首轮 32/32 job 通过，但全量为 643 秒，紧邻主干为 546 秒，不能宣称完整 CI 提速。本轮工具不改变 CI 的测试执行方式。最新关键路径为启动 17、环境 22、安装 18、测试 505、其他步骤 2、未归属 63、收尾 16 秒。
+
+特别是最后 step 完成至 job 完成有 62 秒间隔，归属未知。该间隔单独保留，不能靠减少测试“解释掉”，也不能猜测是网络或 runner 回收。下一轮需区分测试长尾与平台完成事件延迟；证据见 `docs/reviews/2026-10-27-ci-module-feedback-production.json`。前面的 573 秒是既有结构分析样本，最新结果完整保留，不挑最快一次。
+
 ## 结构性原因
 
 - `scripts/ci_change_scope.py` 已对 local/PR 区分端侧，但非文档 main push 强制 full。这样能让主干首轮结果直接满足现有发布器，而不需要随后再派发一遍全量 CI。
 - `scripts/release-preflight.sh` 对后端改动做治理和类型检查，目前没有自动运行模块测试；不能把“preflight passed”当成后端行为回归通过。
 - `backend/tests/conftest.py` 在收集阶段导入 `main.app`，根 autouse fixture 还涉及 API limiter 和 Twin cache。文件位于 `tests/unit/` 并不会自动隔离祖先 conftest；需要实际调整 fixture 的可见范围。见 [pytest fixture 规则](https://www.pytest.org/en/latest/reference/fixtures.html)。
 - `.github/ci/backend-pytest-shards.json` 主要按文件名与耗时组织进程，不是可证明完整的业务影响图。`System Map` 的 runtime dependency 覆盖也是 partial/declaration，不能直接用它排除测试。
-- 当前 `backend/pytest.ini` 默认对整个 app 生成 term-missing 和 HTML 覆盖率。少量模块测试也付出全应用报告成本。模块覆盖率应有独立口径，不能把它报告为全局覆盖率。
+- 当前 `backend/pytest.ini` 默认对整个 app 生成 term-missing 和 HTML 覆盖率。少量本地模块测试也付出全应用报告成本。普通 CI worker 的 `run_ci_pytest_worker.py::BASE_PYTEST_ARGS` 已显式使用 `--no-cov`，因此本轮模块报告优化不能缩短这些 worker 的 499 秒执行阶段。模块覆盖率应有独立口径，不能把它报告为全局覆盖率。
 
 ## 目标架构
 
@@ -77,6 +83,17 @@ flowchart LR
 迁移时保持每个原用例和断言，比较迁移前后 testcase 身份/结果、skip、fixtures 与错误路径。先搬无状态叶子模块，再拆领域服务。公共健康语义、owner/date、安全策略和写入回执保持跨域全量覆盖。组合查询中的纯文本边界验证与完整 provider/runtime 流程应各有明确的测试职责；参数矩阵是否能下沉到纯函数层需要等价验证，不能直接删掉慢用例。
 
 代码拆分先在当前仓库做模块边界：纯解析 → 领域规则 → 存储/外部适配器 → 编排。通过显式输入输出和消费者契约控制依赖；不为 CI 提速先拆微服务或多仓库。这样才可能获得可信的小范围回归。
+
+下一批可直接从以下源码边界推进，不能只按文件名判断“纯单元”：
+
+| 边界 | 已确认依赖 | 拆分时保留的证明 |
+| --- | --- | --- |
+| `app/utils/number_format.py` | 标准库 math / typing，无 DB 或网络 | 数字精度及输入不变测试；日历与报告卡片消费者继续在集成层 |
+| `app/services/llm/prompt_cache.py` | 文件本身是纯变换，但父包 `llm/__init__.py` 提前导入 factory | 先隔离包导入边界；provider 缓存透传及显式 consent fixture 契约不得被当成纯函数删除 |
+| `app/services/genui/table_builder.py` | 依赖 chart_builder、血压展示标记和 number_format | 不将共享展示依赖误判成独立模块；跨端卡片契约仍验证 |
+| 根 `tests/conftest.py` | 导入 main.app，autouse 重置限流器、清理/替换 Twin cache | 将应用 fixture 放入明确集成作用域，真实数据库和缓存隔离仍保留；纯单元不得隐式加载它们 |
+
+这些是源码检查结论，尚未改动对应生产导入或 fixture。下一批验收除了同一测试集合，还应记录收集、fixture setup/call/teardown 与覆盖率报告各段，防止把报告加速误认为业务执行加速。
 
 ### 3. 工作流分层与资源安排
 
