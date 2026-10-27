@@ -16,6 +16,12 @@ agent-neutral rules live in:
 Read relevant source files, nearby tests, and the active Dossier before planning
 implementation.
 
+For CI or release latency work, read the CI / release procedure in
+`docs/governance/performance.md` before measuring or changing execution. Reuse
+its existing tools, quality floor, and committed Dossier evidence; a local
+Harness trace alone is not shared delivery proof. Refresh exact-revision evidence
+on handoff and keep CI activation separate from application deployment.
+
 ## Controller boundary
 
 - Run as `primary_controller` only when Router selects
