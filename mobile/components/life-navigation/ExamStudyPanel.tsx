@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import type { LifeData, LifeTask } from '../../services/lifeNavigation';
 import { localDate } from '../../utils/lifeNavigationModel';
@@ -6,9 +6,11 @@ import { addStudyDay, dailyStudy, daysUntil, examDate, phaseFor, questions, ques
 import { paperAssignment, examPapers } from '../../utils/examPapers';
 import { useLifeControls } from './Controls';
 
-type Props = {data:LifeData; day:string; disabled:boolean; edit:(change:(data:LifeData)=>void)=>void; focus:(task:LifeTask)=>void};
-export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
- const {c,text,button,field}=useLifeControls(disabled);
+type Props = {data:LifeData; day:string; disabled:boolean; edit:(change:(data:LifeData)=>void)=>void; saveAnswer:(change:(data:LifeData)=>void)=>Promise<void>; focus:(task:LifeTask)=>void};
+export default function ExamStudyPanel({data,day,disabled,edit,saveAnswer,focus}:Props) {
+ const [persistence,setPersistence]=useState<'idle'|'saving'|'saved'|'failed'>('idle');
+ const submitting=useRef(false);
+ const {c,text,button,field}=useLifeControls(disabled||persistence==='saving');
  const [section,setSection]=useState('每日计划'),[subject,setSubject]=useState<Subject>('英语'),[mode,setMode]=useState<PracticeMode>('next');
  const [selected,setSelected]=useState(''),[choice,setChoice]=useState<number|null>(null);
  const [feedback,setFeedback]=useState<{id:string;correct:boolean}|null>(null),[error,setError]=useState(''),[writingHint,setWritingHint]=useState(false);
@@ -25,10 +27,18 @@ export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
  const open=async(url:string)=>{try{await Linking.openURL(url);}catch{setError('无法打开资料，请检查网络后重试。');}};
  const heading=(title:string)=><Text accessibilityRole="header" style={{fontSize:20,lineHeight:28,fontWeight:'600',color:c.labelPrimary}}>{title}</Text>;
  const card={padding:16,gap:12,backgroundColor:c.bgCard,borderRadius:14,borderWidth:1,borderColor:c.separator} as const;
+ const submit=async()=>{
+  if(choice===null||!q||disabled||submitting.current)return;
+  submitting.current=true;setPersistence('saving');setError('');
+  setSelected(q.id);setFeedback({id:q.id,correct:choice===q.answer});
+  try {await saveAnswer(d=>recordAnswer(d,day,q,choice));setPersistence('saved');}
+  catch(e){setPersistence('failed');setError(e instanceof Error?e.message:'作答尚未保存，请重试');}
+  finally{submitting.current=false;}
+ };
  return <View style={{gap:16}}>
   <View style={card}>{heading('EMBA · 每天两小时')}{text('英语四级基础起步 · 199 管综 + 204 英语（二）')}{text(remaining>0?`${remaining} 天后初试`:remaining===0?'今天初试':'初试已结束')}{text(`${examDate} · 以准考证为准`)}</View>
   <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{['每日计划','练习与错题','真题与路线'].map(s=>button(s,()=>setSection(s),section===s))}</View>
-  {text('学习记录与网页版共用，修改后请点顶部「保存」。完成勾选和热身正确率不代表掌握或录取。')}
+  {text('提交答案会保存到当前账号，同时保存其他工作区草稿。计划和笔记仍需点顶部「保存」。')}
   {!!error&&<Text accessibilityRole="alert" style={{color:c.labelPrimary}}>{error}</Text>}
   {assignment&&section!=='真题与路线'&&<View style={card}>{heading(`${day} · ${assignment.year}年真题 · ${assignment.review?'复测与补弱':'首轮分段'}`)}{text(`英语：${assignment.english}；管综：${assignment.comprehensive}`)}{text(assignment.writing)}{assignment.papers.map(p=>button(`打开${p.year}年${p.subject==='204'?'英语（二）':'管综'}原卷`,()=>{void open(p.url);} ))}{text('原卷训练：纸上作答，在每日计划记录题号、正确数、用时与错因；尚无真题在线自动判分。文件可能含参考答案，请先遮住答案。')}{text(assignment.papers.map(p=>p.source).join(' / '))}</View>}
   {section==='每日计划'&&<>
@@ -42,15 +52,15 @@ export default function ExamStudyPanel({data,day,disabled,edit,focus}:Props) {
    {text('先用旧年真题分段摸底，记录正确数和耗时；分段结果不折算整卷成绩。')}
   </>}
   {section==='练习与错题'&&<>
-   {heading('补充热身与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(data,item,day).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
-   {text('原创基础题，不是历年真题，也不代表联考难度。首次作答和当日最近一次复练保存在任务记录中。')}
+   {heading('每日专项与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(data,item,day).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
+   {text('原创专项题库，与上方历年真题训练配合使用。首次答案与最近复练分别保留。')}
    <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{practiceModes.map(m=>button(m.label,()=>startPractice(subject,m.key),mode===m.key))}</View>
-   {text(`${day} · 先复练往日错题，再练未做题；今天答过的题可主动重做。每日真题安排见上方；下面仅为补充热身。`)}
+   {text(`${day} · ${mode==='all'?'全部题库包含已做旧题；继续新题请切换「按进度练习」。':mode==='wrong'?'这里只显示待复练错题。':'优先未做专项题，每次最多6题，做完继续补入；次日顺序更新，已做记录保留。'}`)}
    <View style={{flexDirection:'row',gap:8}}>{(['英语','数学','逻辑'] as const).map(s=>button(s,()=>startPractice(s,mode),subject===s))}</View>
    <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled"><View style={{flexDirection:'row',gap:8}}>{available.map(item=>button(item.topic,()=>{setSelected(item.id);reset();},q?.id===item.id))}</View></ScrollView>
-   {q?<View style={card}>{heading(q.topic)}{text(q.prompt)}{q.options.map((option,i)=><Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||!!answer}} disabled={disabled||!!answer} onPress={()=>setChoice(i)} style={{padding:14,minHeight:48,borderWidth:1,borderRadius:10,borderColor:choice===i?c.brand:c.separator}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
-    {answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':'本次答错，已加入待复练')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{button('下一题',nextQuestion)}{button('重新作答',()=>{setMode('all');reset();})}</View>:button('核对答案并记录',()=>{if(choice===null||disabled)return;try{edit(d=>recordAnswer(d,day,q,choice));setSelected(q.id);setFeedback({id:q.id,correct:choice===q.answer});setError('');}catch(e){setError(e instanceof Error?e.message:'作答记录失败');}},choice===null)}
-   </View>:<View style={{gap:8}}>{text(mode==='next'?'本科目当前没有待安排的热身题。已练题不会自动重置；新增每日训练见上方真题安排。':'本科目暂无待复练题。')}{button('进入真题训练',()=>setSection('真题与路线'))}</View>}
+   {q?<View style={card}>{heading(q.topic)}{text(q.prompt)}{!answer&&questionHistory(data,q,day).at(-1)&&text(`上次作答：${questionHistory(data,q,day).at(-1)!.date} · ${questionHistory(data,q,day).at(-1)!.status==='done'?'答对':'待复练'}。当前为主动再练。`)}{q.options.map((option,i)=><Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||!!answer}} disabled={disabled||!!answer} onPress={()=>setChoice(i)} style={{padding:14,minHeight:48,borderWidth:1,borderRadius:10,borderColor:choice===i?c.brand:c.separator}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
+    {answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':'本次答错，已加入待复练')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{text(persistence==='saving'?'正在保存作答…':persistence==='saved'?'作答已保存，可刷新或继续下一题':'作答尚未保存')}{persistence==='failed'&&button('重试保存作答',()=>{void submit();})}{button('下一题',nextQuestion,persistence!=='saved')}{button('重新作答',()=>{setMode('all');reset();},persistence!=='saved')}</View>:button('核对答案并记录',()=>{void submit();},choice===null)}
+   </View>:<View style={{gap:8}}>{text(mode==='next'?'本科目当前没有未做题。题库有限，不把旧题冒充新题；可复练错题或继续真题安排。':'本科目暂无待复练题。')}{button('进入真题训练',()=>setSection('真题与路线'))}</View>}
    <View style={card}>{heading('固定写作示例')}{text('企业试行四天工作制后销售额增长，管理者认为应全面推广。用20分钟列出论证漏洞并写一段分析。')}{button(writingHint?'收起分析提示':'展开分析提示',()=>setWritingHint(!writingHint))}{writingHint&&text('检查同期营销、季节性和人员变化；试点是否代表所有部门；销售额是否等于效率或利润。说明每个漏洞怎样削弱结论。此练习不自动评分。')}</View>
   </>}
   {section==='真题与路线'&&<>
