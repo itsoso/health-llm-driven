@@ -1,4 +1,4 @@
-"""Legacy admin admission endpoints obey invitation enforcement."""
+"""Administrator admission is independent of legacy invitation settings."""
 
 import pytest
 
@@ -30,7 +30,7 @@ def _admin(db, suffix: str) -> User:
 
 @pytest.mark.parametrize("rollout", [True, False])
 @pytest.mark.parametrize("kind", ["ordinary", "wechat"])
-def test_enforcement_blocks_admin_approval_for_every_legacy_target_without_mutation(
+def test_admin_can_approve_existing_accounts_even_with_stale_invitation_flags(
     client, db, monkeypatch, rollout, kind
 ):
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", rollout)
@@ -54,17 +54,16 @@ def test_enforcement_blocks_admin_approval_for_every_legacy_target_without_mutat
         json={"is_approved": True},
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    assert response.status_code == 200
     db.refresh(target)
-    assert target.is_approved is False
+    assert target.is_approved is True
     assert target.is_active is True
     audits = db.query(AgentAuditLog).filter(AgentAuditLog.user_id == admin.id).all()
     assert [item.action for item in audits] == ["privileged_request_authorized"]
 
 
 @pytest.mark.parametrize("rollout", [True, False])
-def test_enforcement_blocks_admin_create_before_user_mutation(
+def test_admin_can_create_users_even_with_stale_invitation_flags(
     client, db, monkeypatch, rollout
 ):
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", rollout)
@@ -83,9 +82,13 @@ def test_enforcement_blocks_admin_create_before_user_mutation(
         },
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
-    assert db.query(User).count() == 1
+    assert response.status_code == 200
+    created = db.query(User).filter(User.id == response.json()["user_id"]).one()
+    assert created.is_active and created.is_approved
+    assert not created.is_admin
+    assert created.phone is None
+    assert auth_service.verify_password("safe-test-password", created.hashed_password)
+    assert db.query(User).count() == 2
 
 
 @pytest.mark.parametrize("rollout", [True, False])
@@ -157,7 +160,7 @@ def test_non_enforced_modes_preserve_admin_approval_and_create(
     ).one().is_approved is True
 
 
-def test_enforcement_blocks_unknown_admin_approval_with_stable_code(
+def test_admin_approval_of_missing_user_returns_not_found(
     client, db, monkeypatch
 ):
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", True)
@@ -169,5 +172,17 @@ def test_enforcement_blocks_unknown_admin_approval_with_stable_code(
         json={"is_approved": True},
     )
 
-    assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    assert response.status_code == 404
+
+
+@pytest.mark.parametrize("authenticated", [False, True])
+def test_direct_user_creation_still_requires_admin(client, db, authenticated):
+    ordinary = User(username="ordinary", name="Ordinary", is_active=True, is_approved=True)
+    db.add(ordinary)
+    db.commit()
+    result = client.post("/api/v1/admin/users/create",
+        headers=_headers(ordinary) if authenticated else {},
+        json={"username": "new-person", "email": "new@example.com",
+              "password": "test-only-password", "name": "New"})
+    assert result.status_code in (401, 403)
+    assert db.query(User).count() == 1

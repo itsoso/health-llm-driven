@@ -196,3 +196,48 @@ def test_registration_storage_failure_redacts_sql_parameters(client, db, monkeyp
     assert private not in caplog.text
     assert db.query(User).count() == 0
     assert db.query(PhoneAuthCode).one().consumed_at is None
+
+
+def test_new_installation_defaults_to_verified_phone_registration():
+    from app.config import Settings
+    config = Settings(_env_file=None)
+    assert config.auth_phone_self_registration_enabled is True
+    assert config.auth_phone_registration_auto_approve is True
+    assert config.registration_invitation_mode == "self_registration"
+
+
+def test_public_registration_does_not_reopen_legacy_invite_admission(client, db, monkeypatch):
+    monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", False)
+    data = {"username": "legacy-person", "email": "legacy@example.com",
+            "password": "test-only-password", "name": "Legacy",
+            "invite_code": settings.default_invite_code,
+            "invitation_code": settings.default_invite_code}
+    for path in ("/api/v1/auth/register", "/api/v1/invitation/apply"):
+        result = client.post(path, json=data)
+        assert result.status_code == 403
+        assert result.json()["detail"]["code"] == "PHONE_REGISTRATION_REQUIRED"
+    assert db.query(User).count() == 0
+
+
+@pytest.mark.parametrize("endpoint", ["verify", "login"])
+def test_public_registration_emergency_close_cannot_be_bypassed_by_old_endpoint(client, db, monkeypatch, endpoint):
+    sent = client.post("/api/v1/auth/phone/code", json={"phone": "13800138771"}).json()
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
+    monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", False)
+    result = client.post(f"/api/v1/auth/phone/{endpoint}", json={"phone": sent["phone"], "code": sent["dev_code"]})
+    assert result.status_code == 403
+    assert result.json()["detail"]["code"] == "REGISTRATION_CLOSED"
+    assert db.query(User).count() == 0
+    assert client.post("/api/v1/auth/phone/code", json={"phone": "13800138772"}).status_code == 403
+
+
+def test_public_mode_requires_phone_verification_for_unknown_wechat_account(client, db, monkeypatch):
+    from app.api import wechat
+    async def session(code):
+        return {"openid": "public-unknown-wechat", "session_key": "synthetic-session"}
+    monkeypatch.setattr(wechat, "get_wechat_session", session)
+    monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", False)
+    result = client.post("/api/v1/wechat/login", json={"code": "synthetic-code", "invite_code": settings.default_invite_code})
+    assert result.status_code == 403
+    assert result.json()["detail"]["code"] == "PHONE_REGISTRATION_REQUIRED"
+    assert db.query(User).count() == 0

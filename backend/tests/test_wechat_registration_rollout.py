@@ -12,6 +12,7 @@ from app.models.user import User
 
 @pytest.fixture(autouse=True)
 def _wechat_session(monkeypatch):
+    monkeypatch.setattr(settings, "auth_phone_self_registration_enabled", False)
     async def fake_session(code: str) -> dict:
         return {"openid": f"openid-{code}", "session_key": "session-key"}
 

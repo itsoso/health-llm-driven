@@ -2057,23 +2057,27 @@ def invitation_only_config(production):
 
 
 def validate_live_deployment_config(production):
-    """Verify fixed safety flags in-place; never normalize or copy live env."""
-    required = {'AUTH_PHONE_SELF_REGISTRATION_ENABLED':'false',
-                'REGISTRATION_INVITATION_ENFORCEMENT_ENABLED':'true',
-                'REGISTRATION_INVITATION_ROLLOUT_ENABLED':'true',
-                'HEALTH_EVIDENCE_RUNTIME_ENABLED':'false'}
-    seen = set()
+    """Accept only complete reviewed admission profiles; never rewrite live env."""
+    admission = ('AUTH_PHONE_SELF_REGISTRATION_ENABLED',
+                 'REGISTRATION_INVITATION_ENFORCEMENT_ENABLED',
+                 'REGISTRATION_INVITATION_ROLLOUT_ENABLED')
+    required = {*admission, 'HEALTH_EVIDENCE_RUNTIME_ENABLED'}
+    seen = {}
     for line in production.splitlines():
         assignment = re.fullmatch(r'\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)', line)
         if assignment is None or assignment[1] not in required:
             continue
         key, value = assignment.groups()
-        expected = required[key]
-        if key in seen or re.fullmatch(rf"(?:{expected}|'{expected}'|\"{expected}\")\s*(?:#.*)?", value) is None:
+        parsed = re.fullmatch(r"(?:([a-z]+)|'([a-z]+)'|\"([a-z]+)\")\s*(?:#.*)?", value)
+        if key in seen or parsed is None:
             raise LaunchError('live deployment safety flag is ambiguous or invalid')
-        seen.add(key)
-    if seen != set(required):
+        seen[key] = next(item for item in parsed.groups() if item is not None)
+    if set(seen) != required:
         raise LaunchError('live deployment safety flags are incomplete')
+    if (seen['HEALTH_EVIDENCE_RUNTIME_ENABLED'] != 'false'
+            or tuple(seen[key] for key in admission) not in (
+                ('false', 'true', 'true'), ('true', 'false', 'false'))):
+        raise LaunchError('live deployment safety flag is ambiguous or invalid')
 
 
 def deploy(policy, workspace, *, backend_ci=False):

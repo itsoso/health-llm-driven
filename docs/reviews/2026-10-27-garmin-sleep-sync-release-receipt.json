@@ -1,0 +1,188 @@
+{
+  "production_sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+  "backend": {
+    "sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+    "state": "SUCCEEDED"
+  },
+  "runtime_terminal": {
+    "candidate_sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+    "old_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+    "phase": "COMMITTED",
+    "mode": "code-only-no-backup",
+    "result": "finalized"
+  },
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active"
+  },
+  "business_lease_released": true,
+  "verified_at": "2026-10-27T01:42:29.785794+00:00",
+  "workflows": {
+    "ci": {
+      "run_id": 40431390771,
+      "conclusion": "success",
+      "headSha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40431390771"
+    },
+    "backend_validate": {
+      "run_id": 40433347087,
+      "conclusion": "success",
+      "headSha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40433347087"
+    },
+    "backend": {
+      "run_id": 40433528469,
+      "conclusion": "success",
+      "headSha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40433528469"
+    }
+  },
+  "public_probes": {
+    "/api/v1/health": 200,
+    "/api/v1/garmin-analysis/me/sleep?days=1": 401
+  },
+  "validation": {
+    "sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+    "targeted_tests": {
+      "passed": 64,
+      "log": "/tmp/reva-sleep-sync-digest-green.log"
+    },
+    "related_regression": {
+      "passed": 300,
+      "skipped": 13,
+      "log": "/tmp/reva-sleep-sync-regression.log"
+    },
+    "postgresql": {
+      "passed": 146,
+      "test_exit": 0,
+      "stop_exit": 0
+    },
+    "independent_safety": {
+      "decision": "GO",
+      "passed": 216,
+      "log": "/tmp/reva-garmin-sleep-independent-final.log"
+    },
+    "live_model": {
+      "status": "passed",
+      "llm_cost": "possible",
+      "suites": [
+        {
+          "suite": "invariants",
+          "total_cases": 12,
+          "passed": 12,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "health_agent_core",
+          "total_cases": 50,
+          "passed": 50,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "orchestrator",
+          "total_cases": 5,
+          "passed": 5,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 0.94,
+          "avg_latency_ms": 7774,
+          "regression": []
+        }
+      ],
+      "failed_suites": [],
+      "errors": [],
+      "trajectory_contract": {
+        "status": "passed",
+        "total_cases": 12,
+        "failed_cases": []
+      },
+      "trajectory_goldens": {
+        "status": "passed",
+        "fixture_version": 1,
+        "total_cases": 9,
+        "covered_scenarios": [
+          "duplicate_client_turn_side_effect",
+          "duplicate_same_record_side_effect",
+          "idempotent_client_turn_replay",
+          "meal_context_reestimate",
+          "missing_identity_receipt",
+          "read_only_delete_side_effect",
+          "simple_fruit_write",
+          "simple_water_write",
+          "uncertain_receipt_false_success"
+        ],
+        "failed_cases": []
+      }
+    },
+    "live_run": {
+      "sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "synthetic_only": true,
+      "database": "sqlite:///:memory:",
+      "user_authorized": true,
+      "baseline": "main if present; missing not proof of no regression",
+      "exit_code": 0,
+      "elapsed_seconds": 72.71
+    },
+    "system_map": "passed",
+    "dossier_consistency": "passed",
+    "secret_scan": "passed",
+    "production_account_replay": false
+  },
+  "scope": {
+    "backend_only": true,
+    "mobile_ota": "not applicable; no mobile changes",
+    "schema_migration": false,
+    "backups_created": false,
+    "real_health_records_accessed": false,
+    "diagnostics": "redacted operational categories and timing only",
+    "historical_records_modified": false,
+    "screenshotted_record_replayed": false,
+    "signed_in_device_acceptance": "not performed; isolated Pi/gateway/PostgreSQL tests cover bounded read and once-only sync submission"
+  },
+  "ci_mode_integration": {
+    "run_id": 40431390771,
+    "job_id": 121949792794,
+    "passed": 4710,
+    "skipped": 47,
+    "subtests_passed": 127
+  },
+  "release_preparation": {
+    "credential_refresh": {
+      "repository": "itsoso/health-llm-driven",
+      "app_id": 5376682,
+      "installation_id": 172918270,
+      "before_sha256": "6811bba356ced96b7817e90ab079336d8e3bd6ebbb55d55f1ae13efa83abfea2",
+      "after_sha256": "5d6313e7b00330520886450f90283c20db27a019fde9c683d8df68637badede4",
+      "expires_at": 1793067711,
+      "state": "CREDENTIAL_REFRESHED"
+    },
+    "canonical_stage": {
+      "sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "state": "CANONICAL_STAGED",
+      "at": 1793064627,
+      "entry_sha256": "e6691609d7a9f56ee7264ef216594831b50b4fa9e578469883d8eec017fc0e34"
+    },
+    "revoked_key_retirement": {
+      "state": "REVOKED_KEY_RETIRED",
+      "old_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "target_sha": "372dd6995bd8866ee91e35a35c1938343901a7e4"
+    },
+    "rotation": {
+      "retired_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "state": "INSTALLED"
+    }
+  }
+}

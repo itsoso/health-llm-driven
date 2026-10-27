@@ -20,6 +20,11 @@ router = APIRouter(prefix="/invitation", tags=["邀请码管理"])
 
 
 def _require_legacy_registration_open() -> None:
+    if settings.auth_phone_self_registration_enabled:
+        raise HTTPException(status_code=403, detail={
+            "code": "PHONE_REGISTRATION_REQUIRED",
+            "message": "请通过手机号验证码注册",
+        })
     if settings.registration_invitation_enforcement_enabled:
         raise HTTPException(
             status_code=403,

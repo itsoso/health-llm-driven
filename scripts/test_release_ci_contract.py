@@ -62,6 +62,24 @@ def _run_bodies(job: dict) -> str:
     )
 
 
+def test_backend_test_install_defers_bytecode_without_weakening_locked_install():
+    job = yaml.safe_load(CI_WORKFLOW.read_text())["jobs"]["backend-test-shards"]
+    step = next(step for step in job["steps"] if step.get("name") == "Install dependencies")
+    commands = [shlex.split(line) for line in step["run"].splitlines() if line.strip()]
+    assert commands == [
+        ["pip", "install", "--no-compile", "--require-hashes", "-r", "requirements.lock"],
+        ["pip", "install", "--no-compile", "-r", "requirements-dev.txt"],
+    ]
+    assert step["working-directory"] == "backend"
+    assert not step.get("continue-on-error", False)
+    # Imports still compile normally; never disable runtime checks or substitute
+    # a cached test result for execution to obtain an installation speedup.
+    assert not {"PYTHONDONTWRITEBYTECODE", "PYTHONOPTIMIZE"} & set(job.get("env", {}))
+    runner = next(step for step in job["steps"] if "Run isolated shards" in step.get("name", ""))
+    assert "run_ci_pytest_worker.py" in runner["run"]
+    assert not runner.get("continue-on-error", False)
+
+
 def test_frontend_mount_boundary_runs_in_real_linux_namespace():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text())
     jobs = workflow['jobs']
@@ -231,6 +249,41 @@ def test_docs_quality_is_mandatory_and_owns_lightweight_doc_gates():
     assert "check_secret_leaks.py" not in backend_runs
     assert "check_system_map.py" not in backend_runs
     assert "check_dossier_consistency.py" not in backend_runs
+
+
+def test_short_ci_jobs_wait_for_docs_without_delaying_long_backend_work():
+    jobs = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    delayed = {
+        "frontend-artifact-integration", "retained-runner-startup",
+        "ota-runner-startup", "frontend-build", "mobile-typecheck", "type-drift",
+    }
+    for name in delayed:
+        job = jobs[name]
+        assert set(job["needs"]) == {"classify-changes", "docs-quality"}
+        # Keep GitHub's implicit success() check; a failed prerequisite must
+        # not turn this admission dependency into an always-running job.
+        assert not any(token in job["if"] for token in ("always(", "failure(", "cancelled("))
+    for name in ("backend-test-shards", "backend-quality", "agent-runtime-postgres"):
+        needs = jobs[name]["needs"]
+        assert set([needs] if isinstance(needs, str) else needs) == {"classify-changes"}
+    assert jobs["docs-quality"]["needs"] == "classify-changes"
+
+
+def test_docs_admission_failure_cannot_be_reported_as_a_green_aggregate():
+    import subprocess
+
+    jobs = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))["jobs"]
+    for name, selected in (("backend-tests", "RUN_BACKEND"), ("release-tests", "RUN_RELEASE")):
+        step = jobs[name]["steps"][0]
+        for scope in ("true", "false"):
+            for status in ("success", "failure", "skipped", "cancelled"):
+                environment = {key: "success" for key in step["env"]}
+                environment.update({"PATH": "/nonexistent", selected: scope, "DOCS_QUALITY": status})
+                result = subprocess.run(
+                    ["/bin/bash", "-eu", "-c", step["run"]],
+                    env=environment, capture_output=True, text=True, timeout=5,
+                )
+                assert (result.returncode == 0) == (status == "success"), (name, scope, status)
 
 
 def test_docs_quality_runs_the_system_map_harness_in_isolation():

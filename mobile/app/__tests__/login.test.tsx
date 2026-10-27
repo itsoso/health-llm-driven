@@ -173,7 +173,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     beginOtp(view);
     await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
     fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
-    mockVerifyPhoneCode.mockRejectedValueOnce(new Error('expired'));
+    mockVerifyPhoneCode.mockRejectedValueOnce({ response: { status: 400, data: { detail: '验证码无效或已过期' } } });
     fireEvent.press(view.getByText('验证并登录'));
     await view.findByText('验证码无效或已过期，请重新获取。');
 
@@ -226,7 +226,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     expect(start).toHaveBeenCalledTimes(1);
   });
 
-  it('shows the invitation-list message instead of claiming a fresh OTP expired', async () => {
+  it('reports paused registration instead of claiming a fresh OTP expired', async () => {
     mockVerifyPhoneCode.mockRejectedValueOnce({
       response: {
         data: {
@@ -243,9 +243,25 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
     fireEvent.press(view.getByText('验证并登录'));
 
-    expect(await view.findByText('该手机号尚未开通，请联系管理员')).toBeTruthy();
+    expect(await view.findByText('新用户注册暂时关闭，已注册用户仍可登录')).toBeTruthy();
     expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
     expect(view.queryByText('SERVER_DETAIL_MUST_NOT_RENDER')).toBeNull();
+  });
+
+  it.each([
+    ['待注册状态无法安全保存，请解锁设备后重试', '待注册状态无法安全保存，请解锁设备后重试'],
+    ['设备无法生成安全的注册请求标识，请重启后重试', '设备无法生成安全的注册请求标识，请重启后重试'],
+    ['PRIVATE_INTERNAL_DETAIL', '登录暂时无法完成，请稍后重试。'],
+  ])('does not report a post-OTP local failure as an expired code', async (message, expected) => {
+    mockVerifyPhoneCode.mockRejectedValueOnce(new Error(message));
+    const view = render(<LoginScreen />);
+    beginOtp(view);
+    await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
+    fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
+    fireEvent.press(view.getByText('验证并登录'));
+    expect(await view.findByText(expected)).toBeTruthy();
+    expect(view.queryByText('验证码无效或已过期，请重新获取。')).toBeNull();
+    expect(view.queryByText('PRIVATE_INTERNAL_DETAIL')).toBeNull();
   });
 
   it('keeps the phone step and shows the invitation-list message before sending an OTP', async () => {
@@ -289,7 +305,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     const view = render(<LoginScreen />);
     await reachInvite(view);
 
-    expect(view.getByText('小巴目前采用邀请制，请输入管理员发送的邀请码。')).toBeTruthy();
+    expect(view.getByText('请输入与当前手机号匹配的历史邀请码。')).toBeTruthy();
     expect(view.getByText('+86 138****8000')).toBeTruthy();
     expect(mockRequestPhoneCode).toHaveBeenCalledTimes(1);
   });
@@ -297,8 +313,8 @@ describe('LoginScreen invitation-gated phone auth', () => {
   it('keeps the manual invite path behind phone ownership verification', async () => {
     const view = render(<LoginScreen />);
 
-    fireEvent.press(view.getByText('我有邀请码'));
-    expect(Alert.alert).toHaveBeenCalledWith('先验证手机号', '邀请码需与手机号匹配，请先获取并验证短信验证码。');
+    expect(view.queryByText('我有邀请码')).toBeNull();
+    expect(view.getByText('新用户验证手机号后即可注册')).toBeTruthy();
     await reachInvite(view);
     fireEvent.changeText(view.getByLabelText('邀请码输入框'), 'abcd2e7k');
     fireEvent.press(view.getByText('完成注册'));
@@ -360,12 +376,13 @@ describe('LoginScreen invitation-gated phone auth', () => {
       .toHaveBeenCalledWith({ linkToken: secondToken }));
   });
 
-  it('restores an unexpired pending registration directly to invite entry after restart', () => {
+  it('starts a fresh phone verification instead of restoring the retired invitation step', () => {
     mockPendingRegistration = { expiresAt: Date.now() + 60_000, phoneMasked: '+86 139****1234' };
     const view = render(<LoginScreen />);
 
-    expect(view.getByText('输入邀请码')).toBeTruthy();
-    expect(view.getByText('+86 139****1234')).toBeTruthy();
+    expect(view.queryByText('输入邀请码')).toBeNull();
+    expect(view.getByLabelText('手机号输入框')).toBeTruthy();
+    expect(view.queryByText('+86 139****1234')).toBeNull();
     expect(view.queryByLabelText('验证码输入框')).toBeNull();
   });
 
@@ -444,7 +461,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.changeText(view.getByLabelText('手机号输入框'), '+86 138 0013 8000');
     fireEvent.press(view.getByText('获取验证码'));
 
-    expect(view.getByLabelText('我有邀请码').props.accessibilityState.disabled).toBe(true);
+    expect(view.queryByLabelText('我有邀请码')).toBeNull();
     expect(view.getByLabelText('密码登录').props.accessibilityState.disabled).toBe(true);
     await act(async () => request.resolve({
       phone: '+8613800138000',

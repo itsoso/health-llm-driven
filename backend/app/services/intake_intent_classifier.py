@@ -151,7 +151,37 @@ def _is_pure_question_item(item: str) -> bool:
 
 # 非摄入言语行为(提问 / 否定·漏服·计划·提醒)的 reason。命中即 kind=unknown,
 # 任何调用方都不得再用别的解析兜底把它写成记录(quick_record 旧正则即一例)。
-NON_INTAKE_REASONS = frozenset({"intake_question", "intake_reflection"})
+NON_INTAKE_REASONS = frozenset({"intake_question", "intake_reflection", "intake_instruction"})
+
+_MEDICATION_READ_INSTRUCTION_RE = re.compile(
+    r"^(?:(?:请|麻烦|帮我|替我|先|只|仅|我想|我需要|提醒)[，,：:]*)*"
+    r"(?:查询|查阅|查看|查一下|查下|看看|核实|核对|检查|分析)(?:一下)?"
+    r"(?P<subject>[^，,。；;]*)"
+)
+_NO_MEDICATION_RECORD_RE = re.compile(
+    r"(?:不要|不用|别|请勿|不需要|无需)(?:再|自动|帮我)?记录(?:本次|这次|我的)?(?:服药|用药)"
+)
+
+
+def is_medication_instruction_text(value: Any) -> bool:
+    """Reject read instructions as intake facts; never grants a read scope.
+
+    A read request must lead the turn. An actual intake followed by a separate
+    review request remains an intake, unless the user explicitly forbids logging.
+    This also identifies legacy instruction-as-name cards on delivery.
+    """
+    if not isinstance(value, str):
+        return False
+    normalized = _normalize(value)
+    if _NO_MEDICATION_RECORD_RE.search(normalized):
+        return True
+    match = _MEDICATION_READ_INSTRUCTION_RE.match(normalized)
+    if match is None:
+        return False
+    subject = match['subject']
+    # Bind the read verb to its own clause and recognize named drugs as well
+    # as generic medication terms. A later intake is not the read's object.
+    return _looks_like_medication(subject, subject)
 
 
 def classify_intake_intent(query: Any) -> IntakeIntent:
@@ -173,6 +203,9 @@ def _classify(raw: str, *, speech_act_guards: bool) -> IntakeIntent:
     normalized = _normalize(raw)
     if not normalized:
         return IntakeIntent("unknown", 0.0, "empty")
+
+    if speech_act_guards and is_medication_instruction_text(raw):
+        return IntakeIntent("unknown", 0.3, "intake_instruction", raw)
 
     is_management = _has_any(normalized, DIET_MANAGEMENT_MARKERS)
     if speech_act_guards and not is_management:
@@ -466,6 +499,8 @@ def non_intake_reason(text: str, *, named: bool = False) -> str | None:
     For parsers that fall back to their own regexes after the classifier
     ("午餐没吃，血糖5.6" classifies as health_metric, yet is no meal record).
     """
+    if is_medication_instruction_text(text):
+        return "intake_instruction"
     normalized = _normalize(text)
     if _is_intake_question(normalized):
         return "intake_question"

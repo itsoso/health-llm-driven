@@ -1,0 +1,16 @@
+{
+  "environment": "macOS synthetic 1000 tracked files; chown/chmod record targets without changing ownership; not production timing",
+  "files": 1000,
+  "samples": [
+    {
+      "variant": "before",
+      "seconds": 83.996,
+      "permission_processes": 8004
+    },
+    {
+      "variant": "after",
+      "seconds": 0.416,
+      "permission_processes": 22
+    }
+  ]
+}

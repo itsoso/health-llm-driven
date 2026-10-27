@@ -62,6 +62,10 @@ PREDEPLOY_ATTESTATION_IMPLEMENTATIONS = {
         "72b1e2423e54d9251bcabe262798366af25ebbe0aee29197c1c6b64547ac180e",
 }
 PROC = Path("/proc")
+NATIVE_ROTATION_OLD = 'c28050786c1e9aa70cca33d7e3d5c093652aeb26'
+NATIVE_ROTATION_ABANDONED = 'ace2737c636c74e9f738cb86960de3f1b4ae94d3'
+NATIVE_ROTATION_PRODUCTION = '1f14f9c0a73facc511daafa3a7aa8e447ee62fd0'
+NATIVE_ROTATION_AUDIT = '3d469e94e68202508912189f93cc0ce3ef3c9af064121f8182374a98cf3b5d10'
 
 
 class BootstrapError(Exception):
@@ -685,6 +689,7 @@ def _persistent_cloud_successor(sha, public):
             or hashlib.sha256(INSTALLED.read_bytes()).hexdigest() != digest):
         raise BootstrapError("reused cloud identity differs from canonical successor")
     seen = set()
+    recovery = _native_rotation_recovery()
     while sha != policy["sha"]:
         if sha in seen or len(seen) >= 10000:
             raise BootstrapError("invalid cloud identity succession chain")
@@ -699,6 +704,8 @@ def _persistent_cloud_successor(sha, public):
             raise BootstrapError("cloud identity reuse lacks completed succession audit")
         if _retired_public_keys(sha, intent)['cloud.pub'] != public:
             raise BootstrapError("cloud identity changed within succession chain")
+        if sha == NATIVE_ROTATION_OLD and recovery is not None:
+            next_sha = recovery['publisher_sha']
         sha = next_sha
     expected, _loopback = key_lines(0, public, public)
     matches = [line for line in AUTHORIZED.read_text().splitlines() if public.split()[1] in line]
@@ -736,6 +743,7 @@ def _installation_evidence(sha, config, library, *, history_only=False):
 
 
 def _retired_history():
+    _native_rotation_recovery()
     root = STATE / "retired"
     if not os.path.lexists(root):
         if LEGACY_RETIREMENTS:
@@ -832,7 +840,9 @@ def _retired_config(sha, evidence):
 
 
 def _assert_fresh_sha(sha, history):
+    recovery = _native_rotation_recovery()
     if (os.path.lexists(STATE / sha) or sha in history
+            or (recovery is not None and recovery['publisher_sha'] == sha)
             or sha in LEGACY_RETIREMENTS
             or any(item.get("new_sha") == sha for item in history.values())
             or any(os.path.lexists(path) for path in _archives(sha))):
@@ -1271,7 +1281,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
-        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE"}:
+        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
             # The no-copy closure already proved the revoked installation before
             # deletion. Reconsume its durable retirement audit now: this checks
             # canonical executor/public-key hashes, original closure receipt and
@@ -2030,6 +2040,124 @@ def acknowledge_lost_closure_receipt(old_sha, sha, *, evidence_sha256=None, acce
         os.close(fd)
 
 
+def _fixed_native_retirement():
+    record = STATE / 'retired' / NATIVE_ROTATION_OLD
+    _inventory(record, {'intent.json', 'completed.json'})
+    audit = {name: _read_json(record / name) for name in ('intent.json', 'completed.json')}
+    if _digest_json(audit) != NATIVE_ROTATION_AUDIT:
+        raise BootstrapError('fixed native retirement audit differs')
+    return audit['intent.json']
+
+
+def _native_rotation_recovery():
+    root = STATE / 'native-rotation-finalization'
+    if not os.path.lexists(root):
+        return None
+    _inventory(root, {'intent.json', 'completed.json'})
+    intent = _read_json(root / 'intent.json')
+    required = {'publisher_sha', 'retirement_sha256', 'production_sha', 'executor_sha256',
+                'authorized', 'locks', 'closure_sha256', 'policy'}
+    if (not isinstance(intent, dict) or set(intent) != required
+            or intent['retirement_sha256'] != NATIVE_ROTATION_AUDIT
+            or intent['production_sha'] != NATIVE_ROTATION_PRODUCTION
+            or intent['policy'] != 'no-backup-v1'
+            or not isinstance(intent['publisher_sha'], str)
+            or re.fullmatch('[a-f0-9]{40}', intent['publisher_sha']) is None
+            or intent['publisher_sha'] in {NATIVE_ROTATION_OLD, NATIVE_ROTATION_ABANDONED, NATIVE_ROTATION_PRODUCTION}
+            or _read_json(root / 'completed.json') != {
+                'state': 'AUTHORIZATION_INSTALLED', 'intent_sha256': _digest_json(intent)}):
+        raise BootstrapError('incomplete native rotation finalization')
+    _fixed_native_retirement()
+    source = canonical_source(intent['publisher_sha'])
+    closure = STATE / 'native-only-closures' / NATIVE_ROTATION_OLD
+    if (intent['executor_sha256'] != hashlib.sha256((source / 'scripts/trusted_release_server.py').read_bytes()).hexdigest()
+            or intent['closure_sha256'] != _digest_json({name: _read_json(closure / name)
+                                                       for name in ('intent.json', 'completed.json')})
+            or intent['locks'] != {'launcher': _recovery_file_identity(STATE / 'launcher.lock'),
+                                   'build': _recovery_file_identity(STATE / NATIVE_ROTATION_OLD / 'build.lock')}):
+        raise BootstrapError('native rotation finalization bindings changed')
+    return intent
+
+
+def finalize_native_rotation(sha, *, evidence_sha256=None):
+    """Explicit, once-only repair of the pinned post-retirement/pre-install failure."""
+    source, server = reviewed_source(sha)
+    _run(['/usr/bin/python3.12', '-I', '-S', '-B', str(source / 'scripts/trusted_release_gate.py'),
+          '--sha', sha, '--workflow-sha', sha])
+    root = STATE / 'native-rotation-finalization'
+    lock = STATE / 'launcher.lock'
+    secure(lock, private=True)
+    fd = os.open(lock, os.O_RDWR | os.O_NOFOLLOW)
+    build_fd = None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        build_fd = _acquire_existing_build_lock(NATIVE_ROTATION_OLD)
+        if build_fd is None:
+            raise BootstrapError('original native build lock required')
+        def inspect():
+            _assert_original_lock(lock, fd)
+            _assert_original_lock(STATE / NATIVE_ROTATION_OLD / 'build.lock', build_fd)
+            if any(os.path.lexists(path) for path in (root, CONFIG, INSTALLED.parent,
+                    STATE / NATIVE_ROTATION_ABANDONED, BUSINESS_LEASE)):
+                raise BootstrapError('native rotation is not an unstarted installation')
+            history = _retired_history()
+            retired = _fixed_native_retirement()
+            if history.get(NATIVE_ROTATION_OLD) != retired:
+                raise BootstrapError('native retirement history changed')
+            _assert_fresh_sha(sha, history)
+            _assert_known_activity(history)
+            _recovery_production_proof(NATIVE_ROTATION_PRODUCTION, source)
+            _assert_idle()
+            _recovery_process_proof()
+            keys = _retired_public_keys(NATIVE_ROTATION_OLD, retired)
+            for item in history.values():
+                if item.get('public_keys'):
+                    for public in item['public_keys'].values():
+                        if public.split()[1] in AUTHORIZED.read_text():
+                            raise BootstrapError('retired key still authorized')
+            _installation_inputs(sha, 0, keys['cloud.pub'])
+            closure = STATE / 'native-only-closures' / NATIVE_ROTATION_OLD
+            evidence = {'publisher_sha': sha, 'retirement_sha256': NATIVE_ROTATION_AUDIT,
+                        'production_sha': NATIVE_ROTATION_PRODUCTION, 'policy': 'no-backup-v1',
+                        'executor_sha256': hashlib.sha256((source / 'scripts/trusted_release_server.py').read_bytes()).hexdigest(),
+                        'authorized': _recovery_file_identity(AUTHORIZED),
+                        'locks': {'launcher': _recovery_file_identity(lock),
+                                  'build': _recovery_file_identity(STATE / NATIVE_ROTATION_OLD / 'build.lock')},
+                        'closure_sha256': _digest_json({name: _read_json(closure / name)
+                                                       for name in ('intent.json', 'completed.json')})}
+            return evidence, keys, history
+        evidence, keys, history = inspect()
+        digest = _digest_json(evidence)
+        if evidence_sha256 is None:
+            return {'state': 'READY', 'evidence_sha256': digest}
+        if evidence_sha256 != digest or inspect()[0] != evidence:
+            raise BootstrapError('native finalization inspection changed')
+        root.mkdir(mode=0o700)
+        _sync_parent(root)
+        _write(root / 'intent.json', json.dumps(evidence, sort_keys=True).encode())
+        retired_keys = {public for old, item in history.items()
+                        for public in _retired_public_keys(old, item).values()}
+        _install_locked(sha, 0, keys['cloud.pub'], source, server, retired_keys=retired_keys)
+        policy = _read_json(CONFIG / 'authorized-release.json')
+        cloud = (CONFIG / 'cloud.pub').read_text().strip()
+        loopback = (CONFIG / 'loopback.pub').read_text().strip()
+        lines = AUTHORIZED.read_text().splitlines()
+        if (policy != {'sha': sha, 'expires_at': 0, 'executor_sha256': evidence['executor_sha256']}
+                or hashlib.sha256(INSTALLED.read_bytes()).hexdigest() != evidence['executor_sha256']
+                or cloud != keys['cloud.pub'] or loopback in retired_keys
+                or [line for line in lines if cloud.split()[1] in line] != [key_lines(0, cloud, loopback)[0]]
+                or [line for line in lines if loopback.split()[1] in line] != [key_lines(0, cloud, loopback)[1]]):
+            raise BootstrapError('new native publisher readback failed')
+        _write(root / 'completed.json', json.dumps({'state': 'AUTHORIZATION_INSTALLED',
+                                                  'intent_sha256': digest}, sort_keys=True).encode())
+        _retired_history()
+        return {'state': 'AUTHORIZATION_INSTALLED', 'sha': sha}
+    finally:
+        if build_fd is not None:
+            os.close(build_fd)
+        os.close(fd)
+
+
 def main():
     try:
         if not sys.flags.isolated or os.geteuid() != 0:
@@ -2038,6 +2166,9 @@ def main():
         use_system_timezone()
         parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
         commands = parser.add_subparsers(dest="action", required=True)
+        native_finalizer = commands.add_parser('finalize-native-rotation', allow_abbrev=False)
+        native_finalizer.add_argument('--sha', required=True)
+        native_finalizer.add_argument('--evidence-sha256')
         create = commands.add_parser("install", allow_abbrev=False)
         create.add_argument("--sha", required=True)
         create.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 stays valid until revocation")
@@ -2084,7 +2215,9 @@ def main():
         sealing.add_argument('--inspect', action='store_true')
         sealing.add_argument('--checkpoint-sha256')
         args = parser.parse_args()
-        if args.action == 'seal-frontend-history':
+        if args.action == 'finalize-native-rotation':
+            result = finalize_native_rotation(args.sha, evidence_sha256=args.evidence_sha256)
+        elif args.action == 'seal-frontend-history':
             if args.inspect and (args.checkpoint_sha256 is not None or args.active_operation is not None):
                 raise BootstrapError('inspection cannot mutate or choose history')
             if args.checkpoint_sha256 is not None and re.fullmatch('[0-9a-f]{64}', args.checkpoint_sha256) is None:

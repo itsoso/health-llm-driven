@@ -1,0 +1,54 @@
+{
+  "feature_commit": "2fed3eaa3c8646b9b989ea441e6a28302e16f7aa",
+  "web_commit": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+  "backend_commit": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+  "web": {
+    "artifact_digest": "064dddcd98bd36a5611035288685d9ec7cf630aa6f732ffa2a834d1f135bf840",
+    "backups_digest": {},
+    "frontend_tree": "732230d57b1971599602633e4ae9797ed6833c19",
+    "kind": "frontend-publication",
+    "operation_id": "a9aa1cc0e069434d9040dc012df96ce8",
+    "production_sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+    "proof_sha256": {
+      "before.json": "19a4bf927b9caf89d4aa1b77f7ac3eb9a2fd1fef31f72621d789651db67a35a6",
+      "build.log": "ba3b77b2c8644eafbbc70c7e1afa054c7270351259d1f4452f9908cbf3622deb",
+      "install-started.json": "c28fefa3b8ad1bc10bf1d8a1bc8f5274431bc06dbeafb4ddea637986ccb46f93",
+      "verified.json": "281b3835a0cb2332165caf3095beb5377588877afbac6eb94785ad133e745590"
+    },
+    "publication_policy": "no-backup-v1",
+    "publisher_sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+    "state": "FRONTEND_SUCCEEDED"
+  },
+  "web_build_id": "mNOI9ap_Z1Nt7-4DtD_Ff",
+  "ci_runs": [
+    40436764319,
+    40438974052,
+    40442091206
+  ],
+  "backend_run": 40440607024,
+  "ota": {
+    "state": "SUCCEEDED",
+    "sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+    "run_id": 40441500904,
+    "group_id": "695dd4dc-a295-43e7-a21d-7ebb4bce5227",
+    "update_id": "01a17b50-3227-7735-b971-490b81dbd75c",
+    "device_uptake": "unverified",
+    "channel": "production",
+    "runtime": "1.3.6",
+    "platform": "ios"
+  },
+  "acceptance": {
+    "six_paper_links": true,
+    "today_120_minutes": true,
+    "tomorrow_different_sections": true,
+    "historical_progress_preserved": true,
+    "workspace_not_modified": true,
+    "public_font_hash_verified": true
+  },
+  "scope": "Six source document links and dated assignments;120-minute daily proposal. No real-paper automatic grading or score-based adaptive scheduling. Physical-device uptake unverified. No study-record writes during acceptance.",
+  "font_remediation": "Bundled original Inter Latin variable font with OFL after production Google Fonts download failure; public asset SHA256 verified.",
+  "failed_preparations_retained": [
+    "ef02b4ba8e51460db96f884b5e871fa4"
+  ],
+  "verified_date": "2026-10-27"
+}

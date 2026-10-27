@@ -1,0 +1,104 @@
+{
+  "production_sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+  "backend": {
+    "sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+    "state": "SUCCEEDED"
+  },
+  "ota": {
+    "intent_sha256": "631bf6839288bdb289e894e33dc0931abc772143027c2e3d2bd603c031397871",
+    "receipt_sha256": "b4e007e83a0ec9e466ff4e350f5c1d69bf816582b5343f113f3344e7b2d9b567",
+    "sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+    "state": "SUCCEEDED"
+  },
+  "ota_verified": {
+    "group_id": "afd20f4f-6bea-43b0-9a37-561df8116e7c",
+    "sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+    "update_id": "01a178e0-cfb1-7969-be62-08cd3ed4e433"
+  },
+  "runtime_terminal": {
+    "candidate_sha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+    "old_sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "phase": "COMMITTED",
+    "mode": "code-only-no-backup",
+    "result": "finalized"
+  },
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active"
+  },
+  "business_lease_released": true,
+  "verified_at": "2026-10-26T15:43:27.765121+00:00",
+  "workflows": {
+    "ci": {
+      "run_id": 40346287287,
+      "conclusion": "success",
+      "headSha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40346287287"
+    },
+    "backend_validate": {
+      "run_id": 40349263970,
+      "conclusion": "success",
+      "headSha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40349263970"
+    },
+    "backend": {
+      "run_id": 40349448930,
+      "conclusion": "success",
+      "headSha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40349448930"
+    },
+    "ota_validate": {
+      "run_id": 40350611247,
+      "conclusion": "success",
+      "headSha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40350611247"
+    },
+    "ota_publish": {
+      "run_id": 40351152172,
+      "conclusion": "success",
+      "headSha": "3dd357f9067ad57a938973e3cdb80c6ade503ede",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40351152172"
+    }
+  },
+  "public_probes": {
+    "/api/v1/health": 200,
+    "/api/v1/medication/medications/1/reminder": 401
+  },
+  "validation": {
+    "backend_related_tests": 506,
+    "backend_final_targeted_tests": 228,
+    "mobile_related_tests": 117,
+    "typecheck": "passed",
+    "lint": "passed",
+    "system_map": "passed",
+    "dossier_consistency": "passed",
+    "independent_review": {
+      "verdict": "GO",
+      "backend_tests": 228,
+      "mobile_registry_tests": 109,
+      "extra_synthetic_probes": 10
+    },
+    "ci_mode_release_invariants": {
+      "passed": 4710,
+      "skipped": 47,
+      "subtests_passed": 127,
+      "job_id": 121654236159
+    },
+    "live_model": "not required by path-sensitive gate"
+  },
+  "scope": {
+    "backend_and_mobile_ota": true,
+    "schema_migration": false,
+    "backups_created": false,
+    "real_health_data_accessed": false,
+    "historical_records_modified": false,
+    "device_ota_application": "not observed",
+    "native_push_tap_acceptance": "not performed; tests cover classifier and cached card projections"
+  }
+}

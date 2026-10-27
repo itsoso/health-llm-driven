@@ -555,6 +555,17 @@ vendor 回执、未知文件、活跃发布进程或租约身份变化均拒绝�
 
 `151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90` 与 `f2022e10027bcf35c4225bf1cc898a9001161ecc` 的领取前失败，使用该入口的固定 `--failed-sha` profile 绑定官方失败运行和审计制品；默认历史 profile 保持不变。选择仅限源码内受审的精确 SHA，不接受调用方提供制品摘要或替换流程阶段。历史消费者按原操作目录选择独立 profile，禁止跨 profile 复用证据。已验证的固定演示维护收尾仍保留 UNKNOWN，OTA 预检只在完整退休历史验证成功后接受其固定版本和操作绑定，不将其标记为演示数据成功。
 
+`c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf` 的新增固定 profile 只接受
+run `40281092624`、attempt `1`、job `121434341485` 和官方 artifact `12633145149`
+（2532 bytes）的领取前失败；ZIP、原控制流与三项审计 JSON 的摘要固定在源码内。
+必须以新的精确绿色 reviewed SHA 执行收尾，原 c29d 的后端成功状态、原 intent/lease
+与未进入 vendor 的证据仍须逐项通过；不修改历史 profile，不复用 c29d 重发。
+本入口先严格读取有界私有 stdin JSON 的唯一 `github_token` 字段，再核验 canonical
+root 源码；同一凭据经 `trusted_release_gate.py --token-stdin --target full` 的 stdin
+传给精确 CI 闸，并用于官方审计制品读取。凭据不进入 argv/env/输出，空、非法或
+读取失败立即阻断，不回退到过期的服务器凭据或环境变量；root、源码、原双锁和
+领取前失败证明不豁免。inspect 返回的证据摘要仍是执行收尾的必需绑定。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
@@ -1595,3 +1606,42 @@ quiesce intent、restore intent、固定 continuation intent/completed 四份真
 事务撤销旧发布身份、移动原 lease 到固定退休位置，并生成单次受保护 rotation
 回执。canonical bootstrap 按固定失败 SHA 分派该 profile，旧 ae49 profile 保持不变；
 历史消费者只接受完整四段恢复与收尾链。任一步已消费后失败，仍禁止自动重放。
+
+#### 固定 native 授权轮换收尾
+
+`bootstrap_trusted_release.py finalize-native-rotation --sha <current-main>` 仅处理
+c280 native-only 授权已退休、ace 后继尚未安装的固定事件。原 retirement 两份审计
+由固定摘要绑定，原 closure/receipt、生产版本与原锁继续校验。默认只读，返回
+`evidence_sha256`；显式传回该摘要才执行一次安装。配置、执行器、业务 workspace、
+租约或收尾记录已存在均拒绝。新发布者必须是当前精确绿色 canonical 源码。
+
+收尾保留原审计，在独立 `native-rotation-finalization` 记录新发布者、原审计摘要、
+原授权文件身份、closure 与锁。先写 intent，再安装并核验严格公钥授权行与执行器，
+最后写完成记录并读回完整继承链。任一步失败不得重试、删除记录或重建旧授权。
+该记录只修复发布授权，不代表业务部署或 Edu 登录验收完成。
+
+### 手机号开放注册配置切换（2026-10-26）
+
+用户已明确取消邀请制，并要求管理员能直接创建用户。应用变更完成后，
+`scripts/public_registration_activation.py` 是本次固定注册策略的独立无备份入口；
+不开放通用 env-only，不使用历史 `invitation_only_config` 恢复生成器改写现行配置。
+它只接受完整旧策略 `false/true/true` 到新策略 `true/false/false`，字段顺序为
+`AUTH_PHONE_SELF_REGISTRATION_ENABLED`、`REGISTRATION_INVITATION_ENFORCEMENT_ENABLED`、
+`REGISTRATION_INVITATION_ROLLOUT_ENABLED`；其它字节及 root:health-app 0640 权限保持。
+新部署校验与 public-host 运行态校验接受两种完整受审策略，拒绝混合状态；
+`HEALTH_EVIDENCE_RUNTIME_ENABLED=false` 等无关约束不变，历史回执不重写。
+
+必须先完成独立 G4、精确当前主干完整 CI、canonical bootstrap，以及同一 SHA 的
+后端 `SUCCEEDED` 发布。使用系统 `/usr/bin/python3.12 -I -S -B` 运行该 SHA 的
+`/var/lib/reva-release/bootstrap/<sha>/source/scripts/public_registration_activation.py`
+并传入 `--publisher-sha <sha>`；默认只读预检，返回 `READY` 后加 `--apply`。
+入口同时核验已部署源码、installed authorization、环境来源、三服务运行策略、
+历史终态，并复用 launcher flock 和 business lease，不能用旧候选或任意目录执行。
+
+`/var/lib/reva-public-registration/journal.json` 只保存绑定、摘要和阶段，不复制 env。
+配置经 CAS 原子替换与 fsync 后，依次重启并读回 health-backend、celery-worker、
+celery-beat，确认三者为新策略及后端健康才记 `CONFIGURATION_SUCCEEDED` 并释放租约。
+中断保留原 journal/lease；只有相同 SHA 的 `--resume --apply` 可以续接可证明的原阶段。
+未知目录、配置漂移、不完整租约和失败的前置证明仍阻断，不自动回退或新建操作覆盖。
+该终态仅证明注册配置生效，不发送短信、不创建账号；真实手机号注册、管理员创建、
+Web 和 OTA 用户路径分别验收。

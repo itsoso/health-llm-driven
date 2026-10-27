@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "kind": "offline_dependency_replay_not_ci_measurement",
+  "baseline_sha": "1c78b9b800db4a35de9daa68ba0526f477d0e905",
+  "workflow_before_sha256": "ec8638996072f891073214dc19d3dd54b0b26b4bc730ba06bde60fdcd477761d",
+  "workflow_after_sha256": "bd99a1c906936bea1771806fad015c45bd2ee9a36a1ecca2d6310791264d0776",
+  "method": "Use identical observed full job durations in each before/after scenario. Expand actual workflow dependencies and matrix. Admit ready jobs by observed start order with name tie-break. Model a shared runner pool; no probability or quota claim.",
+  "limitations": [
+    "Does not reproduce GitHub scheduling, cross-repository contention, per-platform quotas or service startup gaps.",
+    "Delays auxiliary diagnostics until the docs gate passes; does not remove checks.",
+    "Real exact-SHA CI determines performance acceptance."
+  ],
+  "observations": [
+    {
+      "run_id": 40438974052,
+      "sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+      "jobs_export_sha256": "9b43bc275b08b6f67d9b94e62c4a7014e53a8c259e431f1eea11765726a542db",
+      "observed_wall_seconds": 702.0,
+      "scenarios": [
+        {
+          "modeled_slots": 12,
+          "baseline_replay_seconds": 1086.0,
+          "proposed_replay_seconds": 1086.0,
+          "difference_seconds": 0.0,
+          "proposed_latest_backend_start_seconds": 529.0
+        },
+        {
+          "modeled_slots": 16,
+          "baseline_replay_seconds": 876.0,
+          "proposed_replay_seconds": 897.0,
+          "difference_seconds": 21.0,
+          "proposed_latest_backend_start_seconds": 340.0
+        },
+        {
+          "modeled_slots": 20,
+          "baseline_replay_seconds": 690.0,
+          "proposed_replay_seconds": 586.0,
+          "difference_seconds": -104.0,
+          "proposed_latest_backend_start_seconds": 20.0
+        },
+        {
+          "modeled_slots": 24,
+          "baseline_replay_seconds": 607.0,
+          "proposed_replay_seconds": 565.0,
+          "difference_seconds": -42.0,
+          "proposed_latest_backend_start_seconds": 8.0
+        },
+        {
+          "modeled_slots": 32,
+          "baseline_replay_seconds": 565.0,
+          "proposed_replay_seconds": 565.0,
+          "difference_seconds": 0.0,
+          "proposed_latest_backend_start_seconds": 8.0
+        }
+      ]
+    },
+    {
+      "run_id": 40442091206,
+      "sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+      "jobs_export_sha256": "ab2626d34f887f06ce9daf03270af7fb13828c633137259f3aed77a7ced2d98c",
+      "observed_wall_seconds": 707.0,
+      "scenarios": [
+        {
+          "modeled_slots": 12,
+          "baseline_replay_seconds": 1065.0,
+          "proposed_replay_seconds": 1029.0,
+          "difference_seconds": -36.0,
+          "proposed_latest_backend_start_seconds": 502.0
+        },
+        {
+          "modeled_slots": 16,
+          "baseline_replay_seconds": 859.0,
+          "proposed_replay_seconds": 899.0,
+          "difference_seconds": 40.0,
+          "proposed_latest_backend_start_seconds": 339.0
+        },
+        {
+          "modeled_slots": 20,
+          "baseline_replay_seconds": 694.0,
+          "proposed_replay_seconds": 668.0,
+          "difference_seconds": -26.0,
+          "proposed_latest_backend_start_seconds": 19.0
+        },
+        {
+          "modeled_slots": 24,
+          "baseline_replay_seconds": 668.0,
+          "proposed_replay_seconds": 668.0,
+          "difference_seconds": 0.0,
+          "proposed_latest_backend_start_seconds": 11.0
+        },
+        {
+          "modeled_slots": 32,
+          "baseline_replay_seconds": 668.0,
+          "proposed_replay_seconds": 668.0,
+          "difference_seconds": 0.0,
+          "proposed_latest_backend_start_seconds": 11.0
+        }
+      ]
+    }
+  ]
+}

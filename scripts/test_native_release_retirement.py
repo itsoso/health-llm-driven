@@ -738,3 +738,23 @@ def test_native_280_closure_roundtrip_preserves_old_claims(tmp_path, monkeypatch
     before = {p.name: p.read_bytes() for p in workspace.iterdir()}
     assert m.closed_evidence(b, NATIVE_280_SHA, receipt)['state'] == m.TERMINAL
     assert {p.name: p.read_bytes() for p in workspace.iterdir()} == before
+
+
+def test_native_history_survives_no_backup_retirement(tmp_path, monkeypatch):
+    m = load()
+    b, _, record, receipt = completed_fixture(m, tmp_path, monkeypatch)
+    expected = m.closed_evidence(b, m.OLD_SHA, receipt)
+    closure = json.loads((record / 'intent.json').read_text())
+    retirement = b.STATE / 'retired' / m.OLD_SHA
+    retirement.mkdir(parents=True)
+    saved = {'old_sha': m.OLD_SHA, 'new_sha': 'f' * 40,
+             'retirement_policy': 'no-backup-v1', 'installation': closure['installation']}
+    (retirement / 'intent.json').write_text(json.dumps(saved))
+    (retirement / 'completed.json').write_text(json.dumps(
+        {'old_sha': m.OLD_SHA, 'new_sha': 'f' * 40, 'state': 'RETIRED'}))
+    b._installation_evidence = lambda *a: pytest.fail('deleted installation read')
+    assert m.closed_evidence(b, m.OLD_SHA, receipt, historical=True) == expected
+    saved['installation'] = {}
+    (retirement / 'intent.json').write_text(json.dumps(saved))
+    with pytest.raises(m.RetirementError, match='retired native installation'):
+        m.closed_evidence(b, m.OLD_SHA, receipt, historical=True)

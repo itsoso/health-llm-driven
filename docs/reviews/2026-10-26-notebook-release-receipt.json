@@ -1,0 +1,145 @@
+{
+  "production_sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+  "backend": {
+    "sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "state": "SUCCEEDED"
+  },
+  "web": {
+    "artifact_digest": "a86b1ec512fbfa686dcba82cfa95c03cdbcf88eb728cfc726d9c1c004bd6f087",
+    "backups_digest": {},
+    "frontend_tree": "6b70cfec63cb292b40e4065682b88f8a9b4e6595",
+    "kind": "frontend-publication",
+    "operation_id": "882c1ad112704a878de0e82dd1d041a5",
+    "production_sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "proof_sha256": {
+      "before.json": "afd50a28fd8949eddfb19af8fe89158128df302cc5874247b5516a07bd42b84d",
+      "build.log": "0ca157ae51f721e59dde12c75ad41ad7a04c96a4aa3a416d2131bc4b5c512603",
+      "install-started.json": "2c60157a53b55003ccc884c2d1cf9d7fd74e78316a82bc0c07545850a7234e8a",
+      "verified.json": "a32356d1d4de3e2c98846fd96d8f0318d1557761b49749864615c5c76029b8d5"
+    },
+    "publication_policy": "no-backup-v1",
+    "publisher_sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "state": "FRONTEND_SUCCEEDED"
+  },
+  "ota": {
+    "intent_sha256": "5713677297f89892b2a367e67f337d1492992cd25e4fb512d95ad8d0dbc59829",
+    "receipt_sha256": "91bb08903494d100d7509f44213164dea398b67d98d4f905e9bdb33b29b9c6f8",
+    "sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "state": "SUCCEEDED"
+  },
+  "ota_verified": {
+    "group_id": "3ed48372-e105-4212-aabd-83ce6688e486",
+    "sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "update_id": "01a177d0-ab37-7612-80ae-8a6d5df049a4"
+  },
+  "runtime_terminal": {
+    "candidate_sha": "03434bcabf39be9394a65098159c0ae9c338e434",
+    "old_sha": "e502d4c483f29d52afca112fa3e925338b4eda12",
+    "phase": "COMMITTED",
+    "mode": "code-only-no-backup",
+    "result": "finalized"
+  },
+  "services": {
+    "health-backend": "active",
+    "celery-worker": "active",
+    "celery-beat": "active",
+    "health-frontend": "active"
+  },
+  "business_lease_released": true,
+  "verified_at": "2026-10-26T10:46:34.623232+00:00",
+  "workflows": {
+    "ci": {
+      "run_id": 40304979855,
+      "conclusion": "success",
+      "headSha": "03434bcabf39be9394a65098159c0ae9c338e434",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40304979855"
+    },
+    "backend_validate": {
+      "run_id": 40306997996,
+      "conclusion": "success",
+      "headSha": "03434bcabf39be9394a65098159c0ae9c338e434",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40306997996"
+    },
+    "backend": {
+      "run_id": 40307096244,
+      "conclusion": "success",
+      "headSha": "03434bcabf39be9394a65098159c0ae9c338e434",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40307096244"
+    },
+    "ota_validate": {
+      "run_id": 40308916597,
+      "conclusion": "success",
+      "headSha": "03434bcabf39be9394a65098159c0ae9c338e434",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40308916597"
+    },
+    "ota_publish": {
+      "run_id": 40309165168,
+      "conclusion": "success",
+      "headSha": "03434bcabf39be9394a65098159c0ae9c338e434",
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40309165168"
+    }
+  },
+  "public_verification": {
+    "verified_at": "2026-10-26T10:46:34.056705+00:00",
+    "chunks": [
+      {
+        "path": "/_next/static/chunks/2-ywwj7v5ei8l.js",
+        "sha256": "2d1768c1ec60038f7e7feef576ad84e44fa616421fb3ca296aff14011b773013",
+        "public_bytes_match": true
+      }
+    ],
+    "probes": {
+      "/agenda?navigation=week": 200,
+      "/api/v1/health": 200,
+      "/api/v1/life-navigation/workspace": 401
+    },
+    "authenticated_production_write_performed": false
+  },
+  "validation": {
+    "postgresql": {
+      "passed": 15,
+      "exit_code": 0,
+      "temporary_database_stopped": true
+    },
+    "web": {
+      "passed": 615,
+      "skipped": 1,
+      "typecheck": "passed",
+      "production_build": "passed"
+    },
+    "mobile": {
+      "passed": 6,
+      "typecheck": "passed"
+    },
+    "independent_safety": {
+      "verdict": "GO",
+      "backend_passed": 14,
+      "postgresql_only_skipped": 1,
+      "web_passed": 15,
+      "mobile_passed": 6
+    },
+    "ci_mode_release_invariants": {
+      "passed": 4710,
+      "skipped": 47,
+      "subtests_passed": 127,
+      "job_id": 121511915726
+    },
+    "system_map": "passed",
+    "api_types": "exact CI type-drift passed",
+    "live_model": "not required by path-sensitive change gate"
+  },
+  "scope": {
+    "backend_web_mobile_ota": true,
+    "schema_migration": false,
+    "original_shared_checkout": "preserved",
+    "backups_created": false,
+    "signed_in_production_note_save": "not performed; PostgreSQL and synthetic UI tests cover persistence and account isolation",
+    "ota_device_install": "not observed",
+    "old_client_limitation": "strict backup parsing rejects notebook field until matching client update"
+  }
+}

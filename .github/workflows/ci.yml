@@ -56,6 +56,8 @@ jobs:
           python3 backend/scripts/build_ci_pytest_matrix.py
           --workers 16 --github-output "$GITHUB_OUTPUT"
 
+  # Admit shorter auxiliary jobs after this small mandatory gate so initial
+  # runner capacity can start the long backend lanes. All checks remain required.
   docs-quality:
     runs-on: ubuntu-latest
     needs: classify-changes
@@ -147,9 +149,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
+        # Short-lived test runners compile imported modules on demand instead of
+        # precompiling every installed package. Hash verification is unchanged.
         run: |
-          pip install --require-hashes -r requirements.lock
-          pip install -r requirements-dev.txt
+          pip install --no-compile --require-hashes -r requirements.lock
+          pip install --no-compile -r requirements-dev.txt
 
       - name: Run isolated shards (${{ matrix.label }})
         working-directory: backend
@@ -409,6 +413,7 @@ jobs:
           scripts/test_trusted_vision_model.py
           scripts/test_trusted_kbase_login.py
           scripts/test_trusted_edu_login.py
+          scripts/test_public_registration_activation.py
           scripts/test_trusted_neo_wechat.py
           scripts/test_neo_wechat_linux_isolation.py
           scripts/test_neo_wechat_provisioning.py
@@ -492,7 +497,7 @@ jobs:
   frontend-artifact-integration:
     name: frontend-artifact-integration
     runs-on: ubuntu-24.04
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     timeout-minutes: 15
     steps:
@@ -740,7 +745,7 @@ jobs:
 
   retained-runner-startup:
     runs-on: ubuntu-24.04
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     permissions:
       contents: read
@@ -774,7 +779,7 @@ jobs:
 
   ota-runner-startup:
     runs-on: ubuntu-24.04
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_release == 'true' }}
     permissions:
       contents: read
@@ -835,7 +840,7 @@ jobs:
 
   frontend-build:
     runs-on: ubuntu-latest
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_frontend == 'true' }}
     steps:
       - uses: actions/checkout@v5
@@ -881,7 +886,7 @@ jobs:
   mobile-typecheck:
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_mobile == 'true' }}
     steps:
       - uses: actions/checkout@v5
@@ -998,7 +1003,7 @@ jobs:
     # 两端类型并 git diff --exit-code,不一致即红;修复 = 本地 `cd mobile && npm run generate-types`
     # (frontend 同)并提交。SKIP_DB_INIT=1 让 app.openapi() dump 无需 DB(openapi 只读路由/模型)。
     runs-on: ubuntu-latest
-    needs: classify-changes
+    needs: [classify-changes, docs-quality]
     if: ${{ needs.classify-changes.outputs.run_type_drift == 'true' }}
     steps:
       - uses: actions/checkout@v5

@@ -532,15 +532,18 @@ def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
     assert "chown root:root ." in body
     assert "chown -R root:root .git" in body
     assert "chmod -R go-w .git" in body
-    assert "git ls-files --stage -z" in body
-    assert 'chown -h root:root -- "$tracked_path"' in body
-    assert 'chmod 0644 -- "$tracked_path"' in body
-    assert 'chmod 0755 -- "$tracked_path"' in body
+    assert "['git', 'ls-files', '--stage', '-z']" in body
+    assert "['chown', '-h', 'root:root', '--']" in body
+    assert "'0755' if mode == '100755' else '0644'" in body
+    assert "len(batch) >= 128" in body
+    assert "size + cost > 32768" in body
     assert "chown -R root:root .\n" not in body
 
 
+@pytest.mark.parametrize("and_chain", [False, True])
+@pytest.mark.parametrize("fault", [None, "parent_symlink", "file_symlink", "hardlink", "command_failure", "metadata_failure", "stat_after_output"])
 def test_repository_trust_normalization_never_targets_ignored_runtime_data(
-    tmp_path: Path,
+    tmp_path: Path, fault, and_chain,
 ):
     repo = tmp_path / "release"
     repo.mkdir()
@@ -557,10 +560,13 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     )
     (repo / "src").mkdir()
     (repo / "src/app.py").write_text("print('ok')\n", encoding="utf-8")
+    for index in range(64):
+        (repo / f"src/file-{index}.py").write_text("pass\n")
     (repo / ".gitignore").write_text(
         "backend/.env\nuploads/\ntmp/\nnode_modules/\n",
         encoding="utf-8",
     )
+    (repo / "tracked-link").symlink_to("uploads/private.bin")
     subprocess.run(["git", "add", "."], cwd=repo, check=True)
     subprocess.run(["git", "commit", "-qm", "fixture"], cwd=repo, check=True)
     for ignored in (
@@ -571,6 +577,18 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     ):
         ignored.parent.mkdir(parents=True, exist_ok=True)
         ignored.write_text("runtime\n", encoding="utf-8")
+
+    external = tmp_path / "external"
+    external.write_text("unchanged")
+    external.chmod(0o600)
+    if fault == "file_symlink":
+        (repo / "src/app.py").unlink()
+        (repo / "src/app.py").symlink_to(external)
+    elif fault == "parent_symlink":
+        (repo / "src").rename(tmp_path / "outside")
+        (repo / "src").symlink_to(tmp_path / "outside")
+    elif fault == "hardlink":
+        os.link(repo / "src/app.py", tmp_path / "linked")
 
     env_file = tmp_path / "deploy.env"
     env_file.write_text(
@@ -609,8 +627,14 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
         fake_bin / "stat",
         "#!/bin/sh\nprintf 'root:root\\n'\n",
     )
+    if fault == "command_failure":
+        _write_executable(fake_bin / "chown", "#!/bin/sh\n[ \"$1\" != -h ] || exit 23\nexit 0\n")
+    if fault == "metadata_failure":
+        _write_executable(fake_bin / "chown", "#!/bin/sh\nexit 23\n")
+    if fault == "stat_after_output":
+        _write_executable(fake_bin / "stat", "#!/bin/sh\nprintf 'root:root\\n'\nexit 17\n")
     result = subprocess.run(
-        ["bash", "-c", generated.stdout],
+        ["bash", "-c", generated.stdout.rstrip() + (" && printf permission-proof-accepted" if and_chain else "")],
         cwd=repo,
         text=True,
         capture_output=True,
@@ -621,11 +645,24 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
             "TARGET_EVENT_LOG": str(event_log),
         },
     )
+    assert external.read_text() == "unchanged"
+    assert external.stat().st_mode & 0o777 == 0o600
+    if fault is not None:
+        assert result.returncode != 0
+        assert "permission-proof-accepted" not in result.stdout
+        if fault not in {"metadata_failure", "stat_after_output"}:
+            assert "tracked permission normalization failed" in result.stderr
+        return
     assert result.returncode == 0, (result.stdout, result.stderr)
     targets = event_log.read_text(encoding="utf-8")
     assert "|.git\n" in targets
-    assert "|src/app.py\n" in targets
-    assert "|src\n" in targets
+    arguments = [arg for line in targets.splitlines() for arg in line.split("|")]
+    assert "src/app.py" in arguments
+    assert "src" in arguments
+    assert "chown|-h|root:root|--|tracked-link" in targets
+    assert not any("tracked-link" in line and line.startswith("chmod|") for line in targets.splitlines())
+    assert len(targets.splitlines()) < 20, "permission normalization must batch subprocesses"
+    assert sum(line.split("|").count("src") for line in targets.splitlines() if line.startswith("chown|")) == 1
     for ignored in (
         "backend/.env",
         "uploads",
@@ -737,13 +774,15 @@ printf '\n' >> "$OWNERSHIP_LOG"
         "backend/data/gene_knowledge.json",
         "backend/scripts/probe.sh",
     ):
-        assert f"chown|root:root|--|{tracked_path}" in ownership_calls
+        assert any(tracked_path in call.split("|")[4:] for call in ownership_calls
+                   if call.startswith("chown|-h|root:root|--|"))
     for tracked_parent in (
         "backend",
         "backend/data",
         "backend/scripts",
     ):
-        assert f"chown|root:root|--|{tracked_parent}" in ownership_calls
+        assert sum(call.split("|")[4:].count(tracked_parent) for call in ownership_calls
+                   if call.startswith("chown|-h|root:root|--|")) == 1
     assert all("celerybeat-schedule.db" not in call for call in ownership_calls)
     assert data_dir.stat().st_mode & 0o777 == 0o755
     assert seed.stat().st_mode & 0o777 == 0o644

@@ -42,6 +42,26 @@ const OTP_PATTERN = /^\d{4,8}$/;
 const ACCOUNT_LOGIN_ACTIONABLE_ERRORS = new Set([
   '登录状态无法安全保存，请解锁设备后重试',
 ]);
+const PHONE_LOGIN_ACTIONABLE_ERRORS = new Set([
+  ...ACCOUNT_LOGIN_ACTIONABLE_ERRORS,
+  '设备无法生成安全的注册请求标识，请重启后重试',
+  '待注册状态无法安全保存，请解锁设备后重试',
+  '待注册状态无法安全读取，请解锁设备后重试',
+  '待注册状态无法安全清除，请解锁设备后重试',
+]);
+
+function phoneLoginErrorMessage(error: unknown): string {
+  if (error instanceof Error && PHONE_LOGIN_ACTIONABLE_ERRORS.has(error.message)) {
+    return error.message;
+  }
+  if (isNetworkError(error)) return '网络暂时不可用，请检查网络后重试。';
+  const response = (error as { response?: { status?: number; data?: { detail?: unknown } } } | null)?.response;
+  if (response?.status === 400 && response.data?.detail === '验证码无效或已过期') {
+    return '验证码无效或已过期，请重新获取。';
+  }
+  return '登录暂时无法完成，请稍后重试。';
+}
+
 const NETWORK_ERROR_CODES = new Set([
   AxiosError.ERR_NETWORK,
   AxiosError.ECONNABORTED,
@@ -59,7 +79,7 @@ const INVITATION_ERROR_MESSAGES: Record<string, string> = {
   REGISTRATION_USER_ALREADY_EXISTS: '该手机号已注册，请返回使用手机号登录。',
 };
 const PHONE_VERIFICATION_ERROR_MESSAGES: Record<string, string> = {
-  REGISTRATION_CLOSED: '该手机号尚未开通，请联系管理员',
+  REGISTRATION_CLOSED: '新用户注册暂时关闭，已注册用户仍可登录',
   REGISTRATION_INVITATION_REQUIRED: '该手机号尚未开通，请联系管理员',
 };
 
@@ -130,10 +150,7 @@ export default function LoginScreen({
   const [remember, setRemember] = useState(true);
   const previousInvitationLinkToken = useRef(invitationLinkToken);
 
-  const restoredPending = Boolean(
-    pendingRegistration && pendingRegistration.expiresAt > Date.now(),
-  );
-  const showInvite = !ticketExpiredMessage && (inviteVerified || restoredPending);
+  const showInvite = !ticketExpiredMessage && inviteVerified;
   const displayMaskedPhone = pendingRegistration?.phoneMasked
     || (sentPhone ? maskPhone(sentPhone) : '已验证手机号');
   const secureLinkReady = Boolean(invitationLinkToken) && !useManualCredential;
@@ -219,9 +236,7 @@ export default function LoginScreen({
       const codeValue = registrationAuthErrorCode(error);
       setInlineError(
         (codeValue && PHONE_VERIFICATION_ERROR_MESSAGES[codeValue])
-        || (isNetworkError(error)
-          ? '网络暂时不可用，请检查网络后重试。'
-          : '验证码无效或已过期，请重新获取。'),
+        || phoneLoginErrorMessage(error),
       );
     } finally {
       setLoading(false);
@@ -357,7 +372,7 @@ export default function LoginScreen({
             <Text style={styles.title}>{showInvite ? '输入邀请码' : '登录小巴'}</Text>
             <Text style={styles.subtitle}>
               {showInvite
-                ? '小巴目前采用邀请制，请输入管理员发送的邀请码。'
+                ? '请输入与当前手机号匹配的历史邀请码。'
                 : '新用户验证手机号后即可注册'}
             </Text>
           </View>
@@ -590,19 +605,6 @@ export default function LoginScreen({
                   handleRequestCode,
                   loading || normalizeInternationalPhone(phone) === null,
                 )}
-                <Pressable
-                  disabled={loading}
-                  onPress={() => Alert.alert(
-                    '先验证手机号',
-                    '邀请码需与手机号匹配，请先获取并验证短信验证码。',
-                  )}
-                  style={styles.secondaryButton}
-                  accessibilityRole="button"
-                  accessibilityLabel="我有邀请码"
-                  accessibilityState={{ disabled: loading }}
-                >
-                  <Text style={styles.secondaryText}>我有邀请码</Text>
-                </Pressable>
               </>
             )}
           </View>

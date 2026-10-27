@@ -3,23 +3,23 @@ import { fireEvent, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import Navigation from '../Navigation';
 
-const route = vi.hoisted(() => ({ pathname: '/admin', search: '' }));
+const route = vi.hoisted(() => ({ pathname: '/admin', search: '', admin: false }));
 vi.mock('next/navigation', () => ({
   usePathname: () => route.pathname,
   useSearchParams: () => new URLSearchParams(route.search),
 }));
 vi.mock('@/contexts/AuthContext', () => ({
   useAuth: () => ({
-    user: null,
-    isAuthenticated: false,
-    isLoading: true,
+    user: route.admin ? { id: 1, name: 'Synthetic Admin', is_admin: true } : null,
+    isAuthenticated: route.admin,
+    isLoading: !route.admin,
     logout: vi.fn(),
   }),
 }));
 vi.mock('@/components/NotificationCenter', () => ({ default: () => null }));
 
 describe('Navigation', () => {
-  beforeEach(() => { route.pathname = '/admin'; route.search = ''; });
+  beforeEach(() => { route.pathname = '/admin'; route.search = ''; route.admin = false; });
 
   it('offers LifeNav directly in the top bar and closes the mobile menu on selection', () => {
     render(<Navigation />);
@@ -66,4 +66,14 @@ describe('Navigation', () => {
     expect(overviewLinks.length).toBeGreaterThan(0);
     overviewLinks.forEach((link) => expect(link).toHaveAttribute('href', '/dashboard'));
   });
+  it('keeps administrator navigation focused on user management instead of invitation approval', () => {
+    route.admin = true;
+    render(<Navigation />);
+    fireEvent.click(screen.getByRole('button', { name: /Synthetic Admin/ }));
+    expect(screen.getByRole('link', { name: '管理后台' })).toHaveAttribute('href', '/admin');
+    expect(screen.queryByRole('link', { name: '邀请码审批' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '打开主菜单' }));
+    expect(screen.queryByRole('link', { name: '邀请码审批' })).not.toBeInTheDocument();
+  });
+
 });

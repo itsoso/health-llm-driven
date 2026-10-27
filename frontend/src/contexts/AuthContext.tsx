@@ -1,6 +1,6 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef, ReactNode } from 'react';
 import { API_BASE_URL, WEB_SESSION_TOKEN } from '@/services/api/client';
 import { setAiConsentUser } from '@/services/aiConsent';
 
@@ -30,6 +30,7 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  verifyPhoneCode: (phone: string, code: string) => Promise<{ success: boolean; error?: string }>;
   register: (data: RegisterData) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
   refreshUser: () => Promise<void>;
@@ -49,6 +50,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const authGeneration = useRef(0);
   useEffect(() => {
     setAiConsentUser(user?.id ?? null);
   }, [user?.id]);
@@ -60,16 +62,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 获取用户信息
   const fetchUser = async () => {
+    const generation = authGeneration.current;
     try {
       const res = await fetch(`${API_BASE}/auth/me`, {
         credentials: 'include',
       });
 
+      if (generation !== authGeneration.current) return;
       if (res.ok) {
         // 检查响应内容类型
         const contentType = res.headers.get('content-type');
         if (contentType && contentType.includes('application/json')) {
           const userData = await res.json();
+          if (generation !== authGeneration.current) return;
           setUser(userData);
           setToken(WEB_SESSION_TOKEN);
           // 注: iOS 推送注册已随 Capacitor 退役; iPhone/iPad 推送由 mobile/ (Expo RN) 负责
@@ -82,11 +87,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // 403可能是未审核，尝试解析错误信息
         try {
           const errorData = await res.json();
+          if (generation !== authGeneration.current) return;
           if (errorData.detail && errorData.detail.includes('审核')) {
             // 未审核用户，保留token和user，但标记为未审核
             const userData = await fetch(`${API_BASE}/auth/me`, {
               credentials: 'include',
             }).then(r => r.ok ? r.json() : null);
+            if (generation !== authGeneration.current) return;
             if (userData) {
               setUser(userData);
             }
@@ -97,6 +104,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           }
         } catch {
           // 无法解析错误，清除token
+          if (generation !== authGeneration.current) return;
           setToken(null);
           setUser(null);
         }
@@ -107,6 +115,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     } catch (error) {
       console.error('获取用户信息失败:', error);
+      if (generation !== authGeneration.current) return;
       setToken(null);
       setUser(null);
     } finally {
@@ -116,6 +125,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 登录 (使用 useCallback 优化)
   const login = useCallback(async (username: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const generation = ++authGeneration.current;
     setAiConsentUser(null);
     try {
       const res = await fetch(`${API_BASE}/auth/login/json`, {
@@ -137,6 +147,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const data = await res.json();
+      if (generation !== authGeneration.current) return { success: false, error: '登录状态已变化，请重新登录' };
 
       if (res.ok) {
         setAiConsentUser(data.user.id);
@@ -152,8 +163,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const verifyPhoneCode = useCallback(async (phone: string, code: string): Promise<{ success: boolean; error?: string }> => {
+    const generation = ++authGeneration.current;
+    setAiConsentUser(null);
+    try {
+      const res = await fetch(`${API_BASE}/auth/phone/verify`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Auth-Transport': 'web-cookie' },
+        credentials: 'include',
+        body: JSON.stringify({ phone, code }),
+      });
+      const data = await res.json();
+      if (generation !== authGeneration.current) return { success: false, error: '登录状态已变化，请重新验证' };
+      if (!res.ok) {
+        const detail = data?.detail;
+        return { success: false, error: typeof detail === 'string' ? detail :
+          typeof detail?.message === 'string' ? detail.message : '验证码验证失败，请重试' };
+      }
+      if (data?.outcome !== 'authenticated' || !Number.isInteger(data?.user?.id)) {
+        return { success: false, error: '登录服务返回了无法识别的验证结果，请稍后重试' };
+      }
+      // Read back the HttpOnly session; the response token is never persisted by JavaScript.
+      const session = await fetch(`${API_BASE}/auth/me`, { credentials: 'include' });
+      if (!session.ok) return { success: false, error: '登录状态未能建立，请重新验证手机号' };
+      const currentUser = await session.json();
+      if (generation !== authGeneration.current) return { success: false, error: '登录状态已变化，请重新验证' };
+      if (currentUser?.id !== data.user.id) {
+        return { success: false, error: '登录账号已变化，请刷新页面后重试' };
+      }
+      setAiConsentUser(currentUser.id);
+      setUser(currentUser);
+      setToken(WEB_SESSION_TOKEN);
+      return { success: true };
+    } catch {
+      return { success: false, error: '登录状态验证失败，请检查网络后重试' };
+    }
+  }, []);
+
   // 注册 (使用 useCallback 优化)
   const register = useCallback(async (data: RegisterData): Promise<{ success: boolean; error?: string }> => {
+    const generation = ++authGeneration.current;
     setAiConsentUser(null);
     try {
       const res = await fetch(`${API_BASE}/auth/register`, {
@@ -175,6 +224,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       const result = await res.json();
+      if (generation !== authGeneration.current) return { success: false, error: '登录状态已变化，请重新登录' };
 
       if (res.ok || res.status === 201) {
         // 注册成功，但可能未审核，不设置token
@@ -194,6 +244,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // 登出 (使用 useCallback 优化)
   const logout = useCallback(() => {
+    authGeneration.current += 1;
     setAiConsentUser(null);
     setToken(null);
     setUser(null);
@@ -218,9 +269,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     isAuthenticated: !!user,
     login,
     register,
+    verifyPhoneCode,
     logout,
     refreshUser,
-  }), [user, token, isLoading, login, register, logout, refreshUser]);
+  }), [user, token, isLoading, login, register, verifyPhoneCode, logout, refreshUser]);
 
   return (
     <AuthContext.Provider value={contextValue}>

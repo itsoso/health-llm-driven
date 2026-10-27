@@ -3226,3 +3226,14 @@ it('does not label a high-confidence food list with missing calories as a comple
   fireEvent.press(view.getByText('修正'));
   expect(view.getByDisplayValue('火锅汤底 约1份 + 豆制品 约1盘')).toBeTruthy();
 });
+it.each([
+  '提醒 先查询核实药品、计划时间和记录状态 不要记录服药',
+  '请帮我核对奥美拉唑的用药记录',
+  '请帮我查一下今天的用药记录', '查询奥美拉唑的记录',
+  '查看奥美拉唑的服用记录', '核对阿司匹林1片',
+])('does not render cached instruction text as a medication or expose its actions: %s', name => {
+  const card = { type: 'medication_draft', data: { medication_name: name, presentation_state: 'suggestion' }, actions: [{ id: 'legacy', label: '去用药页记录', action: 'route.open', payload: { route: '/medications?draft=medication' } }] };
+  expect(renderServerCards([card] as any)).toEqual([]);
+  expect(renderCard(card as any)).toBeNull();
+  expect(renderCard({ type: 'cards_group', data: { cards: [card] } } as any)).toBeNull();
+});

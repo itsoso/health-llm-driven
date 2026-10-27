@@ -319,7 +319,10 @@ export default function AdminPage() {
       setShowCreateUser(false); setCreateUserForm({ username: '', email: '', password: '', name: '', is_approved: true });
       queryClient.invalidateQueries({ queryKey: ['admin-users'] }); alert(data.message || '用户创建成功');
     },
-    onError: (error: any) => { alert(`❌ ${error?.response?.data?.detail || '创建失败'}`); },
+    onError: (error: any) => {
+      const detail = error?.response?.data?.detail;
+      alert(`❌ ${typeof detail === 'string' ? detail : typeof detail?.message === 'string' ? detail.message : '创建失败'}`);
+    },
   });
 
   // Invitation handlers
@@ -371,7 +374,7 @@ export default function AdminPage() {
         {/* Page Title */}
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-white mb-2">🛡️ 管理后台</h1>
-          <p className="text-purple-200">管理用户、Garmin同步和邀请码</p>
+          <p className="text-purple-200">管理用户和 Garmin 同步</p>
         </div>
 
         {user?.id === 3 && user.is_admin && <DecisionControlPanel />}
@@ -383,9 +386,6 @@ export default function AdminPage() {
           </button>
           <button onClick={() => setActiveTab('garmin')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'garmin' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
             ⌚ Garmin同步
-          </button>
-          <button onClick={() => setActiveTab('invitation')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'invitation' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
-            🎫 邀请码管理
           </button>
           <button onClick={() => setActiveTab('observability')} className={`px-6 py-2 rounded-lg font-medium transition-colors ${activeTab === 'observability' ? 'bg-purple-600 text-white' : 'bg-white/10 text-purple-200 hover:bg-white/20'}`}>
             📊 观察期看板
@@ -403,6 +403,10 @@ export default function AdminPage() {
             📚 KB Review
           </button>
         </div>
+
+        {activeTab === 'users' && (
+          <p className="mb-4 text-sm text-purple-200">用户可用手机号验证码直接注册；管理员也可直接创建账号。</p>
+        )}
 
         {/* Tab Content */}
         {activeTab === 'users' && (

@@ -8,6 +8,27 @@ from sqlalchemy import and_, or_
 from sqlalchemy.orm import Session
 
 
+def _remove_instruction_medication_cards(cards: list) -> list:
+    from app.services.intake_intent_classifier import is_medication_instruction_text
+
+    result = []
+    for card in cards:
+        data = card.get('data') if isinstance(card, dict) else None
+        if isinstance(data, dict):
+            if card.get('type') == 'medication_draft':
+                names = [data.get('medication_name')]
+                if isinstance(data.get('items'), list):
+                    names.extend(item.get('medication_name') for item in data['items'] if isinstance(item, dict))
+                if any(is_medication_instruction_text(name) for name in names):
+                    continue
+            if card.get('type') == 'cards_group' and isinstance(data.get('cards'), list):
+                data['cards'] = _remove_instruction_medication_cards(data['cards'])
+                if not data['cards']:
+                    continue
+        result.append(card)
+    return result
+
+
 def cards_for_persistence(cards: list | None) -> list:
     """Remove short-lived private capabilities while retaining durable meaning.
 
@@ -16,7 +37,7 @@ def cards_for_persistence(cards: list | None) -> list:
     API re-signs it for later history reads, so conversation metadata must never
     become an alternative storage location for a bearer-like URL.
     """
-    durable = deepcopy(cards or [])
+    durable = _remove_instruction_medication_cards(deepcopy(cards or []))
     for card in durable:
         if not isinstance(card, dict):
             continue
@@ -57,6 +78,10 @@ def message_metas_for_delivery(
         cards = meta.get("cards")
         if not isinstance(cards, list):
             continue
+        # Projection only: preserve stored history, but retire malformed legacy
+        # cards and their actions on every authenticated history delivery.
+        cards = _remove_instruction_medication_cards(cards)
+        meta['cards'] = cards
         for card in cards:
             if not isinstance(card, dict) or card.get("type") != "diet_draft":
                 continue

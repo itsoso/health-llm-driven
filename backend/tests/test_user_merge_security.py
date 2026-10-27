@@ -319,7 +319,7 @@ def test_non_admin_cannot_reach_admin_merge_service(client, db, monkeypatch):
     assert db.get(User, target.id) is not None
 
 
-def test_non_enforced_admin_merge_preserves_legacy_status_compatibility(
+def test_non_enforced_admin_merge_still_blocks_unapproved_account(
     client, db, monkeypatch
 ):
     monkeypatch.setattr(settings, "registration_invitation_enforcement_enabled", False)
@@ -346,8 +346,9 @@ def test_non_enforced_admin_merge_preserves_legacy_status_compatibility(
         json={"source_user_id": source.id, "target_user_id": target.id},
     )
 
-    assert response.status_code == 200
-    assert calls == [(source.id, target.id, False)]
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "ACCOUNT_MERGE_INELIGIBLE"
+    assert calls == []
 
 
 def test_merge_service_revalidates_status_under_lock_before_any_migration(

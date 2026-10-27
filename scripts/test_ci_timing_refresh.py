@@ -1,6 +1,7 @@
 """Scheduling telemetry must not alter test selection or timeout policy."""
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -83,14 +84,26 @@ def test_real_catalog_retains_all_shards_and_process_policies():
     payload = json.loads(matrix.DEFAULT_CATALOG.read_text())
     shards = matrix.load_catalog()
     assert payload["timing_source"]["sample_count"] == len(shards) == 60
-    assert payload["timing_source"]["run_id"] == 37884822646
+    assert payload["timing_source"]["run_id"] == 40447632037
     assert payload['timing_source']['aggregation'] == 'maximum'
-    assert [r['run_id'] for r in payload['timing_source']['runs']] == [37877803968, 37880423513, 37884822646]
+    assert [r['run_id'] for r in payload['timing_source']['runs']] == [
+        40438974052, 40442091206, 40447632037,
+    ]
     assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 249.368
+    assert max(worker["estimated_seconds"] for worker in assignments) == 457.037
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
+    # Freeze every execution-policy field, including nested process groups and
+    # calibrated deadlines; only scheduling telemetry may change in this refresh.
+    policy = {key: value for key, value in payload.items() if key != "timing_source"}
+    policy["shards"] = [
+        {key: value for key, value in shard.items() if key != "scheduling_seconds"}
+        for shard in shards
+    ]
+    assert hashlib.sha256(json.dumps(
+        policy, sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest() == "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425"
 
 
 def _refresh_module():
@@ -115,13 +128,14 @@ def test_refresh_preserves_every_non_timing_policy():
     refresh = _refresh_module()
     original = json.loads(matrix.DEFAULT_CATALOG.read_text())
     before = copy.deepcopy(original)
-    logs = [_successful_log(row['label']) for row in original['shards']]
+    logs = [_successful_log(row['label'] + '-' + group['label'] if 'process_groups' in row else row['label'])
+            for row in original['shards'] for group in row.get('process_groups', [{}])]
     result = refresh.refresh_catalog(original, logs, run_id=37784722390,
                                      head_sha='be8bd98e10db01241dd0b9e6e4c34181a9061345')
     assert original == before
     assert result['worker_count'] == original['worker_count']
     for old, new in zip(original['shards'], result['shards'], strict=True):
-        assert new['scheduling_seconds'] == 1.234
+        assert new['scheduling_seconds'] == round(1.234 * len(old.get('process_groups', [{}])), 3)
         assert {k: v for k, v in old.items() if k != 'scheduling_seconds'} == {
             k: v for k, v in new.items() if k != 'scheduling_seconds'}
     assert result['timing_source']['sample_count'] == 60
@@ -166,7 +180,7 @@ def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tm
     import zipfile
 
     catalog = tmp_path / 'catalog.json'
-    catalog.write_text(json.dumps({'worker_count': 2, **_catalog()}))
+    catalog.write_text(json.dumps({'worker_count': 2, 'deadline_calibration': {'proof': 1}, **_catalog()}))
     archive = tmp_path / 'logs.zip'
     output = tmp_path / 'updated.json'
     command = [sys.executable, str(ROOT / 'scripts/refresh_ci_pytest_timings.py'),
@@ -181,6 +195,7 @@ def test_refresh_cli_ignores_aggregate_duplicates_and_keeps_output_on_failure(tm
     result = subprocess.run(command, capture_output=True, text=True)
     assert result.returncode == 0, result.stderr
     assert matrix.load_catalog(output)[0]['scheduling_seconds'] == 1.234
+    assert json.loads(output.read_text())['deadline_calibration'] == {'proof': 1}
     previous = output.read_bytes()
     with zipfile.ZipFile(archive, 'w') as logs:
         logs.writestr('backend-test-balanced-01/7_Run isolated shards (balanced-01).txt',
@@ -226,10 +241,36 @@ def test_multi_run_rejects_changed_policy_or_duplicate_run():
     second = copy.deepcopy(first)
     with pytest.raises(ValueError):
         _refresh_module().combine_samples([first, second])
+
     second['timing_source'].update(run_id=999, head_sha='b' * 40)
     second['shards'][0]['estimated_seconds'] = 91
     with pytest.raises(ValueError):
         _refresh_module().combine_samples([first, second])
+
+
+def test_grouped_process_timings_sum_once_and_preserve_metadata():
+    catalog = {'worker_count': 2, 'deadline_calibration': {'a': {'proof': 'retained'}},
+               **_catalog()}
+    catalog['shards'][0]['process_groups'] = [{'label': 'one'}, {'label': 'two'}]
+    original = copy.deepcopy(catalog)
+    logs = [_successful_log(label) for label in ['a-one', 'a-two', 'b']]
+    result = _refresh_module().refresh_catalog(catalog, logs, run_id=123, head_sha='a'*40)
+    assert result['shards'][0]['scheduling_seconds'] == 2.468
+    assert result['shards'][1]['scheduling_seconds'] == 1.234
+    assert result['deadline_calibration'] == original['deadline_calibration']
+    assert result['timing_source']['sample_count'] == 2
+    assert result['timing_source']['process_sample_count'] == 3
+    assert catalog == original
+
+
+@pytest.mark.parametrize('labels', [['a-one', 'b'], ['a-one', 'a-one', 'b'],
+                                   ['a', 'a-two', 'b'], ['a-one', 'a-two', 'b', 'x']])
+def test_grouped_refresh_rejects_missing_duplicate_or_unknown_process(labels):
+    catalog = {'worker_count': 2, **_catalog()}
+    catalog['shards'][0]['process_groups'] = [{'label': 'one'}, {'label': 'two'}]
+    with pytest.raises(ValueError):
+        _refresh_module().refresh_catalog(catalog, [_successful_log(x) for x in labels],
+                                          run_id=123, head_sha='a'*40)
 
 
 def test_reviewed_r_other_baseline_retains_selection_and_worker_limits(monkeypatch):

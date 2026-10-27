@@ -82,7 +82,8 @@ def test_ready_script_rejects_missing_or_non_successful_dependency(tmp_path, bad
 def test_real_artifact_verification_runs_in_parallel_without_skip_flag():
     jobs = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())['jobs']
     job = jobs['frontend-artifact-integration']
-    assert job['needs'] == 'classify-changes'
+    assert set(job['needs']) == {'classify-changes', 'docs-quality'}
+    assert 'backend-test-shards' not in job['needs']
     command = job['steps'][-1]['run']
     assert 'REVA_TEST_FRONTEND_ARTIFACT_BUILD=1' in command
     assert '-k native_prepare' in command

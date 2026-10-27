@@ -1162,6 +1162,9 @@ def read_scope_notices(scope) -> tuple[str, ...]:
         lines.append('未指定体重腰围趋势范围，本次默认查询包含今天的最近30天已保存记录；'
                      '饮食和运动只查询账号本地日期的今天。未记录不代表没有发生，数据不足不能判断趋势；'
                      '体重腰围记录不能单独确诊代谢疾病。后续记录建议不会自动写入健康数据。')
+    if 'sleep_wake_date_not_sync_completion' in scope.limitations:
+        lines.append('昨晚按账号时区的醒来日期查询。以下是已保存的睡眠日汇总，可能包含多个设备来源；'
+                     '不能据此确认本次佳明同步已完成，也不能单凭读数判断恢复程度。')
     if 'symptom_record_review' in scope.limitations:
         lines.append('按账号本地日期查询，过去若干天包含今天；症状和服药持续时间来自本条自述，'
                      '不是历史日志，也不改变所请求的查询日期。')

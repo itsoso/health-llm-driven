@@ -1,0 +1,312 @@
+{
+  "release_authority": false,
+  "baseline_sha": "53d7efa1626011228b2e66166d21540f425847d9",
+  "measurement": "Prior real CI installation durations plus a synthetic offline pip semantics probe; no candidate performance claim.",
+  "runs": [
+    {
+      "run_id": 40438974052,
+      "head_sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+      "jobs_export_sha256": "a3512bdcff48e44acff1cb2359d3de3116d7aacff9dfda8d78be6be3a894c0ab",
+      "median_install_seconds": 35.0,
+      "workers": [
+        {
+          "worker": "backend-test-balanced-04",
+          "seconds": 43.0
+        },
+        {
+          "worker": "backend-test-balanced-07",
+          "seconds": 31.0
+        },
+        {
+          "worker": "backend-test-balanced-01",
+          "seconds": 29.0
+        },
+        {
+          "worker": "backend-test-balanced-05",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-09",
+          "seconds": 38.0
+        },
+        {
+          "worker": "backend-test-balanced-14",
+          "seconds": 30.0
+        },
+        {
+          "worker": "backend-test-balanced-08",
+          "seconds": 31.0
+        },
+        {
+          "worker": "backend-test-balanced-02",
+          "seconds": 29.0
+        },
+        {
+          "worker": "backend-test-balanced-03",
+          "seconds": 43.0
+        },
+        {
+          "worker": "backend-test-balanced-10",
+          "seconds": 29.0
+        },
+        {
+          "worker": "backend-test-balanced-16",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-15",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-13",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-06",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-12",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-11",
+          "seconds": 28.0
+        }
+      ]
+    },
+    {
+      "run_id": 40442091206,
+      "head_sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+      "jobs_export_sha256": "b72fb05ce1326f244b892f32ef1a54d17e77de5ceb1d9b03498c289accd5b575",
+      "median_install_seconds": 36.5,
+      "workers": [
+        {
+          "worker": "backend-test-balanced-02",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-05",
+          "seconds": 26.0
+        },
+        {
+          "worker": "backend-test-balanced-01",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-15",
+          "seconds": 26.0
+        },
+        {
+          "worker": "backend-test-balanced-07",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-06",
+          "seconds": 34.0
+        },
+        {
+          "worker": "backend-test-balanced-03",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-11",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-14",
+          "seconds": 38.0
+        },
+        {
+          "worker": "backend-test-balanced-16",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-10",
+          "seconds": 26.0
+        },
+        {
+          "worker": "backend-test-balanced-09",
+          "seconds": 44.0
+        },
+        {
+          "worker": "backend-test-balanced-08",
+          "seconds": 40.0
+        },
+        {
+          "worker": "backend-test-balanced-12",
+          "seconds": 27.0
+        },
+        {
+          "worker": "backend-test-balanced-04",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-13",
+          "seconds": 40.0
+        }
+      ]
+    },
+    {
+      "run_id": 40447632037,
+      "head_sha": "a3492a05af00f50a96ab552ac2403eb7d2e0658b",
+      "jobs_export_sha256": "56ed14d85dabb2ff6421d45aa59751449396a6803c8b86eb943a43c6c0415418",
+      "median_install_seconds": 35.5,
+      "workers": [
+        {
+          "worker": "backend-test-balanced-02",
+          "seconds": 30.0
+        },
+        {
+          "worker": "backend-test-balanced-04",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-03",
+          "seconds": 27.0
+        },
+        {
+          "worker": "backend-test-balanced-08",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-07",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-12",
+          "seconds": 26.0
+        },
+        {
+          "worker": "backend-test-balanced-10",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-09",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-14",
+          "seconds": 31.0
+        },
+        {
+          "worker": "backend-test-balanced-15",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-05",
+          "seconds": 32.0
+        },
+        {
+          "worker": "backend-test-balanced-13",
+          "seconds": 37.0
+        },
+        {
+          "worker": "backend-test-balanced-11",
+          "seconds": 30.0
+        },
+        {
+          "worker": "backend-test-balanced-16",
+          "seconds": 32.0
+        },
+        {
+          "worker": "backend-test-balanced-01",
+          "seconds": 40.0
+        },
+        {
+          "worker": "backend-test-balanced-06",
+          "seconds": 36.0
+        }
+      ]
+    },
+    {
+      "run_id": 40451454145,
+      "head_sha": "51255fce58057c956e17569d984a806bedc73be9",
+      "jobs_export_sha256": "da01d0c964d4adfb6661f0c3cf9c576b40b980e9cc5ecef1348ff30eb5f343bf",
+      "median_install_seconds": 35.5,
+      "workers": [
+        {
+          "worker": "backend-test-balanced-06",
+          "seconds": 34.0
+        },
+        {
+          "worker": "backend-test-balanced-04",
+          "seconds": 38.0
+        },
+        {
+          "worker": "backend-test-balanced-02",
+          "seconds": 26.0
+        },
+        {
+          "worker": "backend-test-balanced-08",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-01",
+          "seconds": 35.0
+        },
+        {
+          "worker": "backend-test-balanced-07",
+          "seconds": 38.0
+        },
+        {
+          "worker": "backend-test-balanced-15",
+          "seconds": 24.0
+        },
+        {
+          "worker": "backend-test-balanced-14",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-16",
+          "seconds": 34.0
+        },
+        {
+          "worker": "backend-test-balanced-05",
+          "seconds": 34.0
+        },
+        {
+          "worker": "backend-test-balanced-09",
+          "seconds": 40.0
+        },
+        {
+          "worker": "backend-test-balanced-10",
+          "seconds": 32.0
+        },
+        {
+          "worker": "backend-test-balanced-12",
+          "seconds": 39.0
+        },
+        {
+          "worker": "backend-test-balanced-11",
+          "seconds": 42.0
+        },
+        {
+          "worker": "backend-test-balanced-03",
+          "seconds": 36.0
+        },
+        {
+          "worker": "backend-test-balanced-13",
+          "seconds": 23.0
+        }
+      ]
+    }
+  ],
+  "pip_probe": {
+    "compile": {
+      "initial_pyc_count": 1,
+      "import_passed": true,
+      "lazy_pyc_present": true,
+      "installed_source_sha256": "baef91346d0a2b557617a9dda2b3f905661437f58297423dc71896a79c05b4e5"
+    },
+    "no-compile": {
+      "initial_pyc_count": 0,
+      "import_passed": true,
+      "lazy_pyc_present": true,
+      "installed_source_sha256": "baef91346d0a2b557617a9dda2b3f905661437f58297423dc71896a79c05b4e5"
+    },
+    "invalid_hash_rejected": true,
+    "note": "Synthetic offline pip semantics probe, not a production-package or CI performance measurement."
+  },
+  "candidate_full_ci": "pending"
+}

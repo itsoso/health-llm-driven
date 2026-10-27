@@ -32,3 +32,26 @@ Run frontend tests, TypeScript, ESLint and production build; independent safety 
 User explicitly requested both mobile Web and native Reva. The native LifeNav workspace adds a 备考学习 tab with plan/result editing, focus timer, original practice and explanations, wrong-answer filtering and official resources. Existing owner-scoped save, account remount, background hiding and revision conflict preservation apply. No native dependency or runtime configuration change.
 
 The native pure model mirrors Web with an executable parity check for persisted IDs, questions and rules. This follows the existing separate platform model layout without introducing a Metro cross-root dependency. Both clients use identical date/key UUIDs and share the server ledger. Native writes clone without pre-creating weeks so capacity checks remain atomic. Resource links use the OS browser and surface failures.
+
+## Progress selection correction (2026-10-26, release pending)
+
+The original practice page always opened the same fixed bank independently of the
+schedule. Both clients now default to a read-only queue derived from the selected
+date and existing workspace attempts: unresolved mistakes from an earlier day
+first, then unseen questions. Correct answers and questions attempted that day
+are omitted from this default queue. Explicit wrong-answer and full-bank modes
+remain available. Later-dated records never affect an earlier day's queue or
+counts. Selection does not create or complete tasks; the existing explicit
+workspace save remains required.
+
+Daily English and math/logic plan cards open the matching practice subject;
+review opens a subject with unresolved mistakes, and writing links to past-paper
+resources. Submitted feedback remains visible until the learner advances. The
+20 original warm-up questions are finite, not a daily question-generation
+service. Exhaustion explains this limitation and offers the past-paper route;
+the fixed writing example is labeled as such. No mastery, adaptive difficulty,
+or scheduled addition of new exam questions is claimed.
+
+Regression checks cover cross-week history, date boundaries, no mutation during
+selection, correct-answer exclusion, review priority, same-day retries, exhaustion,
+feedback retention, schedule navigation and identical Web/native queue rules.

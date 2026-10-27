@@ -178,7 +178,7 @@ def test_phone_code_rejects_unknown_phone_during_rollout_rollback(
     response = client.post("/api/v1/auth/phone/code", json={"phone": "13800138110"})
 
     assert response.status_code == 403
-    assert response.json()["detail"]["code"] == "REGISTRATION_INVITATION_REQUIRED"
+    assert response.json()["detail"]["code"] == "REGISTRATION_CLOSED"
     assert db.query(PhoneAuthCode).count() == 0
 
 

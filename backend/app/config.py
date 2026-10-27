@@ -526,7 +526,7 @@ class Settings(BaseSettings):
     auth_sms_ip_hourly_limit: int = Field(default=20, gt=0)
     auth_sms_global_daily_limit: int = Field(default=500, gt=0)
     auth_phone_registration_auto_approve: bool = True
-    auth_phone_self_registration_enabled: bool = False  # OTP 验证后自主注册；关闭可回退邀请模式
+    auth_phone_self_registration_enabled: bool = True  # OTP 验证后自主注册；生产关闭时保留老用户登录
     # 邀请制手机号注册。凭据摘要使用独立 key，避免与 JWT/OTP 的密钥域复用。
     # development/test 可从 SECRET_KEY 做带域派生；production enforcement 必须显式配置。
     registration_invitation_digest_key: Optional[str] = None
