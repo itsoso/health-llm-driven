@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -365,9 +366,11 @@ export default function LoginScreen({
           contentInsetAdjustmentBehavior="automatic"
         >
           <View style={styles.logoSection}>
-            <View style={styles.logoCircle}>
-              <Ionicons name="heart-circle" size={64} color={c.brand} />
-            </View>
+            <Image
+              source={require('../assets/images/icon.png')}
+              style={styles.logo}
+              accessibilityLabel={`${APP_DISPLAY_NAME}图标`}
+            />
             <Text style={styles.brand}>{APP_DISPLAY_NAME}</Text>
             <Text style={styles.title}>{showInvite ? '输入邀请码' : `登录${APP_DISPLAY_NAME}`}</Text>
             <Text style={styles.subtitle}>
@@ -618,13 +621,10 @@ const createStyles = (c: ColorPalette, s: SemanticPalette) => StyleSheet.create(
   safe: { flex: 1, backgroundColor: c.bgPrimary },
   container: { flexGrow: 1, justifyContent: 'center', paddingHorizontal: 32, paddingVertical: 28 },
   logoSection: { alignItems: 'center', marginBottom: 32 },
-  logoCircle: {
+  logo: {
     width: 88,
     height: 88,
-    borderRadius: 44,
-    backgroundColor: c.brandLight,
-    alignItems: 'center',
-    justifyContent: 'center',
+    borderRadius: 24,
     marginBottom: 14,
   },
   brand: { fontSize: 16, fontWeight: '700', color: c.brand, marginBottom: 10 },
