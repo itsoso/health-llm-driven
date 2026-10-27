@@ -1,0 +1,824 @@
+{
+  "release_authority": false,
+  "measurement": "Offline replay of the same successful CI process durations, not a new CI result.",
+  "worker_count": 16,
+  "test_processes_unchanged": true,
+  "sources": [
+    {
+      "run_id": 40438974052,
+      "head_sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "63121d40a585b7f6f2088b2582756abb717c3109d1fb24db653d0f249f22094d"
+    },
+    {
+      "run_id": 40442091206,
+      "head_sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "8a1781b16560778e4fa45a84b240f24f810578387c3448e974048e847c46ef43"
+    },
+    {
+      "run_id": 40447632037,
+      "head_sha": "a3492a05af00f50a96ab552ac2403eb7d2e0658b",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "dd98abb9b2244c949f92f7e2af5a66307770c731fd25a82464b303c58d3e8c08"
+    }
+  ],
+  "runs": [
+    {
+      "run_id": 40438974052,
+      "before": {
+        "max_seconds": 483.901,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "agent-composed-synthesis-02,q,t-a-e",
+            "seconds": 258.34
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-01,watch,t-w-z",
+            "seconds": 324.664
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,a-early-rest,wearable-reports,services",
+            "seconds": 483.901
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-03,r-runtime-recovery,write-z,live-run-events",
+            "seconds": 477.978
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,d-dedao,twin-api",
+            "seconds": 453.976
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "agent-i-l,b,s-c-k,t-f-v-rest",
+            "seconds": 435.524
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "s-l-z,d-data-device,n,timeline-medications",
+            "seconds": 474.179
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "k-m-rest,agent-executor-error-fast,s-a-b,app-store-demo-account",
+            "seconds": 388.262
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "g,agent-executor-i-z,a-agenda,live-run-api",
+            "seconds": 434.798
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "agent-r,a-late,d-rest,today-core",
+            "seconds": 330.742
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-s-v,agent-w-z,workday-workout,timeline-core",
+            "seconds": 307.309
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,agent-executor-g-h,today-timeline",
+            "seconds": 445.419
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,a-action",
+            "seconds": 423.676
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "r-other,o,u,agent-e-core",
+            "seconds": 345.734
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "d-diet,e,r-record-registration,voice",
+            "seconds": 428.549
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,agent-executor-food",
+            "seconds": 454.117
+          }
+        ]
+      },
+      "after": {
+        "max_seconds": 455.467,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z,live-run-api",
+            "seconds": 372.374
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-03,a-early-rest,voice",
+            "seconds": 453.885
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,q,agent-e-core",
+            "seconds": 419.678
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-02,agent-executor-food,t-f-v-rest",
+            "seconds": 292.216
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,a-action,live-run-events",
+            "seconds": 455.467
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "k-m-rest,b,s-c-k,app-store-demo-account",
+            "seconds": 381.864
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "g,d-data-device,r-runtime-recovery,twin-api",
+            "seconds": 419.749
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-i-l,agent-w-z,agent-executor-g-h,today-timeline",
+            "seconds": 436.058
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "agent-composed-synthesis-01,agent-executor-error-fast,u,timeline-medications",
+            "seconds": 385.73
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "r-other,a-late,s-a-b,timeline-core,services",
+            "seconds": 336.605
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-r,agent-executor-i-z,d-rest,d-dedao",
+            "seconds": 370.789
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,wearable-reports,t-a-e",
+            "seconds": 444.213
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,r-record-registration,today-core",
+            "seconds": 439.893
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "d-diet,e,watch,workday-workout",
+            "seconds": 447.611
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-s-v,o,n,t-w-z",
+            "seconds": 360.36
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,a-agenda,write-z",
+            "seconds": 450.676
+          }
+        ]
+      },
+      "leave_one_out": {
+        "max_seconds": 489.896,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z",
+            "seconds": 356.073
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-02,n,agent-executor-g-h",
+            "seconds": 278.415
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-03,agent-executor-food,timeline-medications",
+            "seconds": 453.799
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-04,agent-f-h,today-core",
+            "seconds": 451.121
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "k-m-rest,r-runtime-recovery,write-z,app-store-demo-account",
+            "seconds": 364.906
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "g,b,u,timeline-core",
+            "seconds": 391.423
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "agent-i-l,d-data-device,s-a-b,agent-e-core",
+            "seconds": 406.71
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-composed-synthesis-01,agent-executor-a-d,s-c-k,live-run-api",
+            "seconds": 441.239
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "h-j,agent-w-z,r-record-registration,live-run-events",
+            "seconds": 465.666
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "r-other,agent-executor-error-fast,a-action,twin-api",
+            "seconds": 328.708
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-r,a-late,wearable-reports,voice",
+            "seconds": 339.335
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "p,agent-executor-i-z,a-agenda,t-w-z",
+            "seconds": 410.84
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "d-diet,agent-m-p,d-rest,t-a-e",
+            "seconds": 443.829
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "agent-s-v,f,watch,t-f-v-rest",
+            "seconds": 395.18
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-a-d-rest,e,q,workday-workout,today-timeline",
+            "seconds": 450.028
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "o,c,a-early-rest,d-dedao,services",
+            "seconds": 489.896
+          }
+        ]
+      }
+    },
+    {
+      "run_id": 40442091206,
+      "before": {
+        "max_seconds": 579.295,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "agent-composed-synthesis-02,q,t-a-e",
+            "seconds": 437.691
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-01,watch,t-w-z",
+            "seconds": 320.785
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,a-early-rest,wearable-reports,services",
+            "seconds": 459.135
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-03,r-runtime-recovery,write-z,live-run-events",
+            "seconds": 338.018
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,d-dedao,twin-api",
+            "seconds": 269.042
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "agent-i-l,b,s-c-k,t-f-v-rest",
+            "seconds": 396.013
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "s-l-z,d-data-device,n,timeline-medications",
+            "seconds": 579.295
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "k-m-rest,agent-executor-error-fast,s-a-b,app-store-demo-account",
+            "seconds": 477.88
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "g,agent-executor-i-z,a-agenda,live-run-api",
+            "seconds": 472.505
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "agent-r,a-late,d-rest,today-core",
+            "seconds": 270.656
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-s-v,agent-w-z,workday-workout,timeline-core",
+            "seconds": 353.685
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,agent-executor-g-h,today-timeline",
+            "seconds": 262.763
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,a-action",
+            "seconds": 432.009
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "r-other,o,u,agent-e-core",
+            "seconds": 490.872
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "d-diet,e,r-record-registration,voice",
+            "seconds": 239.527
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,agent-executor-food",
+            "seconds": 364.407
+          }
+        ]
+      },
+      "after": {
+        "max_seconds": 451.798,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z,live-run-api",
+            "seconds": 451.798
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-03,a-early-rest,voice",
+            "seconds": 336.937
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,q,agent-e-core",
+            "seconds": 433.361
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-02,agent-executor-food,t-f-v-rest",
+            "seconds": 423.433
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,a-action,live-run-events",
+            "seconds": 278.577
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "k-m-rest,b,s-c-k,app-store-demo-account",
+            "seconds": 435.419
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "g,d-data-device,r-runtime-recovery,twin-api",
+            "seconds": 431.723
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-i-l,agent-w-z,agent-executor-g-h,today-timeline",
+            "seconds": 403.397
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "agent-composed-synthesis-01,agent-executor-error-fast,u,timeline-medications",
+            "seconds": 412.88
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "r-other,a-late,s-a-b,timeline-core,services",
+            "seconds": 410.635
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-r,agent-executor-i-z,d-rest,d-dedao",
+            "seconds": 330.221
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,wearable-reports,t-a-e",
+            "seconds": 284.7
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,r-record-registration,today-core",
+            "seconds": 430.898
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "d-diet,e,watch,workday-workout",
+            "seconds": 282.134
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-s-v,o,n,t-w-z",
+            "seconds": 446.778
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,a-agenda,write-z",
+            "seconds": 371.392
+          }
+        ]
+      },
+      "leave_one_out": {
+        "max_seconds": 497.71,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z,write-z",
+            "seconds": 455.201
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-03,n,t-a-e",
+            "seconds": 336.215
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,watch,u",
+            "seconds": 431.264
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-02,r-runtime-recovery,timeline-medications",
+            "seconds": 411.058
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-executor-food,d-dedao",
+            "seconds": 273.742
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "k-m-rest,agent-f-h,r-record-registration,live-run-api",
+            "seconds": 394.212
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "agent-i-l,b,s-a-b,t-f-v-rest",
+            "seconds": 400.624
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-composed-synthesis-01,agent-w-z,agent-executor-g-h,today-core",
+            "seconds": 386.051
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "g,agent-executor-error-fast,a-action,twin-api",
+            "seconds": 448.059
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "agent-r,a-late,wearable-reports,t-w-z",
+            "seconds": 285.079
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "c,agent-executor-i-z,a-agenda,today-timeline,services",
+            "seconds": 327.418
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "p,o,d-rest,workday-workout",
+            "seconds": 470.767
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "d-diet,agent-executor-a-d,q,timeline-core,live-run-events",
+            "seconds": 294.167
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "r-other,f,a-early-rest,voice",
+            "seconds": 497.71
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-a-d-rest,e,d-data-device,agent-e-core",
+            "seconds": 342.142
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-s-v,agent-m-p,s-c-k,app-store-demo-account",
+            "seconds": 410.574
+          }
+        ]
+      }
+    },
+    {
+      "run_id": 40447632037,
+      "before": {
+        "max_seconds": 546.877,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "agent-composed-synthesis-02,q,t-a-e",
+            "seconds": 452.903
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-01,watch,t-w-z",
+            "seconds": 362.203
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,a-early-rest,wearable-reports,services",
+            "seconds": 255.684
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-03,r-runtime-recovery,write-z,live-run-events",
+            "seconds": 458.928
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,d-dedao,twin-api",
+            "seconds": 387.588
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "agent-i-l,b,s-c-k,t-f-v-rest",
+            "seconds": 432.762
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "s-l-z,d-data-device,n,timeline-medications",
+            "seconds": 546.877
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "k-m-rest,agent-executor-error-fast,s-a-b,app-store-demo-account",
+            "seconds": 480.367
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "g,agent-executor-i-z,a-agenda,live-run-api",
+            "seconds": 459.368
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "agent-r,a-late,d-rest,today-core",
+            "seconds": 439.147
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-s-v,agent-w-z,workday-workout,timeline-core",
+            "seconds": 339.447
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,agent-executor-g-h,today-timeline",
+            "seconds": 274.861
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,a-action",
+            "seconds": 427.305
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "r-other,o,u,agent-e-core",
+            "seconds": 368.25
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "d-diet,e,r-record-registration,voice",
+            "seconds": 411.615
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,agent-executor-food",
+            "seconds": 366.304
+          }
+        ]
+      },
+      "after": {
+        "max_seconds": 449.668,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z,live-run-api",
+            "seconds": 430.345
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-03,a-early-rest,voice",
+            "seconds": 406.496
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,q,agent-e-core",
+            "seconds": 271.046
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-02,agent-executor-food,t-f-v-rest",
+            "seconds": 435.027
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,a-action,live-run-events",
+            "seconds": 393.556
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "k-m-rest,b,s-c-k,app-store-demo-account",
+            "seconds": 449.277
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "g,d-data-device,r-runtime-recovery,twin-api",
+            "seconds": 437.436
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-i-l,agent-w-z,agent-executor-g-h,today-timeline",
+            "seconds": 421.68
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "agent-composed-synthesis-01,agent-executor-error-fast,u,timeline-medications",
+            "seconds": 438.467
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "r-other,a-late,s-a-b,timeline-core,services",
+            "seconds": 388.709
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-r,agent-executor-i-z,d-rest,d-dedao",
+            "seconds": 449.668
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "c,agent-executor-a-d,wearable-reports,t-a-e",
+            "seconds": 286.583
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "p,f,r-record-registration,today-core",
+            "seconds": 445.14
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "d-diet,e,watch,workday-workout",
+            "seconds": 440.538
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-s-v,o,n,t-w-z",
+            "seconds": 390.579
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-a-d-rest,agent-m-p,a-agenda,write-z",
+            "seconds": 379.062
+          }
+        ]
+      },
+      "leave_one_out": {
+        "max_seconds": 477.376,
+        "workers": [
+          {
+            "worker": "balanced-01",
+            "shards": "s-l-z,today-core",
+            "seconds": 430.496
+          },
+          {
+            "worker": "balanced-02",
+            "shards": "agent-composed-synthesis-03,q,live-run-events",
+            "seconds": 435.404
+          },
+          {
+            "worker": "balanced-03",
+            "shards": "agent-composed-synthesis-04,a-early-rest",
+            "seconds": 226.24
+          },
+          {
+            "worker": "balanced-04",
+            "shards": "agent-composed-synthesis-02,agent-executor-food,app-store-demo-account",
+            "seconds": 431.722
+          },
+          {
+            "worker": "balanced-05",
+            "shards": "h-j,agent-f-h,d-rest",
+            "seconds": 392.679
+          },
+          {
+            "worker": "balanced-06",
+            "shards": "k-m-rest,b,a-action,live-run-api",
+            "seconds": 439.589
+          },
+          {
+            "worker": "balanced-07",
+            "shards": "g,d-data-device,wearable-reports,d-dedao",
+            "seconds": 409.1
+          },
+          {
+            "worker": "balanced-08",
+            "shards": "agent-i-l,a-late,u,t-w-z,agent-e-core",
+            "seconds": 462.699
+          },
+          {
+            "worker": "balanced-09",
+            "shards": "r-other,agent-w-z,a-agenda,workday-workout",
+            "seconds": 371.35
+          },
+          {
+            "worker": "balanced-10",
+            "shards": "c,agent-executor-error-fast,watch,today-timeline,twin-api",
+            "seconds": 339.587
+          },
+          {
+            "worker": "balanced-11",
+            "shards": "agent-composed-synthesis-01,agent-executor-i-z,s-a-b,t-a-e",
+            "seconds": 470.223
+          },
+          {
+            "worker": "balanced-12",
+            "shards": "p,agent-executor-a-d,agent-executor-g-h,t-f-v-rest,services",
+            "seconds": 380.518
+          },
+          {
+            "worker": "balanced-13",
+            "shards": "d-diet,f,r-runtime-recovery",
+            "seconds": 425.76
+          },
+          {
+            "worker": "balanced-14",
+            "shards": "agent-s-v,e,n,timeline-medications",
+            "seconds": 415.722
+          },
+          {
+            "worker": "balanced-15",
+            "shards": "agent-a-d-rest,o,s-c-k,write-z",
+            "seconds": 355.144
+          },
+          {
+            "worker": "balanced-16",
+            "shards": "agent-r,agent-m-p,r-record-registration,timeline-core,voice",
+            "seconds": 477.376
+          }
+        ]
+      }
+    }
+  ],
+  "baseline_sha": "dabcddab5e8ac33f9570f7ba1c1655ccf24b8db2",
+  "execution_policy_sha256": "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425",
+  "catalog_before_sha256": "63c7365de58da8d4d948eccae26a169bf5a4f1605e63517d5e078a5a1ebd7fe4",
+  "catalog_after_sha256": "99f052503b8eeaa01973c8cc921c03f8f5d36a9e166254eb83f439baf6437324",
+  "limitations": [
+    "Replay excludes runner queues, dependency installation and cleanup.",
+    "Leave-one-out: each held-out run uses weights from the other two runs only; oldest sample regresses 5.995 seconds.",
+    "Three baseline runs do not establish P95/P99 or guarantee future latency.",
+    "No worker, test selection, process isolation, retry or deadline change."
+  ]
+}

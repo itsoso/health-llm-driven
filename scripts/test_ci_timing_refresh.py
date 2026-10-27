@@ -1,6 +1,7 @@
 """Scheduling telemetry must not alter test selection or timeout policy."""
 
 import copy
+import hashlib
 import importlib.util
 import json
 from pathlib import Path
@@ -83,14 +84,26 @@ def test_real_catalog_retains_all_shards_and_process_policies():
     payload = json.loads(matrix.DEFAULT_CATALOG.read_text())
     shards = matrix.load_catalog()
     assert payload["timing_source"]["sample_count"] == len(shards) == 60
-    assert payload["timing_source"]["run_id"] == 40431390771
+    assert payload["timing_source"]["run_id"] == 40447632037
     assert payload['timing_source']['aggregation'] == 'maximum'
-    assert [r['run_id'] for r in payload['timing_source']['runs']] == [40358356587, 40431390771]
+    assert [r['run_id'] for r in payload['timing_source']['runs']] == [
+        40438974052, 40442091206, 40447632037,
+    ]
     assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 439.374
+    assert max(worker["estimated_seconds"] for worker in assignments) == 457.037
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
+    # Freeze every execution-policy field, including nested process groups and
+    # calibrated deadlines; only scheduling telemetry may change in this refresh.
+    policy = {key: value for key, value in payload.items() if key != "timing_source"}
+    policy["shards"] = [
+        {key: value for key, value in shard.items() if key != "scheduling_seconds"}
+        for shard in shards
+    ]
+    assert hashlib.sha256(json.dumps(
+        policy, sort_keys=True, separators=(",", ":"),
+    ).encode()).hexdigest() == "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425"
 
 
 def _refresh_module():
