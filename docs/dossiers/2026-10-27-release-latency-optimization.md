@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | 第三阶段：刷新近期调度权重，待独立审查与完整 CI |
+| 状态 | completed |
+| 当前阶段 | 第三阶段 G1–G6 通过，近期权重已生效并完成首轮实测 |
 
 ## G1 范围
 
@@ -101,4 +101,23 @@ G1/G2 PASS。基线 main `dabcddab5e8ac33f9570f7ba1c1655ccf24b8db2`（文档 CI 
 
 成本与目标：仍使用 16 worker 和相同测试进程，不增加并发或测试计算量；希望完整 CI 低于 570 秒、最长测试步骤低于 500 秒。若完整耗时比 631 秒增加超过 10%（694.1 秒），或任一测试遗漏/失败，则停止推广并调查；不削减测试、不增加超时、不创建备份/回退副本。
 
-G3 PASS：旧 catalog 在更新后的新鲜来源合约中 RED；校准后 66 项调度/CI 合约、23 项真实 runner 回归通过。新增完整执行策略摘要约束覆盖嵌套 process_groups、deadline_calibration 与 worker 数；逐字段比较一致。System Map、Dossier、LLM 变更闸（无需 live）、diff 检查通过。本地 runner 首次因默认 PostgreSQL 未运行而在 conftest 导入失败；按 CI 的 DATABASE_URL=sqlite:///:memory: 环境重跑通过，此处只验证执行器，不宣称 PostgreSQL 语义验收。G4/G5/G6 待固定提交审查及精确候选首轮完整 CI。
+G3 PASS：旧 catalog 在更新后的新鲜来源合约中 RED；校准后 66 项调度/CI 合约、23 项真实 runner 回归通过。新增完整执行策略摘要约束覆盖嵌套 process_groups、deadline_calibration 与 worker 数；逐字段比较一致。System Map、Dossier、LLM 变更闸（无需 live）、diff 检查通过。本地 runner 首次因默认 PostgreSQL 未运行而在 conftest 导入失败；按 CI 的 DATABASE_URL=sqlite:///:memory: 环境重跑通过，此处只验证执行器，不宣称 PostgreSQL 语义验收。
+
+G4 PASS：固定提交 `51255fce58057c956e17569d984a806bedc73be9` 独立 GO。逐字段核验非调度策略一致；独立校验三轮日志摘要、每个进程首轮成功、最大值权重及全部回放/留一结果。独立 130 项合约/发布准入与 23 项 runner 测试通过，工作树未改动。
+
+G5 PASS：[完整 CI 40451454145](https://github.com/itsoso/health-llm-driven/actions/runs/40451454145) 绑定精确候选，attempt=1，32/32 job 全部 success，无重跑、取消或 skipped job。完整时长 587 秒，最晚后端启动 26 秒，最慢后端测试步骤 496 秒。
+
+G6 PASS：main 的调度权重已生效并完成真实运行。完整耗时比紧邻基线 631 秒减少 44 秒（6.97%），最慢测试步骤 547→496 秒，减少 51 秒（9.32%）。570 秒完整 CI 目标未达到，差 17 秒；500 秒最慢测试目标达到；未触发 694.1 秒停止阈值。保留此首轮结果，不重跑挑选样本。只涉及 CI 调度，无应用部署、生产授权轮换或 OTA。
+
+新增实际日志确认 64 个进程全部首轮成功；JUnit 逐进程 testcase 身份与结果多重集合完全相同：35,701 条结果、155 条既有 skipped testcase、无 failure/error。跳过的 testcase 与 CI job 状态分开，不用通过率掩盖遗漏。对应规范化清单摘要和日志摘要见 `docs/reviews/2026-10-27-ci-weight-refresh-production.json`。
+
+| 指标 | 第二阶段基线 | 第三阶段实测 |
+| --- | ---: | ---: |
+| 完整 CI | 631 秒 | 587 秒 |
+| 全部后端分片最晚启动 | 27 秒 | 26 秒 |
+| 最慢测试步骤 | 547 秒 | 496 秒 |
+| 最后完成的后端 job 执行 | 605 秒 | 560 秒 |
+| 最后完成后端 job 的依赖安装 | 35 秒 | 40 秒 |
+| 测试结果条数 / 既有跳过项 | 35,701 / 155 | 35,701 / 155 |
+
+本轮最后完成后端 balanced-09 在第 15 秒启动，实际测试 494 秒，第 575 秒结束，聚合至第 587 秒；另一个分片的测试步骤为全局最长 496 秒。更早两轮完整 CI 702 / 707 秒到本轮 587 秒累计减少 115 / 120 秒（约 16%～17%），但相隔运行仍受 runner 和执行波动影响，不构成稳定因果收益或 P95/P99 保证。
