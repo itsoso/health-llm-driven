@@ -1,5 +1,5 @@
 import React from 'react';
-import { fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLifeWorkspace, saveLifeWorkspace, getLifeHistory, getLifeBackup, importLifeBackup, restoreLifeWorkspace } from '@/services/lifeNavigation';
 import { blankData } from './model';
@@ -9,8 +9,47 @@ vi.mock('@/services/lifeNavigation', () => ({ getLifeWorkspace: vi.fn(), saveLif
 import LifeNavigationWorkspace from './LifeNavigationWorkspace';
 const workspace = { schema_version: 'life_navigation.v1' as const, revision: 3, data: blankData(), updated_at: '2026-10-10T00:00:00Z' };
 describe('Life navigation saved state and account isolation', () => {
-    afterEach(cleanup);
+    afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
     beforeEach(() => { vi.clearAllMocks(); user = { id: 7 }; (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace); });
+    it('opens shared exam links and preserves drafts during URL history navigation', async () => {
+        window.history.replaceState(null, '', '/agenda?navigation=week&tab=exam&study=practice');
+        render(<LifeNavigationWorkspace />);
+        await waitFor(() => expect(screen.getByText('每日专项与错题回看')).toBeTruthy());
+        fireEvent.click(screen.getByText('方向与季度'));
+        fireEvent.change(screen.getByLabelText('愿景'), { target: { value: 'Keep my draft' } });
+        fireEvent.click(screen.getByText('备考学习'));
+        expect(location.search).toContain('tab=exam');
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        act(() => {
+            history.replaceState(history.state, '', '/agenda?navigation=week&tab=direction&study=practice');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        });
+        expect(screen.getByLabelText('愿景')).toHaveValue('Keep my draft');
+        expect(confirm).not.toHaveBeenCalled();
+        expect(saveLifeWorkspace).not.toHaveBeenCalled();
+        confirm.mockRestore();
+    });
+    it('restores the latest tab URL when cancelling external back navigation with a draft', async () => {
+        history.replaceState(null, '', '/agenda?navigation=week');
+        render(<LifeNavigationWorkspace />);
+        await waitFor(() => screen.getByText('方向与季度'));
+        fireEvent.click(screen.getByText('方向与季度'));
+        fireEvent.change(screen.getByLabelText('愿景'), { target: { value: 'Unsaved direction' } });
+        fireEvent.click(screen.getByText('备考学习'));
+        fireEvent.click(screen.getByText('练习与错题'));
+        const wanted = location.href;
+        const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+        act(() => {
+            history.replaceState(null, '', '/dashboard');
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        });
+        expect(confirm).toHaveBeenCalledTimes(1);
+        expect(location.href).toBe(wanted);
+        expect(screen.getByText('每日专项与错题回看')).toBeTruthy();
+        fireEvent.click(screen.getByText('方向与季度'));
+        expect(screen.getByLabelText('愿景')).toHaveValue('Unsaved direction');
+        confirm.mockRestore();
+    });
     it('saves study attempts through the authenticated revisioned workspace and reloads them', async () => {
         let saved = workspace;
         (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockImplementation(async (owner, revision, data) => {

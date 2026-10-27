@@ -5,7 +5,7 @@ import ExamStudyPanel from './ExamStudyPanel';
 import { blankData, copy, validateData } from './model';
 import type { LifeData } from '@/services/lifeNavigation';
 import { questions, recordAnswer, addStudyDay, studyId } from './examStudy';
-afterEach(cleanup);
+afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
 function Harness({initial=blankData()}: {initial?:LifeData}){const [data,setData]=useState(initial);return <ExamStudyPanel data={data} day="2026-10-24" focus={vi.fn()} saveAnswer={async fn=>{setData(prev=>{const next=copy(prev);fn(next);return next;});}} edit={fn=>setData(prev=>{const next=copy(prev);fn(next);return next;})}/>;}
 describe('exam study user flow',()=>{
  it('creates one shared daily plan and lets the learner explicitly mark work done',()=>{

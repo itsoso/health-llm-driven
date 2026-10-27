@@ -21,3 +21,13 @@
 新增原创专项题库与日期稳定的未做题优先队列；不把原创题冒充历年真题，也不把日期轮换当成无限题库生成。全部题库包含已做题，界面显示上次作答日期和状态。题库耗尽会明确说明。既有20题ID及纸上真题日程保持兼容。
 
 验收覆盖：无额外保存点击即调用账号隔离保存；重载保留记录；失败不冒充成功、可重试；重复点击只有一次写入；换账号不接受旧请求结果；Web/Mobile一致；既有每周100项任务上限保留并明确报错。
+
+### Web 栏目链接
+
+LifeNav 在现有 `/agenda?navigation=week` 路由上用 `tab` 标识栏目：
+`today`、`week`、`exam`、`focus`、`notes`、`review`、`achievements`、`direction`、`opportunities`、`backup`。
+备考子栏目用 `study=plan|practice|resources`。例如
+`/agenda?navigation=week&tab=exam&study=practice` 直接进入练习与错题。
+点击栏目添加浏览器历史记录，刷新、复制链接及前进后退恢复对应栏目。
+未知值回到默认栏目；保留其他查询参数与锚点。切换栏目不会保存、重载或清空工作区草稿，
+离开 LifeNav 的原有未保存提醒继续有效。URL 不携带账号、答案或私有学习内容；接收链接的人仍读取自己的账号数据。

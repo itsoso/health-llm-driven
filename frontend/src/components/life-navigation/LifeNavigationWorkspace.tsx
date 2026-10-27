@@ -10,7 +10,9 @@ import css from './workspace.module.css';
 import MorningReadingPanel from './MorningReadingPanel';
 import ExamStudyPanel from './ExamStudyPanel';
 import NotebookPanel from './NotebookPanel';
+import { useNavigationParam, sameWorkspaceRoute, navigationEvent } from './useNavigationParam';
 type Tab = '记事本' | '备考学习' | '今日' | '周计划' | '时段导航' | '周复盘' | '成果' | '方向与季度' | '机会' | '备份';
+const tabRoutes: Record<string, Tab> = { today: '今日', week: '周计划', exam: '备考学习', focus: '时段导航', notes: '记事本', review: '周复盘', achievements: '成果', direction: '方向与季度', opportunities: '机会', backup: '备份' };
 const navGroups = [
     { label: '行动与时间', items: [{ title: '今日', icon: Sun }, { title: '周计划', icon: CalendarDays }, { title: '备考学习', icon: BookOpen }, { title: '时段导航', icon: Timer }] },
     { label: '回顾与积累', items: [{ title: '记事本', icon: BookOpen }, { title: '周复盘', icon: BookOpen }, { title: '成果', icon: Award }] },
@@ -36,7 +38,7 @@ function SessionWorkspace({ owner }: {
     const clearDraftHistory = draftHistory.clear;
     const [menuOpen, setMenuOpen] = useState(false);
     const [pendingTask, setPendingTask] = useState<string | null>(null);
-    const [tab, setTab] = useState<Tab>('今日');
+    const [tab, setTab] = useNavigationParam<Tab>('tab', tabRoutes, '今日');
     const [day, setDay] = useState(localDate());
     const monday = mondayOf(day);
     const quarter = `${day.slice(0, 4)}-Q${Math.ceil(Number(day.slice(5, 7)) / 3)}`;
@@ -60,9 +62,13 @@ function SessionWorkspace({ owner }: {
     useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(timer); }, []);
     useEffect(() => {
         if (!dirty) return;
-        const route = new URL(window.location.href);
-        const routeState = window.history.state;
-        const sameRoute = (url: URL) => url.origin === route.origin && url.pathname === route.pathname && url.search === route.search;
+        let route = new URL(window.location.href);
+        let routeState = window.history.state;
+        const sameRoute = (url: URL) => sameWorkspaceRoute(url, route);
+        const rememberRoute = () => {
+            const next = new URL(window.location.href);
+            if (sameRoute(next)) { route = next; routeState = window.history.state; }
+        };
         const confirmLeave = () => window.confirm('离开会丢弃未保存的导航草稿。确定离开？');
         const unload = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ''; };
         const click = (event: MouseEvent) => {
@@ -75,16 +81,19 @@ function SessionWorkspace({ owner }: {
             if (!confirmLeave()) { event.preventDefault(); event.stopImmediatePropagation(); }
         };
         const pop = (event: PopStateEvent) => {
-            if (sameRoute(new URL(window.location.href)) || confirmLeave()) return;
+            if (sameRoute(new URL(window.location.href))) { rememberRoute(); return; }
+            if (confirmLeave()) return;
             // Capture runs before the App Router's bubbling popstate listener.
             // Restore the original URL/tree before that listener can unmount drafts.
             event.stopImmediatePropagation();
             window.history.pushState(routeState, '', route.href);
         };
+        window.addEventListener(navigationEvent, rememberRoute);
         window.addEventListener('beforeunload', unload);
         document.addEventListener('click', click, true);
         window.addEventListener('popstate', pop, true);
         return () => {
+            window.removeEventListener(navigationEvent, rememberRoute);
             window.removeEventListener('beforeunload', unload);
             document.removeEventListener('click', click, true);
             window.removeEventListener('popstate', pop, true);

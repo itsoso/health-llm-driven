@@ -5,10 +5,12 @@ import { localDate } from './model';
 import { dailyStudy, daysUntil, examDate, phaseFor, questions, recordAnswer, addStudyDay, studyTask, wrongQuestions, questionHistory, type StudyQuestion, type Subject, type PracticeMode, practiceQuestions, practiceModes, comprehensiveSubject } from './examStudy';
 import { paperAssignment, examPapers } from './examPapers';
 import css from './exam-study.module.css';
+import { useNavigationParam } from './useNavigationParam';
+const studySections = { plan: 'plan', practice: 'practice', resources: 'resources' } as const;
 
 type Props = { data: LifeData; day: string; edit: (change: (draft: LifeData) => void) => void; saveAnswer: (change: (draft: LifeData) => void) => Promise<void>; focus: (task: LifeTask) => void };
 export default function ExamStudyPanel({data,day,edit,saveAnswer,focus}:Props) {
- const [section,setSection]=useState<'plan'|'practice'|'resources'>('plan');
+ const [section,setSection]=useNavigationParam<'plan'|'practice'|'resources'>('study', studySections, 'plan');
  const [subject,setSubject]=useState<Subject>('英语');const [mode,setMode]=useState<PracticeMode>('next');
  const [selected,setSelected]=useState('');const [choice,setChoice]=useState<number|null>(null);
  const [feedback,setFeedback]=useState<{id:string;day:string;correct:boolean}|null>(null);const [error,setError]=useState('');

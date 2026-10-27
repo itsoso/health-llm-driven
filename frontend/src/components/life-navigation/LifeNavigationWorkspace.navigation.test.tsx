@@ -11,7 +11,7 @@ const monday = mondayOf(today);
 const makeWorkspace = () => ({ schema_version: 'life_navigation.v1' as const, revision: 3, data: blankData(), updated_at: null });
 describe('Life navigation reference workspace interaction', () => {
     beforeEach(() => { vi.clearAllMocks(); vi.mocked(getLifeWorkspace).mockResolvedValue(makeWorkspace()); });
-    afterEach(cleanup);
+    afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
     it('offers a home logo and all eight views through a collapsible navigation', async () => {
         render(<LifeNavigationWorkspace />);
         const home = await screen.findByRole('link', { name: 'Reva 首页' });
