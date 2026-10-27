@@ -21,17 +21,17 @@ describe('Life navigation saved state and account isolation', () => {
         await waitFor(() => screen.getByText('备考学习'));
         fireEvent.click(screen.getByText('备考学习'));
         fireEvent.click(screen.getByText('练习与错题'));
+        fireEvent.click(screen.getByText('全部题库'));
         fireEvent.click(screen.getByRole('radio', { name: 'A. cancel permanently' }));
         fireEvent.click(screen.getByText('核对答案并记录'));
-        expect(saveLifeWorkspace).not.toHaveBeenCalled();
-        fireEvent.click(screen.getByRole('button', { name: '保存工作区' }));
         await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalledTimes(1));
+        await waitFor(() => expect(screen.getByText('作答已保存，可刷新或继续下一题')).toBeTruthy());
         view.unmount();
         (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(saved);
         render(<LifeNavigationWorkspace />);
         await waitFor(() => screen.getByText('备考学习'));
         fireEvent.click(screen.getByText('备考学习')); fireEvent.click(screen.getByText('练习与错题'));
-        expect(screen.getByText(/已练 1 \/ 20 题 · 待复练 1 题/)).toBeTruthy();
+        expect(screen.getByText(/已练 1 \/ \d+ 题 · 待复练 1 题/)).toBeTruthy();
     });
     it('keeps local edits on conflict and does not claim saved', async () => {
         (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 409 } });
@@ -151,4 +151,43 @@ describe('Life navigation saved state and account isolation', () => {
         fireEvent.click(screen.getByText('方向与季度'));
         expect(screen.getByLabelText('愿景')).toHaveValue('');
     });
+});
+
+it('keeps failed answers visible and retries once with the same revision before allowing next', async () => {
+    user={id:7};
+    (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace);
+    (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockReset().mockRejectedValueOnce({response:{status:409}}).mockImplementation(async (_owner,revision,data)=>({...workspace,revision:revision+1,data}));
+    render(<LifeNavigationWorkspace/>);
+    fireEvent.click(await screen.findByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));fireEvent.click(screen.getByText('全部题库'));
+    fireEvent.click(screen.getByRole('radio',{name:'B. delay until later'}));fireEvent.click(screen.getByText('核对答案并记录'));
+    await screen.findByText('重试保存作答');
+    expect(screen.getByRole('button',{name:'下一题'})).toBeDisabled();
+    expect(screen.queryByText('作答已保存，可刷新或继续下一题')).toBeNull();
+    expect(screen.getByText(/本次答对/)).toBeTruthy();
+    fireEvent.click(screen.getByText('重试保存作答'));
+    await screen.findByText('作答已保存，可刷新或继续下一题');
+    const calls=(saveLifeWorkspace as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls).toHaveLength(2);expect(calls.map(c=>c[1])).toEqual([3,3]);
+    expect(Object.values(calls[1][2].weeks).flatMap((w:any)=>w.tasks)).toHaveLength(1);
+    expect(screen.getByRole('button',{name:'下一题'})).not.toBeDisabled();
+    cleanup();
+});
+
+it('does not duplicate a pending answer or carry its success into another account', async () => {
+    user={id:7};let complete!:(w:typeof workspace)=>void;
+    (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace);
+    (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockReset().mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
+    const view=render(<LifeNavigationWorkspace/>);
+    fireEvent.click(await screen.findByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));fireEvent.click(screen.getByText('全部题库'));
+    fireEvent.click(screen.getByRole('radio',{name:'B. delay until later'}));
+    const submit=screen.getByText('核对答案并记录');fireEvent.click(submit);fireEvent.click(submit);
+    expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button',{name:'下一题'})).toBeDisabled();
+    user={id:8};view.rerender(<LifeNavigationWorkspace/>);
+    await screen.findByText('备考学习');
+    complete({...workspace,revision:4,data:(saveLifeWorkspace as ReturnType<typeof vi.fn>).mock.calls[0][2]});
+    fireEvent.click(screen.getByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));
+    await waitFor(()=>expect(screen.getByText(/已练 0 \/ /)).toBeTruthy());
+    expect(screen.queryByText('作答已保存，可刷新或继续下一题')).toBeNull();
+    cleanup();
 });

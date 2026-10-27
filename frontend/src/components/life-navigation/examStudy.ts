@@ -1,6 +1,7 @@
 import type { LifeData, LifeTask } from '@/services/lifeNavigation';
 import { blankTask, blankWeek, mondayOf } from './model';
 import { paperAssignment } from './examPapers';
+import { additionalQuestions } from './examQuestionBank';
 export const examDate = '2026-12-19';
 export type Subject = '英语' | '数学' | '逻辑';
 export interface StudyQuestion { id: string; subject: Subject; topic: string; prompt: string; options: string[]; answer: number; explanation: string }
@@ -25,6 +26,7 @@ export const questions: StudyQuestion[] = [
  {id:'l04',subject:'逻辑',topic:'集合',prompt:'所有项目经理都参加培训。有些受训者懂法语。能否推出有项目经理懂法语？',options:['一定能','一定没有','不能确定','所有经理都懂'],answer:2,explanation:'懂法语者可能在项目经理集合之外，也可能有交集，不能确定。'},
  {id:'l05',subject:'逻辑',topic:'加强',prompt:'研究者认为提醒短信能减少爽约。哪项最支持？',options:['短信便宜','随机分组后收到短信组爽约率低于未收到组','多数人有手机','医院喜欢短信'],answer:1,explanation:'随机对照更好控制其他因素，直接提供效果证据；成本不是效果。'},
  {id:'l06',subject:'逻辑',topic:'命题否定',prompt:'“所有参加者都交了作业”的否定是？',options:['所有人都没交','有参加者没交','有参加者交了','只有一人交了'],answer:1,explanation:'全称肯定的否定是特称否定：至少一人未交。'},
+ ...additionalQuestions,
 ];
 export function daysUntil(day:string) { return Math.round((Date.parse(examDate+'T00:00:00Z')-Date.parse(day+'T00:00:00Z'))/86400000); }
 export function phaseFor(day:string) { const n=daysUntil(day);return n<0?'初试后：等待成绩与复试通知':n===0?'考试日：以准考证为准':n<=5?'收尾：错题回看与作息':n<=19?'冲刺：限时训练':n<=40?'强化：专项与真题':'起步：摸底与基础'; }
@@ -52,8 +54,11 @@ export function dailyStudy(day:string) {
 export function studyId(day:string,key:string):string {
  // Persisted identifiers: append keys only; never reorder or reuse a code.
  const index=['english','comprehensive','review','e01','e02','e03','e04','e05','e06','e07','e08','m01','m02','m03','m04','m05','m06','l01','l02','l03','l04','l05','l06','writing','paper-english','paper-comprehensive','paper-writing','paper-review'].indexOf(key);
- if(index<0||!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('备考记录标识无效');
- return `e6ba2027-${day.slice(0,4)}-4${day.slice(5,7)}${day.slice(8,9)}-8${day.slice(9)}00-${(index+1).toString(16).padStart(12,'0')}`;
+ const extra = /^([eml])(1\d{2})$/.exec(key);
+ const code = index >= 0 ? index + 1 : extra && additionalQuestions.some(q => q.id === key)
+  ? ({e:1000,m:2000,l:3000}[extra[1] as 'e'|'m'|'l'] + Number(extra[2])) : -1;
+ if(code<0||!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('备考记录标识无效');
+ return `e6ba2027-${day.slice(0,4)}-4${day.slice(5,7)}${day.slice(8,9)}-8${day.slice(9)}00-${code.toString(16).padStart(12,'0')}`;
 }
 export function studyTask(data:LifeData,day:string,key:string):LifeTask|undefined {return data.weeks[mondayOf(day)]?.tasks.find(t=>t.id===studyId(day,key));}
 function room(data:LifeData,day:string,count:number){const key=mondayOf(day);if(!data.weeks[key]&&Object.keys(data.weeks).length>=200)throw Error('工作区达到200周上限，请先整理。');if((data.weeks[key]?.tasks.length??0)+count>100)throw Error('每周最多100项任务，请先整理。');data.weeks[key]??=blankWeek();return data.weeks[key];}
@@ -76,6 +81,14 @@ export function practiceQuestions(data:LifeData,day:string,subject:Subject,mode:
  if(mode==='all')return pool;
  const history=pool.map(question=>({question,last:questionHistory(data,question,day).at(-1)}));
  if(mode==='wrong')return history.filter(({last})=>last?.status==='doing').map(({question})=>question);
+ if(day>='2026-10-27') {
+  // Rotate the fixed bank, not the shrinking unseen list: submitting an answer never skips its successor.
+  const ordered=[...pool.filter(q=>q.id.length>3),...pool.filter(q=>q.id.length===3)];
+  const days=Math.floor((Date.parse(day+'T00:00:00Z')-Date.parse('2026-10-27T00:00:00Z'))/86400000);
+  const offset=(days*6)%ordered.length;
+  const unseen=new Set(history.filter(({last})=>!last||!['doing','done'].includes(last.status)).map(({question})=>question.id));
+  return [...ordered.slice(offset),...ordered.slice(0,offset)].filter(q=>unseen.has(q.id)).slice(0,6);
+ }
  const review=history.filter(({last})=>last?.status==='doing'&&last.date<day);
  const unseen=history.filter(({last})=>!last||!['doing','done'].includes(last.status));
  return [...review,...unseen].map(({question})=>question);

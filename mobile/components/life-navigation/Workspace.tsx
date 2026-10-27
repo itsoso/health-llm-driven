@@ -74,7 +74,7 @@ export default function Workspace({ owner, onViewHealth }: {
     function editStudy(change: (d: LifeData) => void) { if (!draft || lock.current) return; const next = copy(draft); change(next); setDraft(next); setDirty(true); setMessage(''); }
     function editWeek(change: (w: typeof week) => void) { edit(d => change(d.weeks[monday])); }
     async function write(send: () => Promise<LifeWorkspace>) { if (!workspace || lock.current || !alive.current || !active.current)
-        return; lock.current = true; setBusy(true); const version = ++epoch.current; try {
+        return false; lock.current = true; setBusy(true); const version = ++epoch.current; try {
         const saved = await send();
         if (alive.current && active.current && version === epoch.current) {
             setWorkspace(saved);
@@ -86,7 +86,9 @@ export default function Workspace({ owner, onViewHealth }: {
             setTitle('');
             setCriterion('');
             setMessage('已保存个人安排');
+            return true;
         }
+        return false;
     }
     catch (e) {
         if (version === epoch.current)
@@ -95,6 +97,7 @@ export default function Workspace({ owner, onViewHealth }: {
                     status: number;
                 };
             }).response?.status === 409 ? '另一设备已更新，草稿已保留，请重新读取后核对。' : '保存失败，草稿已保留，请检查字段或稍后重试。');
+        return false;
     }
     finally {
         if (version === epoch.current) {
@@ -107,6 +110,12 @@ export default function Workspace({ owner, onViewHealth }: {
     function checkedSave(data: LifeData) { validateData(data); return saveLifeWorkspace(owner, workspace!.revision, data); }
     const save = () => { if (draft && workspace)
         void write(() => checkedSave(copy(draft))); };
+    async function saveStudy(change: (data: LifeData) => void) {
+        if (!draft || !workspace || lock.current) throw Error('正在保存，请稍后重试');
+        const next = copy(draft); change(next); validateData(next);
+        setDraft(next); setDirty(true);
+        if (!await write(() => checkedSave(next))) throw Error('作答尚未保存。草稿已保留，请核对顶部错误后重试。');
+    }
     function persistFocus(next: NonNullable<typeof focus>) { if (!draft || !workspace)
         return; const data = copy(draft); data.focus = next; setDraft(data); setDirty(true); void write(() => checkedSave(data)); }
     const names: Record<string, string> = { main: '主任务', auxiliary: '辅助任务', other: '可选任务', aux1: '辅助一', aux2: '辅助二', important: '重要事项', misc: '其他事项', morning: '上午', afternoon: '下午', evening: '晚上', flexible: '灵活', planned: '未开始', doing: '进行中', done: '已完成', skipped: '已跳过', macro: '宏观', industry: '行业', people: '人群', customer: '客户', unknown: '未知', hypothesis: '假设', signal: '信号', supported: '有支持证据', low: '低', medium: '中', high: '高', idle: '未启动', focus: '专注', rest: '休息', paused: '已暂停' };
@@ -163,7 +172,7 @@ export default function Workspace({ owner, onViewHealth }: {
      status={dirty ? '有未保存草稿' : title || criterion ? '任务待加入' : '已同步'}
      trailing={button('保存个人安排', save, !dirty, '保存')}
      onDate={value=>{setDate(value);setGenerated(null);}}/>
- {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} data={draft} day={date} disabled={busy} edit={editStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
+ {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} data={draft} day={date} disabled={busy} edit={editStudy} saveAnswer={saveStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
  {tab === '今日' && <>
  <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>

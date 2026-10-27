@@ -107,7 +107,7 @@ function SessionWorkspace({ owner }: {
     }, [pendingTask, tab, day]);
     const editWeek = (fn: (value: LifeData['weeks'][string]) => void) => edit(d => { d.weeks[monday] ??= blankWeek(); fn(d.weeks[monday]); });
     const write = async (operation: () => Promise<LifeWorkspace>) => { if (writeLock.current)
-        return; writeLock.current = true; setBusy(true); setError(''); const epoch = ++requestEpoch.current; try {
+        return false; writeLock.current = true; setBusy(true); setError(''); const epoch = ++requestEpoch.current; try {
         const w = await operation();
         if (alive.current && epoch === requestEpoch.current) {
             setWorkspace(w);
@@ -118,11 +118,14 @@ function SessionWorkspace({ owner }: {
             setHistory([]);
             setGenerated(null);
             setPreview(null);
+            return true;
         }
+        return false;
     }
     catch (e) {
         if (alive.current && epoch === requestEpoch.current)
             setError(message(e));
+        return false;
     }
     finally {
         writeLock.current = false;
@@ -131,6 +134,13 @@ function SessionWorkspace({ owner }: {
     } };
     const save = (next = draft) => { if (workspace && next)
         void write(() => saveLifeWorkspace(owner, workspace.revision, next)); };
+    const saveStudy = async (change: (data: LifeData) => void) => {
+        if (!draft || !workspace || writeLock.current) throw Error('正在保存，请稍后重试');
+        const next = copy(draft); change(next);
+        draftHistory.capture(draft); setDraft(next); setDirty(true);
+        const saved = await write(() => saveLifeWorkspace(owner, workspace.revision, next));
+        if (!saved) throw Error('作答尚未保存。草稿已保留，请核对顶部错误后重试。');
+    };
     const focusSave = (focus: LifeFocus) => { if (!draft)
         return; const next = copy(draft); next.focus = focus; draftHistory.capture(draft); setDraft(next); setDirty(true); save(next); };
     const reload = () => { if (dirty && !window.confirm('重新读取会丢弃本地未保存更改。建议先导出本地草稿，确定继续？'))
@@ -215,7 +225,7 @@ function SessionWorkspace({ owner }: {
   {tab === '今日' || tab === '周计划' ? <MorningReadingPanel owner={owner} day={day}/> : null}
   <fieldset className={css.fieldset} disabled={busy}>
   {tab === '记事本' ? <NotebookPanel notes={draft.notebook ?? []} onChange={notes => edit(d => { d.notebook = notes; })}/> : null}
-  {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} day={day} edit={edit} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
+  {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} day={day} edit={edit} saveAnswer={saveStudy} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
   {tab === '今日' ? <>
     <nav className={css.quickLinks} aria-label="今日快捷导航"><a href="#life-today-tasks">今日任务</a><a href="#life-today-schedule">时间安排</a><a href="#life-today-notes">日记录</a></nav>
     <section className={css.focusCard} aria-label="今日重点">

@@ -52,7 +52,8 @@ describe('practice selection follows dated study history', () => {
   const data=blankData();recordAnswer(data,'2026-10-26',questions[0],0);
   expect(practiceQuestions(data,'2026-10-26','英语').map(q=>q.id)).not.toContain('e01');
   expect(practiceQuestions(data,'2026-10-26','英语','wrong').map(q=>q.id)).toEqual(['e01']);
-  expect(practiceQuestions(data,'2026-10-27','英语')[0].id).toBe('e01');
+  expect(practiceQuestions(data,'2026-10-27','英语').map(q=>q.id)).not.toContain('e01');
+  expect(practiceQuestions(data,'2026-10-27','英语','wrong').map(q=>q.id)).toEqual(['e01']);
  });
  it('uses only records on or before the selected day, including across weeks', () => {
   const data=blankData();recordAnswer(data,'2026-10-25',questions[0],0);
