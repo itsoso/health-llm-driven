@@ -18,6 +18,7 @@ import secrets
 import stat
 import subprocess
 import sys
+import time
 
 STATE = Path('/var/lib/reva-release')
 TARGET = '8f7d94696424f92ff57243edb906cd6d2dd14a3a'
@@ -94,6 +95,15 @@ def legacy_evidence(source,b,closure):
 
 
 def production(source,b,server,reset,closure):
+    # The actual installed RPC launcher must retain this attempt's durable
+    # history guard before any database write; source-only protection is not enough.
+    b.secure(b.INSTALLED)
+    policy=b._read_json(b.CONFIG/'authorized-release.json')
+    server.validate_policy(policy,now=time.time())
+    executor=hashlib.sha256((source/'scripts/trusted_release_server.py').read_bytes()).hexdigest()
+    if (policy['sha']!=source.parent.name or policy['executor_sha256']!=executor
+            or hashlib.sha256(b.INSTALLED.read_bytes()).hexdigest()!=executor):
+        raise BriefingError('current installed launcher lacks this reviewed history guard')
     target=b.canonical_source(TARGET)
     reset._validate_production(TARGET,target,b,server)
     complete=b._read_json(b.STATE/TARGET/'completed.json')

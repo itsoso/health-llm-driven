@@ -850,12 +850,27 @@ def _assert_fresh_sha(sha, history):
 
 
 def _assert_known_activity(history, old_sha=None):
+    assert_xiaoqihou_briefing_history()
     for path in STATE.iterdir():
         if re.fullmatch(r"[0-9a-f]{40}", path.name) and path.name not in history and path.name != old_sha:
             raise BootstrapError("existing release activity requires operator review")
 
 
+def assert_xiaoqihou_briefing_history():
+    if not os.path.lexists(STATE / 'review-xiaoqihou-briefings'):
+        return
+    path=Path(__file__).with_name('trusted_release_server.py')
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached maintenance history code forbidden')
+    spec=importlib.util.spec_from_file_location('xiaoqihou_history_server',path)
+    server=importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(server)
+    server.assert_xiaoqihou_briefing_history(STATE)
+
+
 def assert_frontend_rebuild_history(*, backup_memo=None):
+    assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
@@ -867,6 +882,7 @@ def assert_frontend_rebuild_history(*, backup_memo=None):
 
 
 def assert_ota_history():
+    assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
@@ -880,6 +896,7 @@ def assert_ota_history():
 
 
 def _assert_idle(*, backup_memo=None):
+    assert_xiaoqihou_briefing_history()
     assert_frontend_rebuild_history(backup_memo=backup_memo)
     assert_ota_history()
     if os.path.lexists(BUSINESS_LEASE):

@@ -84,3 +84,8 @@ G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workfl
 聊天头改用适合28pt的代码矢量云朵/暖色日光，移除小尺寸圆底、脸部细节与idle状态点；桌面及大头像资源不变。现有ChatHeader、EmptyStateHome共19项通过，Mobile TypeScript通过。新包模拟器视觉验收待执行。
 
 审核账号新固定维护正在准备：`xiaoqihou-fixed-briefing-v1`，以当前8f生产代码、固定fixture哈希和新的精确CI操作者为边界，仅插入一条会话及两条夹具消息；旧数据不修改、不删除、不归一化时间。原279 UNKNOWN与两次未进入数据库写入的记录不变。独立目录、父子进程和锁证明、原子业务租约、资料快照、显式事务及提交后只读校验都必须通过；已有标识或任意不确定结果禁止重试。尚未执行生产写入，须待完整测试、独立审查、精确CI及新鲜inspect后取得该具体attempt的独立授权。
+
+
+新维护 G4 首轮 NO-GO：已验证的 `/var/lock` alias 不能直接传给拒绝符号链接的 fsync；修正为先验证 lease 再同步真实父目录，使用实际 sync 与 alias 的回归通过。第二轮 NO-GO：易失 lease 重启丢失后，原发布历史聚合没有识别新维护目录；现将固定 intent→database-started→completed 完整链校验接入 bootstrap install/known activity/idle 与 server frontend/OTA 历史聚合，缺失、未知、畸形或多余文件均拒绝后继发布。维护执行还须验证实际 installed launcher 与当前受审操作者源码/策略逐字节绑定；先轮换安装带守卫的发布器，生产后端仍保持8f，才允许该独立维护。352项发布器/维护回归通过，另补实际 build/testflight claim 的无新消费标记负例。仍未生产写入；待固定提交复审。
+
+另一任务固定剩菜源码 `ea779bbe4` 已取得独立GO并cherry-pick为 `e71083201`，与图标及维护范围汇合；本任务独占发布。汇合 `b256161a2` 干净快照真实模型闸通过（含synthetic consent、内存库、已披露阿里云服务），没有使用用户截图重放或读写生产健康数据。新发布器守卫改变后继续绑定最终精确候选；任何旧日志都不冒充最终版本送审证据。

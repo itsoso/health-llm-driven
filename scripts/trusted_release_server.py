@@ -1164,8 +1164,74 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
+def assert_xiaoqihou_briefing_history(state=None):
+    """Durable UNKNOWN admission survives loss of the volatile business lease.
+
+    This validates the one fixed narrow attempt only. No history is repaired,
+    no DB query is made, and a complete chain never grants retry authority.
+    """
+    root=Path(state or STATE)/'review-xiaoqihou-briefings'
+    if not os.path.lexists(root):
+        return
+    attempt='xiaoqihou-fixed-briefing-v1'
+    def directory(path):
+        secure_path(path,directory=True)
+        if stat.S_IMODE(path.stat().st_mode)!=0o700:
+            raise LaunchError('private Xiaoqihou maintenance audit required')
+    directory(root)
+    if {p.name for p in root.iterdir()}!={attempt}:
+        raise LaunchError('unknown Xiaoqihou maintenance attempt')
+    record=root/attempt; directory(record)
+    names={'intent.json','database-started.json','completed.json'}
+    if {p.name for p in record.iterdir()}!=names:
+        raise LaunchError('Xiaoqihou maintenance incomplete; no publication authority')
+    raw={name:_read_private(record/name) for name in names}
+    intent,start,end=(_json(raw[name]) for name in ('intent.json','database-started.json','completed.json'))
+    if not all(isinstance(v,dict) for v in (intent,start,end)):
+        raise LaunchError('invalid Xiaoqihou maintenance receipt')
+    evidence=intent.get('evidence'); operator=intent.get('operator_sha'); lease=intent.get('lease'); parent=intent.get('parent_binding')
+    hexdigest=lambda value:hashlib.sha256(json.dumps(value,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    is_hash=lambda value: isinstance(value,str) and re.fullmatch('[a-f0-9]{64}',value) is not None
+    fields={'target_sha','fixture_sha256','legacy_closure_sha256','database_snapshot_sha256',
+            'production_evidence_sha256','health_snapshot_sha256','demo_user_id','action','ordering_metadata_plan'}
+    if (set(intent)!={'evidence','evidence_sha256','operator_sha','attempt','accept_xiaoqihou_briefing','lease','parent_binding'}
+            or not isinstance(operator,str) or re.fullmatch('[a-f0-9]{40}',operator) is None
+            or intent['attempt']!=attempt or intent['accept_xiaoqihou_briefing'] is not True
+            or not isinstance(evidence,dict) or set(evidence)!=fields
+            or evidence['target_sha']!='8f7d94696424f92ff57243edb906cd6d2dd14a3a'
+            or evidence['fixture_sha256']!='40263013f3b91292e997343f535a45520ec9c28c979e5410530f0f11c0beed14'
+            or evidence['action']!='INSERT_XIAOQIHOU_FIXED_BRIEFING_ONLY_V1'
+            or evidence['ordering_metadata_plan']!={'action':'PRESERVE_ALL_EXISTING_ROWS','rows':[]}
+            or type(evidence['demo_user_id']) is not int or evidence['demo_user_id']<1
+            or any(not is_hash(evidence[k]) for k in ('legacy_closure_sha256','database_snapshot_sha256','production_evidence_sha256','health_snapshot_sha256'))
+            or intent['evidence_sha256']!=hexdigest(evidence)
+            or not isinstance(lease,dict) or set(lease)!={'token','identity'} or not is_hash(lease['token'])
+            or not isinstance(lease['identity'],list) or len(lease['identity'])!=2
+            or any(not isinstance(pair,list) or len(pair)!=2 or any(type(n) is not int or n<1 for n in pair) for pair in lease['identity'])
+            or not isinstance(parent,dict) or set(parent)!={'pid','start_ticks','nonce_sha256'}
+            or type(parent['pid']) is not int or parent['pid']<2
+            or not isinstance(parent['start_ticks'],str) or not parent['start_ticks'].isdigit()
+            or not is_hash(parent['nonce_sha256'])):
+        raise LaunchError('Xiaoqihou maintenance intent binding differs')
+    fingerprint=intent['evidence_sha256']
+    if start!={'state':'DATABASE_ATTEMPT_STARTED','operator_sha':operator,'attempt':attempt,'evidence_sha256':fingerprint}:
+        raise LaunchError('Xiaoqihou database attempt binding differs')
+    result=end.get('result')
+    if (not isinstance(result,dict) or set(result)!={'state','before_sha256','after_sha256'}
+            or result['state']!='VERIFIED_BRIEFING_ONLY' or result['before_sha256']!=evidence['database_snapshot_sha256']
+            or not is_hash(result['after_sha256'])
+            or end!={'state':'BRIEFING_REPAIRED_ONLY','evidence_sha256':fingerprint,'result':result,
+                     'original_outcome':'UNKNOWN','reset_authorized':False,'release_unblocked':False,'retry_authorized':False}):
+        raise LaunchError('Xiaoqihou maintenance completion unverified')
+    directory(root); directory(record)
+    if ({p.name for p in root.iterdir()}!={attempt} or {p.name for p in record.iterdir()}!=names
+            or any(_read_private(record/name)!=raw[name] for name in names)):
+        raise LaunchError('Xiaoqihou maintenance history changed during read')
+
+
 def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None, pending_no_backup_finalization=None):
     """Independent frontend evidence must never count as backend success."""
+    assert_xiaoqihou_briefing_history(state)
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
     publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo,
                                pending_no_backup_finalization=pending_no_backup_finalization)
@@ -1707,6 +1773,7 @@ def retained_rpc(policy, action):
 
 def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
+    assert_xiaoqihou_briefing_history()
     assert_retained_history()
     root = STATE / "ota"
     closures = STATE / "ota-preclaim-closures"

@@ -247,3 +247,86 @@ def test_postgres_email_reassignment_does_not_change_bound_owner(pg_adapter):
         m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None, evidence=before)
     with engine.begin() as c:
         assert c.execute(text('SELECT count(*) FROM agent_conversations')).scalar_one() == 2
+
+
+def history_fixture(tmp_path):
+    core=core_load();value=evidence(core);fingerprint=core.digest(value)
+    root=tmp_path/'review-xiaoqihou-briefings';root.mkdir(mode=0o700)
+    record=root/'xiaoqihou-fixed-briefing-v1';record.mkdir(mode=0o700)
+    intent={'evidence':value,'evidence_sha256':fingerprint,'operator_sha':'a'*40,'attempt':record.name,
+            'accept_xiaoqihou_briefing':True,'lease':{'token':'b'*64,'identity':[[1,2],[1,3]]},
+            'parent_binding':{'pid':42,'start_ticks':'100','nonce_sha256':'f'*64}}
+    start={'state':'DATABASE_ATTEMPT_STARTED','operator_sha':'a'*40,'attempt':record.name,'evidence_sha256':fingerprint}
+    end={'state':'BRIEFING_REPAIRED_ONLY','evidence_sha256':fingerprint,
+         'result':{'state':'VERIFIED_BRIEFING_ONLY','before_sha256':value['database_snapshot_sha256'],'after_sha256':'e'*64},
+         'original_outcome':'UNKNOWN','reset_authorized':False,'release_unblocked':False,'retry_authorized':False}
+    for n,v in [('intent.json',intent),('database-started.json',start),('completed.json',end)]:
+        (record/n).write_text(json.dumps(v));(record/n).chmod(0o600)
+    return record,intent,start,end
+
+
+@pytest.mark.parametrize('fault',[None,'no_completion','no_start','no_intent','wrong_operator','wrong_hash','retry','extra','other_attempt','wrong_target'])
+def test_durable_history_admission_without_volatile_lease(tmp_path,monkeypatch,fault):
+    from test_trusted_release_server import load_server
+    server=load_server();monkeypatch.setattr(server,'STATE',tmp_path)
+    monkeypatch.setattr(server,'secure_path',lambda *a,**k:None)
+    monkeypatch.setattr(server,'validate_metadata',lambda *a,**k:None)
+    record,intent,start,end=history_fixture(tmp_path)
+    if fault and fault.startswith('no_'):
+        (record/{'no_completion':'completed.json','no_start':'database-started.json','no_intent':'intent.json'}[fault]).unlink()
+    elif fault=='wrong_operator':start['operator_sha']='b'*40;(record/'database-started.json').write_text(json.dumps(start))
+    elif fault=='wrong_hash':end['evidence_sha256']='0'*64;(record/'completed.json').write_text(json.dumps(end))
+    elif fault=='retry':end['retry_authorized']=True;(record/'completed.json').write_text(json.dumps(end))
+    elif fault=='extra':(record/'other.json').write_text('{}')
+    elif fault=='other_attempt':(record.parent/'another').mkdir()
+    elif fault=='wrong_target':intent['evidence']['target_sha']='c'*40;(record/'intent.json').write_text(json.dumps(intent))
+    assert not (tmp_path/'lease').exists()
+    if fault is None:server.assert_xiaoqihou_briefing_history()
+    else:
+        with pytest.raises(server.LaunchError):server.assert_xiaoqihou_briefing_history()
+
+
+def test_true_publisher_admission_blocks_unknown_before_consumption(tmp_path,monkeypatch):
+    from test_trusted_release_server import setup_state, policy
+    server=setup_state(monkeypatch,tmp_path);monkeypatch.setattr(server,'STATE',tmp_path)
+    record,_,_,_=history_fixture(tmp_path);(record/'completed.json').unlink()
+    workspace=tmp_path/('a'*40);workspace.mkdir()
+    for entry in [lambda:server.run_once(policy(),workspace,lambda *a:pytest.fail('prepare'),lambda *a:pytest.fail('deploy')),
+                  lambda:server.check_readiness(policy()),lambda:server.claim_build(policy(),workspace),
+                  lambda:server.claim_testflight(policy(),workspace),
+                  lambda:server.assert_frontend_rebuild_history(tmp_path),lambda:server.assert_ota_history()]:
+        with pytest.raises(server.LaunchError,match='maintenance incomplete'):entry()
+    assert not (workspace/'started.json').exists() and not (workspace/'build-started.json').exists()
+    assert not (workspace/'native-started.json').exists()
+
+
+def test_true_bootstrap_idle_and_known_activity_block_unknown(tmp_path,monkeypatch):
+    from test_trusted_release_server import setup_state
+    server=setup_state(monkeypatch,tmp_path);monkeypatch.setattr(server,'STATE',tmp_path)
+    m=load();b=m.load(Path(__file__).with_name('bootstrap_trusted_release.py'),'xiaoqihou_bootstrap_admission_test')
+    monkeypatch.setattr(b,'STATE',tmp_path);monkeypatch.setattr(b,'BUSINESS_LEASE',tmp_path/'absent-volatile-lease')
+    # OS metadata/loading is tested by the bootstrap suite. Keep actual public
+    # aggregate functions and actual strict receipt validator for this regression.
+    monkeypatch.setattr(b,'assert_xiaoqihou_briefing_history',lambda:server.assert_xiaoqihou_briefing_history(tmp_path))
+    record,_,_,_=history_fixture(tmp_path);(record/'completed.json').unlink()
+    for call in (lambda:b._assert_known_activity({}),b._assert_idle,b.assert_frontend_rebuild_history,b.assert_ota_history):
+        with pytest.raises(server.LaunchError,match='maintenance incomplete'):call()
+
+
+@pytest.mark.parametrize('fault',[None,'installed','policy_sha','executor'])
+def test_current_installed_history_guard_required_before_database(tmp_path,monkeypatch,fault):
+    import hashlib
+    m=load();sha='a'*40;source=tmp_path/sha/'source';(source/'scripts').mkdir(parents=True)
+    code=b'reviewed launcher with durable guard';(source/'scripts/trusted_release_server.py').write_bytes(code)
+    installed=tmp_path/'installed.py';installed.write_bytes(code if fault!='installed' else b'old launcher')
+    policy={'sha':'b'*40 if fault=='policy_sha' else sha,'expires_at':0,
+            'executor_sha256':'0'*64 if fault=='executor' else hashlib.sha256(code).hexdigest()}
+    b=SimpleNamespace(INSTALLED=installed,CONFIG=tmp_path/'config',STATE=tmp_path,secure=lambda *a:None,
+        canonical_source=lambda *a:tmp_path/'target',_read_json=lambda p:policy if p.name=='authorized-release.json' else {'sha':m.TARGET,'state':'SUCCEEDED'})
+    server=SimpleNamespace(validate_policy=lambda *a,**k:None)
+    reset=SimpleNamespace(_validate_production=lambda *a:None)
+    monkeypatch.setattr(m,'legacy_evidence',lambda *a:{'immutable':True})
+    monkeypatch.setattr(m.subprocess,'run',lambda *a,**k:SimpleNamespace(stdout=b'active\n'))
+    if fault is None: assert m.production(source,b,server,reset,object())['target_sha']==m.TARGET
+    else:
+        with pytest.raises(m.BriefingError,match='installed launcher'):m.production(source,b,server,reset,object())
