@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import ExamStudyPanel from './ExamStudyPanel';
 import { blankData, copy, validateData } from './model';
 import type { LifeData } from '@/services/lifeNavigation';
-import { questions, recordAnswer, addStudyDay } from './examStudy';
+import { questions, recordAnswer, addStudyDay, studyId } from './examStudy';
 afterEach(cleanup);
 function Harness({initial=blankData()}: {initial?:LifeData}){const [data,setData]=useState(initial);return <ExamStudyPanel data={data} day="2026-10-24" focus={vi.fn()} edit={fn=>setData(prev=>{const next=copy(prev);fn(next);return next;})}/>;}
 describe('exam study user flow',()=>{
@@ -81,4 +81,12 @@ describe('real paper daily plan', () => {
   expect(screen.getByRole('link',{name:'打开2024年英语（二）原卷 ↗'}).getAttribute('href')).toContain('bbfa3fc');
   expect(screen.getByText(/尚不支持真题在线自动判分/)).toBeTruthy();
  });
+});
+
+it('does not show saved old-plan results as completion of new real-paper work', () => {
+ const data=blankData();addStudyDay(data,'2026-10-26');
+ Object.values(data.weeks).flatMap(w=>w.tasks).forEach(t=>{t.date='2026-10-27';t.id=studyId(t.date,t.title.includes('英语')?'english':t.title.includes('错题')?'review':'comprehensive');t.status='done';t.result='旧计划的结果';});
+ render(<ExamStudyPanel data={data} day="2026-10-27" edit={()=>{}} focus={()=>{}}/>);
+ expect(screen.getByText('本日已勾选完成 0 / 120 分钟计划')).toBeTruthy();
+ expect(screen.queryByDisplayValue('旧计划的结果')).toBeNull();
 });

@@ -22,3 +22,14 @@ describe('dated two-hour real-paper practice', () => {
   addStudyDay(d,'2026-10-27');expect(w.tasks).toHaveLength(4);expect(w.tasks[0].result).toBe('保留复盘');
  });
 });
+
+it('does not inherit completion from a previously saved same-day warmup plan', () => {
+ const d=blankData();addStudyDay(d,'2026-10-26');
+ const w=d.weeks[mondayOf('2026-10-27')];
+ for(const task of w.tasks){task.date='2026-10-27';task.id=studyId('2026-10-27',task.title.includes('英语')?'english':task.title.includes('错题')?'review':'comprehensive');task.status='done';task.result='旧任务结果';}
+ const old=JSON.stringify(w.tasks);addStudyDay(d,'2026-10-27');
+ expect(JSON.stringify(w.tasks.slice(0,3))).toBe(old);expect(w.tasks).toHaveLength(7);
+ expect(w.tasks.slice(3).every(t=>t.status==='planned'&&t.result==='')).toBe(true);
+ expect(w.tasks.slice(3).reduce((n,t)=>n+(t.estimated_minutes??0),0)).toBe(120);
+ expect(paperAssignment('2026-10-29')?.writing).toContain('再练与扩写');
+});

@@ -38,7 +38,7 @@ export default function ExamStudyPanel({data,day,edit,focus}:Props) {
     <label className={css.field}>学习结果 · {t.title}<textarea value={saved.result} maxLength={4000} placeholder="记下材料、正确题数、耗时和卡住的地方" onChange={e=>mutate(d=>{const task=studyTask(d,day,t.key);if(task)task.result=e.target.value;})}/></label>
     <button type="button" onClick={()=>focus(saved)}>开始专注并保存</button>
    </>:<p className={css.hint}>加入计划后可以记录完成情况，与今日、周计划共用同一条任务。</p>}</article>;})}</div>
-   <div className={css.callout}><strong>先做分段摸底，再决定补哪里</strong><p>第一周把旧年真题拆成30分钟英语和20分钟管综专项，记录正确数与耗时。分段结果只作诊断，不折算成整卷成绩。每天只多练一个弱项，不靠补打卡追进度。</p></div>
+   <div className={css.callout}><strong>先做分段摸底，再决定补哪里</strong><p>按每日计划分段训练，记录正确数与耗时。新真题计划单独保存，不替换既有计划或继承其完成状态。分段结果只作诊断，不折算成整卷成绩。每天只多练一个弱项，不靠补打卡追进度。</p></div>
   </>}
   {section==='practice'&&<>
    <div className={css.sectionTitle}><div><h3>补充热身与错题回看</h3><p>已练 {attempts} / {questions.length} 题 · 待复练 {wrong.length} 题</p></div></div>

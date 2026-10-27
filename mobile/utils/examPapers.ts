@@ -57,5 +57,5 @@ export function paperAssignment(day: string) {
  const start=year===2024?'2026-10-27':year===2025?'2026-11-09':'2026-11-30';
  const offset=Math.floor((Date.parse(day+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/86400000);
  const section=offset%9, review=offset>=9||day>='2026-12-14';
- return {year, review, round:Math.floor(offset/9)+1, english:englishSections[section], comprehensive:comprehensiveSections[section], writing:offset%2===0?'管综第56题：论证有效性分析；先列结论、前提、漏洞，再写一段':'管综第57题：论说文；先列论点、论据与反例，再写一段', papers:examPapers.filter(p=>p.year===year)};
+ return {year, review, round:Math.floor(offset/9)+1, english:englishSections[section], comprehensive:comprehensiveSections[section], writing:(offset>=2?'再练与扩写：':'首次提纲：')+(offset%2===0?'管综第56题：论证有效性分析；先列结论、前提、漏洞，再写一段':'管综第57题：论说文；先列论点、论据与反例，再写一段'), papers:examPapers.filter(p=>p.year===year)};
 }

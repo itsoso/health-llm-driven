@@ -38,10 +38,10 @@ export function dailyStudy(day:string) {
  if(assignment) {
   const label=`${assignment.year}年真题 · ${assignment.review?'复测':'首轮分段'}`;
   return [
-   {key:'english',title:'英语（二）',minutes:45,detail:`${label}：${assignment.english}。限时作答25分钟，核对证据与生词20分钟。`},
-   {key:'comprehensive',title:'管综专项',minutes:40,detail:`${label}：${assignment.comprehensive}。先独立作答，再标记不会、误读、计算或超时。`},
-   {key:'writing',title:'写作训练',minutes:20,detail:`${assignment.year}年${assignment.writing}。这是分段训练，整篇写作另行安排。`},
-   {key:'review',title:'错题复盘',minutes:15,detail:'闭卷复做昨日错题，记录年份、科目、题号、实际用时、错因及下一次复测日期。无错题时回忆今天的解题依据。'}
+   {key:'paper-english',title:'英语（二）',minutes:45,detail:`${label}：${assignment.english}。限时作答25分钟，核对证据与生词20分钟。`},
+   {key:'paper-comprehensive',title:'管综专项',minutes:40,detail:`${label}：${assignment.comprehensive}。先独立作答，再标记不会、误读、计算或超时。`},
+   {key:'paper-writing',title:'写作训练',minutes:20,detail:`${assignment.year}年${assignment.writing}。这是分段训练，整篇写作另行安排。`},
+   {key:'paper-review',title:'错题复盘',minutes:15,detail:'闭卷复做昨日错题，记录年份、科目、题号、实际用时、错因及下一次复测日期。无错题时回忆今天的解题依据。'}
   ];
  }
  const subject=comprehensiveSubject(day);
@@ -51,7 +51,7 @@ export function dailyStudy(day:string) {
 }
 export function studyId(day:string,key:string):string {
  // Persisted identifiers: append keys only; never reorder or reuse a code.
- const index=['english','comprehensive','review','e01','e02','e03','e04','e05','e06','e07','e08','m01','m02','m03','m04','m05','m06','l01','l02','l03','l04','l05','l06','writing'].indexOf(key);
+ const index=['english','comprehensive','review','e01','e02','e03','e04','e05','e06','e07','e08','m01','m02','m03','m04','m05','m06','l01','l02','l03','l04','l05','l06','writing','paper-english','paper-comprehensive','paper-writing','paper-review'].indexOf(key);
  if(index<0||!/^\d{4}-\d{2}-\d{2}$/.test(day))throw Error('备考记录标识无效');
  return `e6ba2027-${day.slice(0,4)}-4${day.slice(5,7)}${day.slice(8,9)}-8${day.slice(9)}00-${(index+1).toString(16).padStart(12,'0')}`;
 }
