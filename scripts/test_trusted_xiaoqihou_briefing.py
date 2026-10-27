@@ -1,0 +1,246 @@
+"""Authorization, lease, parent and uncertain-commit regression coverage."""
+import importlib.util
+import json
+import os
+from pathlib import Path
+from types import SimpleNamespace
+import pytest
+from test_trusted_review_briefing_repair import Engine, database_stubs
+from test_review_xiaoqihou_briefing import load as core_load
+
+
+def load():
+    path=Path(__file__).with_name('trusted_xiaoqihou_briefing.py')
+    spec=importlib.util.spec_from_file_location('trusted_xiaoqihou_test',path)
+    m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+    return m
+
+
+def evidence(core):
+    return dict(target_sha=core.TARGET,action=core.ACTION,fixture_sha256=core.FIXTURE_SHA256,
+        legacy_closure_sha256='a'*64,production_evidence_sha256='b'*64,database_snapshot_sha256='c'*64,
+        health_snapshot_sha256='d'*64,demo_user_id=44,ordering_metadata_plan=core.empty_ordering_plan())
+
+
+def test_canonical_entry_required():
+    m=load()
+    with pytest.raises(m.BriefingError): m.context('a'*40)
+
+
+@pytest.mark.parametrize('flags',[
+ ['--accept-xiaoqihou-briefing'], ['--evidence-sha256','a'*64],
+ ['--database-probe','apply','--token-stdin'],['--database-probe','apply','--accept-xiaoqihou-briefing'],
+ ['--parent-proof-fd','9']])
+def test_cli_rejects_incomplete_authority(monkeypatch,flags):
+    m=load();monkeypatch.setattr(m.sys,'argv',['briefing','--sha','a'*40,*flags])
+    monkeypatch.setattr(m,'context',lambda *a,**k:pytest.fail('must not reach context'))
+    monkeypatch.setattr(m,'database_child',lambda *a:pytest.fail('must not reach database child'))
+    assert m.main()==1
+
+
+@pytest.mark.parametrize('fault',[None,'commit_lost','health_before','health_after','health_readback','readback','parent_before_commit'])
+def test_database_preserves_no_retry_semantics(monkeypatch,fault):
+    m=load();core=core_load()
+    shared=m.load(Path(__file__).with_name('trusted_review_briefing_repair.py'),'test_xiao_shared')
+    engine=Engine(fail_commit=fault=='commit_lost')
+    health=['d'*64]*3
+    if fault and fault.startswith('health_'):
+        health[{'health_before':0,'health_after':1,'health_readback':2}[fault]]='f'*64
+    readers=database_stubs(monkeypatch,shared,core,engine,health_values=health,readback_fail=fault=='readback')
+    monkeypatch.setattr(shared,'demo_identity',lambda *a:44)
+    n=0
+    def check():
+        nonlocal n
+        n+=1
+        if fault=='parent_before_commit' and n==2: raise m.BriefingError('lost original parent')
+    def run(): return m.database_work(engine,core,shared,readers,'fixture@example.invalid',Path('/fixture'),b'x'*32,check,evidence=evidence(core))
+    if fault is None:
+        assert run()['state']=='VERIFIED_BRIEFING_ONLY'
+        assert engine.events.count('commit')==1 and engine.events.count('connect')==2
+    else:
+        with pytest.raises((m.BriefingError,OSError,ValueError)): run()
+        assert engine.events.count('commit') <= 1 and engine.events.count('insert') <= 1
+        if fault in ('health_before','health_after','parent_before_commit'):
+            assert 'commit' not in engine.events and engine.events.count('rollback')==1
+        else: assert engine.events.count('commit')==1
+
+
+@pytest.mark.parametrize('fault',[None,'holder','start','exe','argv','uid','nonce','attempt','authority','digest','lease'])
+def test_inherited_proof_and_live_parent_lease(tmp_path,monkeypatch,fault):
+    m=load();shared=m.load(Path(__file__).with_name('trusted_review_briefing_repair.py'),'test_xiao_parent')
+    proc=tmp_path/'proc';parent=proc/'900';(parent/'fd').mkdir(parents=True)
+    fields=['S','1','1','1','0']+['0']*14+['1234']
+    (parent/'stat').write_text('900 (python) '+' '.join(fields));(parent/'status').write_text('Uid:\t0\t0\t0\t0\n')
+    source=tmp_path/'canonical';sha='a'*40;digest='b'*64
+    argv=['/usr/bin/python3.12','-I','-S','-B',str(source/'scripts'/m.ENTRY),'--sha',sha,
+          '--accept-xiaoqihou-briefing','--evidence-sha256',digest]
+    (parent/'exe').symlink_to('/usr/bin/python3.12')
+    launcher,build=tmp_path/'launcher',tmp_path/'build';launcher.touch();build.touch()
+    lfd,bfd=os.open(launcher,os.O_RDWR),os.open(build,os.O_RDWR);rd,wr=os.pipe()
+    try:
+        for fd,path in ((lfd,launcher),(bfd,build)): (parent/'fd'/str(fd)).symlink_to(path)
+        lines=[]
+        for n,fd in enumerate((lfd,bfd)):
+            st=os.fstat(fd)
+            lines.append(f'{n}: FLOCK ADVISORY WRITE {901 if fault=="holder" else 900} {os.major(st.st_dev):02x}:{os.minor(st.st_dev):02x}:{st.st_ino} 0 EOF')
+        (proc/'locks').write_text('\n'.join(lines))
+        proof={'parent':{'pid':900,'start_ticks':'1234'},'nonce':'c'*64,'sha':sha,'mode':'apply',
+               'evidence_sha256':digest,'attempt':m.ATTEMPT,'lease':{'token':'d'*64,'identity':[[1,2],[1,3]]}}
+        if fault=='start':proof['parent']['start_ticks']='999'
+        elif fault=='exe':(parent/'exe').unlink();(parent/'exe').symlink_to('/usr/bin/python3.11')
+        elif fault=='argv':argv=['python','-c','unrelated']
+        elif fault=='uid':(parent/'status').write_text('Uid:\t1000\t1000\t1000\t1000\n')
+        elif fault=='nonce':proof['nonce']='wrong'
+        elif fault=='attempt':proof['attempt']='old'
+        elif fault=='authority':argv.remove('--accept-xiaoqihou-briefing')
+        elif fault=='digest':proof['evidence_sha256']='e'*64
+        (parent/'cmdline').write_bytes(b'\0'.join(x.encode() for x in argv)+b'\0')
+        os.write(wr,json.dumps(proof).encode());os.close(wr);wr=None
+        actual=os.fstat
+        monkeypatch.setattr(m.os,'fstat',lambda fd:SimpleNamespace(st_mode=actual(fd).st_mode,st_uid=0) if fd==rd else actual(fd))
+        monkeypatch.setattr(m.os,'getppid',lambda:900)
+        b=SimpleNamespace(_assert_original_lock=lambda *a:None,BUSINESS_LEASE=tmp_path/'lease')
+        reset=SimpleNamespace(_lease_identity=lambda *a:((1,2),(1,4 if fault=='lease' else 3)))
+        def run():return m.validate_parent(source,sha,'apply',rd,lfd,bfd,b,object(),shared,reset,proc)
+        if fault is not None:
+            with pytest.raises(m.BriefingError):run()
+        else:
+            verified,check=run();assert verified==proof
+            (proc/'locks').write_text('')
+            with pytest.raises(m.BriefingError):check()
+    finally:
+        for fd in (lfd,bfd,rd,wr):
+            if fd is not None:os.close(fd)
+
+
+@pytest.mark.parametrize('unknown',[False,True])
+def test_actual_adapter_intent_lease_and_cleanup(tmp_path,monkeypatch,unknown):
+    m=load();core=core_load();m.STATE=tmp_path
+    shared=m.load(Path(__file__).with_name('trusted_review_briefing_repair.py'),'test_xiao_adapter')
+    readers=SimpleNamespace(sync=lambda *a:None,write_json=lambda p,v:p.write_text(json.dumps(v)))
+    b=SimpleNamespace(STATE=tmp_path,BUSINESS_LEASE=tmp_path/'lease',secure=lambda *a,**k:None,
+        _write=lambda p,v:p.write_bytes(v),_read_json=lambda p:json.loads(p.read_text()),_assert_original_lock=lambda *a:None,
+        _recovery_process_proof=lambda:None)
+    reset=SimpleNamespace(_lease_identity=lambda *a:tuple((p.stat().st_dev,p.stat().st_ino) for p in (b.BUSINESS_LEASE,b.BUSINESS_LEASE/'token')))
+    monkeypatch.setattr(shared,'parent_identity',lambda pid:{'pid':pid,'start_ticks':'12'})
+    production={'legacy':{'immutable':'historical'}}
+    monkeypatch.setattr(m,'production',lambda *a:production)
+    calls=[]
+    def run(argv,**kwargs):
+        proof=json.loads(os.read(kwargs['pass_fds'][0],4096)); mode=proof['mode'];calls.append(mode)
+        if mode=='inspect':value={'demo_user_id':44,'database_snapshot_sha256':'c'*64,'health_snapshot_sha256':'d'*64,'ordering_metadata_plan':core.empty_ordering_plan()}
+        else:
+            (m.record_path()/'database-started.json').write_text('{}')
+            if unknown:raise OSError('lost response')
+            value={'state':'VERIFIED_BRIEFING_ONLY','before_sha256':'c'*64,'after_sha256':'e'*64}
+        return SimpleNamespace(stdout=json.dumps(value).encode())
+    monkeypatch.setattr(m.subprocess,'run',run)
+    a=m.make_adapter(tmp_path,b,object(),readers,core,shared,reset,object(),'a'*40,10,11)
+    observed=core.repair(a);assert not a.record.exists() and not b.BUSINESS_LEASE.exists()
+    try:
+        if unknown:
+            with pytest.raises(OSError):core.repair(a,authorized=True,evidence_sha256=observed['evidence_sha256'])
+        else:assert core.repair(a,authorized=True,evidence_sha256=observed['evidence_sha256'])['state']=='BRIEFING_REPAIRED_ONLY'
+    finally:a.finish()
+    assert b.BUSINESS_LEASE.exists()==unknown
+    assert (a.record/'intent.json').is_file()
+    with pytest.raises(core.RepairError):core.repair(a,authorized=True,evidence_sha256=observed['evidence_sha256'])
+    assert calls.count('apply')==1
+
+
+@pytest.fixture
+def pg_adapter():
+    """A random disposable database on an explicitly supplied synthetic cluster."""
+    import os
+    import uuid
+    from sqlalchemy import create_engine, text
+    from sqlalchemy.engine import make_url
+    url = os.environ.get('REVA_REVIEW_CLOSURE_TEST_DATABASE_URL')
+    if not url:
+        pytest.skip('dedicated PostgreSQL integration URL required')
+    parsed = make_url(url)
+    # This fixture creates only a new synthetic database; never adopt public
+    # tables in a supplied database or a remote/production server.
+    if parsed.host not in (None, '', 'localhost', '127.0.0.1') or (parsed.query.get('host') and not str(parsed.query['host']).startswith('/tmp/reva-')):
+        pytest.fail('dedicated local Unix-socket test cluster required')
+    name = 'briefing_adapter_' + uuid.uuid4().hex
+    control = create_engine(url, isolation_level='AUTOCOMMIT')
+    with control.connect() as c:
+        c.execute(text('CREATE DATABASE ' + name + " ENCODING 'UTF8' TEMPLATE template0"))
+    engine = create_engine(parsed.set(database=name), isolation_level='SERIALIZABLE')
+    m=load();core=core_load();shared=m.load(Path(__file__).with_name('trusted_review_briefing_repair.py'),'xiao_pg_shared')
+    root = Path(__file__).resolve().parents[1]
+    readers = m.load(root / 'scripts/review_maintenance_retirement.py', 'pg_adapter_readers')
+    fixture = root / 'backend/fixtures/demo_user_minimal.json'
+    try:
+        with engine.begin() as c:
+            c.execute(text('CREATE TABLE public.users (id SERIAL PRIMARY KEY, email TEXT UNIQUE, is_active BOOLEAN, is_approved BOOLEAN, is_admin BOOLEAN)'))
+            c.execute(text('CREATE TABLE public.agent_conversations (id SERIAL PRIMARY KEY, user_id INTEGER REFERENCES users(id), title TEXT, session_key TEXT, created_at TIMESTAMP, updated_at TIMESTAMP)'))
+            c.execute(text('CREATE TABLE public.agent_messages (id SERIAL PRIMARY KEY, conversation_id INTEGER REFERENCES agent_conversations(id), role TEXT, content TEXT, image_url TEXT, meta JSONB, created_at TIMESTAMP)'))
+            c.execute(text("INSERT INTO users VALUES (1,'review@example.invalid',true,true,false),(2,'other@example.invalid',true,true,false)"))
+            c.execute(text("INSERT INTO agent_conversations(user_id,title,session_key,created_at,updated_at) VALUES (1,'old','old',now()-interval '1 day',now()-interval '1 day'),(2,'other','other',now()-interval '1 day',now()-interval '1 day')"))
+            c.execute(text("INSERT INTO agent_messages(conversation_id,role,content,created_at) VALUES(1,'user','old content',now()),(2,'user','other content',now())"))
+            for table in readers.DIRECT_TABLES:
+                if table == 'agent_conversations':
+                    continue
+                c.execute(text(f'CREATE TABLE public.{table} (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id), payload JSONB)'))
+                c.execute(text(f'INSERT INTO public.{table} VALUES (1,1,\'{{"synthetic":"demo"}}\'),(2,2,\'{{"synthetic":"other"}}\')'))
+            for table, (fk, parent) in readers.CHILD_TABLES.items():
+                if table == 'agent_messages':
+                    continue
+                c.execute(text(f'CREATE TABLE public.{table} (id INTEGER PRIMARY KEY, {fk} INTEGER REFERENCES public.{parent}(id), payload JSONB)'))
+                c.execute(text(f'INSERT INTO public.{table} VALUES (1,1,\'{{"synthetic":"demo-child"}}\'),(2,2,\'{{"synthetic":"other-child"}}\')'))
+        yield m, core, shared, readers, engine, fixture
+    finally:
+        engine.dispose()
+        with control.connect() as c:
+            c.execute(text('DROP DATABASE ' + name))
+        control.dispose()
+
+
+def test_postgres_actual_database_work_public_schema(pg_adapter):
+    from sqlalchemy import text
+    m, core, shared, readers, engine, fixture = pg_adapter
+    observed = m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None)
+    before = evidence(core)
+    before.update(observed)
+    result = m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None, evidence=before)
+    assert result['state'] == 'VERIFIED_BRIEFING_ONLY'
+    with engine.begin() as c:
+        assert c.execute(text('SELECT count(*) FROM agent_conversations')).scalar_one() == 3
+        assert c.execute(text('SELECT count(*) FROM agent_messages')).scalar_one() == 4
+        assert c.execute(text("SELECT content FROM agent_messages WHERE id=2")).scalar_one() == 'other content'
+        assert shared.health_snapshot(c, 1, b'k' * 32, readers) == before['health_snapshot_sha256']
+    with pytest.raises(core.RepairError, match='already exists'):
+        m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None)
+
+
+def test_postgres_trigger_blocks_before_any_insert(pg_adapter):
+    from sqlalchemy import text
+    m, core, shared, readers, engine, fixture = pg_adapter
+    observed = m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None)
+    before = evidence(core)
+    before.update(observed)
+    with engine.begin() as c:
+        c.execute(text("CREATE FUNCTION unwanted() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN UPDATE weight_records SET payload='{}'::jsonb; RETURN NEW; END $$"))
+        c.execute(text('CREATE TRIGGER unwanted BEFORE INSERT ON agent_conversations FOR EACH ROW EXECUTE FUNCTION unwanted()'))
+    with pytest.raises(shared.BriefingError, match='unreviewed'):
+        m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None, evidence=before)
+    with engine.begin() as c:
+        assert c.execute(text('SELECT count(*) FROM agent_conversations')).scalar_one() == 2
+        assert shared.health_snapshot(c, 1, b'k' * 32, readers) == before['health_snapshot_sha256']
+
+
+def test_postgres_email_reassignment_does_not_change_bound_owner(pg_adapter):
+    from sqlalchemy import text
+    m, core, shared, readers, engine, fixture = pg_adapter
+    observed = m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None)
+    before = evidence(core)
+    before.update(observed)
+    with engine.begin() as c:
+        c.execute(text("UPDATE users SET email='old-review@example.invalid' WHERE id=1"))
+        c.execute(text("UPDATE users SET email='review@example.invalid' WHERE id=2"))
+    with pytest.raises(m.BriefingError, match='demo identity'):
+        m.database_work(engine, core, shared, readers, 'review@example.invalid', fixture, b'k' * 32, lambda:None, evidence=before)
+    with engine.begin() as c:
+        assert c.execute(text('SELECT count(*) FROM agent_conversations')).scalar_one() == 2

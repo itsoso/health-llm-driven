@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 |---|---|
-| 状态 | building |
-| 当前阶段 | S5 本地验证与独立安全审查；尚未发布新候选 |
+| 状态 | shipping |
+| 当前阶段 | S7 后端和 Web 已上线，iOS 281 已进入 TestFlight 内部测试；正式 App Review 仍 BLOCK |
 
 ## G1 准入
 
@@ -48,4 +48,39 @@ App Store Connect 的 App 6763569720 可编辑名称已保存并回读为“小�
 
 `e8be03fbc` 的澄清修正获得独立 GO，剩菜60项通过，真实模型全套再次通过。完整 CI run `40494169829` 中仅 backend-test-balanced-05 的旧缓存版本断言失败，汇总闸随之失败；修正该断言为已实现的 v3，不改变生产代码。相关撤权、预生成与账户删除106项通过。保留失败运行，最终候选需重新取得精确 SHA 完整 CI 绿色，才可发布。
 
-模拟器 Release 原生构建成功并安装，名称回读为小气候。视觉检查发现登录页仍使用通用心形标识，补为同一云朵图标；登录行为不变，现有登录回归45项通过。最终候选需以新源码增量构建再验收。
+模拟器 Release 原生构建成功并安装，名称回读为小气候。视觉检查发现登录页仍使用通用心形标识，补为同一云朵图标；登录行为不变，现有登录回归48项通过。此处及以上为发布前过程记录；最终交付事实见下节。
+
+## 2026-10-27 最终候选与实际交付
+
+候选为 `8f7d94696424f92ff57243edb906cd6d2dd14a3a`。独立安全复审 GO，精确 SHA 的完整 CI [40496844800](https://github.com/itsoso/health-llm-driven/actions/runs/40496844800) 成功；发布 validate `40499788048` 成功。最终模拟器 Release 源码与候选的1055个 tracked mobile 文件相符；实际模拟器版本1.3.6、build 1，不冒充商店281包。登录、今日计划打开关闭、个人中心隐私页、登录云朵标识及桌面名称图标已实际验收。
+
+- 后端：受审发布 `40500052228` 的 backend job 成功；生产精确候选 SHA、`completed.json=SUCCEEDED`、健康分60/60、公共 health 200、匿名 POST `/api/v1/agent/send` 401 独立回读通过。截图中的剩菜续接修复已部署；没有回放或修改截图中的真实健康记录。
+- Web：无备份发布操作 `9a93b39ad8c546e8a5ee8379708cd459` 的持久回执为 `FRONTEND_SUCCEEDED`，artifact digest `92e9fbc11a01347304b5bf4594cfad76671597f2c76ace26670d73a27db6aa2b`；公共隐私和连接页含新名称、无旧名称，`/icon.png` 与候选文件逐字节相同。登录路由为客户端页面，初始 HTML 没有品牌文本，不据此声称完成该页文字视觉验收。
+- iOS：EAS build `a40a61f3-02db-4a88-a308-56884c53500b` 为 FINISHED、IOS、STORE、production，版本1.3.6（281），source SHA 与候选一致。下载的实际 IPA 名称为“小气候”，bundle `life.executor.health`，SDK `iphoneos26.5`；图标已视觉核对，App Store 分发描述文件 `get-task-allow=false`。IPA SHA256 为 `43a880c1a7f252ca75d17589fd25cc4ac4cc99e1911a3d7fd5f39aeda1eec356`。
+- 上传：submission `74009f8c-7450-4ac1-a73b-7a57fc919539` 返回 ERRORED/UNKNOWN_ERROR，原 workflow 的 testflight、release-result 失败记录保留，没有重建、重传或清消费标记。Apple API 独立确认 ASC build `bba28f43-cc87-429b-a23f-0babcdb98245` 为 VALID，1.3.6（281）处于 `IN_BETA_TESTING`，已在 `Team (Expo)` 内部组；外部测试仍为 `READY_FOR_BETA_SUBMISSION`。这是 Apple 实际接收和内部可用证据，不把原失败 workflow 改称成功。
+- 商店资料：API 保存新名称、说明与 Review Notes；TestFlight 更新说明已保存。1.3.6 草稿关联281，仍 `PREPARE_FOR_SUBMISSION`、MANUAL；没有提交 App Review，也未公开发布新商店版本。
+- 收尾：后端和 Web 服务 active，业务租约已释放；本次受限 SSH 授权已精确撤销、loopback 私钥销毁，长期复用的 cloud secret 与 Expo token 保留。原部署、上传和失败审计均保留，没有创建备份。
+
+实际证据汇总：`docs/reviews/2026-10-27-xiaoqihou-release-receipt.json`。相关测试集合存在重叠，不能相加为总测试数。
+
+## 正式 App Review 的剩余阻断
+
+G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workflow 汇合仍失败。G6：BLOCK，未声称完整商店上架。
+
+1. 上传工具错误与 Apple 接收成功需要按受审流程收尾，不能重新 dispatch 原上传或据此绕过正式送审闸。
+2. 审核账号可以登录且有演示数据，但固定简报不是默认最新会话，端到端 live-demo 检查失败。历史 reset 为已接受 UNKNOWN，已有行政收尾明确 `demo_verified=false`、`reset_authorized=false`、`retry_authorized=false`；未重跑 reset 或旧简报修复。新的数据维护须遵循 `docs/governance/deploy.md` 中独立明确授权和受审新 attempt 的要求。
+3. 新候选完整模拟器验收和人工审核后的截图材料尚未齐备；硬件不支持项继续依模拟器替代验收规范记录，不伪造真机通过。
+4. 用户要求通过 API 构建和发布，已按此执行；当前隐私问卷发布状态、医疗器械声明及合同仍未取得完整当前证据，不要求用户再次网页登录，也不将其记为通过。
+
+商标申请与上述发布无关，仍未申请或缴费。
+
+
+## 2026-10-27 送审继续及最新范围
+
+用户明确要求完成后提交 App Store 审核，并确认当前隐私问卷（含语音、照片、位置）已发布、医疗器械声明 No 已保存、Apple 合同有效。公开 ASC OpenAPI 4.5.1 没有完整可读的上述状态，分别保留用户确认来源，不能伪称 API 回读。
+
+用户在“解决问题”任务追加左上角图标与剩菜流程优化，并明确要求协调；已读取该任务原始用户消息核实。该任务独占剩菜后端实现及安全审查，本任务独占聊天头图标及统一发布。281 / 8f 是已交付旧候选；新改动汇合并重新验证后才冻结新的送审候选，不重复上传281，不并发部署。
+
+聊天头改用适合28pt的代码矢量云朵/暖色日光，移除小尺寸圆底、脸部细节与idle状态点；桌面及大头像资源不变。现有ChatHeader、EmptyStateHome共19项通过，Mobile TypeScript通过。新包模拟器视觉验收待执行。
+
+审核账号新固定维护正在准备：`xiaoqihou-fixed-briefing-v1`，以当前8f生产代码、固定fixture哈希和新的精确CI操作者为边界，仅插入一条会话及两条夹具消息；旧数据不修改、不删除、不归一化时间。原279 UNKNOWN与两次未进入数据库写入的记录不变。独立目录、父子进程和锁证明、原子业务租约、资料快照、显式事务及提交后只读校验都必须通过；已有标识或任意不确定结果禁止重试。尚未执行生产写入，须待完整测试、独立审查、精确CI及新鲜inspect后取得该具体attempt的独立授权。

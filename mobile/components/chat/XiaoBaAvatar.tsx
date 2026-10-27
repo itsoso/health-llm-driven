@@ -1,5 +1,6 @@
 import React from 'react';
 import { Image, StyleSheet, View, ViewStyle } from 'react-native';
+import Svg, { Circle, Path } from 'react-native-svg';
 
 import {
   revaColors as C,
@@ -22,11 +23,13 @@ export default function XiaoBaAvatar({
   size = 32,
   state = 'idle',
   label = '小气候形象',
+  compact = false,
   style,
 }: {
   size?: number;
   state?: XiaoBaAvatarState;
   label?: string;
+  compact?: boolean;
   style?: ViewStyle;
 }) {
   const radius = size / 2;
@@ -36,13 +39,26 @@ export default function XiaoBaAvatar({
       accessibilityRole="image"
       accessibilityLabel={label}
       style={[
-        styles.avatar,
+        compact ? styles.compactAvatar : styles.avatar,
         { width: size, height: size, borderRadius: radius },
         style,
       ]}
     >
-      <Image source={BRAND_ICON} style={{ width: size, height: size }} resizeMode="cover" accessible={false} />
-      <View
+      {compact ? (
+        <Svg width={size} height={size} viewBox="0 0 28 28" accessible={false}>
+          <Circle cx="19.5" cy="8.5" r="4.5" fill="#E7B879" />
+          <Path
+            d="M8.2 21.1a5.2 5.2 0 0 1-.7-10.35 6.8 6.8 0 0 1 12.9 1.35h.3a4.5 4.5 0 0 1 0 9H8.2Z"
+            fill="#E0F0E8"
+            stroke={C.green700}
+            strokeWidth={1.65}
+            strokeLinejoin="round"
+          />
+        </Svg>
+      ) : (
+        <Image source={BRAND_ICON} style={{ width: size, height: size }} resizeMode="cover" accessible={false} />
+      )}
+      {!compact && <View
         style={[
           styles.statusDot,
           {
@@ -54,12 +70,16 @@ export default function XiaoBaAvatar({
             width: Math.max(6, size * 0.18),
           },
         ]}
-      />
+      />}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  compactAvatar: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   avatar: {
     alignItems: 'center',
     justifyContent: 'center',

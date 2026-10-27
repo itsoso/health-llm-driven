@@ -67,7 +67,7 @@ export default function ChatHeader({
             <Ionicons name="chevron-back" size={21} color={C.ink1} />
           </Pressable>
         ) : (
-          <XiaoBaAvatar size={22} />
+          <XiaoBaAvatar size={28} compact />
         )}
         <LlmModelPicker
           canSelectModel={canSelectModel}

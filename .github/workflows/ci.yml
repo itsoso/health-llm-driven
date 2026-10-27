@@ -440,6 +440,8 @@ jobs:
           scripts/test_review_demo_briefing_repair.py
           scripts/test_review_briefing_unstarted_closure.py
           scripts/test_trusted_review_briefing_repair.py
+          scripts/test_review_xiaoqihou_briefing.py
+          scripts/test_trusted_xiaoqihou_briefing.py
           scripts/test_admin_key_pause.py
           scripts/test_recover_contained_services.py
           scripts/test_dinner_guard_recovery.py
@@ -602,6 +604,11 @@ jobs:
         env:
           REVA_REVIEW_CLOSURE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
         run: python -m pytest -q --noconftest --no-cov scripts/test_review_maintenance_retirement.py -k postgres
+
+      - name: Verify fresh Xiaoqihou briefing PostgreSQL boundary
+        env:
+          REVA_REVIEW_CLOSURE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --noconftest --no-cov scripts/test_review_xiaoqihou_briefing.py scripts/test_trusted_xiaoqihou_briefing.py
 
       - name: Verify old-target rollback closure PostgreSQL boundary
         env:

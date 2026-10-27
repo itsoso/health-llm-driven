@@ -1,0 +1,268 @@
+{
+  "candidate_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+  "timestamp": "2026-10-27T12:22:03.286598+00:00",
+  "status": "backend_web_live_testflight_internal_live_app_review_blocked",
+  "safety_review": {
+    "verdict": "GO",
+    "reviewer": "xiaoqihou_release_rereview",
+    "scope_base": "12edbb30e9bf30247dbcb2ac6635e3fee322754a",
+    "prior_no_go_preserved": true,
+    "final_ui_delta": "GO"
+  },
+  "tests": {
+    "semantics_pass": 3589,
+    "backend_affected_initial_pass": 5836,
+    "backend_initial_failures_fixed": 2,
+    "backend_fix_combination_pass": 266,
+    "mobile_related_suites": 42,
+    "web_pass": 90,
+    "watch_pass": 63,
+    "postgres_leftover_pass": 59,
+    "postgres_integration_prior_pass": 49,
+    "final_leftover_pass": 60,
+    "independent_safety_pass": 119,
+    "independent_clarifier_pass": 6,
+    "release_helpers_pass": 92,
+    "release_preflight_pass": 56,
+    "api_type_drift": "passed",
+    "typecheck_mobile_web": "passed",
+    "design_check": "passed",
+    "note": "Overlapping test sets; do not sum counts.",
+    "login_final_pass": 48,
+    "cache_ci_fix_pass": 106
+  },
+  "store": {
+    "app_id": "6763569720",
+    "draft_name": "小气候",
+    "draft_description_old_brand_remaining": false,
+    "public_release": false,
+    "new_native_build": "281",
+    "demo_briefing_gate": "blocked: fixed briefing is not default latest conversation",
+    "review_notes_old_name_remaining": false,
+    "version": "1.3.6",
+    "eas_build_id": "a40a61f3-02db-4a88-a308-56884c53500b",
+    "asc_build_id": "bba28f43-cc87-429b-a23f-0babcdb98245",
+    "processing_state": "VALID",
+    "internal_build_state": "IN_BETA_TESTING",
+    "external_build_state": "READY_FOR_BETA_SUBMISSION",
+    "internal_group": "Team (Expo)",
+    "formal_submission": false,
+    "ipa": {
+      "ipa_sha256": "43a880c1a7f252ca75d17589fd25cc4ac4cc99e1911a3d7fd5f39aeda1eec356",
+      "bytes": 25243412,
+      "apps": [
+        {
+          "path": "Payload/app.app/Info.plist",
+          "CFBundleIdentifier": "life.executor.health",
+          "CFBundleDisplayName": "小气候",
+          "CFBundleShortVersionString": "1.3.6",
+          "CFBundleVersion": "281",
+          "DTSDKName": "iphoneos26.5",
+          "DTXcode": "2660",
+          "MinimumOSVersion": "16.0",
+          "ITSAppUsesNonExemptEncryption": false
+        }
+      ],
+      "icon_paths": [
+        "/tmp/xiaoqihou-281-icon-AppIcon60x60@2x.png",
+        "/tmp/xiaoqihou-281-icon-AppIcon76x76@2x~ipad.png"
+      ],
+      "icon_visual_check": "passed",
+      "distribution_profile": "App Store",
+      "get_task_allow": false,
+      "healthkit_entitlement": true
+    },
+    "remaining_app_review_gates": [
+      "workflow release-result failure remains unreconciled for formal submission",
+      "demo fixed briefing not default latest conversation; prior reset UNKNOWN retired without retry authorization",
+      "candidate screenshot and full simulator acceptance evidence incomplete",
+      "current privacy publication, regulated medical device declaration and agreements not verified through available API"
+    ],
+    "draft_metadata": {
+      "draft_build": {
+        "type": "builds",
+        "id": "bba28f43-cc87-429b-a23f-0babcdb98245"
+      },
+      "submitted_for_review": false
+    },
+    "testflight_notes_saved": true
+  },
+  "simulator": {
+    "source_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+    "root": "/tmp/xiaoqihou-simulator-803f73821",
+    "configuration": "Release",
+    "simulator_build_number": "1",
+    "native_tree": "7e4af09e1cdcf686c06bfa4a68f1cfd634c21ecd",
+    "tracked_mobile_files_verified": 1055,
+    "build_state": "built_installed",
+    "app_path": "/Users/thomas/Library/Developer/Xcode/DerivedData/app-doprdiwlgiptgjerdnsxkwcrcvdh/Build/Products/Release-iphonesimulator/app.app",
+    "bundle_id": "life.executor.health",
+    "display_name": "小气候",
+    "actual_version": "1.3.6",
+    "actual_build": "1",
+    "main_jsbundle_sha256": "aff0d2b4a3039d71449bf3cfc209b110fb44cbecf838eb9a5e32f4a9397d1bcc",
+    "checks": {
+      "demo_account_login": "passed",
+      "today_context_open_dismiss": "passed",
+      "personal_center_privacy_policy": "passed",
+      "new_login_cloud_icon": "passed"
+    },
+    "checked_at": "2026-10-27T11:45:44.873699+00:00",
+    "launcher_name_icon": "passed",
+    "screenshots": [
+      "/tmp/xiaoqihou-final-login.png",
+      "/tmp/xiaoqihou-final-home-icon.png"
+    ]
+  },
+  "production_changes": true,
+  "ci": {
+    "run_id": 40496844800,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40496844800",
+    "status": "completed",
+    "conclusion": "success"
+  },
+  "live_llm_final_sha": {
+    "sha": "e8be03fbc44a7cda01c448aaa2bc8a1e1d3bf66b",
+    "status": "passed",
+    "orchestrator_pass": 5,
+    "average": 0.88,
+    "production_backend_unchanged_at_candidate": true
+  },
+  "local_test_logs": [
+    "/tmp/xiaoqihou-final-leftover.log",
+    "/tmp/xiaoqihou-caption-postgres-v2.log",
+    "/tmp/xiaoqihou-live-e8be03fbc.log"
+  ],
+  "ci_history": [
+    {
+      "run_id": 40494169829,
+      "sha": "e8be03fbc44a7cda01c448aaa2bc8a1e1d3bf66b",
+      "conclusion": "failure",
+      "failure": "legacy cache namespace assertion"
+    },
+    {
+      "run_id": 40496319790,
+      "sha": "5aa3941fff8e202373fbd361921d31d692729523",
+      "status": "cancellation_requested",
+      "reason": "superseded by login logo fix before any release"
+    }
+  ],
+  "credential_refresh": {
+    "state": "CREDENTIAL_REFRESHED",
+    "record": "/var/lib/reva-github-api/refresh/xiaoqihou-20261027-5aa3941"
+  },
+  "authorization_preflight": {
+    "initial_result": "blocked before retirement intent",
+    "cause": "old authorization had not yet been revoked",
+    "old_sha": "12edbb30e9bf30247dbcb2ac6635e3fee322754a",
+    "old_revoke": "REVOKED",
+    "old_loopback_key": "DESTROYED",
+    "rotation": "INSTALLED"
+  },
+  "release_workflow": {
+    "validate_run_id": 40499788048,
+    "validate_conclusion": "success",
+    "release_run_id": 40500052228,
+    "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40500052228",
+    "status": "completed",
+    "conclusion": "failure",
+    "failed_stage": "EAS submit returned UNKNOWN_ERROR; Apple independently confirms valid received build",
+    "submission_id": "74009f8c-7450-4ac1-a73b-7a57fc919539"
+  },
+  "backend": {
+    "candidate_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+    "state": "SUCCEEDED",
+    "health_score": "60/60",
+    "independent_revision_match": true,
+    "public_health_http": 200,
+    "unauthenticated_agent_send_http": 401
+  },
+  "web": {
+    "artifact": {
+      "artifact_digest": "92e9fbc11a01347304b5bf4594cfad76671597f2c76ace26670d73a27db6aa2b",
+      "binding": {
+        "artifact_id": "9a93b39ad8c546e8a5ee8379708cd459",
+        "frontend_tree": "5363a2fe431d4bc0a447b6ade4c8ec09870ceb1a",
+        "package_lock_sha256": "3f20a42c83d2d3975862dce2e451504c9758665fdff543729396091a28ac601f",
+        "public_build_env": {
+          "BACKEND_URL": "http://127.0.0.1:8000"
+        },
+        "publisher_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+        "recipe_sha256": "e2fe645904643cdc0518c3bef6c7ac5a4aa5e50f179ad13338b0243bbbab4195",
+        "schema_version": 1,
+        "toolchain": {
+          "libc": [
+            "glibc",
+            "2.35"
+          ],
+          "machine": "x86_64",
+          "node": "v20.19.6",
+          "npm": "10.8.2",
+          "release": "5.15.0-161-generic",
+          "system": "Linux"
+        }
+      },
+      "build_log_sha256": "9c84d8432409d887ff737f63930c939f2952c65b8434a70c51a2b909fb92f8c1",
+      "intent_sha256": "ddbc851302390ecee63226bdb4400e7b00d9d760eed6ae809b06cf12b397ea99",
+      "state": "FRONTEND_ARTIFACT_READY"
+    },
+    "publication": {
+      "artifact_digest": "92e9fbc11a01347304b5bf4594cfad76671597f2c76ace26670d73a27db6aa2b",
+      "backups_digest": {},
+      "frontend_tree": "5363a2fe431d4bc0a447b6ade4c8ec09870ceb1a",
+      "kind": "frontend-publication",
+      "operation_id": "9a93b39ad8c546e8a5ee8379708cd459",
+      "production_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "proof_sha256": {
+        "before.json": "c22c97a644dc35c6b39dca8b20260824eb66706ec2803262c07ef5251230243c",
+        "build.log": "9c84d8432409d887ff737f63930c939f2952c65b8434a70c51a2b909fb92f8c1",
+        "install-started.json": "86c20e1976990424c6f0250cd28d70f028878bbf2c726a93d8ab513c3ad0c1a4",
+        "verified.json": "fd66fb8a43877d9d413dfb2070f7bab4334bf302c02c0142be4d4c57b5987ed4"
+      },
+      "publication_policy": "no-backup-v1",
+      "publisher_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "state": "FRONTEND_SUCCEEDED"
+    },
+    "public_probes": [
+      {
+        "path": "/login",
+        "status": 200,
+        "new_name_present": false,
+        "old_name_present": false
+      },
+      {
+        "path": "/privacy",
+        "status": 200,
+        "new_name_present": true,
+        "old_name_present": false
+      },
+      {
+        "path": "/connect/health",
+        "status": 200,
+        "new_name_present": true,
+        "old_name_present": false
+      },
+      {
+        "path": "/icon.png",
+        "status": 200,
+        "sha256": "e63daad1a321f01a85e2e218382eeebd7046810410fc9deb52b15bd2ae8b32a3",
+        "matches_candidate": true
+      }
+    ]
+  },
+  "authorization_cleanup": {
+    "state": "REVOKED_LOOPBACK_PRIVATE_KEY_DESTROYED",
+    "persistent_cloud_secret_preserved": true,
+    "long_term_expo_token_preserved": true,
+    "business_lease_released": true,
+    "backend_frontend_active": true
+  },
+  "stage_timing": {
+    "build_created_utc": "2026-10-27T11:59:21.866Z",
+    "build_finished_utc": "2026-10-27T12:05:59.603Z",
+    "asc_uploaded_utc": "2026-10-27T12:08:35Z",
+    "workflow_start_utc": "2026-10-27T11:57:44Z",
+    "backend_job_completed_utc": "2026-10-27T12:02:49Z",
+    "workflow_completed_utc": "2026-10-27T12:09:14Z"
+  }
+}
