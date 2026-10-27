@@ -1,5 +1,14 @@
 # 照片营养缺失追问与汇总修复
 
+| 字段 | 值 |
+|---|---|
+| 状态 | shipping |
+| 当前阶段 | S6 主干已整合，等待精确 CI、后端部署与适用 OTA |
+
+## G1 准入
+
+裁决：PASS。修复截图所示的既有健康查询或原记录补算入口，不增加诊断、自动写入或跨用户读取权限。
+
 - 日期：2026-10-27
 - Controller：reva-workflow-router quick_fix；overlay：safety-gate；System Map 按需查询。
 - 状态：本地实现与回归；首轮独立审查 NO-GO 已修复；新固定 diff 独立重审 GO；PostgreSQL 验证通过。发布受主干分叉阻断。
@@ -39,3 +48,10 @@
 ## 发布门禁
 
 起始 main 相对 origin/main ahead 11 / behind 36，且有其他任务未提交文件。仅提交本任务路径，不 push、merge、deploy 或 OTA。按 AGENTS.md §7 及 deploy 规范，须先恢复可验证目标主干、精确 SHA CI、发布锁/回执与完整集成闸。独立 safety GO 不豁免这些条件。不创建备份或回退副本。
+
+
+## 本次部署续接（2026-10-27）
+
+用户明确要求“部署和OTA”。本地已将远端 `b99d631023d6ced7762e89611f403efde8022faa` 整合为 `6b8c66628fc68f27e36eeb99b461acb30707d76b`；唯一业务冲突保留体重与睡眠的两条独立范围说明，地图重新生成，未提交工作摘要逐一保持一致。此前“分叉、未合并”的描述为历史断点；当前仍未部署。
+
+整合后相关后端274项、移动端68项通过；独立 integrated_release_safety 对上述精确候选累计diff给出GO，独立后端97+158项、移动端52项通过。System Map、secret scan通过。此次补齐本任务Dossier的可解析状态与G1裁决，随后重新运行一致性闸；不以文档修复替代精确SHA完整CI。生产只读核对为4f8fffed3、三个服务active、发布lease不存在；版本授权、trusted后端validate/deploy及OTA validate/publish待执行。
