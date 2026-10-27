@@ -43,11 +43,11 @@ jest.mock('../services/auth', () => ({
 import LoginScreen from '../app/login';
 
 describe('LoginScreen', () => {
-  it('uses 小巴健康 and self-service registration language', () => {
+  it('uses 小气候 and self-service registration language', () => {
     const { getByText, queryByText } = render(<LoginScreen />);
 
-    expect(getByText('小巴健康')).toBeTruthy();
-    expect(getByText('登录小巴')).toBeTruthy();
+    expect(getByText('小气候')).toBeTruthy();
+    expect(getByText('登录小气候')).toBeTruthy();
     expect(getByText('新用户验证手机号后即可注册')).toBeTruthy();
     expect(queryByText('登录 / 注册')).toBeNull();
     expect(queryByText('HealthPilot')).toBeNull();

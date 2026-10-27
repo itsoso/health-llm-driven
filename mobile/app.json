@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "小巴健康",
+    "name": "小气候",
     "slug": "health-pilot",
     "version": "1.3.6",
     "orientation": "portrait",
@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#D57953"
+      "backgroundColor": "#FBF8EF"
     },
     "ios": {
       "supportsTablet": false,
@@ -20,7 +20,7 @@
         "com.apple.developer.healthkit": true
       },
       "infoPlist": {
-        "CFBundleDisplayName": "小巴健康",
+        "CFBundleDisplayName": "小气候",
         "UISupportedInterfaceOrientations": [
           "UIInterfaceOrientationPortrait"
         ],
@@ -192,7 +192,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "backgroundColor": "#FBF8EF"
       },
       "predictiveBackGestureEnabled": false,
       "package": "life.executor.health"

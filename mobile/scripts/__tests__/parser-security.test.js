@@ -73,7 +73,7 @@ describe('build parser security regressions', () => {
       const assert = require('node:assert/strict');
       const imported = require(${JSON.stringify(moduleName)});
       const plist = imported.default || imported;
-      const input = { CFBundleDisplayName: '小巴健康', CFBundleIdentifier: 'life.executor.health',
+      const input = { CFBundleDisplayName: '小气候', CFBundleIdentifier: 'life.executor.health',
         UIRequiresFullScreen: true, UIDeviceFamily: [1], NSAppTransportSecurity: { NSAllowsArbitraryLoads: false } };
       // Expo deliberately returns null-prototype dictionaries; compare their data.
       assert.deepEqual(JSON.parse(JSON.stringify(plist.parse(plist.build(input)))), input);

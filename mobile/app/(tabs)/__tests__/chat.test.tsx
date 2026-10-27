@@ -210,7 +210,7 @@ jest.mock('../../../components/chat/ChatBubble', () => {
             onPress={() => onShareLongImage?.(
               { id: item.id, role: item.role, content: item.content, imageUris: item.imageUris },
               'wechat',
-              '— 小巴健康',
+              '— 小气候',
             )}
           />
           <Pressable
@@ -218,7 +218,7 @@ jest.mock('../../../components/chat/ChatBubble', () => {
             onPress={() => onShareLongImage?.(
               { id: item.id, role: item.role, content: item.content, imageUris: item.imageUris },
               'xiaohongshu',
-              '小巴健康给我的今日建议',
+              '小气候给我的今日建议',
             )}
           />
         </>
@@ -486,8 +486,8 @@ describe('ChatScreen', () => {
   });
 
   it.each([
-    ['wechat', 'mock-wechat-share-share-assistant', '— 小巴健康'],
-    ['xiaohongshu', 'mock-xiaohongshu-share-share-assistant', '小巴健康给我的今日建议'],
+    ['wechat', 'mock-wechat-share-share-assistant', '— 小气候'],
+    ['xiaohongshu', 'mock-xiaohongshu-share-share-assistant', '小气候给我的今日建议'],
   ] as const)('shares a complete reply as a %s long image', async (target, label, caption) => {
     mockMessages = [{
       id: 'share-assistant',

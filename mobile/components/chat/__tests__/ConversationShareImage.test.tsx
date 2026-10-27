@@ -45,16 +45,16 @@ describe('ConversationShareImage', () => {
     expect(view.UNSAFE_getByType(MarkdownText).props.palette).toBe(colors);
   });
 
-  it('uses 小巴健康 on every exported brand surface', () => {
+  it('uses 小气候 on every exported brand surface', () => {
     const view = render(
       <ConversationShareImage
         messages={[{ id: 'assistant-1', role: 'assistant', content: '今晚早点休息。' }]}
       />,
     );
 
-    expect(view.getByText('小巴健康 · 对话摘录')).toBeTruthy();
-    expect(view.getByText('小巴健康')).toBeTruthy();
-    expect(view.getByText('小巴健康 · 你忠实的健康参谋')).toBeTruthy();
+    expect(view.getByText('小气候 · 对话摘录')).toBeTruthy();
+    expect(view.getByText('小气候')).toBeTruthy();
+    expect(view.getByText('小气候 · 你忠实的健康参谋')).toBeTruthy();
     expect(view.queryByText('小巴')).toBeNull();
   });
 

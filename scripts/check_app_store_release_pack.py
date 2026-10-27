@@ -68,7 +68,7 @@ OFFICIAL_REFERENCE_URLS = [
     "https://developer.apple.com/app-store/review/guidelines/",
 ]
 
-EXPECTED_APP_NAME = "小巴健康"
+EXPECTED_APP_NAME = "小气候"
 # Apple distinguishes this byte limit from the description's character limit:
 # https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information
 REVIEW_NOTES_MAX_BYTES = 4000

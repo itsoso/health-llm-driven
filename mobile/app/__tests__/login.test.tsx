@@ -108,7 +108,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
   it('explains self-registration and defaults the phone field to +86', () => {
     const view = render(<LoginScreen />);
 
-    expect(view.getByText('登录小巴')).toBeTruthy();
+    expect(view.getByText('登录小气候')).toBeTruthy();
     expect(view.getByText('新用户验证手机号后即可注册')).toBeTruthy();
     expect(view.queryByText('登录 / 注册')).toBeNull();
     expect(view.getByLabelText('手机号输入框').props.value).toBe('+86 ');
@@ -219,7 +219,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     await waitFor(() => expect(view.getByLabelText('验证码输入框')).toBeTruthy());
     fireEvent.changeText(view.getByLabelText('验证码输入框'), '123456');
     fireEvent.press(view.getByText('验证并登录'));
-    await waitFor(() => expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy());
+    await waitFor(() => expect(view.getByText('注册成功，欢迎加入小气候')).toBeTruthy());
     expect(completed).toHaveBeenCalledTimes(1);
     expect(mockCompleteInvitedRegistration).not.toHaveBeenCalled();
     fireEvent.press(view.getByText('开始设置我的健康档案'));
@@ -320,7 +320,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
     fireEvent.press(view.getByText('完成注册'));
 
     await waitFor(() => expect(mockCompleteInvitedRegistration).toHaveBeenCalledWith({ manualCode: 'ABCD2E7K' }));
-    expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy();
+    expect(view.getByText('注册成功，欢迎加入小气候')).toBeTruthy();
     fireEvent.press(view.getByText('开始设置我的健康档案'));
     expect(mockReplace).toHaveBeenCalledWith('/reva-onboarding');
   });
@@ -334,7 +334,7 @@ describe('LoginScreen invitation-gated phone auth', () => {
       />,
     );
 
-    expect(view.getByText('注册成功，欢迎加入小巴')).toBeTruthy();
+    expect(view.getByText('注册成功，欢迎加入小气候')).toBeTruthy();
     fireEvent.press(view.getByText('开始设置我的健康档案'));
     expect(startOnboarding).toHaveBeenCalledTimes(1);
   });

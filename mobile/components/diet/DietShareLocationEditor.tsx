@@ -109,7 +109,7 @@ export function DietShareLocationEditor({ initialValue, recordDate, onConfirm, o
       <Text style={styles.help}>地点可手动填写，确认后才公开到图片和文字。仅用于本次分享，不修改饮食记录或足迹。</Text>
       {available && (!consent ? <View style={styles.notice}>
         <Text style={styles.label}>使用高德地点查询</Text>
-        <Text style={styles.help}>同意后，小巴健康将经服务器向高德地图发送本次精确坐标（定位时）或搜索词（搜索时），用于查找地点。我们不保存这些查询内容。不授权也可手动填写，不会后台定位。</Text>
+        <Text style={styles.help}>同意后，小气候将经服务器向高德地图发送本次精确坐标（定位时）或搜索词（搜索时），用于查找地点。我们不保存这些查询内容。不授权也可手动填写，不会后台定位。</Text>
         <Pressable accessibilityRole="button" accessibilityLabel="同意本次高德查询" onPress={allow} style={styles.primary}>
           <Text style={styles.primaryText}>{isToday && !edited.current ? '同意并查找当前位置' : '同意本次查询'}</Text>
         </Pressable>

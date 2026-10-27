@@ -19,7 +19,7 @@ const zh: Record<string, string> = {
   'tab.record': '记录',
 
   // Lock / auth
-  'lock.title': '小巴健康',
+  'lock.title': '小气候',
   'lock.unlock': '解锁',
 
   // Error fallback

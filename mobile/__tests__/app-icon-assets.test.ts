@@ -23,13 +23,13 @@ function readPng(configPath: string) {
 }
 
 describe('app icon assets', () => {
-  it('keeps the shared Mac and Mobile brand icon wired to every launcher surface', () => {
+  it('keeps the 小气候 brand icon wired to every launcher surface', () => {
     const expo = appJson.expo;
 
     expect(expo.icon).toBe('./assets/images/icon.png');
     expect(expo.android.adaptiveIcon.foregroundImage).toBe('./assets/images/adaptive-icon.png');
     expect(expo.splash.image).toBe('./assets/images/splash-icon.png');
-    expect(expo.splash.backgroundColor).toBe('#D57953');
+    expect(expo.splash.backgroundColor).toBe('#FBF8EF');
   });
 
   it('keeps canonical and adaptive launcher art byte-identical at 1024 px', () => {

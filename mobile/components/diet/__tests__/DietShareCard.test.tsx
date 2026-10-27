@@ -765,13 +765,13 @@ describe('DietShareSheet image and text behavior', () => {
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
       buildDietShareCaption(record, '7月11日'),
     ));
-    expect(buildDietShareCaption(record, '7月11日')).toContain('#小巴健康记录');
+    expect(buildDietShareCaption(record, '7月11日')).toContain('#小气候记录');
 
     fireEvent.press(view.getByRole('button', { name: '复制朋友圈文案' }));
     await waitFor(() => expect(Clipboard.setStringAsync).toHaveBeenCalledWith(
       buildDietShareMomentsCaption(record, '7月11日'),
     ));
-    expect(buildDietShareMomentsCaption(record, '7月11日')).not.toContain('#小巴健康记录');
+    expect(buildDietShareMomentsCaption(record, '7月11日')).not.toContain('#小气候记录');
   });
 
   it('compacts long food descriptions while keeping short captions unchanged', () => {

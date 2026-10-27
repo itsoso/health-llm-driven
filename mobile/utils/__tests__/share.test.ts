@@ -100,7 +100,7 @@ describe('sharePlainText', () => {
     jest.spyOn(Share, 'share').mockResolvedValueOnce({ action: Share.dismissedAction });
 
     const result = await sharePlainText({
-      title: '小巴健康 · 对话节选',
+      title: '小气候 · 对话节选',
       message: '这次没有真的分享出去',
     });
 
@@ -112,7 +112,7 @@ describe('sharePlainText', () => {
     jest.spyOn(Share, 'share').mockRejectedValueOnce(new Error('share sheet failed'));
 
     await expect(sharePlainText({
-      title: '小巴健康 · 对话节选',
+      title: '小气候 · 对话节选',
       message: '系统分享失败',
     })).rejects.toThrow('share sheet failed');
 
@@ -132,7 +132,7 @@ describe('shareAgentSelection', () => {
 
   it('sends only conversation and durable message ids to the Agent share API', async () => {
     await shareAgentSelection({
-      title: '小巴健康 · 对话节选',
+      title: '小气候 · 对话节选',
       conversationId: 77,
       messageIds: [41, 42],
     });
@@ -153,7 +153,7 @@ describe('shareAgentSelection', () => {
 
   it('fails before network access when durable identity is missing', async () => {
     await expect(shareAgentSelection({
-      title: '小巴健康 · 对话节选',
+      title: '小气候 · 对话节选',
       conversationId: 0,
       messageIds: [41],
     })).rejects.toThrow('selected_agent_share_not_durable');
@@ -174,15 +174,15 @@ describe('sharePlainCaption', () => {
 
   it('shares copy-ready text without creating a public url', async () => {
     await sharePlainCaption({
-      title: '小巴健康 · 小红书文案',
-      message: '今晚 23:00 前睡觉。\n#健康管理 #小巴健康',
+      title: '小气候 · 小红书文案',
+      message: '今晚 23:00 前睡觉。\n#健康管理 #小气候',
     });
 
     expect(api.post).not.toHaveBeenCalled();
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('今晚 23:00 前睡觉。\n#健康管理 #小巴健康');
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('今晚 23:00 前睡觉。\n#健康管理 #小气候');
     expect(Share.share).toHaveBeenCalledWith({
-      title: '小巴健康 · 小红书文案',
-      message: '今晚 23:00 前睡觉。\n#健康管理 #小巴健康',
+      title: '小气候 · 小红书文案',
+      message: '今晚 23:00 前睡觉。\n#健康管理 #小气候',
     });
   });
 });
@@ -238,10 +238,10 @@ describe('shareLongImage', () => {
   ] as const)('opens the %s image share sheet and copies the companion text', async (target, dialogTitle) => {
     await shareLongImage('/tmp/reva-conversation-long-image.png', {
       target,
-      caption: '— 小巴健康',
+      caption: '— 小气候',
     });
 
-    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('— 小巴健康');
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith('— 小气候');
     expect(Sharing.shareAsync).toHaveBeenCalledWith(
       'file:///tmp/reva-conversation-long-image.png',
       {
@@ -257,7 +257,7 @@ describe('shareLongImage', () => {
 
     await shareLongImage('/tmp/reva-conversation-long-image.png', {
       target: 'xiaohongshu',
-      caption: '— 小巴健康',
+      caption: '— 小气候',
     });
 
     expect(Sharing.shareAsync).toHaveBeenCalledTimes(1);

@@ -1,5 +1,5 @@
-export const APP_DISPLAY_NAME = '小巴健康';
-export const ASSISTANT_REPLY_NAME = '小巴健康';
+export const APP_DISPLAY_NAME = '小气候';
+export const ASSISTANT_REPLY_NAME = '小气候';
 
 // 社交平台品牌色(分享入口图标用)。放在 brand.ts(design token 闸豁免文件)—— 这两个
 // 是外部平台官方品牌色,不属 revaTheme 语义色,但组件里裸写 hex 会触发 design:check

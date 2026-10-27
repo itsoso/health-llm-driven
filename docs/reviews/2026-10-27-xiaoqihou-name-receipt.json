@@ -1,0 +1,15 @@
+{
+  "app_id": "6763569720",
+  "bundle_id": "life.executor.health",
+  "app_info_id": "0beb0b07-4a48-4686-b437-1b700f836a87",
+  "localization_id": "d70e5af0-72d9-4e38-ba10-f753dac0f7ad",
+  "locale": "en-US",
+  "requested_name": "小气候",
+  "scope": "editable App Store app-info name only; no review submission or public release",
+  "status": "name_saved_and_read_back",
+  "started_at": "2026-10-27T08:40:00.882256+00:00",
+  "verified_name": "小气候",
+  "verified_at": "2026-10-27T08:40:04.578998+00:00",
+  "public_release_verified": false,
+  "store_state": "PREPARE_FOR_SUBMISSION"
+}

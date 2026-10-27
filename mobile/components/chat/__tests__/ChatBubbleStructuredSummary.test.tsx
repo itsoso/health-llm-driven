@@ -309,7 +309,7 @@ describe('ChatBubble structured summary', () => {
 2. 饭后散步 10 分钟
 `);
 
-    expect(getByText('小巴健康')).toBeTruthy();
+    expect(getByText('小气候')).toBeTruthy();
     expect(getByTestId('assistant-metric-grid')).toBeTruthy();
     expect(getByTestId('assistant-action-card')).toBeTruthy();
     expect(getByText('睡眠')).toBeTruthy();
@@ -539,7 +539,7 @@ ${sectionTitle}
   it('promotes the assistant identity without changing the conclusion reading scale', () => {
     const { getByText, getByTestId } = renderBubble('今晚先补水 300ml，再散步 10 分钟。');
 
-    const label = getByText('小巴健康');
+    const label = getByText('小气候');
     const dot = getByTestId('assistant-conclusion-dot');
     const container = getByTestId('assistant-conclusion');
     const conclusion = getByText('今晚先补水 300ml，再散步 10 分钟。');
@@ -667,7 +667,7 @@ ${sectionTitle}
           imageUris: undefined,
         }),
         target,
-        expect.stringContaining('小巴健康'),
+        expect.stringContaining('小气候'),
       );
       expect(sharePlainText).not.toHaveBeenCalled();
       expect(sharePlainCaption).not.toHaveBeenCalled();
@@ -730,7 +730,7 @@ ${sectionTitle}
     expect(queryByText('继续追问')).toBeNull();
   });
 
-  it('shares assistant replies under the 小巴健康 brand', async () => {
+  it('shares assistant replies under the 小气候 brand', async () => {
     sharePlainText.mockResolvedValueOnce(undefined);
 
     const { getByLabelText, getByTestId } = renderBubble('今天先补水 300ml, 晚饭后散步 15 分钟。');
@@ -741,7 +741,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴健康 · 建议',
+        title: '小气候 · 建议',
       }));
     });
   });
@@ -757,15 +757,15 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴健康 · 小红书文案',
+        title: '小气候 · 小红书文案',
         message: expect.not.stringContaining('http'),
       }));
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('小巴健康给我的今日建议'),
+        message: expect.stringContaining('小气候给我的今日建议'),
       }));
       expect(sharePlainText).not.toHaveBeenCalled();
       expect(sharePlainCaption).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#健康管理 #生活方式改善 #小巴健康'),
+        message: expect.stringContaining('#健康管理 #生活方式改善 #小气候'),
       }));
     });
   });
@@ -785,10 +785,10 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('今天这餐被小巴健康认真记下来了'),
+        message: expect.stringContaining('今天这餐被小气候认真记下来了'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#饮食记录 #健康管理 #小巴健康'),
+        message: expect.stringContaining('#饮食记录 #健康管理 #小气候'),
       }));
     });
   });
@@ -924,7 +924,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴健康 · 饮食记录',
+        title: '小气候 · 饮食记录',
         message: expect.stringContaining('餐食记录 · 午餐'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -937,7 +937,7 @@ ${sectionTitle}
         message: expect.not.stringMatching(/今天|今日|识别置信度/),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴健康'),
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小气候'),
       }));
     });
   });
@@ -1094,7 +1094,7 @@ ${sectionTitle}
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        title: '小巴健康 · 饮食记录',
+        title: '小气候 · 饮食记录',
         message: expect.stringContaining('今日摄入 1040 kcal'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -1110,7 +1110,7 @@ ${sectionTitle}
         message: expect.stringContaining('今日策略'),
       }));
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
-        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小巴健康'),
+        message: expect.stringContaining('#小红书饮食日记 #朋友圈打卡 #小气候'),
       }));
     });
   });

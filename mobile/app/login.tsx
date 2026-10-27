@@ -336,7 +336,7 @@ export default function LoginScreen({
       <SafeAreaView style={styles.safe}>
         <View style={styles.successContainer}>
           <Ionicons name="checkmark-circle" size={72} color={c.brand} />
-          <Text style={styles.successTitle}>注册成功，欢迎加入小巴</Text>
+          <Text style={styles.successTitle}>注册成功，欢迎加入{APP_DISPLAY_NAME}</Text>
           {renderPrimaryButton(
             '开始设置我的健康档案',
             () => {
@@ -369,7 +369,7 @@ export default function LoginScreen({
               <Ionicons name="heart-circle" size={64} color={c.brand} />
             </View>
             <Text style={styles.brand}>{APP_DISPLAY_NAME}</Text>
-            <Text style={styles.title}>{showInvite ? '输入邀请码' : '登录小巴'}</Text>
+            <Text style={styles.title}>{showInvite ? '输入邀请码' : `登录${APP_DISPLAY_NAME}`}</Text>
             <Text style={styles.subtitle}>
               {showInvite
                 ? '请输入与当前手机号匹配的历史邀请码。'

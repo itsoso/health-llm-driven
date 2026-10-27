@@ -101,7 +101,7 @@ describe('app.config app links', () => {
     it('isolates package and launcher name and keeps the verified embedded bundle', () => {
       const config = configForVariant('preview', internalEnv);
       expect(config.android.package).toBe('life.executor.health.preview');
-      expect(config.name).toBe('小巴健康 Preview');
+      expect(config.name).toBe('小气候 Preview');
       expect(config.updates.enabled).toBe(false);
       expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
       expect(config.extra.release.capabilities.dailyJourney).toBe(false);
@@ -125,7 +125,7 @@ describe('app.config app links', () => {
 
     it('does not disable updates or rename existing production builds', () => {
       const config = configForVariant('production');
-      expect(config.name).toBe('小巴健康');
+      expect(config.name).toBe('小气候');
       expect(config.android.package).toBe('life.executor.health');
       expect(config.updates).toEqual(appJson.expo.updates);
     });
@@ -150,17 +150,17 @@ describe('app.config app links', () => {
     });
   });
 
-  it('uses 小巴健康 as the user-visible production app name', () => {
+  it('uses 小气候 as the user-visible production app name', () => {
     const config = configForVariant('production');
 
-    expect(config.name).toBe('小巴健康');
-    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康');
-    expect(APP_DISPLAY_NAME).toBe('小巴健康');
+    expect(config.name).toBe('小气候');
+    expect(config.ios?.infoPlist?.CFBundleDisplayName).toBe('小气候');
+    expect(APP_DISPLAY_NAME).toBe('小气候');
   });
 
-  it('keeps user-visible variant names aligned with 小巴健康', () => {
-    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康 Dev');
-    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小巴健康 Preview');
+  it('keeps user-visible variant names aligned with 小气候', () => {
+    expect(configForVariant('development').ios?.infoPlist?.CFBundleDisplayName).toBe('小气候 Dev');
+    expect(configForVariant('preview').ios?.infoPlist?.CFBundleDisplayName).toBe('小气候 Preview');
   });
 
   it('uses an explicit native build number for reproducible local release builds', () => {
