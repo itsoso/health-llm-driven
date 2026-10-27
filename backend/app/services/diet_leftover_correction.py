@@ -33,6 +33,15 @@ _REQUESTS = (
 )
 _QUANTITY = re.compile(r'(?:约|大约)?\s*(?P<amount>\d+(?:\.\d+)?|[一二两三四五六七八九十半])\s*(?P<unit>千克|公斤|毫升|克|碗|份|个|只|块|片|杯|盘|根|颗|粒|g|kg|ml|mL)')
 _NUMBERS = dict(zip('一二两三四五六七八九十半', (1,2,2,3,4,5,6,7,8,9,10,.5)))
+# Full source-caption grammar: unrecognized dates, subjects, cancellation and
+# hypothetical clauses cannot become today's owned photo by omission.
+_SOURCE_CAPTION = re.compile(
+    rf'(?:请)?(?:帮我|给我)?(?:记录(?:一下)?|这是)?(?:我(?:的)?)?(?:今天(?:的)?)?'
+    rf'(?:这餐|这一餐|这顿饭|这顿|{_MEAL}|今早|今中午|今晚)?(?:的)?'
+    r'(?:剩菜(?:照片)?|剩余(?:部分|这么多|照片)?|剩下(?:部分|这么多|照片)?|没吃完(?:的部分)?)'
+    r'(?:照片)?(?:请?(?:计算(?:一下|下)?|算(?:一下|下)?|估算(?:一下|下)?)'
+    r'(?:今天|今早|今中午|今晚)?(?:真正|实际)?(?:摄入量|吃下的份量))?'
+)
 
 
 def is_leftover_context(text):
@@ -186,11 +195,15 @@ def _clarified_photo(db, user_id, conversation_id, current_message_id, meal, now
     if (not timedelta(0) <= now - created <= timedelta(minutes=30)
             or created.astimezone(local_zone).date() != now.astimezone(local_zone).date()):
         return None
-    mentioned = {_MEALS[label] for label in _MEALS if label in source.content}
+    caption = re.sub(r'\n\[附图: 1张\]$', '', source.content).strip()
+    compact = re.sub(r'[\s，,。.!！]', '', caption)
+    if _requested_meal(caption) != meal and not _SOURCE_CAPTION.fullmatch(compact):
+        return None
+    mentioned = {_MEALS[label] for label in _MEALS if label in caption}
     for label, value in (('今晚','dinner'), ('今早','breakfast'), ('今中午','lunch')):
-        if label in source.content:
+        if label in caption:
             mentioned.add(value)
-    if (mentioned and mentioned != {meal}) or re.search(r'昨天|昨日|前天|明天|明日', source.content):
+    if mentioned and mentioned != {meal}:
         return None
     try:
         urls = json.loads(source.image_url)

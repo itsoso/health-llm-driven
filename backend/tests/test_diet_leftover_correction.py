@@ -173,9 +173,17 @@ def _clarification_followup(db, context, *, text='根据剩菜照片修正今天
 
 
 @pytest.mark.asyncio
-async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, context, monkeypatch):
+@pytest.mark.parametrize('caption,meal,request', [
+    ('记录这餐，剩余这么多，计算实际摄入量', 'lunch', '根据剩菜照片修正今天午餐记录'),
+    ('记录这餐 剩余这么多 计算下今晚真正摄入量', 'dinner', '根据剩菜照片修正今天晚餐记录'),
+    ('今天午餐的剩菜照片\n[附图: 1张]', 'lunch', '根据剩菜照片修正今天午餐记录'),
+])
+async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, context, monkeypatch, caption, meal, request):
     from app.services import diet_leftover_correction as subject
-    source, answer, current = _clarification_followup(db, context)
+    source, answer, current = _clarification_followup(db, context, text=request)
+    source.content = caption
+    context[4].meal_type = meal
+    db.commit()
     monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
     vision = AsyncMock(return_value={'comparable':True,'full_plate_visible':True,'items':[
         {'index':0,'remaining_fraction':.5,'confidence':.9},
@@ -186,6 +194,32 @@ async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, con
     assert result['cards'][0]['data']['adjust_record']['record_id'] == context[4].id
     assert context[4].calories == 450
     assert vision.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('caption', [
+    '记录昨晚晚餐剩余部分，计算实际摄入量', '上周晚餐剩余部分',
+    '2031-04-03晚餐剩菜照片', '4月3日晚餐剩菜照片',
+    '这是妈妈晚餐的剩菜照片', '朋友说这是晚餐剩菜照片',
+    '不要记录晚餐剩菜照片', '晚餐剩菜照片，算了取消',
+    '假如这是我的晚餐剩余照片', '记录我妈妈晚餐剩余部分，计算实际摄入量',
+    '记录2030年12月1日晚餐剩余部分，计算实际摄入量',
+])
+async def test_conflicting_source_caption_cannot_supply_todays_photo(db, context, monkeypatch, caption):
+    from app.services import diet_leftover_correction as subject
+    source, answer, current = _clarification_followup(db, context, text='根据剩菜照片修正今天晚餐记录')
+    source.content = caption
+    context[4].meal_type = 'dinner'
+    db.commit()
+    monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
+    vision = AsyncMock(return_value={'comparable':True,'full_plate_visible':True,'items':[
+        {'index':0,'remaining_fraction':.5,'confidence':.9},
+        {'index':1,'remaining_fraction':.25,'confidence':.9}]})
+    monkeypatch.setattr(subject, 'estimate_leftovers', vision)
+    result = await subject.build_leftover_proposal(db, context[0].id, context[1].id,
+        current.id, current.content, [], NOW, 'Asia/Shanghai')
+    assert result['cards'] == []
+    vision.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -231,7 +265,6 @@ async def test_text_followup_stream_stays_in_confirmation_flow(db, context, monk
             {'index':1,'remaining_fraction':.25,'confidence':.9}]}))
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, '_agent_kernel_reference_now', lambda:NOW)
-    monkeypatch.setattr(executor, '_should_preprocess_attached_images', lambda *_:True)
     async def no_generic(*_a, **_kw):
         pytest.fail('explicit leftover followup must not enter generic read/write inference')
     monkeypatch.setattr(executor, '_call_llm_stream', no_generic)
