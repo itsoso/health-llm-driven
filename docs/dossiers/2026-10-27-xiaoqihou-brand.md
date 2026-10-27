@@ -125,3 +125,7 @@ G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workfl
 在新exam表权限校验处失败，生产服务停止；本轮先准备固定前向恢复，细节见
 [通知详情Dossier](2026-10-18-notification-detail.md)。未重跑失败发布，也未提交App Store审核。
 恢复完成后仍须闭合失败身份、部署通知修复并验证最终用户路径，之后才执行已授权的API送审。
+
+2026-10-28 07:30 +08:00：统一候选61cd完整CI [40600694655](https://github.com/itsoso/health-llm-driven/actions/runs/40600694655)通过，canonical服务器源码已检出。首次凭据默认只读inspect在网络依赖关系检查拒绝；未mint新token、未消费凭据/恢复attempt，数据库与服务均未变。现场证明三个业务service因原runtime boot gate禁用而仅保留Before=shutdown.target，原验证器期望的multi-user.target隐式关系已消失。修正限于既有GateView的精确状态转换，原runtime/network证明代码保持不变，未知关系继续拒绝；重新固定候选、独立G4和CI后才推进。
+
+同日App Store API已选中原生282，替换并排序五张新截图，逐张COMPLETE回读；没有重复构建或上传。年龄分级、审核联系资料、免费价格及中美可用状态已读回；隐私/医疗声明/合同沿用用户明确确认。282与61cd源码/API兼容独立GO，旧客户端204项、隔离PostgreSQL兼容97项通过。新主干的备考UI不在冻结282内。模拟器CUA再次timeoutReached；旧截图不升级为新鲜验收，通知线上已知失败和最终送审仍待闭合。

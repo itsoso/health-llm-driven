@@ -220,6 +220,56 @@ def test_gate_projection_never_relaxes_network_guard_and_rejects_actual_drift():
     with pytest.raises(m.RecoveryError): view.is_enabled(m.UNITS[0])
 
 
+@pytest.mark.parametrize('unit', ['health-backend.service', 'celery-worker.service', 'celery-beat.service'])
+@pytest.mark.parametrize('damage', [None, 'extra_before', 'duplicate_before', 'enabled_edge',
+                                  'extra_after', 'missing_requires', 'guard_edge', 'enabled_early'])
+def test_armed_boot_gate_preserves_actual_network_guard_contract(tmp_path, unit, damage):
+    """systemd removes the implicit target edge when the proven gate disables units."""
+    from types import SimpleNamespace
+    fixture_path = Path(__file__).with_name('test_contained_recovery_proof.py')
+    spec = importlib.util.spec_from_file_location('exam_network_contract_fixture', fixture_path)
+    fixture = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(fixture)
+    proof, source, properties = fixture.network_guard_fixture(tmp_path)
+    m = module()
+    enabled = {name: 'disabled' for name in m.UNITS}
+    enabled['health-network-guard.service'] = 'enabled'
+    for name in m.UNITS[1:]:
+        properties[name]['Before'] = 'shutdown.target'
+    if damage == 'extra_before': properties[unit]['Before'] += ' unexpected.service'
+    if damage == 'duplicate_before': properties[unit]['Before'] += ' shutdown.target'
+    if damage == 'enabled_edge': properties[unit]['Before'] += ' multi-user.target'
+    if damage == 'extra_after': properties[unit]['After'] += ' unexpected.service'
+    if damage == 'missing_requires': properties[unit]['Requires'] = 'system.slice sysinit.target -.mount'
+    if damage == 'guard_edge': properties['health-network-guard.service']['Before'] += ' unexpected.service'
+    if damage == 'enabled_early': enabled[unit] = 'enabled'
+    raw = SimpleNamespace(show=lambda name, key: properties[name][key], is_enabled=lambda name: enabled[name])
+    proof.systemd = m.GateView(raw, dict.fromkeys(m.UNITS, 'enabled'), released=False)
+    if damage:
+        with pytest.raises((m.RecoveryError, fixture.proof.ProofError)):
+            proof._network_guard(source)
+    else:
+        assert proof._network_guard(source)['profile'] == 'network-guard-v1'
+        assert all(properties[name]['Before'] == 'shutdown.target' for name in m.UNITS[1:])
+
+
+@pytest.mark.parametrize('released', [False, True])
+def test_gate_target_projection_requires_matching_enablement_and_exact_edge(released):
+    from types import SimpleNamespace
+    m = module()
+    values = {'Before': 'multi-user.target shutdown.target' if released else 'shutdown.target'}
+    raw = SimpleNamespace(show=lambda unit, prop: values[prop],
+                          is_enabled=lambda unit: 'enabled' if released else 'disabled')
+    view = m.GateView(raw, dict.fromkeys(m.UNITS, 'enabled'), released=released)
+    assert sorted(view.show(m.UNITS[1], 'Before').split()) == ['multi-user.target', 'shutdown.target']
+    if released:
+        values['Before'] = 'shutdown.target'
+        assert view.show(m.UNITS[1], 'Before') == 'shutdown.target'
+    else:
+        values['Before'] = 'multi-user.target shutdown.target'
+        with pytest.raises(m.RecoveryError): view.show(m.UNITS[1], 'Before')
+
+
 def test_actual_runtime_installed_validation_is_read_only_and_finalizes_forward(tmp_path):
     import sys
     path = Path(__file__).with_name('test_runtime_state_release_transaction.py')

@@ -1406,6 +1406,11 @@ runtime v2 `INSTALLED` 且所有 writer/socket inactive 的已知事故。原发
 与回滚，须在授权后执行；默认 inspect 不执行该 DML，也不能声称完整 KB 检查通过。
 失败尝试停止服务并记录 containment 是否已证明，不恢复旧配置、不建备份。
 
+armed runtime gate 临时禁用原先 enabled 的业务 service 时，systemd 会移除其
+`Before=multi-user.target` 隐式关系。恢复器只在原 journal/禁用态均已证明、实际
+Before 恰为 `shutdown.target` 时向原验证器呈现原始关系；未知、重复或提前恢复的
+关系继续阻断。网络 guard 本身、Requires/After 和 finalize 后的关系不作转换。
+
 独立完成记录仅为 `FORWARD_RECOVERED`，生产源码仍是 a8；不代表通知修复、OTA 或
 App Store 送审完成。原失败回执、原迁移 intent、lease、stage 与发布身份均保留。
 新恢复和凭据续期审计目录一旦存在，bootstrap/server 的持久历史闸拒绝普通发布与

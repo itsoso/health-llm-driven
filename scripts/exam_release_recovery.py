@@ -308,7 +308,17 @@ class GateView:
         self.systemd, self.original, self.released = systemd, original, released
 
     def show(self, unit, prop):
-        return self.systemd.show(unit, prop)
+        actual = self.systemd.show(unit, prop)
+        if (not self.released and unit in UNITS[1:] and prop == 'Before'
+                and self.original[unit] == 'enabled'):
+            # Disabling WantedBy=multi-user.target removes systemd's implicit
+            # Before edge. The pinned armed transaction already proves why the
+            # unit is disabled; require that exact live state and edge before
+            # presenting its original profile to the unchanged network verifier.
+            self.is_enabled(unit)
+            need(actual.split() == ['shutdown.target'], 'armed runtime target edge differs')
+            return 'multi-user.target shutdown.target'
+        return actual
 
     def is_enabled(self, unit):
         actual = self.systemd.is_enabled(unit)
