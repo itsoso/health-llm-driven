@@ -155,3 +155,14 @@ G6 PASS：安装配置已在 main 生效。完整 CI 587→560 秒（9 分 20 �
 关键 balanced-14 第 12 秒启动，安装 16 秒、测试 482 秒，第 550 秒完成，聚合至第 560 秒。启动和执行均有波动，不能把 27 秒整轮改善或 worker 时间总和下降全部归因于单个参数，也不推断费用/P95/P99。此阶段不修改生产应用或重复 OTA。
 
 原始日志复核 64 个测试进程全部首轮成功；与基线逐进程 testcase 身份及结果多重集合完全相同，共 35,701 条结果、155 条既有 skipped testcase，无 failure/error。证据见 `docs/reviews/2026-10-27-ci-bytecode-production.json`（精确 SHA、run、jobs 摘要、逐步骤耗时、覆盖清单摘要及目标裁决）。基线文档中的 candidate pending 描述保留为测量前记录，以本节和实际证据为最终裁决。
+
+
+## 跨 Agent 复用：共享 Harness 入口（2026-10-27）
+
+用户询问部署状态、Harness 留存与其他 Agent 如何复用。已上线的 CI 优化与本节治理补充分别验收；不触发应用重启或重复 OTA。
+
+共享真源为 `docs/governance/performance.md` 的 CI / 发布流程，沿用 AGENTS §5 的既有链接，两端 Health Harness adapter 按任务条件读取。合同 patch 升为 1.0.4，注册表增加性能治理引用与新内容摘要，package 合同测试同步；不改变插件安装状态、路由、工具权限、测试选择或发布 Gate。流程要求按精确 revision 恢复证据、拆分耗时、复用现有报告器/权重刷新器、保持质量底线、真实 CI 验收，并将结果提交到原 Dossier / reviews。旧 checkout 或已加载的插件缓存不会自动刷新，接手 Agent 必须核对并更新到目标版本；本地 trace 不作为共享交付证明。
+
+验证：先登记必需引用时治理检查 RED（adapter_semantic_marker_missing），补齐两端引用与摘要后 PASS。分别在内存删除引用、同时更新内容摘要仍被拒绝。治理及插件合同测试最终 115 passed；System Map、Dossier 一致性、两个 skill quick_validate、LLM change gate（无需 live eval）与 diff whitespace 检查通过。初轮发现 AGENTS 超过既有 10 KiB 约束及固定合同版本未同步，已保留原 AGENTS 入口、修正版本，未放宽测试；独立评审还修正了报告命令的解释器前缀。独立复核 GO，失败项及 package 12/12 通过，两端内容与边界一致。
+
+交接基线为 `f466569f11aeef3616571a5d9adce1c0229f0ec9`，已 fast-forward 接入其他任务无重叠的 main 更新。此处记录本地验证；推送与新精确 SHA 的 CI 结果须以实际 GitHub 记录为准，不提前声明完成。

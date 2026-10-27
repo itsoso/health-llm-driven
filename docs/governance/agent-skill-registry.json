@@ -86,7 +86,7 @@
       }
     },
     "health-harness-orchestrator": {
-      "version": "1.0.3",
+      "version": "1.0.4",
       "required_markers": [
         "primary_controller",
         "implementation",
@@ -100,11 +100,12 @@
         "BLOCK",
         "production",
         "system-map",
-        "deferred_by_phase.on_demand"
+        "deferred_by_phase.on_demand",
+        "docs/governance/performance.md"
       ],
       "adapter_sha256": {
-        "claude": "9bf53bf78a96228b4a4480bf8c14bb5f5baa23e90fbe95576c980bbf7a5160d8",
-        "codex": "f44569a13662ea9f24f8fd5398118e64f4fd2f7e7ff52a1927c8dcf9893e1d80"
+        "claude": "963905c4ba54e3b561a578bbf8b02d454def01186b3cec3b70e06236d0ad937c",
+        "codex": "de21cd57043899aea55c2dce64c75f4f6b47b564b75ccc332a82e75de4c8b895"
       }
     }
   },
@@ -169,7 +170,7 @@
       "id": "health-harness-orchestrator",
       "lifecycle": "standard",
       "owner": "reva-engineering",
-      "version": "1.0.3",
+      "version": "1.0.4",
       "layer": "workflow",
       "kind": "controller",
       "platforms": [
@@ -181,14 +182,15 @@
         "incident",
         "cross-surface-delivery"
       ],
-      "last_reviewed": "2026-10-10",
+      "last_reviewed": "2026-10-27",
       "evidence": [
         "The operating harness provides checkpointed implementation, review, validation and release hand-offs."
       ],
       "sources": [
         "docs/design-agent-operating-harness.md",
         ".claude/skills/health-harness-orchestrator/SKILL.md",
-        "plugins/reva-health-harness/skills/health-harness-orchestrator/SKILL.md"
+        "plugins/reva-health-harness/skills/health-harness-orchestrator/SKILL.md",
+        "docs/governance/performance.md"
       ],
       "adapters": {
         "claude": ".claude/skills/health-harness-orchestrator/SKILL.md",
