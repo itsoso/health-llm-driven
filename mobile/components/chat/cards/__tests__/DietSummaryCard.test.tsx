@@ -20,13 +20,54 @@ const data = {
 };
 
 describe('DietSummaryCardView', () => {
+  it('marks partial historical cards and suppresses unsupported daily judgements', () => {
+    const { getByText, queryByText } = render(<DietSummaryCardView data={{
+      ...data, meals: [...data.meals, { meal_type: 'lunch' }],
+    }} />);
+    expect(getByText('已知小计')).toBeTruthy();
+    expect(getByText('980')).toBeTruthy();
+    expect(getByText('1 条记录营养数据不完整；小计仅含各项已知值，不能代表全天摄入。')).toBeTruthy();
+    expect(queryByText('全天合计')).toBeNull();
+    expect(queryByText('蛋白质充足')).toBeNull();
+  });
+
+  it('keeps unknown distinct from a real zero', () => {
+    const { queryByText, getByText, getAllByText } = render(<DietSummaryCardView data={{
+      meals: [{ calories: null, protein: 0, carbs: -1, fat: true }],
+      totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    }} />);
+    expect(getByText('已知小计')).toBeTruthy();
+    expect(queryByText('全天合计')).toBeNull();
+    expect(getAllByText('—')).toHaveLength(6);
+    expect(getAllByText('0')).toHaveLength(2);
+  });
+
+  it('preserves the new server subtotal summed before rounding individual readings', () => {
+    const { getByText } = render(<DietSummaryCardView data={{
+      meals: [{ calories: 0, protein: 0, carbs: 0, fat: 0 },
+        { calories: 0, protein: 0, carbs: 0, fat: 0 }],
+      totals: { calories: 0.01, protein: 0, carbs: 0, fat: 0 },
+      nutrition_coverage: { version: 1, record_count: 2, incomplete_records: 0,
+        missing_by_nutrient: { calories: 0, protein: 0, carbs: 0, fat: 0, fiber: 2 } },
+    }} />);
+    expect(getByText('0.01')).toBeTruthy();
+    expect(getByText('已记录合计')).toBeTruthy();
+  });
+
+  it('does not display a zero subtotal for an entirely unknown meal', () => {
+    const { queryByText, getByText } = render(<DietSummaryCardView data={{
+      meals: [{ meal_type: 'lunch' }], totals: { calories: 0, protein: 0, carbs: 0, fat: 0 },
+    }} />);
+    expect(queryByText('0')).toBeNull();
+    expect(getByText('1 条记录营养数据不完整；小计仅含各项已知值，不能代表全天摄入。')).toBeTruthy();
+  });
   it('renders meals, detail, observations and water progress', () => {
-    const { getByText } = render(<DietSummaryCardView data={data} />);
+    const { getByText, queryByText } = render(<DietSummaryCardView data={data} />);
     expect(getByText('早餐')).toBeTruthy();
     expect(getByText('午餐')).toBeTruthy();
     expect(getByText('山药小米粥·蒸蛋羹×2·焯青菜')).toBeTruthy();
-    expect(getByText('蛋白质充足')).toBeTruthy();
-    expect(getByText('膳食纤维不足')).toBeTruthy();
+    expect(queryByText('蛋白质充足')).toBeNull();
+    expect(queryByText('膳食纤维不足')).toBeNull();
     expect(getByText('500/2000ml')).toBeTruthy();
   });
 

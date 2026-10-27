@@ -6,9 +6,8 @@
  * → ChatBubble extractRevaUiBlocks(utils/revaUiBlocks.ts 有 diet 分支)→ renderCard
  * → 本卡渲染 (仅后端下发, match/build 恒 null)。**v 是整数 1**,parser 校验 v===1。
  *
- * 结构:壳 + 2 行头、关键观察、饮水进度条都走 **StatusSummary scaffold**(汇总卡族共享,
- * 见 statusSummary.tsx);本卡只保留领域主体 —— 餐次×宏量表(右列 mono tabular 右对齐)+
- * 全天合计。视觉与抽 scaffold 前一字不差。
+ * 壳与饮水进度条复用 StatusSummary；餐次表区分已知小计与已记录合计。
+ * 历史卡片也不再展示缺乏全天完整数据支撑的营养充足/不足判断。
  */
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
@@ -17,13 +16,11 @@ import { Ionicons } from '@expo/vector-icons';
 import { revaColors as C, revaFonts } from '../../../constants/revaTheme';
 import { MEAL_ICONS } from './mealCardVisuals';
 import type { CardSpec } from './types';
+import { formatDisplayNumber } from '../../../utils/displayNumber';
 import {
   StatusSummaryShell,
-  StatusObservationList,
   StatusProgressBar,
-  parseObservations,
   formatBeijingDate,
-  fmtNum,
   pickText,
   pickNum,
 } from './statusSummary';
@@ -48,7 +45,14 @@ interface Meal {
 // ── 领域解析(饮食专属;通用原语来自 statusSummary） ─────────────────────────
 function macroCells(source: unknown): (string | null)[] {
   const r = (source && typeof source === 'object') ? (source as Record<string, unknown>) : {};
-  return MACRO_KEYS.map((k) => fmtNum(r[k]));
+  return MACRO_KEYS.map((k) => {
+    const value = nutrient(r[k]);
+    return value == null ? null : formatDisplayNumber(value);
+  });
+}
+function nutrient(value: unknown): number | undefined {
+  const number = pickNum(value);
+  return number != null && number >= 0 ? number : undefined;
 }
 function parseMeals(raw: unknown): Meal[] {
   if (!Array.isArray(raw)) return [];
@@ -68,9 +72,17 @@ export function DietSummaryCardView({ data }: { data?: unknown }) {
   const d = (data && typeof data === 'object') ? (data as Record<string, any>) : {};
   const dateLabel = formatBeijingDate(d.record_date);
   const meals = parseMeals(d.meals);
-  const totals = macroCells(d.totals);
+  const rows = Array.isArray(d.meals) ? d.meals.filter((m: unknown) => m && typeof m === 'object') : [];
+  const incomplete = rows.filter((row: Record<string, unknown>) => MACRO_KEYS.some((key) => nutrient(row[key]) == null)).length;
+  // Historical cards have zero-filled totals and unsupported daily judgements.
+  // Rebuild their subtotal; new coverage-tagged totals were summed before rounding.
+  const knownTotals = Object.fromEntries(MACRO_KEYS.map((key) => {
+    const known = rows.map((row: Record<string, unknown>) => nutrient(row[key]))
+      .filter((value: number | undefined): value is number => value != null);
+    return [key, known.length ? known.reduce((sum: number, value: number) => sum + value, 0) : null];
+  }));
+  const totals = macroCells(d.nutrition_coverage?.version === 1 ? d.totals : knownTotals);
   const hasTotals = totals.some((v) => v != null);
-  const observations = parseObservations(d.observations);
 
   const waterCurrent = pickNum(d.water?.current_ml);
   const waterTarget = pickNum(d.water?.target_ml);
@@ -112,7 +124,7 @@ export function DietSummaryCardView({ data }: { data?: unknown }) {
 
           {hasTotals ? (
             <View style={[styles.row, styles.totalRow]}>
-              <Text maxFontSizeMultiplier={1.25} style={[styles.totalLabel, styles.mealCol]}>全天合计</Text>
+              <Text maxFontSizeMultiplier={1.25} style={[styles.totalLabel, styles.mealCol]}>{incomplete ? '已知小计' : '已记录合计'}</Text>
               {totals.map((v, ci) => (
                 <Text key={ci} maxFontSizeMultiplier={1.2} style={[styles.totalCell, styles.numCol]}>{v ?? '—'}</Text>
               ))}
@@ -120,10 +132,11 @@ export function DietSummaryCardView({ data }: { data?: unknown }) {
           ) : null}
 
           <Text maxFontSizeMultiplier={1.1} style={styles.unitLegend}>热量 kcal · 蛋白 / 碳水 / 脂肪 g</Text>
+          <Text maxFontSizeMultiplier={1.2} style={styles.unitLegend}>
+            {incomplete ? `${incomplete} 条记录营养数据不完整；小计仅含各项已知值，不能代表全天摄入。` : '仅汇总已记录餐次，不代表全天完整摄入。'}
+          </Text>
         </View>
       ) : null}
-
-      <StatusObservationList items={observations} />
 
       {showWater ? (
         <StatusProgressBar

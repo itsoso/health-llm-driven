@@ -84,14 +84,9 @@ def test_descriptor_golden_exact():
             ],
             "totals": {"calories": 1710, "protein": 92, "carbs": 141,
                        "fat": 75, "fiber": 4},
-            "observations": [
-                {"severity": "normal", "label": "蛋白质充足",
-                 "detail": "全天 92g(约 1.29g/kg)。"},
-                {"severity": "caution", "label": "脂肪偏高",
-                 "detail": "全天 75g,占总热量约 39%。"},
-                {"severity": "caution", "label": "膳食纤维不足",
-                 "detail": "约 4g,一般建议 25g+。"},
-            ],
+            "observations": [],
+            "nutrition_coverage": {"version": 1, "record_count": 3, "incomplete_records": 0,
+                                   "missing_by_nutrient": {"calories": 0, "protein": 0, "carbs": 0, "fat": 0, "fiber": 0}},
             "water": {"current_ml": 500, "target_ml": 2000},
         },
     }
@@ -106,12 +101,8 @@ def test_observations_deterministic_and_factual():
     # R4:陈述语气,禁命令式
     for banned in ("必须", "务必", "一定要", "应该马上"):
         assert banned not in joined
-    # 脂肪 75g/1710kcal ≈ 39% > 35% → caution;纤维 4<25 → caution
-    labels = {o["label"]: o["severity"] for o in a}
-    assert labels.get("脂肪偏高") == "caution"
-    assert labels.get("膳食纤维不足") == "caution"
-    # 蛋白 92g/71.2kg ≈ 1.29g/kg ≥ 1.0 → 充足
-    assert labels.get("蛋白质充足") == "normal"
+    # A full set of recorded macros still does not establish full-day coverage.
+    assert a == []
 
 
 def test_zero_macros_emit_no_misleading_deficit_observation():
@@ -151,11 +142,9 @@ def test_nan_inf_macros_degrade_to_none_not_crash():
     assert d["data"]["meals"][0]["protein"] is None
 
 
-def test_no_weight_degrades_protein_to_grams_only():
-    obs = build_diet_daily_summary(_summary())["data"]["observations"]
-    prot = [o for o in obs if o["label"] == "蛋白质"]
-    assert prot and prot[0]["severity"] == "normal"
-    assert "g/kg" not in prot[0]["detail"]
+def test_weight_does_not_imply_day_coverage_or_protein_adequacy():
+    assert build_diet_daily_summary(_summary())["data"]["observations"] == []
+    assert build_diet_daily_summary(_summary(), weight_kg=71.2)["data"]["observations"] == []
 
 
 def test_empty_meals_returns_none_fail_open():

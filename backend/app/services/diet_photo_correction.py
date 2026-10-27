@@ -24,6 +24,10 @@ _REQUEST = re.compile(
     r"(?P<meal>早餐|午餐|晚餐|加餐)(?:记录)?[。！!]?"
 )
 _MEALS = {"早餐": "breakfast", "午餐": "lunch", "晚餐": "dinner", "加餐": "snack"}
+_MISSING_PHOTO_NUTRITION = re.compile(
+    r"(?:最后一张|上一张)(?:图片|照片)(?:还)?(?:没有|没)(?:计算出|算出|估算出)"
+    r"(?:热量|营养)(?:[，,](?:请)?(?:补算|重新估算))?[。！!]?"
+)
 
 # Whole original utterances only: these frames remove a meal component, never
 # authorize deleting a record or a generic history read.
@@ -54,6 +58,67 @@ def _removal_item(text):
 def _item_clarification(reason, detail):
     return {"status": "waiting_for_user", "reason": reason, "cards": [],
             "reply": f"尚未修改饮食记录。{detail}"}
+
+
+def is_photo_nutrition_repair(text):
+    return bool(_MISSING_PHOTO_NUTRITION.fullmatch(re.sub(r"\s+", "", str(text or ""))))
+
+
+def _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id, text, now):
+    # Match the complete current utterance, never a quoted/extracted command.
+    if not is_photo_nutrition_repair(text):
+        return None
+    missing = _item_clarification("photo_nutrition_target_required",
+        "无法唯一定位最后一张照片对应的饮食记录。请在饮食页选择原记录，"
+        "点击“估算失败 · 重试”，或编辑食物和份量后保存补算。")
+    if type(user_id) is not int or user_id <= 0 or now.tzinfo is None:
+        return missing
+    current = _owned_message(db, user_id, conversation_id, current_message_id)
+    if current is None or current.content.strip() != str(text).strip() or current.image_url:
+        return missing
+    source = (db.query(AgentMessage).filter(
+        AgentMessage.conversation_id == conversation_id, AgentMessage.role == "user",
+        AgentMessage.id < current_message_id, AgentMessage.image_url.isnot(None),
+        AgentMessage.image_url != "").order_by(AgentMessage.id.desc()).first())
+    if source is None or source.created_at is None:
+        return missing
+    created_at = source.created_at
+    if created_at.tzinfo is None:  # AgentMessage.created_at stores naive UTC.
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    if not timedelta(0) <= now - created_at <= timedelta(hours=24):
+        return missing
+    # Do not skip a newer unbound/deleted image, or use the latest meal as a proxy.
+    assets = db.query(DietPhotoAsset).filter(
+        DietPhotoAsset.user_id == user_id, DietPhotoAsset.origin_message_id == source.id).limit(2).all()
+    if len(assets) != 1:
+        return missing
+    asset = assets[0]
+    if (asset.lifecycle != "attached" or asset.deleted_at is not None
+            or asset.classification != "food" or asset.photo_draft_token is not None
+            or not asset.diet_record_id):
+        return missing
+    target = db.query(DietRecord).filter(
+        DietRecord.user_id == user_id, DietRecord.id == asset.diet_record_id).first()
+    if target is None or not str(target.food_items or "").strip():
+        return missing
+    fields = ("meal_type", "food_items", "calories", "protein", "carbs", "fat", "fiber")
+    action = build_diet_adjust_action(target.id, {key: getattr(target, key) for key in fields},
+                                      current_record=target)
+    seed = action["payload"]["patch"]["adjust_record"]
+    seed["proposed_food_items"] = target.food_items
+    meal_label = next((label for label, value in _MEALS.items() if value == target.meal_type), "这餐")
+    card = {"type": "record_quality", "data": format_card_numbers({
+        "domain": "diet", "title": f"{target.record_date} {meal_label}营养待核对",
+        "summary": "请核对原记录的食物和份量，再保存补算营养。", "record_id": target.id,
+        "expanded_sections": ["adjust_record"], "adjust_record": seed,
+        "boundary": "尚未保存；补算成功后只更新原记录，保留照片。",
+    }), "actions": [action]}
+    # Command revision and nutrient baseline retain full precision.
+    card["data"]["adjust_record"] = dict(seed)
+    return {"status": "waiting_for_user", "reason": "photo_nutrition_confirmation_required",
+            "cards": [card], "sources_used": ["本人照片与饮食记录绑定", "本人饮食记录"],
+            "reply": "已找到最后一张照片对应的原记录，尚未修改。请核对下方食物和份量，"
+                     "点击保存后重新估算营养；成功后更新原记录，不会新增一餐。"}
 
 
 def _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now):
@@ -208,6 +273,9 @@ def _blocked(reason, detail):
 
 
 def build_correction_proposal(db, user_id, conversation_id, current_message_id, text, now, timezone_name):
+    nutrition_proposal = _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id, text, now)
+    if nutrition_proposal is not None:
+        return nutrition_proposal
     item_proposal = _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now)
     if item_proposal is not None:
         return item_proposal

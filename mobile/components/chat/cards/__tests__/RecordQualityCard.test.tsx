@@ -125,6 +125,21 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(mockUpdate).not.toHaveBeenCalled();
   });
 
+  it('recalculates missing nutrition on explicit save even when the proposed food is unchanged', async () => {
+    const card = baseAdjustCard();
+    card.adjust_record = { ...card.adjust_record, calories: null,
+      proposed_food_items: card.adjust_record.food_items } as any;
+    mockRecalculate.mockResolvedValue({ id: 123, calories: 450 } as any);
+    const { getByText } = render(<RecordQualityCardView {...(card as any)} />);
+    expect(mockRecalculate).not.toHaveBeenCalled();
+    fireEvent.press(getByText('重新估算并保存'));
+    await waitFor(() => expect(mockRecalculate).toHaveBeenCalledWith(123, {
+      meal_type: 'snack', food_items: card.adjust_record.food_items,
+      expected_updated_at: card.adjust_record.updated_at,
+    }, expect.any(String)));
+    expect(mockUpdate).not.toHaveBeenCalled();
+  });
+
   it('saves a personal one-fifth share through the atomic calculation command, not manual PUT', async () => {
     mockRecalculate.mockResolvedValue({ id: 123, meal_type: 'snack', food_items: '整桌菜（按实际食用1/5计）', calories: 200 } as any);
     const onCardDataChange = jest.fn();

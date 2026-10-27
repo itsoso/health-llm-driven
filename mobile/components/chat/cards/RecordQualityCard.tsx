@@ -793,7 +793,9 @@ export function DietRecordAdjustEditor({
         <Text accessibilityLiveRegion="polite" style={styles.adjustHint}>
           {foodChanged
             ? '食物已修改，保存时重新估算热量和营养；下方为修改前数值。'
-            : '份额已修改，保存时同步调整热量和营养；下方为修改前数值。'}
+            : portionChanged
+              ? '份额已修改，保存时同步调整热量和营养；下方为修改前数值。'
+              : '请核对食物和份量，保存时重新估算热量和营养；下方为原记录数值。'}
         </Text>
       ) : null}
       <View style={styles.macroGrid}>
@@ -845,7 +847,7 @@ export function DietRecordAdjustEditor({
           {saving ? <ActivityIndicator size="small" color="#fff" /> : (
             <Ionicons name="checkmark-circle" size={14} color="#fff" />
           )}
-          <Text style={styles.saveButtonText}>{saving ? (needsRecalculation ? '更新营养中' : '保存中') : foodChanged ? '重新估算并保存' : portionChanged ? '保存份额' : '保存修正'}</Text>
+          <Text style={styles.saveButtonText}>{saving ? (needsRecalculation ? '更新营养中' : '保存中') : portionChanged && !foodChanged ? '保存份额' : needsRecalculation ? '重新估算并保存' : '保存修正'}</Text>
         </Pressable>
       </View>
     </View>

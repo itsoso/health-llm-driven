@@ -2,8 +2,7 @@
 
 汇总类卡结构化 v1(founder 2026-07-16 立项)。北极星 = 恢复总览卡的设计语言。
 数据来自 agent_read_tools 今日饮食汇总(DailyDietSummary:meals + 宏量合计);
-observations 由本模块**确定性派生**(只读数值 + 常识阈值,factual 陈述、禁命令式 —— 守
-R4:builder 绝不自判医学等级、绝不编造个性化处方);actions 沿用既有 route.open。
+仅对逐条已知值求小计；缺值不作零。已记录餐次不证明全天完整，故不推断营养充足或不足。
 
 cap 暗置(genui-diet-summary-v1):composer/renderer 就绪但不点亮,eval 过闸后开。
 契约字段与 mobile DietSummaryCard 的 parse* 一字对齐(meal_type/name/detail/
@@ -14,6 +13,8 @@ from __future__ import annotations
 import json
 import math
 from typing import Any, Optional
+
+from app.utils.number_format import format_display_number
 
 DIET_SUMMARY_TYPE = "diet_daily_summary"
 GENUI_DIET_SUMMARY_CAP = "genui-diet-summary-v1"  # 客户端能力位(点亮门控)
@@ -29,81 +30,22 @@ _MEAL_KEY = {
 _MEAL_LABEL = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
 _MEAL_ORDER = {"breakfast": 0, "lunch": 1, "dinner": 2, "snack": 3}
 
-_FIBER_TARGET_G = 25.0    # 膳食纤维通用推荐(营养常识阈值,非个性化处方)
-_FAT_PCT_CAUTION = 35.0   # 脂肪占总热量上限(常识阈值)
-_PROTEIN_GKG_LOW = 1.0    # 蛋白 g/kg 下限(有体重时判偏低)
+_NUTRIENTS = ("calories", "protein", "carbs", "fat", "fiber")
 
 
-def _round(v: Any, nd: int = 1) -> Optional[float]:
-    if v is None:
+def _nutrient(value: Any) -> Optional[float]:
+    if value is None or isinstance(value, bool):
         return None
     try:
-        f = float(v)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         return None
-    # nan/inf → 视作缺值:int(round(nan)) 会抛(拖垮整回合所有卡),json.dumps 又会吐
-    # 非法的 NaN/Infinity token(移动端 JSON.parse 崩)。一律钳成 None 走缺值降级。
-    if not math.isfinite(f):
-        return None
-    return int(round(f)) if nd == 0 else round(f, nd)
+    return number if math.isfinite(number) and number >= 0 else None
 
 
-def _derive_observations(totals: dict, *, weight_kg: Optional[float] = None) -> list[dict]:
-    """确定性派生关键观察 —— 只读数值 + 常识阈值,factual 陈述,severity ∈ normal/caution。
-
-    R4:不写命令式("必须/务必…")、不判医学诊断;只陈述测得值与通用阈值的关系。
-    """
-    obs: list[dict] = []
-    # 健壮性(safety advisory):真实 DailyDietSummary 宏量非负,但入参负数/垃圾会渲染出
-    # 无意义串 → 一律钳到 ≥0;非数值/nan/inf 视作缺值(None)。
-    def _nn(x):
-        try:
-            f = float(x)
-        except (TypeError, ValueError):
-            return None
-        if not math.isfinite(f):
-            return None
-        return max(0.0, f)
-
-    cal = _nn(totals.get("calories")) or 0
-    protein = _nn(totals.get("protein"))
-    fat = _nn(totals.get("fat"))
-    fiber = _nn(totals.get("fiber"))
-
-    # 关键:read_daily_diet 用 sum(r.x or 0),未记录的宏量汇总成 0(而非 None)——
-    # 0 无法区分"确实没吃"与"没记录"。为守 R4 factual,**只在值 > 0 时**才出观察,
-    # 绝不对一个可能仅是未登记的 0 断言"…不足"。(全为真实非负浮点,truthy 即 > 0。)
-    if protein:
-        if weight_kg and weight_kg > 0:
-            gkg = protein / weight_kg
-            caution = gkg < _PROTEIN_GKG_LOW
-            obs.append({
-                "severity": "caution" if caution else "normal",
-                "label": "蛋白质偏低" if caution else "蛋白质充足",
-                "detail": f"全天 {protein:.0f}g(约 {gkg:.2f}g/kg)。",
-            })
-        else:
-            obs.append({"severity": "normal", "label": "蛋白质",
-                        "detail": f"全天 {protein:.0f}g。"})
-
-    if fat and cal and cal > 0:
-        pct = (fat * 9.0) / cal * 100.0
-        caution = pct > _FAT_PCT_CAUTION
-        obs.append({
-            "severity": "caution" if caution else "normal",
-            "label": "脂肪偏高" if caution else "脂肪适中",
-            "detail": f"全天 {fat:.0f}g,占总热量约 {pct:.0f}%。",
-        })
-
-    if fiber:
-        caution = fiber < _FIBER_TARGET_G
-        obs.append({
-            "severity": "caution" if caution else "normal",
-            "label": "膳食纤维不足" if caution else "膳食纤维充足",
-            "detail": f"约 {fiber:.0f}g,一般建议 {int(_FIBER_TARGET_G)}g+。",
-        })
-
-    return obs[:4]
+def _round(value: Any) -> Optional[float]:
+    number = _nutrient(value)
+    return format_display_number(number) if number is not None else None
 
 
 def build_diet_daily_summary(
@@ -129,7 +71,7 @@ def build_diet_daily_summary(
             "meal_type": key,
             "name": _MEAL_LABEL[key],
             "detail": (str(m.get("food_items") or "").strip() or None),
-            "calories": _round(m.get("calories"), 0),
+            "calories": _round(m.get("calories")),
             "protein": _round(m.get("protein")),
             "carbs": _round(m.get("carbs")),
             "fat": _round(m.get("fat")),
@@ -138,23 +80,31 @@ def build_diet_daily_summary(
         return None
     meals.sort(key=lambda x: _MEAL_ORDER.get(x["meal_type"], 9))
 
-    totals = {
-        "calories": _round(summary.get("total_calories"), 0),
-        "protein": _round(summary.get("total_protein")),
-        "carbs": _round(summary.get("total_carbs")),
-        "fat": _round(summary.get("total_fat")),
-        "fiber": _round(summary.get("total_fiber")),
+    # Upstream sums use `or 0`; rebuild from individual raw values so unknown
+    # stays unknown, and sum before applying display precision.
+    rows = [{key: _nutrient(m.get(key)) for key in _NUTRIENTS}
+            for m in raw_meals if isinstance(m, dict)]
+    totals = {}
+    for key in _NUTRIENTS:
+        known = [row[key] for row in rows if row[key] is not None]
+        totals[key] = _round(sum(known)) if known else None
+    coverage = {
+        "version": 1,
+        "record_count": len(rows),
+        "incomplete_records": sum(any(row[key] is None for key in _NUTRIENTS[:4]) for row in rows),
+        "missing_by_nutrient": {key: sum(row[key] is None for row in rows) for key in _NUTRIENTS},
     }
 
     data: dict[str, Any] = {
         "record_date": (str(summary.get("record_date") or "").strip() or None),
         "meals": meals,
         "totals": totals,
-        "observations": _derive_observations(totals, weight_kg=weight_kg),
+        "nutrition_coverage": coverage,
+        "observations": [],
     }
     if isinstance(water, dict):
-        cur = _round(water.get("current_ml"), 0)
-        tgt = _round(water.get("target_ml"), 0)
+        cur = _round(water.get("current_ml"))
+        tgt = _round(water.get("target_ml"))
         if cur is not None and tgt is not None and tgt > 0:
             data["water"] = {"current_ml": cur, "target_ml": tgt}
 
