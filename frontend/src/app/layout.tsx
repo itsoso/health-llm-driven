@@ -1,13 +1,15 @@
 import type { Metadata, Viewport } from 'next';
-import { Inter } from 'next/font/google';
+import localFont from 'next/font/local';
 import './globals.css';
 import { Providers } from './providers';
 import Navigation from '@/components/Navigation';
 import Footer from '@/components/Footer';
 import QuickActionButton from '@/components/QuickActionButton';
 
-const inter = Inter({
-  subsets: ['latin'],
+const inter = localFont({
+  src: './fonts/inter-latin-variable.woff2',
+  weight: '100 900',
+  style: 'normal',
   display: 'swap',
   adjustFontFallback: false,
 });
