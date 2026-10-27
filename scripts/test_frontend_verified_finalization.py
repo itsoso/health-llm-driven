@@ -863,6 +863,11 @@ def test_ordinary_rebuild_history_never_reads_finalized_backup_bodies(tmp_path, 
     )
     consumer = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(consumer)
+    # Exercise the real inventory guard using only this test's filesystem.
+    monkeypatch.setattr(consumer, 'EXAM_RETIRED_INSTALLATIONS',
+                        (tmp_path / 'retired-config', tmp_path / 'retired-library'))
+    monkeypatch.setattr(consumer, 'EXAM_PROVIDER_REFRESH_ROOT', tmp_path / 'provider-refresh')
+    monkeypatch.setattr(consumer, 'EXAM_CREDENTIAL_ROOT', tmp_path / 'credentials')
     monkeypatch.setattr(consumer, 'secure_path', server.secure_path)
     monkeypatch.setattr(consumer, '_load_frontend_finalizer', lambda: m)
     monkeypatch.setattr(m, 'tree_evidence', lambda *a, **k: pytest.fail('backup body traversed'))

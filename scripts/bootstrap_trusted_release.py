@@ -341,8 +341,21 @@ def _dinner_profile_module(sha):
     return _dinner_guard_module()
 
 
+def _exam_forward_module():
+    path = Path(__file__).absolute().with_name('exam_forward_retirement.py')
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached exam closure proof forbidden')
+    spec = importlib.util.spec_from_file_location('reviewed_exam_forward_closure', path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    exec(compile(path.read_bytes(), str(path), 'exec', dont_inherit=True), module.__dict__)
+    return module
+
+
 def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     workspace = STATE / sha
+    exam_closure = os.path.lexists(STATE / 'exam-forward-closures' / sha)
     dinner_closure = os.path.lexists(STATE / "dinner-guard-closures" / sha)
     fdd_closure = os.path.lexists(STATE / "fdd-guard-closures" / sha)
     rollback_closure = os.path.lexists(STATE / "rolled-back-release-closures" / sha)
@@ -353,8 +366,13 @@ def _workspace_evidence(sha, *, recovery_receipt=None, historical=False):
     unchanged_closure = os.path.lexists(STATE / "unchanged-release-closures" / sha)
     contained_closure = os.path.lexists(STATE / "contained-release-closures" / sha)
     lost_receipt_ack = os.path.lexists(STATE / "lost-closure-receipt-acknowledgments" / sha)
-    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure, dinner_closure, fdd_closure)) > 1:
+    if sum((review_closure, unchanged_closure, contained_closure, partial_laya, native_closure, retained_closure, rollback_closure, dinner_closure, fdd_closure, exam_closure)) > 1:
         raise BootstrapError("conflicting release closure evidence")
+    if exam_closure:
+        if lost_receipt_ack or os.path.lexists(STATE / 'recoveries' / sha):
+            raise BootstrapError('conflicting exam closure evidence')
+        return _exam_forward_module().closed_evidence(
+            sys.modules[__name__], sha, recovery_receipt, historical=historical)
     if fdd_closure:
         return _fdd_guard_module().closed_evidence(
             sys.modules[__name__], sha, recovery_receipt, historical=historical)
@@ -868,7 +886,19 @@ def _exam_history_server():
     return server
 
 
-def assert_exam_recovery_history():
+def assert_exam_recovery_history(*, _exam_pending_rotation=None):
+    if os.path.lexists(STATE / 'exam-forward-closures'):
+        try:
+            closure = _exam_forward_module()
+            if _exam_pending_rotation is None:
+                closure.history_evidence(sys.modules[__name__])
+            else:
+                closure.validate_pending_rotation(sys.modules[__name__], _exam_pending_rotation)
+        except Exception:
+            raise BootstrapError('exam closure history is incomplete or invalid') from None
+        return
+    if _exam_pending_rotation is not None:
+        raise BootstrapError('pending exam rotation requires complete closure')
     # Neither service recovery nor read-credential renewal retires the failed
     # release. No completion string grants ordinary rotation/replay authority.
     # lexists also blocks broken links and unexpected file types after reboot.
@@ -895,8 +925,9 @@ def assert_xiaoqihou_briefing_history():
     server.assert_xiaoqihou_briefing_history(STATE)
 
 
-def assert_frontend_rebuild_history(*, backup_memo=None):
-    assert_exam_recovery_history()
+def assert_frontend_rebuild_history(*, backup_memo=None, _exam_pending_rotation=None):
+    exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
+    assert_exam_recovery_history(**exam_options)
     assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat")):
         return
@@ -905,11 +936,12 @@ def assert_frontend_rebuild_history(*, backup_memo=None):
     spec = importlib.util.spec_from_file_location("frontend_history_server", path)
     server = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(server)
-    server.assert_frontend_rebuild_history(STATE, backup_memo=backup_memo)
+    server.assert_frontend_rebuild_history(STATE, backup_memo=backup_memo, **exam_options)
 
 
-def assert_ota_history():
-    assert_exam_recovery_history()
+def assert_ota_history(*, _exam_pending_rotation=None):
+    exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
+    assert_exam_recovery_history(**exam_options)
     assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
         return
@@ -920,14 +952,15 @@ def assert_ota_history():
     spec = importlib.util.spec_from_file_location("ota_history_server", path)
     server = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(server)
-    server.assert_ota_history()
+    server.assert_ota_history(**exam_options)
 
 
-def _assert_idle(*, backup_memo=None):
-    assert_exam_recovery_history()
+def _assert_idle(*, backup_memo=None, _exam_pending_rotation=None):
+    exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
+    assert_exam_recovery_history(**exam_options)
     assert_xiaoqihou_briefing_history()
-    assert_frontend_rebuild_history(backup_memo=backup_memo)
-    assert_ota_history()
+    assert_frontend_rebuild_history(backup_memo=backup_memo, **exam_options)
+    assert_ota_history(**exam_options)
     if os.path.lexists(BUSINESS_LEASE):
         raise BootstrapError("business release lease exists; retirement forbidden")
     result = _run(["/usr/bin/ps", "-e", "-ww", "-o", "pid=", "-o", "args="], capture=True)
@@ -1213,10 +1246,11 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                 _assert_original_lock(build_path, build_fd)
         # Ephemeral memo shared only by the two checks under this launcher lock.
         backup_memo = {}
-        def check_idle(phase):
+        def check_idle(phase, *, exam_pending=None):
             began = time.monotonic()
             print(json.dumps({"stage": phase, "state": "STARTED"}), file=sys.stderr, flush=True)
-            _assert_idle(backup_memo=backup_memo)
+            options = {} if exam_pending is None else {'_exam_pending_rotation': exam_pending}
+            _assert_idle(backup_memo=backup_memo, **options)
             print(json.dumps({"stage": phase, "state": "VERIFIED",
                               "elapsed_seconds": round(time.monotonic() - began, 2),
                               "memoized_backups": len(backup_memo)}), file=sys.stderr, flush=True)
@@ -1265,7 +1299,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if review_advance is not None:
             check_advance()
         check_locks()
-        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE", "CLOSED_DINNER_GUARD_RELEASE"}:
+        if recovery_receipt is not None and workspace["state"] not in {"RECOVERED_PREPARATION_FAILURE", "CLOSED_PREDEPLOY_ATTESTATION_FAILURE", "CLOSED_RESTORED_RELEASE", "CLOSED_UNCHANGED_RELEASE", "CLOSED_UNKNOWN_REVIEW_MAINTENANCE", "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT", "CLOSED_PARTIAL_LAYA_ORPHANED_LEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_RETAINED_CANDIDATE_FAILURE", "CLOSED_ROLLED_BACK_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_EXAM_FORWARD_FAILURE"}:
             raise BootstrapError("recovery receipt only applies to historical recovery")
         current_keys = {name: (CONFIG / name).read_text().strip()
                         for name in ('cloud.pub', 'loopback.pub')}
@@ -1319,7 +1353,9 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         check_locks()
         _write(record / "intent.json", json.dumps(intent, sort_keys=True).encode())
         check_locks()
-        check_idle("history-before-retirement")
+        check_idle('history-before-retirement', exam_pending=(
+            intent if workspace.get('state') == 'CLOSED_EXAM_FORWARD_FAILURE' else None))
+        check_locks()
         check_advance()
         _discard_current_installation(old_sha, installation)
         check_locks()
@@ -1327,7 +1363,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
-        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
+        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD", "CLOSED_EXAM_FORWARD_FAILURE"}:
             # The no-copy closure already proved the revoked installation before
             # deletion. Reconsume its durable retirement audit now: this checks
             # canonical executor/public-key hashes, original closure receipt and

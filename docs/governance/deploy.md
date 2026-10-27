@@ -1409,8 +1409,8 @@ runtime v2 `INSTALLED` 且所有 writer/socket inactive 的已知事故。原发
 独立完成记录仅为 `FORWARD_RECOVERED`，生产源码仍是 a8；不代表通知修复、OTA 或
 App Store 送审完成。原失败回执、原迁移 intent、lease、stage 与发布身份均保留。
 新恢复和凭据续期审计目录一旦存在，bootstrap/server 的持久历史闸拒绝普通发布与
-轮转，包括 completed、未知文件、断链及重启丢失临时 lease 的情况。后续必须实现并
-独立审查 closure consumer，不能删除目录或手工解绑 stage 绕过此闸。
+轮转，包括 completed、未知文件、断链及重启丢失临时 lease 的情况。仅下述独立受审的
+完整 closure 链可解除阻断，不能删除目录或手工解绑 stage 绕过此闸。
 
 同事故的 `scripts/exam_recovery_credential.py` 使用独立固定尝试
 `exam-a8-read-credential-v1`，仅在原证据、双锁与摘要匹配时续期仓库只读 GitHub App
@@ -1424,6 +1424,22 @@ retired 与旧安装归档路径，以及 provider refresh 下任意 exam-* 和 
 临时文件。文件、目录、断链、异常父目录和检查中新增记录一律阻断；不读取令牌内容，
 不把外部 completed 解释为授权。该只读检查在 inspect、双锁及每个既有变更边界重复；
 出现痕迹后须独立对账及重新受审，不能删除记录、忽略记录或沿用失效的旧凭据摘要。
+
+固定外部 `exam-3127c8678bec90e57cc05f359e629f072e0d133f` 凭据更新已独立核对完成，
+专用 `exam_provider_reconciliation.py` 只消费其精确原始摘要、字段及文件身份；核对原
+lease/workspace 与 canonical 旧实现摘要，不执行旧实现、不推断历史签发或 CI 成功。
+新凭据操作仍使用独立未消费 attempt，绑定新旧摘要并在 CAS 前实时验证完整 CI。
+恢复与凭据入口同时持有原 launcher、存在时的原 build lock 和 provider refresh lock。
+其他替代尝试、临时凭据、文件替换或未知审计继续阻断。
+
+`exam_forward_retirement.py` 的固定 `exam-a8-forward-close-v1` 仅在完整
+`FORWARD_RECOVERED`、凭据链及新鲜服务/健康证明成立后收口；默认 inspect，执行须绑定
+摘要和明确的固定 accept 开关。其完成状态 `CLOSED_EXAM_FORWARD_FAILURE` 不改写原
+`NEEDS_OPERATOR`，不宣称通知已发布。撤销旧发布身份，销毁旧 loopback 私钥，将原
+lease 在同一文件系统无覆盖地原子移走，保留原 inode、stage 及四个审计文件；不复制
+配置、源码或运行时数据。随后 canonical bootstrap 通过原 closure receipt 执行无副本
+授权轮转。普通发布重复验证完整持久链；仅有完成字符串、缺少临时 lease、未完成轮转
+或有冲突审计均不授予发布权限。
 
 ### 自动回滚至旧 revision 的独立收口
 

@@ -19,6 +19,11 @@ def load(name):
 @pytest.fixture
 def state(tmp_path, monkeypatch):
     server = load('trusted_release_server')
+    # The real history guard must inventory only this synthetic host.
+    monkeypatch.setattr(server, 'EXAM_RETIRED_INSTALLATIONS',
+                        (tmp_path / 'retired-config', tmp_path / 'retired-library'))
+    monkeypatch.setattr(server, 'EXAM_PROVIDER_REFRESH_ROOT', tmp_path / 'provider-refresh')
+    monkeypatch.setattr(server, 'EXAM_CREDENTIAL_ROOT', tmp_path / 'credentials')
     ota = load('trusted_ota_server')
     contract = load('trusted_ota')
     monkeypatch.setattr(ota, 'assert_ci_budget', lambda sha: None)

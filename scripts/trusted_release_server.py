@@ -1243,11 +1243,66 @@ def assert_no_competing_exam_recovery(state=None):
         raise LaunchError('competing exam recovery inventory unavailable') from None
 
 
-def assert_exam_recovery_history(state=None):
+def _load_exam_forward_history():
+    """Load the closure consumer from the executor's own canonical revision."""
+    entry = Path(__file__).absolute()
+    if entry == Path('/usr/local/lib/reva-release/trusted_release_server.py'):
+        policy = validate_policy(_json(_read_private(POLICY)), now=0)
+        secure_path(entry)
+        if hashlib.sha256(entry.read_bytes()).hexdigest() != policy['executor_sha256']:
+            raise LaunchError('installed exam history executor binding differs')
+        sha = policy['sha']
+        source = STATE / 'bootstrap' / sha / 'source'
+    else:
+        source = entry.parent.parent
+        sha = source.parent.name
+        if (re.fullmatch('[a-f0-9]{40}', sha) is None
+                or source != STATE / 'bootstrap' / sha / 'source'
+                or entry != source / 'scripts/trusted_release_server.py'):
+            raise LaunchError('canonical exam history source required')
+    if os.path.lexists(source / 'scripts/__pycache__'):
+        raise LaunchError('cached exam history code forbidden')
+    env = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1',
+           'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
+    modules = []
+    for name in ('bootstrap_trusted_release', 'exam_forward_retirement'):
+        script = source / 'scripts' / (name + '.py')
+        secure_path(script)
+        raw = script.read_bytes()
+        expected = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+            '-c', 'core.fsmonitor=false', '-C', str(source), 'show', sha + ':scripts/' + name + '.py'],
+            env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+        if raw != expected:
+            raise LaunchError('exam history helper differs from canonical source')
+        spec = importlib.util.spec_from_file_location('canonical_exam_history_' + name, script)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        exec(compile(raw, str(script), 'exec', dont_inherit=True), module.__dict__)
+        modules.append(module)
+        if name == 'bootstrap_trusted_release':
+            module.canonical_source(sha)
+    return tuple(modules)
+
+
+def assert_exam_recovery_history(state=None, *, _exam_pending_rotation=None):
     # A separate reviewed closure must account for every incident side effect.
     # Presence alone blocks here; partial, malformed and completed attempts all
     # remain ineligible for ordinary publication even if /run lost its lease.
     root = Path(STATE if state is None else state)
+    if os.path.lexists(root / 'exam-forward-closures'):
+        try:
+            b, closure = _load_exam_forward_history()
+            if b.STATE != root:
+                raise LaunchError('exam history root differs')
+            if _exam_pending_rotation is None:
+                closure.history_evidence(b)
+            else:
+                closure.validate_pending_rotation(b, _exam_pending_rotation)
+        except Exception:
+            raise LaunchError('exam closure history is incomplete or invalid') from None
+        return
+    if _exam_pending_rotation is not None:
+        raise LaunchError('pending exam rotation requires complete closure')
     if any(os.path.lexists(root / name) for name in
            ('exam-a8-forward-acl-v1', 'exam-a8-read-credential-v1')):
         raise LaunchError('exam recovery requires independent closure')
@@ -1319,9 +1374,10 @@ def assert_xiaoqihou_briefing_history(state=None):
         raise LaunchError('Xiaoqihou maintenance history changed during read')
 
 
-def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None, pending_no_backup_finalization=None):
+def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None, pending_no_backup_finalization=None, _exam_pending_rotation=None):
     """Independent frontend evidence must never count as backend success."""
-    assert_exam_recovery_history(state)
+    exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
+    assert_exam_recovery_history(state, **exam_options)
     assert_xiaoqihou_briefing_history(state)
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
     publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo,
@@ -1862,9 +1918,10 @@ def retained_rpc(policy, action):
     return value
 
 
-def assert_ota_history():
+def assert_ota_history(*, _exam_pending_rotation=None):
     """Every started OTA must finish before any later publisher or rotation."""
-    assert_exam_recovery_history()
+    exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
+    assert_exam_recovery_history(**exam_options)
     assert_xiaoqihou_briefing_history()
     assert_retained_history()
     root = STATE / "ota"

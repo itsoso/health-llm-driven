@@ -17,6 +17,11 @@ def load(name):
 @pytest.fixture
 def history(tmp_path, monkeypatch):
     server = load("trusted_release_server")
+    # Keep the real inventory guard, but never inventory host credentials.
+    monkeypatch.setattr(server, "EXAM_RETIRED_INSTALLATIONS",
+                        (tmp_path / "retired-config", tmp_path / "retired-library"))
+    monkeypatch.setattr(server, "EXAM_PROVIDER_REFRESH_ROOT", tmp_path / "provider-refresh")
+    monkeypatch.setattr(server, "EXAM_CREDENTIAL_ROOT", tmp_path / "credentials")
     state = tmp_path / "state"
     audit = state / "frontend-rebuilds" / ("c" * 32)
     audit.mkdir(parents=True, mode=0o700)

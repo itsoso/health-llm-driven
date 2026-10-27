@@ -307,6 +307,7 @@ def test_true_bootstrap_idle_and_known_activity_block_unknown(tmp_path,monkeypat
     monkeypatch.setattr(b,'STATE',tmp_path);monkeypatch.setattr(b,'BUSINESS_LEASE',tmp_path/'absent-volatile-lease')
     # OS metadata/loading is tested by the bootstrap suite. Keep actual public
     # aggregate functions and actual strict receipt validator for this regression.
+    monkeypatch.setattr(b,'_exam_history_server',lambda:server)
     monkeypatch.setattr(b,'assert_xiaoqihou_briefing_history',lambda:server.assert_xiaoqihou_briefing_history(tmp_path))
     record,_,_,_=history_fixture(tmp_path);(record/'completed.json').unlink()
     for call in (lambda:b._assert_known_activity({}),b._assert_idle,b.assert_frontend_rebuild_history,b.assert_ota_history):

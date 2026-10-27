@@ -123,12 +123,7 @@ def test_build_env_file_rejects_unknown_keys_and_expansion():
 
 
 def test_unfinished_frontend_audit_blocks_later_backend_operations(tmp_path, monkeypatch):
-    path = Path(__file__).with_name("trusted_release_server.py")
-    spec = importlib.util.spec_from_file_location("frontend_audit_server", path)
-    server = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(server)
-    monkeypatch.setattr(server, "secure_path", lambda *a, **kw: None)
-    monkeypatch.setattr(server, "_read_private", lambda p: p.read_bytes())
+    server = load_server(monkeypatch, tmp_path)
     root = tmp_path / "frontend-rebuilds"
     root.mkdir(mode=0o700)
     op = root / ("c" * 32)
@@ -152,7 +147,7 @@ def test_unfinished_frontend_audit_blocks_later_backend_operations(tmp_path, mon
 
 def test_preinstall_failure_requires_exact_log_inventory_and_receipts(tmp_path, monkeypatch):
     m = load()
-    server = load_server(monkeypatch)
+    server = load_server(monkeypatch, tmp_path)
     operation = tmp_path / ("c" * 32)
     operation.mkdir()
     intent = m.receipt("a" * 40, "b" * 40, operation.name, "d" * 40, "FRONTEND_STARTED", None)
@@ -172,11 +167,16 @@ def test_preinstall_failure_requires_exact_log_inventory_and_receipts(tmp_path, 
         server.frontend_preinstall_failure(operation)
 
 
-def load_server(monkeypatch):
+def load_server(monkeypatch, tmp_path):
     path = Path(__file__).with_name("trusted_release_server.py")
     spec = importlib.util.spec_from_file_location("frontend_retirement_server", path)
     server = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(server)
+    # Keep actual competing-recovery checks within the synthetic host.
+    monkeypatch.setattr(server, "EXAM_RETIRED_INSTALLATIONS",
+                        (tmp_path / "retired-config", tmp_path / "retired-library"))
+    monkeypatch.setattr(server, "EXAM_PROVIDER_REFRESH_ROOT", tmp_path / "provider-refresh")
+    monkeypatch.setattr(server, "EXAM_CREDENTIAL_ROOT", tmp_path / "credentials")
     monkeypatch.setattr(server, "secure_path", lambda *a, **kw: None)
     monkeypatch.setattr(server, "_read_private", lambda p: p.read_bytes())
     return server
@@ -231,7 +231,7 @@ def test_terminal_unit_rejects_live_or_unknown_state(monkeypatch):
 @pytest.fixture
 def retirement(tmp_path, monkeypatch):
     m = load()
-    server = load_server(monkeypatch)
+    server = load_server(monkeypatch, tmp_path)
     monkeypatch.setattr(m, "STATE", tmp_path)
     monkeypatch.setattr(m, "LEASE", tmp_path / "active")
     monkeypatch.setattr(m, "retired_lease", lambda op: tmp_path / "retired")

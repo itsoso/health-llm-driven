@@ -17,6 +17,11 @@ def load(name):
 @pytest.fixture
 def evidence(tmp_path, monkeypatch):
     server = load('trusted_release_server')
+    # Shared by stopped-recovery tests: all inventory belongs to the fixture.
+    monkeypatch.setattr(server, 'EXAM_RETIRED_INSTALLATIONS',
+                        (tmp_path / 'retired-config', tmp_path / 'retired-library'))
+    monkeypatch.setattr(server, 'EXAM_PROVIDER_REFRESH_ROOT', tmp_path / 'provider-refresh')
+    monkeypatch.setattr(server, 'EXAM_CREDENTIAL_ROOT', tmp_path / 'credentials')
     rebuild = load('trusted_frontend_rebuild')
     monkeypatch.setattr(server, 'secure_path', lambda *a, **kw: None)
     monkeypatch.setattr(server, '_read_private', lambda p: p.read_bytes())
