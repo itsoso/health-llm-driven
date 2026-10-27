@@ -2,6 +2,8 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor, cleanup } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { getLifeWorkspace, saveLifeWorkspace, getLifeHistory, getLifeBackup, importLifeBackup, restoreLifeWorkspace } from '@/services/lifeNavigation';
+import { getExamPractice, getExamAttempts, submitExamAttempt } from '@/services/examPractice';
+vi.mock('@/services/examPractice',()=>({getExamPractice:vi.fn(),getExamAttempts:vi.fn(),submitExamAttempt:vi.fn()}));
 import { blankData } from './model';
 let user = { id: 7 };
 vi.mock('@/contexts/AuthContext', () => ({ useAuth: () => ({ user, isAuthenticated: true }) }));
@@ -10,11 +12,11 @@ import LifeNavigationWorkspace from './LifeNavigationWorkspace';
 const workspace = { schema_version: 'life_navigation.v1' as const, revision: 3, data: blankData(), updated_at: '2026-10-10T00:00:00Z' };
 describe('Life navigation saved state and account isolation', () => {
     afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
-    beforeEach(() => { vi.clearAllMocks(); user = { id: 7 }; (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace); });
+    beforeEach(() => { vi.clearAllMocks(); user = { id: 7 }; vi.mocked(getExamPractice).mockImplementation(async (_owner,day)=>({catalog_version:'v1',day,today:day,questions:[{id:'a',version:1,subject:'英语',topic:'范围',prompt:'Server question A',options:['Alpha','Beta'],source:'原创',difficulty:'基础'}],progress:[],queue:['a'],plan:[],total_minutes:120,legacy_notice:''}));vi.mocked(getExamAttempts).mockResolvedValue({items:[],total:0});vi.mocked(submitExamAttempt).mockResolvedValue({question:{id:'a',version:1,subject:'英语',topic:'范围',prompt:'Server question A',options:['Alpha','Beta'],source:'原创',difficulty:'基础'},id:'1',question_id:'a',question_version:1,choice_index:0,correct_index:1,correct:false,explanation:'Server result',study_date:'2026-10-28',answered_at:null,elapsed_seconds:1,source:'submitted'}); (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace); });
     it('opens shared exam links and preserves drafts during URL history navigation', async () => {
         window.history.replaceState(null, '', '/agenda?navigation=week&tab=exam&study=practice');
         render(<LifeNavigationWorkspace />);
-        await waitFor(() => expect(screen.getByText('每日专项与错题回看')).toBeTruthy());
+        await waitFor(() => expect(screen.getByText('每日练习')).toBeTruthy());
         fireEvent.click(screen.getByText('方向与季度'));
         fireEvent.change(screen.getByLabelText('愿景'), { target: { value: 'Keep my draft' } });
         fireEvent.click(screen.getByText('备考学习'));
@@ -37,6 +39,7 @@ describe('Life navigation saved state and account isolation', () => {
         fireEvent.change(screen.getByLabelText('愿景'), { target: { value: 'Unsaved direction' } });
         fireEvent.click(screen.getByText('备考学习'));
         fireEvent.click(screen.getByText('练习与错题'));
+        await screen.findByText('Server question A');
         const wanted = location.href;
         const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
         act(() => {
@@ -45,32 +48,22 @@ describe('Life navigation saved state and account isolation', () => {
         });
         expect(confirm).toHaveBeenCalledTimes(1);
         expect(location.href).toBe(wanted);
-        expect(screen.getByText('每日专项与错题回看')).toBeTruthy();
+        expect(screen.getByText('每日练习')).toBeTruthy();
         fireEvent.click(screen.getByText('方向与季度'));
         expect(screen.getByLabelText('愿景')).toHaveValue('Unsaved direction');
         confirm.mockRestore();
     });
-    it('saves study attempts through the authenticated revisioned workspace and reloads them', async () => {
-        let saved = workspace;
-        (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockImplementation(async (owner, revision, data) => {
-            expect(owner).toBe(7); expect(revision).toBe(3);
-            saved = { ...workspace, revision: 4, data }; return saved;
-        });
-        const view = render(<LifeNavigationWorkspace />);
-        await waitFor(() => screen.getByText('备考学习'));
-        fireEvent.click(screen.getByText('备考学习'));
-        fireEvent.click(screen.getByText('练习与错题'));
-        fireEvent.click(screen.getByText('全部题库'));
-        fireEvent.click(screen.getByRole('radio', { name: 'A. cancel permanently' }));
-        fireEvent.click(screen.getByText('核对答案并记录'));
-        await waitFor(() => expect(saveLifeWorkspace).toHaveBeenCalledTimes(1));
-        await waitFor(() => expect(screen.getByText('作答已保存，可刷新或继续下一题')).toBeTruthy());
-        view.unmount();
-        (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(saved);
-        render(<LifeNavigationWorkspace />);
-        await waitFor(() => screen.getByText('备考学习'));
-        fireEvent.click(screen.getByText('备考学习')); fireEvent.click(screen.getByText('练习与错题'));
-        expect(screen.getByText(/已练 1 \/ \d+ 题 · 待复练 1 题/)).toBeTruthy();
+    it('submits server practice separately without saving other workspace drafts', async () => {
+        render(<LifeNavigationWorkspace/>);
+        fireEvent.click(await screen.findByText('方向与季度'));
+        fireEvent.change(screen.getByLabelText('愿景'), {target:{value:'Unsaved direction'}});
+        fireEvent.click(screen.getByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));
+        fireEvent.click(await screen.findByLabelText('A. Alpha'));fireEvent.click(screen.getByText('提交答案'));
+        await screen.findByText('作答已保存');
+        expect(submitExamAttempt).toHaveBeenCalledWith(7, expect.objectContaining({question_id:'a'}));
+        expect(saveLifeWorkspace).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByText('方向与季度'));
+        expect(screen.getByLabelText('愿景')).toHaveValue('Unsaved direction');
     });
     it('keeps local edits on conflict and does not claim saved', async () => {
         (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockRejectedValue({ response: { status: 409 } });
@@ -190,43 +183,4 @@ describe('Life navigation saved state and account isolation', () => {
         fireEvent.click(screen.getByText('方向与季度'));
         expect(screen.getByLabelText('愿景')).toHaveValue('');
     });
-});
-
-it('keeps failed answers visible and retries once with the same revision before allowing next', async () => {
-    user={id:7};
-    (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace);
-    (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockReset().mockRejectedValueOnce({response:{status:409}}).mockImplementation(async (_owner,revision,data)=>({...workspace,revision:revision+1,data}));
-    render(<LifeNavigationWorkspace/>);
-    fireEvent.click(await screen.findByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));fireEvent.click(screen.getByText('全部题库'));
-    fireEvent.click(screen.getByRole('radio',{name:'B. delay until later'}));fireEvent.click(screen.getByText('核对答案并记录'));
-    await screen.findByText('重试保存作答');
-    expect(screen.getByRole('button',{name:'下一题'})).toBeDisabled();
-    expect(screen.queryByText('作答已保存，可刷新或继续下一题')).toBeNull();
-    expect(screen.getByText(/本次答对/)).toBeTruthy();
-    fireEvent.click(screen.getByText('重试保存作答'));
-    await screen.findByText('作答已保存，可刷新或继续下一题');
-    const calls=(saveLifeWorkspace as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls).toHaveLength(2);expect(calls.map(c=>c[1])).toEqual([3,3]);
-    expect(Object.values(calls[1][2].weeks).flatMap((w:any)=>w.tasks)).toHaveLength(1);
-    expect(screen.getByRole('button',{name:'下一题'})).not.toBeDisabled();
-    cleanup();
-});
-
-it('does not duplicate a pending answer or carry its success into another account', async () => {
-    user={id:7};let complete!:(w:typeof workspace)=>void;
-    (getLifeWorkspace as ReturnType<typeof vi.fn>).mockResolvedValue(workspace);
-    (saveLifeWorkspace as ReturnType<typeof vi.fn>).mockReset().mockImplementation(()=>new Promise(resolve=>{complete=resolve;}));
-    const view=render(<LifeNavigationWorkspace/>);
-    fireEvent.click(await screen.findByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));fireEvent.click(screen.getByText('全部题库'));
-    fireEvent.click(screen.getByRole('radio',{name:'B. delay until later'}));
-    const submit=screen.getByText('核对答案并记录');fireEvent.click(submit);fireEvent.click(submit);
-    expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole('button',{name:'下一题'})).toBeDisabled();
-    user={id:8};view.rerender(<LifeNavigationWorkspace/>);
-    await screen.findByText('备考学习');
-    complete({...workspace,revision:4,data:(saveLifeWorkspace as ReturnType<typeof vi.fn>).mock.calls[0][2]});
-    fireEvent.click(screen.getByText('备考学习'));fireEvent.click(screen.getByText('练习与错题'));
-    await waitFor(()=>expect(screen.getByText(/已练 0 \/ /)).toBeTruthy());
-    expect(screen.queryByText('作答已保存，可刷新或继续下一题')).toBeNull();
-    cleanup();
 });

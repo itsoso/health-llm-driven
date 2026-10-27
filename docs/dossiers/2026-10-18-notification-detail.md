@@ -90,3 +90,34 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 最终局部验证：59 项通知回归通过；同组隔离 PostgreSQL 59 项通过（仅使用本任务 55438 端口测试库）；System Map 检查通过。机器未提供全局 python3.12/ruff，地图使用现有 .venv/bin/python3.12，Python 编译检查通过；Ruff 缺失不冒充已通过。
 - `84359d05d` 固定复审 NO-GO：换行拆句会遗失“未记录到”等无指标前导；初稿的通用 Pi 收集器未约束重复终止/终止后内容。新增合成 RED 6 failed 后改为完整标题+正文单一引用，所有前导一并保留，主动标记检查覆盖全部引用；首轮与修复轮共用同一有界收集器。新鲜综合 161 passed，真实模型 v4 双路径通过；先前失败和 NO-GO 均保留。
 - 干净 843 归档集成出现 23 个 Pi runtime unavailable 失败，定位为未安装该归档的 backend/pi-runtime 锁定 Node 依赖；主工作区测试有依赖而正常。这是验证环境缺项，最终冻结归档会先安装锁定运行时再重跑；不把旧归档失败或主工作区结果当最终候选集成通过。
+
+## 2026-10-27 973 验证及并发发布阻断
+
+最终修复提交 `973a858519f045dc2bfea3b522cb6e2195141520`：独立 G4 GO（通知实现及精确838原生策略范围），综合161项、隔离PostgreSQL70项、真实模型v4正常/受阻恢复双路径均通过。精确干净归档安装锁定Pi依赖后，CI-mode集成779项通过；System Map通过。未修改Mobile tree，Store282仍冻结838。
+
+### 2026-10-28 · 统一发布接管与生产事故
+
+用户已确认暂停其他发布，由本会话统一推进。接管时远端 main 已到
+`a8cd1e7635eb697c0f0bc528382c98b3602893c3`，其精确 CI
+[40528116164](https://github.com/itsoso/health-llm-driven/actions/runs/40528116164) 成功，
+但后端发布 [40532246649](https://github.com/itsoso/health-llm-driven/actions/runs/40532246649)
+失败。生产已 checkout a8，runtime journal 为 `INSTALLED`，四个 writer/socket 均停止，
+原 `NEEDS_OPERATOR`、lease、stage 与迁移 intent 保留。通知修复尚未发布。
+
+只读 PostgreSQL 证据证明固定 exam 迁移仍 `PENDING`，目标表、序列和迁移账目未提交。
+根因是默认 ACL 给新表继承了 UPDATE/DELETE，违反追加流水权限校验。修复仅对本次
+新建表与序列收紧 runtime ACL，不改默认授权或其他对象；PUBLIC/额外角色仍阻断。
+通用 runtime schema probe 对该精确追加表使用零行 INSERT 和序列 USAGE 检查，
+其他表继续要求零行 UPDATE。真实 PostgreSQL RED 已复现原错误；49 项迁移/权限检查
+与7项 schema 单测通过，包括缺权限、额外授权、事务回滚、零数据写入与序列未推进。
+
+准备独立固定 `exam-a8-forward-acl-v1` 恢复尝试：只恢复 a8 服务，不重跑旧发布或旧
+迁移 intent，不恢复旧配置、不建备份。新源码需固定 commit G4、完整 CI 和 digest
+绑定的 inspect；具体新尝试须另行确认后执行。完成后仍保留原失败身份与 lease，
+另经独立闭合后才可部署通知修复。当前无恢复成功、通知上线或 App Store 送审声明。
+
+完整真实模型闸第一次 orchestrator 4/5；原summary未保存具体失败case，原因仍未知。保留首次失败日志，不称作修复成功。相同973源码、相同阈值及baseline参数的一次诊断执行增加结果保存，不改评价逻辑：invariants12/12、health_agent_core50/50、orchestrator5/5、trajectory12及goldens9自动评分通过。完整case保存于本机 `/tmp/xiaoqihou-live-973-diagnostic-cases.json`。独立复核发现两个main基线文件实际不存在，runner保留baseline_path但跳过比较，故不能称“基线无回归”。原始合成中存在不受来源支持的日期和因果推断；该评测未经过orchestrator的_safety_wrap及AgentExecutor最终医疗边界，不能从raw输出断言已向用户交付。独立限域裁决接受为一次新鲜自动评分通过，不证明完整安全验收；通知973的独立G4 GO保持有效，相关来源约束及最终回复另有专门证据。上述orchestrator和评测代码838→973未改。
+
+2026-10-27 23:06 CST，push被远端非快进拒绝：origin/main新增 `c4875a6b749cd0601615ab22592aa56157111cee`，包含备考服务、新数据库表及发布迁移helper。本地为ahead2/behind1，未强推、未合并、未部署。按AGENTS第7节停止外部写入，已请用户确认并发任务暂停发布与本会话统一交接；交接不能豁免新增范围的独立审查、PostgreSQL、精确完整CI及迁移准入。
+
+最后只读生产核验仍为838，业务发布租约不存在。例行同权限GitHub只读凭据已在发现分叉前完成续期并留审计，不构成973发布授权。通知线上行为尚未修复验收，App Review保持未提交；已知失败不能归入模拟器未验证项予以豁免。

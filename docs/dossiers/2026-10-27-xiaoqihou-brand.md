@@ -111,3 +111,17 @@ G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workfl
 唯一发布工作流 [40517861529](https://github.com/itsoso/health-llm-driven/actions/runs/40517861529) 整体成功；生产 HEAD 和 durable `completed.json` 独立读回 838 / SUCCEEDED。EAS `267aad01-a185-4343-b0fb-13ee7e8fabc7` 为 production / 1.3.6 (282) / 精确 838，上传 `91cdf464-0aa9-4a91-a800-e4c346933b21` 成功。Apple build `f224685f-e589-41ea-a9d3-fa337b85269a` 已 VALID / APP_STORE_ELIGIBLE。尚未正式提交审核。
 
 用户新反馈“推送的 context 没有带入”已纳入本次送审前修复，来源链路和失败/修复记录见 notification-detail Dossier。原生包保持冻结；后端修复与仅增加 838 白名单的原生检查策略另行固定提交、安全复审及 CI，完成后核验与原生 282 的组合。不得将 Apple 已处理或已有截图等同最终送审通过。
+
+实际282 IPA已下载并核验，SHA256 `05af6f2510c74648ca5991b1578612438774253052bf68aad1ddc7bafd4d5732`，显示名小气候、云朵/暖色日光图标实际可见，Bundle ID、签名team、APNs/HealthKit/associated domain与受审范围一致；仅location后台模式，iPhone portrait，Xcode2660/iOS26.5。实际制品验证器通过。embedded update `2fda6a22-1167-4e7c-b99e-58f443d7203f` 时间1793110673505晚于冻结前最后OTA，冻结仍有效。
+
+七张合成演示账号截图已按838源/模拟器实际build1准备；其中五张已通过ASC API上传并处理为COMPLETE。旧五张尚未删除、顺序尚未替换；draft仍选择281，282尚未绑定为送审版本。候选绑定模拟器证据列明5项真实通过、17项未验证及GPS三项硬件残余风险，保留用户明确接受的模拟器路径；它不豁免当前通知问题。CUA服务后续多次timeoutReached，未冒充新UI验收。
+
+通知修复973已完成本地验证，推送因远端备考服务c487新增迁移而被拒绝。已停止外部写入并等待并发发布交接；App Review未提交。详见通知Dossier。商店资料已更新282实际身份但保持preparing，未将安装包处理完成等同发布验收通过。
+
+
+### 2026-10-28 送审依赖状态
+
+282构建已上传并完成Apple处理，原生内容仍冻结838。统一接管发现另一次a8后端发布
+在新exam表权限校验处失败，生产服务停止；本轮先准备固定前向恢复，细节见
+[通知详情Dossier](2026-10-18-notification-detail.md)。未重跑失败发布，也未提交App Store审核。
+恢复完成后仍须闭合失败身份、部署通知修复并验证最终用户路径，之后才执行已授权的API送审。

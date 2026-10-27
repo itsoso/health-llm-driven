@@ -850,10 +850,20 @@ def _assert_fresh_sha(sha, history):
 
 
 def _assert_known_activity(history, old_sha=None):
+    assert_exam_recovery_history()
     assert_xiaoqihou_briefing_history()
     for path in STATE.iterdir():
         if re.fullmatch(r"[0-9a-f]{40}", path.name) and path.name not in history and path.name != old_sha:
             raise BootstrapError("existing release activity requires operator review")
+
+
+def assert_exam_recovery_history():
+    # Neither service recovery nor read-credential renewal retires the failed
+    # release. No completion string grants ordinary rotation/replay authority.
+    # lexists also blocks broken links and unexpected file types after reboot.
+    if any(os.path.lexists(STATE / name) for name in
+           ('exam-a8-forward-acl-v1', 'exam-a8-read-credential-v1')):
+        raise BootstrapError('exam recovery requires independent closure')
 
 
 def assert_xiaoqihou_briefing_history():
@@ -870,6 +880,7 @@ def assert_xiaoqihou_briefing_history():
 
 
 def assert_frontend_rebuild_history(*, backup_memo=None):
+    assert_exam_recovery_history()
     assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("frontend-rebuilds", "frontend-publications", "neo-wechat")):
         return
@@ -882,6 +893,7 @@ def assert_frontend_rebuild_history(*, backup_memo=None):
 
 
 def assert_ota_history():
+    assert_exam_recovery_history()
     assert_xiaoqihou_briefing_history()
     if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
         return
@@ -896,6 +908,7 @@ def assert_ota_history():
 
 
 def _assert_idle(*, backup_memo=None):
+    assert_exam_recovery_history()
     assert_xiaoqihou_briefing_history()
     assert_frontend_rebuild_history(backup_memo=backup_memo)
     assert_ota_history()

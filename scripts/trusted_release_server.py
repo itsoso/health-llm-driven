@@ -1164,6 +1164,16 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
+def assert_exam_recovery_history(state=None):
+    # A separate reviewed closure must account for every incident side effect.
+    # Presence alone blocks here; partial, malformed and completed attempts all
+    # remain ineligible for ordinary publication even if /run lost its lease.
+    root = Path(STATE if state is None else state)
+    if any(os.path.lexists(root / name) for name in
+           ('exam-a8-forward-acl-v1', 'exam-a8-read-credential-v1')):
+        raise LaunchError('exam recovery requires independent closure')
+
+
 def assert_xiaoqihou_briefing_history(state=None):
     """Durable UNKNOWN admission survives loss of the volatile business lease.
 
@@ -1231,6 +1241,7 @@ def assert_xiaoqihou_briefing_history(state=None):
 
 def assert_frontend_rebuild_history(state=None, *, pending_operation=None, pending_finalization_operation=None, pending_stopped_publication=None, pending_vision_operation=None, backup_memo=None, _seal_snapshot=None, pending_no_backup_finalization=None):
     """Independent frontend evidence must never count as backend success."""
+    assert_exam_recovery_history(state)
     assert_xiaoqihou_briefing_history(state)
     assert_vision_model_history(state,pending_operation=pending_vision_operation)
     publication_options = dict(pending_stopped_publication=pending_stopped_publication, backup_memo=backup_memo,
@@ -1773,6 +1784,7 @@ def retained_rpc(policy, action):
 
 def assert_ota_history():
     """Every started OTA must finish before any later publisher or rotation."""
+    assert_exam_recovery_history()
     assert_xiaoqihou_briefing_history()
     assert_retained_history()
     root = STATE / "ota"

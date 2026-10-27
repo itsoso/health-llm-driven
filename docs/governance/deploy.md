@@ -31,6 +31,8 @@
 
 中断后同一 intent 只可回读：ledger 与 schema/binding 完全匹配才能确认已提交并补齐完成回执；ledger 仍 pending、表不完整、intent 缺失或身份漂移均 NEEDS_OPERATOR，绝不自动重放 DDL、清除意图、领取新操作或改用通用 migration runner。该入口不创建或检查任何备份。合入与本地 PostgreSQL 测试仅证明实现；生产角色/固定凭据就绪及精确候选发布回执必须另行验证。
 
+备考作答新增表使用第二个封闭 profile `scripts/exam_attempts_release.py`。它只允许固定摘要的 `20261028_120000_life_exam_attempts` 成对迁移、新 `exam_practice.py` 模型和唯一模型 import；不能与每日行程 profile 混合扩大 schema 差异。沿用 canonical 源、原租约、固定迁移凭据、停写前预检和候选完整 schema 检查。新表 `life_exam_attempts` 对 runtime role 只授予 SELECT/INSERT，序列只授予 USAGE；账号删除通过外键 CASCADE 清理。运行角色不能更新或删除作答流水。新 intent 和完成回执位于 `/var/lib/reva-release/exam-attempts-migrations/<candidate-sha>/`，同时证明序列身份、表约束、owner 索引、权限与绑定；未知提交状态只回读，不重放 DDL。其 PostgreSQL 迁移及应用并发语义必须分别通过 CI，不能用 SQLite 代替。
+
 新的 Web 发布使用显式 `deploy.sh --publish-frontend-no-backup`，旧 `--publish-frontend`、重建和 stopped-recovery 切换入口仍冻结。新入口只能消费由 `--prepare-frontend-artifact` 完成的同 operation-id 制品，不能在停服后编译。候选须为精确完整 CI 绿色的 current main，先通过独立安全审查并以既有 canonical bootstrap 安装该候选的历史消费者；入口核验当前授权 SHA、有效期与实际 installed server 摘要。后端可保持原已部署且有 SUCCEEDED 回执的 revision，不制造后端发布回执，也不重复发布没有 Mobile 变化的 OTA。
 
 在 `/var/lib/reva-release/bootstrap/<publisher-sha>/source` 使用系统 Python 的固定 deploy 入口，传入 `--publisher-sha`、`--production-sha`、`--frontend-tree`、`--operation-id`；先只读预检，确认返回的证据后再加 `--evidence-sha256` 执行。原 launcher/build 锁和 business lease 继续互斥。停服前完成候选校验，核验固定 live 目录、父/根 inode、同设备且无嵌套挂载；确认 systemd control-group 已停空后删除旧 `.next` / `node_modules`，移入已验证的新制品并同步两个父目录，不保留旧制品副本。全部制品摘要一致才启动，公共/本地页面与后端保持证据均通过后才写终态并释放租约。删除、移动、fsync、启动或回读异常均保留原租约与 NEEDS_OPERATOR，不自动回滚、重试或换 operation-id。
@@ -1382,6 +1384,39 @@ retirement 服务快照归档区分 socket 与 service：systemd 的 socket 无
 数字 MainPID/NRestarts、有效启动时间和绑定的进程身份。socket 仍须 active、
 listening/running、Result=success 且启动时间为正数；该适配不改变实时服务验证。
 
+
+### a8 exam 迁移失败的固定前向恢复
+
+`scripts/exam_release_recovery.py` 仅接受
+`a8cd1e7635eb697c0f0bc528382c98b3602893c3` 在 checkout 后、固定 exam 迁移事务回滚、
+runtime v2 `INSTALLED` 且所有 writer/socket inactive 的已知事故。原发布仍为
+`NEEDS_OPERATOR`，旧迁移仅有 intent，表、序列及账目必须明确未提交；未知结果或
+已提交不授予重放权限。此入口不是普通 deploy、rollback 或 lease 重置。
+
+从新 main 精确绿色 SHA 的 canonical root-owned source 运行，独立 G4 绑定同一 SHA。
+默认只读 inspect 返回 evidence digest；另行明确授权固定新尝试
+`exam-a8-forward-acl-v1` 后，才可传 digest 与同名 accept 开关执行。launcher lock、
+原 business lease/stage、原 workspace、迁移 intent、runtime journal、配置和身份
+须前后核验。任何既存新尝试一律拒绝自动续跑，保留新旧审计等待独立处置。
+
+唯一 DDL 是原 canonical a8 的固定 exam SQL。只收紧新建表/序列的 runtime ACL，
+保留全局默认权限；PUBLIC、额外角色、列级或继承的越权继续拒绝。数据库事务回执、
+完整 schema、依赖、Pi、Laya、KB、health/auth 及跨 RestartSec 稳定证据通过后，
+才沿原 runtime state machine commit/finalize。KB 完整检查包括保存点内合成 DML
+与回滚，须在授权后执行；默认 inspect 不执行该 DML，也不能声称完整 KB 检查通过。
+失败尝试停止服务并记录 containment 是否已证明，不恢复旧配置、不建备份。
+
+独立完成记录仅为 `FORWARD_RECOVERED`，生产源码仍是 a8；不代表通知修复、OTA 或
+App Store 送审完成。原失败回执、原迁移 intent、lease、stage 与发布身份均保留。
+新恢复和凭据续期审计目录一旦存在，bootstrap/server 的持久历史闸拒绝普通发布与
+轮转，包括 completed、未知文件、断链及重启丢失临时 lease 的情况。后续必须实现并
+独立审查 closure consumer，不能删除目录或手工解绑 stage 绕过此闸。
+
+同事故的 `scripts/exam_recovery_credential.py` 使用独立固定尝试
+`exam-a8-read-credential-v1`，仅在原证据、双锁与摘要匹配时续期仓库只读 GitHub App
+凭据。新 token 只经有界 stdin 进入内存，先通过现有 canonical/TLS 精确完整 CI 闸，
+再 CAS 原子替换已绑定的凭据；不授予部署权限、不改业务 lease、身份、数据库或服务。
+inspect 不 mint token、不写文件，亦不声称线上 CI 已核验；凭据结果未知时禁止重试。
 
 ### 自动回滚至旧 revision 的独立收口
 

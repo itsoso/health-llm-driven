@@ -2641,6 +2641,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/life-navigation/exam/practice": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exam Practice View */
+        get: operations["exam_practice_view_api_v1_life_navigation_exam_practice_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/life-navigation/exam/attempts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Exam Attempts */
+        get: operations["exam_attempts_api_v1_life_navigation_exam_attempts_get"];
+        put?: never;
+        /** Exam Submit */
+        post: operations["exam_submit_api_v1_life_navigation_exam_attempts_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/health-navigation/grants": {
         parameters: {
             query?: never;
@@ -24951,6 +24986,137 @@ export interface components {
          * @enum {string}
          */
         EventStatusEnum: "pending" | "auto_confirmed" | "confirmed" | "corrected" | "dismissed";
+        /** ExamAttempt */
+        ExamAttempt: {
+            /** Id */
+            id: string;
+            question: components["schemas"]["ExamQuestion"];
+            /** Question Id */
+            question_id: string;
+            /** Question Version */
+            question_version: number;
+            /** Choice Index */
+            choice_index: number;
+            /** Correct Index */
+            correct_index: number;
+            /** Correct */
+            correct: boolean;
+            /** Explanation */
+            explanation: string;
+            /**
+             * Study Date
+             * Format: date
+             */
+            study_date: string;
+            /** Answered At */
+            answered_at: string | null;
+            /** Elapsed Seconds */
+            elapsed_seconds: number | null;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "submitted" | "legacy_first" | "legacy_latest";
+        };
+        /** ExamAttemptWrite */
+        ExamAttemptWrite: {
+            /**
+             * Request Id
+             * Format: uuid
+             */
+            request_id: string;
+            /** Question Id */
+            question_id: string;
+            /** Question Version */
+            question_version: number;
+            /** Choice Index */
+            choice_index: number;
+            /** Elapsed Seconds */
+            elapsed_seconds: number;
+        };
+        /** ExamHistory */
+        ExamHistory: {
+            /** Items */
+            items: components["schemas"]["ExamAttempt"][];
+            /** Total */
+            total: number;
+        };
+        /** ExamPlanBlock */
+        ExamPlanBlock: {
+            /** Subject */
+            subject: string;
+            /** Minutes */
+            minutes: number;
+            /** Instruction */
+            instruction: string;
+        };
+        /** ExamPractice */
+        ExamPractice: {
+            /** Catalog Version */
+            catalog_version: string;
+            /**
+             * Day
+             * Format: date
+             */
+            day: string;
+            /**
+             * Today
+             * Format: date
+             */
+            today: string;
+            /** Questions */
+            questions: components["schemas"]["ExamQuestion"][];
+            /** Progress */
+            progress: components["schemas"]["ExamProgress"][];
+            /** Queue */
+            queue: string[];
+            /** Plan */
+            plan: components["schemas"]["ExamPlanBlock"][];
+            /** Total Minutes */
+            total_minutes: number;
+            /** Legacy Notice */
+            legacy_notice: string;
+        };
+        /** ExamProgress */
+        ExamProgress: {
+            /** Question Id */
+            question_id: string;
+            /** Attempt Count */
+            attempt_count: number;
+            /** Latest Correct */
+            latest_correct: boolean;
+            /** Ever Wrong */
+            ever_wrong: boolean;
+            /**
+             * Last Date
+             * Format: date
+             */
+            last_date: string;
+            /** Next Review Date */
+            next_review_date: string | null;
+        };
+        /** ExamQuestion */
+        ExamQuestion: {
+            /** Id */
+            id: string;
+            /** Version */
+            version: number;
+            /**
+             * Subject
+             * @enum {string}
+             */
+            subject: "英语" | "数学" | "逻辑";
+            /** Topic */
+            topic: string;
+            /** Prompt */
+            prompt: string;
+            /** Options */
+            options: string[];
+            /** Source */
+            source: string;
+            /** Difficulty */
+            difficulty: string;
+        };
         /** ExcretionDailySummary */
         ExcretionDailySummary: {
             /**
@@ -40865,6 +41031,103 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LifeWorkspace-Output"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exam_practice_view_api_v1_life_navigation_exam_practice_get: {
+        parameters: {
+            query?: {
+                day?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamPractice"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exam_attempts_api_v1_life_navigation_exam_attempts_get: {
+        parameters: {
+            query?: {
+                question_id?: string | null;
+                offset?: number;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamHistory"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    exam_submit_api_v1_life_navigation_exam_attempts_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExamAttemptWrite"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExamAttempt"];
                 };
             };
             /** @description Validation Error */

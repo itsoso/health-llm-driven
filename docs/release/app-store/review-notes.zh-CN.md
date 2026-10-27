@@ -2,7 +2,7 @@
 
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
 >
-> App Store Connect contains the demo account, password, reviewer contact and these review notes. Placeholders remain intentionally so secrets are not committed. Candidate 1.3.3 (271) uses the owner-authorized simulator-risk policy in `docs/governance/simulator-review-acceptance.md`; unverified physical checks remain explicitly recorded outside Git, not represented as passes.
+> App Store Connect contains the demo account, password, reviewer contact and these review notes. Placeholders remain intentionally so secrets are not committed. Candidate 1.3.6 (282), source `83876750fcbb404255b7439482688fee82a490d4`, uses the owner-authorized simulator-risk policy in `docs/governance/simulator-review-acceptance.md`; unverified physical checks remain explicitly recorded outside Git, not represented as passes. Final submission remains pending notification-fix deployment and online acceptance.
 >
 > Paste only `## What To Test` through the end into ASC Notes (maximum 4,000 UTF-8 bytes). Enter credentials and contact details in their separate fields; do not paste this preface.
 
@@ -18,15 +18,15 @@ If the reviewer cannot sign in, please contact support@executor.life.
 
 1. Choose `账号密码登录` and sign in with the demo account. The app opens directly into 小气候.
 2. If a pending action, risk or processing state exists, tap the top context strip for 今日计划, use 返回小气候 to return, or close it.
-3. Ask 小气候: `帮我算我的BMI`. On first use, read the separate AI data-sharing disclosure and choose whether to allow sharing. Declining preserves the draft and does not transmit it to an AI provider. After explicit permission, the answer shows an always-visible `参考来源` panel directly below the medical information.
-4. Tap `中国成人体重判定标准（WS/T 428—2013）` or `成人 BMI 计算方法与分类`. The app opens the official HTTPS source from 国家卫生健康委员会 (`https://www.nhc.gov.cn/`) or CDC (`https://www.cdc.gov/bmi/`). The same panel states `健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。`
+3. Ask `帮我算我的BMI`. First use shows a separate AI data-sharing disclosure. Declining preserves the draft without AI transmission. After permission, medical answers display `参考来源`.
+4. Open 国家卫生健康委员会 (https://www.nhc.gov.cn/) or CDC (https://www.cdc.gov/bmi/) under 参考来源. The answer states: 健康信息用于辅助管理，不替代诊断；做医疗决定前请咨询医生。
 5. Ask 小气候: `今天应该先做什么健康行动？`
 6. Tap the `+` button beside the input bar to photograph or select a meal image. The recognized result remains editable until it is saved.
 7. Open the top-right more menu -> 个人中心 for records, data sources, notifications and privacy.
 
 Text chat remains available after declining notification, location, microphone, photo, camera or HealthKit permissions. Optional permissions are requested only when starting the related feature.
 
-The app does not bundle an on-device inference model or expose an account-free local mode. Requests require authentication and use documented endpoints; unknown or unavailable sessions fail closed.
+AI requests require authentication. The app does not bundle an on-device inference model or provide an account-free local mode.
 
 ## Third-Party AI Permission
 
@@ -38,7 +38,7 @@ Login does not grant AI sharing permission. Declining keeps non-AI records, priv
 
 HealthKit access requires user action. Authorized health/fitness data, including Apple Watch records in Apple Health, supports health displays, timelines and personalized suggestions, never advertising, marketing profiles, resale or unrelated data mining.
 
-The standard iPhone release does not include an Apple Watch companion app, Rokid integration, Siri intents or background location tracking.
+No Watch companion, Rokid integration or Siri intents are included. Optional daily GPS journeys require daily opt-in, retention consent and OS location permission; background location is used only for an enabled journey. This is not required for chat or records.
 
 ## Medical Boundary
 
@@ -56,6 +56,6 @@ Users receive a deletion request number, queryable status and an expected 7-day 
 
 ## Notes For Review
 
-- The demo account has sample health records for 小气候 and 今日计划 without HealthKit authorization. The context strip requires a qualified action, risk or processing state.
+- The demo account has sample health records for 小气候 and 今日计划 without HealthKit authorization. The context strip appears for pending actions.
 - Optional permissions are not required for the reviewer to use text conversation.
 - The submitted binary is iPhone-only, portrait-only and supports iOS 16 or later.

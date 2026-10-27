@@ -28,7 +28,7 @@ Before upload or submit for review, the release owner must check:
 - HealthKit, notification, microphone, camera, and location permission prompts are contextual and optional unless the user explicitly starts that feature.
 - Any paywall, subscription, or purchase copy uses Apple-compliant wording and does not route to external payment.
 - Medical boundary is visible: 小气候 provides health records, trend interpretation, and lifestyle suggestions, not diagnosis, emergency triage, prescriptions, or medication-dose decisions.
-- The standard binary is iPhone portrait only and does not contain Watch, Rokid, Siri intents or background location capabilities.
+- The inspected candidate is iPhone portrait only and excludes Watch, Rokid and Siri intents. Declare any actual background location capability accurately: candidate 1.3.6 (282), source `83876750fcbb404255b7439482688fee82a490d4`, supports optional daily GPS with daily opt-in, retention consent and OS permission.
 - App Privacy responses match the checked-in nutrition-label declaration and have been published, not merely saved as a draft.
 - App Information declares the regulated medical device status. This release must be `No`; a `Yes` assessment requires regulatory evidence and blocks submission.
 - Either the physical-iPhone acceptance path has passed, or the release owner's explicit simulator-risk alternative in `docs/governance/simulator-review-acceptance.md` has passed. In the latter case preserve the unverified voice, camera and external-share risks instead of claiming physical success.

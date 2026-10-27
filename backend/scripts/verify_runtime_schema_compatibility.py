@@ -6,7 +6,7 @@ from __future__ import annotations
 import importlib
 import pkgutil
 
-from sqlalchemy import false, inspect, select, update
+from sqlalchemy import false, insert, inspect, select, text, update
 
 
 def verify_runtime_schema_compatibility(*, engine, metadata, session_factory) -> int:
@@ -55,6 +55,26 @@ def verify_runtime_schema_compatibility(*, engine, metadata, session_factory) ->
             )
         for table in metadata.sorted_tables:
             session.execute(select(table).limit(0))
+            if table.name == "life_exam_attempts" and table.schema in (None, "public"):
+                # This ledger is append-only. Probe INSERT without creating rows
+                # or advancing its sequence; retain UPDATE probes everywhere else.
+                columns = [column for column in table.columns if column.computed is None]
+                session.execute(
+                    insert(table).from_select(
+                        [column.name for column in columns],
+                        select(*columns).where(false()),
+                        include_defaults=False,
+                    )
+                )
+                if engine.dialect.name == "postgresql" and not session.execute(
+                    text(
+                        "SELECT has_sequence_privilege(current_user, "
+                        "'public.life_exam_attempts_sequence_seq', 'USAGE')"
+                    )
+                ).scalar_one():
+                    raise RuntimeError("missing append sequence privilege: life_exam_attempts")
+                checked += 1
+                continue
             writable = next(
                 (column for column in table.columns if column.computed is None),
                 None,

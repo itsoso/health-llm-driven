@@ -367,3 +367,5 @@ __all__ = [
 ]
 
 from app.models.life_navigation import LifeNavigationWorkspace
+
+from app.models.exam_practice import ExamAttemptRecord

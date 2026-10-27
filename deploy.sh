@@ -1216,6 +1216,7 @@ verify_rollback_point_schema_compatibility() {
 
 verify_code_only_source_changes() {
     DAILY_JOURNEY_ADDITIVE=0
+    EXAM_ATTEMPTS_ADDITIVE=0
     if ! [[ "$ROLLBACK_CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ &&
             "$DEPLOY_EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
         print_error "无备份 source compatibility 缺少精确 SHA"
@@ -1224,18 +1225,25 @@ verify_code_only_source_changes() {
     if ! git -C "$SCRIPT_DIR" diff --quiet "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" -- \
         backend/migrations/managed backend/app/models infra/systemd/dropins; then
         local admission
-        if ! admission=$(python3 "$SCRIPT_DIR/scripts/daily_journey_release.py" source-check \
-            "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" --source "$SCRIPT_DIR") ||
-            [[ "$admission" != "DAILY_JOURNEY_ADDITIVE" ]]; then
+        if admission=$(python3 "$SCRIPT_DIR/scripts/daily_journey_release.py" source-check \
+            "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" --source "$SCRIPT_DIR") &&
+            [[ "$admission" = "DAILY_JOURNEY_ADDITIVE" ]]; then
+            DAILY_JOURNEY_ADDITIVE=1
+        elif admission=$(python3 "$SCRIPT_DIR/scripts/exam_attempts_release.py" source-check \
+            "$ROLLBACK_CANDIDATE_COMMIT" "$DEPLOY_EXPECTED_SHA" --source "$SCRIPT_DIR") &&
+            [[ "$admission" = "EXAM_ATTEMPTS_ADDITIVE" ]]; then
+            DAILY_JOURNEY_ADDITIVE=1
+            EXAM_ATTEMPTS_ADDITIVE=1
+        else
             print_error "无备份发布拒绝未受审的 schema/models/runtime 变更；尚未停写"
             return 1
         fi
-        DAILY_JOURNEY_ADDITIVE=1
     fi
 }
 
 daily_journey_release_command() {
-    local phase="$1" loader
+    local phase="$1" loader profile="daily_journey_release.py"
+    [[ "${EXAM_ATTEMPTS_ADDITIVE:-0}" != 1 ]] || profile="exam_attempts_release.py"
     [[ "$phase" = preflight || "$phase" = apply || "$phase" = readback ]] || return 1
     [[ "$REMOTE_PATH" = /opt/health-app && "$REMOTE_RELEASE_LOCK_DIR" = /var/lock/health-app-release ]] || return 1
     # Authenticate the immutable canonical helper before executing any of its
@@ -1243,11 +1251,13 @@ daily_journey_release_command() {
     loader="$(cat <<'DAILY_JOURNEY_LOADER'
 import hashlib, os, pathlib, re, stat, subprocess, sys
 try:
-    sha, old, token, phase = sys.argv[1:]
+    sha, old, token, phase, profile = sys.argv[1:]
+    if profile not in ('daily_journey_release.py', 'exam_attempts_release.py'):
+        raise ValueError('profile')
     if not re.fullmatch('[0-9a-f]{40}', sha):
         raise ValueError('binding')
     source = pathlib.Path('/var/lib/reva-release/bootstrap') / sha / 'source'
-    entry = source / 'scripts/daily_journey_release.py'
+    entry = source / 'scripts' / profile
     for path in [*reversed(entry.parents), entry, source / '.git/config']:
         item = path.lstat()
         file = path in (entry, source / '.git/config')
@@ -1257,7 +1267,7 @@ try:
     def git(*args):
         return subprocess.run(['/usr/bin/git','-c','core.hooksPath=/dev/null','-c','core.fsmonitor=false','-C',str(source),*args],env=env,stdin=subprocess.DEVNULL,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,check=True,timeout=30).stdout.strip()
     raw = entry.read_bytes()
-    if git('rev-parse','HEAD') != sha.encode() or len(raw) > 1000000 or hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest().encode() != git('rev-parse',sha+':scripts/daily_journey_release.py'):
+    if git('rev-parse','HEAD') != sha.encode() or len(raw) > 1000000 or hashlib.sha1(b'blob '+str(len(raw)).encode()+b'\0'+raw).hexdigest().encode() != git('rev-parse',sha+':scripts/'+profile):
         raise ValueError('source')
     executable = '/opt/health-app/backend/venv/bin/python'
     os.execve(executable,[executable,'-I','-B',str(entry),phase,old,sha,'--lease-token',token],env)
@@ -1266,19 +1276,20 @@ except Exception:
     raise SystemExit(70)
 DAILY_JOURNEY_LOADER
 )" || return 1
-    printf '/usr/bin/python3.12 -I -S -B -c %q %q %q %q %q' \
-        "$loader" "$DEPLOY_EXPECTED_SHA" "$ROLLBACK_CANDIDATE_COMMIT" "$REMOTE_RELEASE_LOCK_TOKEN" "$phase"
+    printf '/usr/bin/python3.12 -I -S -B -c %q %q %q %q %q %q' \
+        "$loader" "$DEPLOY_EXPECTED_SHA" "$ROLLBACK_CANDIDATE_COMMIT" "$REMOTE_RELEASE_LOCK_TOKEN" "$phase" "$profile"
 }
 
 daily_journey_release_preflight() {
     [[ "${DAILY_JOURNEY_ADDITIVE:-0}" = 1 ]] || return 0
-    local command output
+    local command output prefix="DAILY_JOURNEY"
+    [[ "${EXAM_ATTEMPTS_ADDITIVE:-0}" != 1 ]] || prefix="EXAM_ATTEMPTS"
     command="$(daily_journey_release_command preflight)" || return 1
     _REMOTE_RELEASE_LOCK_ABANDONED=1
     if ! output=$(ssh "$SERVER" "$command") ||
-       [[ "$output" != "DAILY_JOURNEY_PREFLIGHT_OK pending=1" &&
-          "$output" != "DAILY_JOURNEY_READBACK_OK committed=1" ]]; then
-        print_error "行程新增表预检未通过；未停写，原租约和迁移意图保留"
+       [[ "$output" != "${prefix}_PREFLIGHT_OK pending=1" &&
+          "$output" != "${prefix}_READBACK_OK committed=1" ]]; then
+        print_error "受审新增表预检未通过；未停写，原租约和迁移意图保留"
         return 1
     fi
     _REMOTE_RELEASE_LOCK_ABANDONED=0

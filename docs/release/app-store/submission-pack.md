@@ -4,7 +4,14 @@
 
 Status: preparing App Store submission; final gate pending.
 
-Current candidate: 1.3.3 (271), source `5ddd9402d22c8124bc84b578662ea87c1f6e432c`.
+Current candidate: 1.3.6 (282), source `83876750fcbb404255b7439482688fee82a490d4`.
+EAS build `267aad01-a185-4343-b0fb-13ee7e8fabc7` has finished and Apple build
+`f224685f-e589-41ea-a9d3-fa337b85269a` is VALID / APP_STORE_ELIGIBLE. This is upload
+and processing evidence, not an App Review submission. The historical-notification
+context fix must be deployed and accepted online before final submission. Release
+ownership has been handed to this session. The inherited a8 database migration
+failure currently leaves production services stopped; recovery and audited closure
+must precede the notification deployment and final submission.
 Readiness uses the release owner's explicitly accepted simulator-risk path, not
 a claim of completed physical acceptance. External candidate-bound results and
 the final-submit check remain required before the actual submission action.
@@ -57,7 +64,7 @@ the final-submit check remain required before the actual submission action.
 
 ### What's New
 
-本版本收敛为 iPhone 上的小气候核心体验：打开即进入小气候，动态上下文条与今日计划、文字与语音输入、拍照记录、确认写入和个人中心都围绕对话完成。新增可查询的账号与数据删除请求，改为场景触发权限，并优化动态行动、流式 Markdown、图片持久化和写入回执。
+小气候启用全新云朵图标和更清晰的对话入口。优化剩菜照片的餐次澄清和记录修正提示，并改进健康记录与日常对话体验。
 
 ## Review Notes
 
@@ -68,14 +75,23 @@ credentials and reviewer contact use their separate ASC fields. Notes has a
 description's character limit. Keywords are also measured in UTF-8, with a
 100-byte limit; avoid repeating the app/company name. See Apple's [platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
 
-App Store Connect currently treats 1.3.3 as the app's inaugural Store version,
-so its API rejects the `whatsNew` field in `PREPARE_FOR_SUBMISSION`. The draft
-What's New copy above is retained for a later update release and is intentionally
-not uploaded for this first submission.
+App Store Connect has a saved 1.3.6 draft with build 281 selected. Build 282 has
+completed Apple processing; selecting it and formal submission remain pending.
+Manual release is retained. Five new source-bound simulator screenshots have
+completed processing; replacement of the old screenshot set remains pending.
 
 ## Production Build Preflight
 
-Standard production is iPhone-only and portrait-only. It intentionally excludes the Watch companion, Rokid integration, Siri intents and background location. Those capabilities use separate non-submission profiles.
+The inspected 1.3.6 (282) production IPA is iPhone-only and portrait-only. It excludes the Watch companion, Rokid integration and Siri intents. Its background location capability supports the optional daily GPS journey: daily opt-in, retention consent and system location permission are required.
+
+The actual IPA SHA256 is `05af6f2510c74648ca5991b1578612438774253052bf68aad1ddc7bafd4d5732`.
+Its display name is 小气候, Xcode is 2660, iOS SDK is 26.5 and signing team is
+QA2U724DAN. The actual cloud icon was visually inspected. Candidate-bound artifact
+validation passed using policy revision `973a858519f045dc2bfea3b522cb6e2195141520`.
+The Release simulator uses build 1 from the same frozen application source; it is
+not the Store IPA. Five simulator checks passed and seventeen remain explicitly
+unverified under the owner's simulator policy. The known notification failure is
+separately blocking, not included in a waiver. External evidence remains outside Git.
 
 Before triggering a production iOS build or submit, run the no-network config gate:
 
@@ -217,11 +233,16 @@ Official requirement: https://developer.apple.com/help/app-store-connect/manage-
 
 ## Age Rating Confirmation
 
-The release owner must open the saved App Store Connect age-rating questionnaire for version 1.3.3, review it against the production capability surface and save any required answers. Do not infer answers from the repository or set the confirmation before the saved questionnaire is visible. After this manual review, set `APP_STORE_AGE_RATING_CONFIRMED=1` on the release machine.
+The release owner must open the saved App Store Connect age-rating questionnaire for version 1.3.6, review it against the production capability surface and save any required answers. Do not infer answers from the repository or set the confirmation before the saved questionnaire is visible. After this manual review, set `APP_STORE_AGE_RATING_CONFIRMED=1` on the release machine.
 
 ## Production OTA Freeze
 
-From the moment the 1.3.3 candidate is built until App Review and public G6 verification finish, do not publish an EAS Update to the production channel. This keeps the reviewed JavaScript bundle identical to the tested candidate. The release owner records the freeze window and then sets `APP_STORE_PRODUCTION_OTA_FROZEN=1`; lift the freeze only after the approved binary is public and G6 passes.
+The former 279 freeze was lifted on 2026-10-21. A new production OTA freeze is
+recorded in the brand Dossier for source `83876750fcbb404255b7439482688fee82a490d4`
+and Store build 282. Do not publish updates until the review/release is closed or
+the owner explicitly replaces the candidate. The actual IPA embedded update time
+`1793110673505` is later than the last update before this freeze (`1793097350609`).
+This preserves candidate content; it does not waive backend or submission gates.
 
 ## Screenshot Set
 
@@ -235,16 +256,14 @@ Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07
 
 The uploaded set uses the demo account, contains no private user health data, and targets `APP_IPHONE_67` at 1290 x 2796. The settings screenshot containing the demo login identifier and the privacy-policy screenshot were validated locally but intentionally excluded from marketing assets.
 
-The release target is version 1.3.3 with the App Store build number assigned by
-EAS remote auto-increment (expected Build 241 or later). Build 240 and the Build
-226 screenshots are historical evidence only and cannot satisfy the final gate.
+The release target is version 1.3.6 (282), EAS build `267aad01-a185-4343-b0fb-13ee7e8fabc7`, source `83876750fcbb404255b7439482688fee82a490d4`. Earlier builds and screenshot sets are historical evidence only and cannot satisfy the final gate.
 Record the newly produced EAS build ID, source commit and IPA metadata in the
 external evidence file, then capture or explicitly re-verify the required
 screenshot set against that exact candidate before submission.
 
 Use `docs/release/app-store/screenshot-runbook.md`. Required first pass:
 
-1. Xiaoba Health: open directly into 小气候, with today briefing and suggested next action visible.
+1. 小气候: open directly into 小气候, with today briefing and suggested next action visible.
 2. Chat: AI conversation with dynamic UI card.
 3. Record: fast food/water/workout recording opened from the conversation entry points.
 4. Profile: personal center / data connections and health profile.
