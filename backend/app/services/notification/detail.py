@@ -1,6 +1,7 @@
 """Owner-bound projection of saved notifications, never a current health verdict."""
 from __future__ import annotations
 
+import html
 import json
 import re
 
@@ -47,6 +48,105 @@ def read_notification_detail(db: Session, user_id: int, log_id: int) -> dict | N
     }
 
 
+# These are general meanings, never personalized thresholds or recommendations.
+_REVIEW_TOPICS = {
+    'sleep': (r'睡眠|睡了', '睡眠时长和睡眠分期描述不同方面；设备估计与实际睡眠体验可能存在差异。',
+              '核对实际睡眠时段、设备佩戴情况和当天的主观感受。差值不能补成另一晚的实测时长。'),
+    'hrv': (r'HRV|心率变异', 'HRV（心率变异性）描述相邻心跳间隔的变化，不能单独判断疾病或恢复程度。',
+            '核对设备算法、测量条件和原文所用的个人基线。'),
+    'resting_heart_rate': (r'静息心率', '静息心率指安静休息状态下的心跳频率，测量条件会影响读数。',
+                           '核对是否在可比较的休息状态测量，以及比较基线的来源。'),
+    'oxygen': (r'血氧|SpO2', '血氧饱和度描述血液携氧状态；佩戴、活动和设备可能影响估计。',
+               '核对设备、佩戴情况及是否有复测；不能仅凭历史推送判断当前状态。'),
+    'blood_pressure': (r'血压', '血压包含收缩压和舒张压，姿势、设备和测量时机影响读数。',
+                       '核对单位、袖带和测量条件，以及是否有重复测量。'),
+    'glucose': (r'血糖|CGM', '血糖读数受测量方式和时点影响；不同来源的读数不能直接视为同一测量。',
+                '核对单位、测量方式和与进食的时间关系；原文不足以形成个人用药方案。'),
+    'activity': (r'步数|运动时长|活动时长', '步数或活动时长描述活动量，不能单独代表体能或运动强度。',
+                 '核对统计时段、设备覆盖情况，以及原文比较是否使用相同条件。'),
+    'weight': (r'体重', '体重描述测量时的身体质量，单次变化不能直接说明身体成分的变化。',
+               '核对单位、设备、测量时点和条件，不能从推送文字补造变化原因。'),
+}
+
+
+def notification_review_sources(detail: dict) -> list[dict]:
+    """Whole source sentences only; no date arithmetic or isolated number matching."""
+    content = detail.get('content') or ''
+    if not isinstance(content, str) or len(content) > 16000:
+        return []
+    # Keep punctuation/negation with the source. A decimal point is not a split.
+    sentences = [part.strip() for part in re.split(r'(?<=[。！？\n])|(?<=[.!?])\s+', content) if part.strip()]
+    if len(sentences) > 80:
+        return []
+    return [{'source_index': index, 'text': sentence,
+             'topics': [key for key, (pattern, _, _) in _REVIEW_TOPICS.items() if re.search(pattern, sentence, re.I)]}
+            for index, sentence in enumerate(sentences)]
+
+
+def _unique_review_object(pairs: list) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError('duplicate notification review key')
+        result[key] = value
+    return result
+
+
+def render_notification_review(candidate: str, detail: dict) -> str:
+    """Accept only a source selection; all factual prose stays server-owned.
+
+    A topic must match the complete quoted sentence. Arbitrary model prose,
+    supplied numbers/dates, partial coverage and unsupported notices fail closed.
+    The ordinary medical boundary still checks the entire rendered answer.
+    """
+    if not isinstance(candidate, str) or len(candidate) > 12000:
+        raise ValueError('invalid notification review size')
+    try:
+        plan = json.loads(candidate, object_pairs_hook=_unique_review_object)
+    except (TypeError, ValueError, RecursionError) as exc:
+        raise ValueError('invalid notification review JSON') from exc
+    if not isinstance(plan, dict) or set(plan) != {'items'} or not isinstance(plan['items'], list):
+        raise ValueError('invalid notification review schema')
+    sources = notification_review_sources(detail)
+    eligible = {source['source_index']: source for source in sources if source['topics']}
+    if not 1 <= len(plan['items']) <= 12 or not eligible:
+        raise ValueError('no bounded notification metrics')
+    selected = set()
+    for item in plan['items']:
+        if not isinstance(item, dict) or set(item) != {'source_index', 'topics'}:
+            raise ValueError('invalid notification review item')
+        index, topics = item['source_index'], item['topics']
+        if type(index) is not int or index not in eligible or index in selected:
+            raise ValueError('invalid notification source index')
+        if (not isinstance(topics, list) or not topics or not all(isinstance(t, str) for t in topics)
+                or len(topics) != len(set(topics)) or set(topics) != set(eligible[index]['topics'])):
+            raise ValueError('notification topic is not source bound')
+        selected.add(index)
+    if selected != set(eligible):
+        raise ValueError('notification metric coverage incomplete')
+    parts = ['已带入你选中的历史推送。以下解读原文中的指标及其局限，原始指标尚未重新核验。']
+    for index in sorted(selected):
+        source = eligible[index]
+        # Avoid turning saved prose into links, HTML or a client card protocol.
+        # Do not drop dangerous sentences: the final medical gate must see them.
+        quote = html.escape(source['text'], quote=False)
+        quote = re.sub(r'([\\`*_[\]{}])', r'\\\1', quote)
+        if len(quote) > 1800 or re.search(r'https?://|reva-ui|<[^>]*>|SYSTEM:|忽略.*规则', source['text'], re.I):
+            raise ValueError('notification source contains active markup or instructions')
+        meanings = '\n'.join(_REVIEW_TOPICS[topic][1] for topic in source['topics'])
+        questions = '\n'.join(_REVIEW_TOPICS[topic][2] for topic in source['topics'])
+        parts.append('推送当时写到：\n> ' + quote.replace('\n', '\n> ') + '\n\n含义与局限：' + meanings
+                     + '\n需要核实：' + questions)
+    parts.append('以上只是历史推送的文字依据，不能据此判断你现在的健康状态。'
+                 '保存时间不是指标采样时间，也不能证明实际送达或已读。'
+                 '原文中的建议不作为本轮执行方案；其他结论尚未核验，不能补造病因或个体判断。')
+    if detail.get('content_source') != 'saved_full_text':
+        parts.append('当前保存的文字可能只是摘要，全文完整性未知；本轮仅解读已保存的指标片段。')
+    else:
+        parts.append('本轮仅解读上述指标片段，不代表原推送的其他结论已获证实。')
+    return '\n\n'.join(parts)
+
+
 def notification_review_context(detail: dict) -> str:
     """Keep record prose as quoted data and its historical limitations explicit."""
     # Keep the detail page complete, but bound model input with an explicit limit.
@@ -58,6 +158,7 @@ def notification_review_context(detail: dict) -> str:
                               else 'unknown_may_be_summary'),
         'content_truncated_for_review': len(detail['content']) > 16000,
         'content': detail['content'][:16000],
+        'review_sources': notification_review_sources(detail),
     }
     return (
         '## 所选历史推送解读\n'
@@ -74,6 +175,11 @@ def notification_review_context(detail: dict) -> str:
         'text_completeness=unknown_may_be_summary 表示全文完整性未知、可能只存留摘要；'
         '即使 content_truncated_for_review=false 也不能称其为完整正文。'
         '若本轮内容被截断，说明范围，不能补造全文。\n'
+        '最终只输出 JSON，不输出自然语言或 Markdown。格式：'
+        '{"items":[{"source_index":0,"topics":["sleep"]}]}。'
+        '从 review_sources 选择所有 topics 非空的完整句子，逐项原样复制 source_index 和 topics；'
+        '不要添加字段、日期、数值、解释或建议。无匹配时返回 {"items":[]}。'
+        '系统会按原文和已定义的指标释义生成回答。\n'
         + json.dumps(evidence, ensure_ascii=False)
     )
 
@@ -90,7 +196,7 @@ def notification_review_safe_explanation(detail: dict) -> str:
     )
     definitions = [definition for pattern, definition in terms if re.search(pattern, text, re.I)]
     parts = [
-        '本轮仅提供术语说明，尚未完成对原推送结论的解读。',
+        '已带入你选中的历史推送。本轮仅提供术语说明，尚未完成对原推送结论的解读。',
         '这是一条已保存的历史推送，原始指标尚未重新核验，不能据此判断你现在的健康状态。'
         '保存时间不是指标采样时间，也不能证明实际送达或已读。',
     ]

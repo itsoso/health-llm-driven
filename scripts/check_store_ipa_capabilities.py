@@ -21,6 +21,10 @@ from pathlib import Path, PurePosixPath
 # Narrow admission for the independently reviewed GPS candidate. A new source
 # requires fresh native-scope review, even if its configuration looks similar.
 REVIEWED_JOURNEY_SOURCE = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
+REVIEWED_JOURNEY_SOURCES = frozenset({
+    REVIEWED_JOURNEY_SOURCE,
+    '83876750fcbb404255b7439482688fee82a490d4',
+})
 
 
 def inspect_ipa(path: Path, expected_sha256: str) -> dict:
@@ -170,7 +174,7 @@ def validate_store_artifact(ipa: Path, receipt_path: Path, evidence_path: Path,
         config = subprocess.run(['git', 'show', f'{source_sha}:mobile/app.config.ts'],
                                 cwd=root, capture_output=True, text=True, check=True, timeout=10).stdout
         usage = None
-        if (source_sha == REVIEWED_JOURNEY_SOURCE
+        if (source_sha in REVIEWED_JOURNEY_SOURCES
                 and "const DAILY_JOURNEY_RUNTIME = '1.3.6';" in config and receipt['version'] == '1.3.6'
                 and 'const dailyJourney = config.version === DAILY_JOURNEY_RUNTIME' in config
                 and 'isIosBackgroundLocationEnabled: dailyJourney' in config):

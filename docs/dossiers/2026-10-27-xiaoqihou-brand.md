@@ -89,3 +89,25 @@ G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workfl
 新维护 G4 首轮 NO-GO：已验证的 `/var/lock` alias 不能直接传给拒绝符号链接的 fsync；修正为先验证 lease 再同步真实父目录，使用实际 sync 与 alias 的回归通过。第二轮 NO-GO：易失 lease 重启丢失后，原发布历史聚合没有识别新维护目录；现将固定 intent→database-started→completed 完整链校验接入 bootstrap install/known activity/idle 与 server frontend/OTA 历史聚合，缺失、未知、畸形或多余文件均拒绝后继发布。维护执行还须验证实际 installed launcher 与当前受审操作者源码/策略逐字节绑定；先轮换安装带守卫的发布器，生产后端仍保持8f，才允许该独立维护。352项发布器/维护回归通过，另补实际 build/testflight claim 的无新消费标记负例。仍未生产写入；待固定提交复审。
 
 另一任务固定剩菜源码 `ea779bbe4` 已取得独立GO并cherry-pick为 `e71083201`，与图标及维护范围汇合；本任务独占发布。汇合 `b256161a2` 干净快照真实模型闸通过（含synthetic consent、内存库、已披露阿里云服务），没有使用用户截图重放或读写生产健康数据。新发布器守卫改变后继续绑定最终精确候选；任何旧日志都不冒充最终版本送审证据。
+
+
+## 83876750 固定候选与送审准备
+
+最终应用候选冻结为 `83876750fcbb404255b7439482688fee82a490d4`，Mobile tree `fc943f6e0f1fa6cab9e3d0ae08a1ff749ceaea58`。完整 CI [40510498394](https://github.com/itsoso/health-llm-driven/actions/runs/40510498394) attempt 2 成功；attempt 1 的真实模型证据尚未完成导致 backend-quality 失败记录保留。干净精确候选真实模型回归完成后才重跑失败 CI job，未改应用源码。独立 G4 GO、783项 CI-mode 集成、秘密扫描及 System Map 检查通过。受审 validate [40513511069](https://github.com/itsoso/health-llm-driven/actions/runs/40513511069) 成功。
+
+受审 launcher 已安装838，原生产后端仍8f。首次 bootstrap 预检将父包装进程识别为并发发布器，未建立 retirement intent；更换为 stdin 交付并 execve 交接的调用方式，保留互斥检查，第二次成功。没有重建、清理或覆盖未知发布记录。新简报只读 inspect 成功；固定 attempt 已提供完整合成内容预览，独立用户授权待回复，尚未写入数据库。
+
+从本记录起，为正式送审建立838候选的生产 OTA 发布冻结，直至审核/发布收尾或用户明确授权替换候选；不沿用已解除的279冻结。本任务仍为唯一发布者。冻结前最后更新为 `01a17cee-3dd1-7225-9fff-709e7e3b5927`，group `d1bd9f69-fb5b-4d7e-af92-eed8bde772c2`，source `12edbb30e9bf30247dbcb2ac6635e3fee322754a`，runtime1.3.6，创建于2026-10-27T10:35:50.609Z。冻结是后续发布限制，不更改既有用户的更新通道。新IPA仍须核对embedded update时间、实际权限及签名。
+
+模拟器Release1.3.6/build1的1055个Mobile文件与838逐字节相符。实际通过登录、Today打开关闭、个人中心隐私页、导入入口、前后台草稿保留以及小尺寸云朵视觉检查。截图来自合成演示账号；硬件/第三方集成未验证项仍需完整列举并绑定最终IPA，不冒充商店包或真机通过。新商店构建、最终资料及正式送审尚未完成。
+
+
+独立原生范围复核 GO：旧GPS候选1ba724dc至838的实际production/ios配置执行结果仅品牌与颜色差异，GPS usage/background modes、HealthKit/APNs、Bundle ID、associated domain、runtime1.3.6及生产排除Rokid/Siri/Watch不变；eas.json逐字节一致，直接原生依赖与本地原生模块未变，JS/工具依赖变化不增加原生权限。独立65项配置、图标及Watch插件测试通过。最终IPA策略仅拟新增精确838白名单，仍逐项检查真实制品、签名和候选GPS风险接受；该策略不能代替实际新包验收。策略修订先RED（仅新候选case失败，未知来源拒绝仍通过），最终固定策略提交及复审待原生发布结束后进行，不推进或替换当前应用候选。
+
+## 2026-10-27 维护完成及 282 上传
+
+用户已明确确认固定新 attempt `xiaoqihou-fixed-briefing-v1`，按原 inspect digest 执行一次并完成 `VERIFIED_BRIEFING_ONLY`；只新增一条合成演示会话及两条消息。旧 UNKNOWN 历史保持，未重跑。新完成回执摘要 `e232998b0a6eb70995a0c5695f57d1df5dae2f0d5a5fa028f3693f653b006cf5`，live demo 检查通过；模拟器实际默认会话显示固定简报。
+
+唯一发布工作流 [40517861529](https://github.com/itsoso/health-llm-driven/actions/runs/40517861529) 整体成功；生产 HEAD 和 durable `completed.json` 独立读回 838 / SUCCEEDED。EAS `267aad01-a185-4343-b0fb-13ee7e8fabc7` 为 production / 1.3.6 (282) / 精确 838，上传 `91cdf464-0aa9-4a91-a800-e4c346933b21` 成功。Apple build `f224685f-e589-41ea-a9d3-fa337b85269a` 已 VALID / APP_STORE_ELIGIBLE。尚未正式提交审核。
+
+用户新反馈“推送的 context 没有带入”已纳入本次送审前修复，来源链路和失败/修复记录见 notification-detail Dossier。原生包保持冻结；后端修复与仅增加 838 白名单的原生检查策略另行固定提交、安全复审及 CI，完成后核验与原生 282 的组合。不得将 Apple 已处理或已有截图等同最终送审通过。

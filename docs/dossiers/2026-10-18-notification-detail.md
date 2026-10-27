@@ -78,3 +78,13 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 - 2026-10-20 收尾协议修复：新增固定 1e67 intent-only 的独立审计入口与固定 successor attempt；旧 intent/UNKNOWN 不变，审计不授予任何写入/发布权限。新 attempt 仍须显式授权与新鲜证据，父子证明及 advance 绑定完整链。六文件独立 G4 GO；合成 scope 224 passed /22 skipped，隔离 PostgreSQL 最终 246 passed /0 skipped，test_exit=0、stop_exit=0（`/tmp/reva-unstarted-successor-pg-result.json`）；独立 reviewer 217 passed /3 skipped。新测试已注册完整 CI，部署规范同步。现有演示账号窄化修复授权继续适用，但不能从审计回执自动推导授权。87fd 单独完整本地 CI 已通过 4411 项、0失败、49跳过；最终组合 SHA 仍须重新取得精确完整 CI。尚未执行新生产收尾/修复或发布。
 - 2026-10-20 Linux CI 差异修复：ae4a 的 GitHub 39431517707 在 SSH 合成进程测试失败；原因是 proc 枚举顺序不确定，无关用户 SSH 可能先于已知 chatlog 被送入动态身份认证。新增精确 root@notty 形状前置拒绝，密钥/journal/UID/监听验证仍全部保留。双序 RED 1失败1通过，ack+advance GREEN 151通过；合法形状缺失身份材料仍拒绝。本机复现不代替 Linux 精确候选 CI，生产未变。
 - 2026-10-20 生产只读检查进一步定位：e451 精确 GitHub CI 39433678616 全绿、本地4493项0失败49跳过，已暂存，未部署。closure-inspect 在 SSH 标题前置拒绝；独立只读诊断确认原证据未变，唯一 known-key/root/no-TTY/childless/loopback5030 chatlog 是精确 root-only 标题（10字节、无内部NUL、仅尾NUL填充），不是 @notty。原操作不重放；按真实转发连接形式补最小兼容，固定密钥/boot/PID/start/journal/socket/双观察证明全部保留。
+
+## 2026-10-27 所选推送来源保留修复
+
+- 新截图显示标准解读问题被替换为固定术语说明，用户认为 context 未带入。只读链路核对确认客户端发送 ID，服务端按本人读取；生产脱敏边界标记为 `unverified_dose_action` 与 `notification_review_explanation_incomplete`，没有读取或复述真实健康载荷。
+- 最初仅对剂量拦截做一次无工具重解读。真实模型合成探针暴露保存时间被推为采样日期、按差值补出未测量时长；独立预审 NO-GO。保留失败证据 `/tmp/xiaoqihou-notification-live-probe-result.json`，不放宽医疗规则。
+- 修正为统一来源契约：初稿和重解读只能选择服务端完整原文句子及匹配的指标类型；后端渲染历史引用、固定含义、局限和核实项。拒绝额外/重复字段、非整型索引、重复或越界选择、错配类型、遗漏指标、超长/截断资料及主动标记。保存时间不转为采样日期，不从差值创造个人读数；非指标结论仍明确未核验。
+- 来源失败或单一无依据剂量问题最多做一次有截止时间的重解读，只使用同一条本人通知，不带旧草稿、旧聊天、伪造客户端内容或其他个人记录。拒绝工具、未知事件、非字符串、重复终止及终止后内容；供应商 reasoning 仅计入资源上限并丢弃。所有渲染文本仍通过原医疗边界，失败保留非完成状态及原错误，部分流不输出、不入库。
+- RED：来源契约和畸形流 11 failed / 3 passed；GREEN 第一轮 49 passed，相邻综合 149 passed。最终供应商 reasoning 兼容修正后真实模型双路径探针通过：正常初稿和强制坏初稿后的单次修复均 complete，原文数字保留、无猜测日期/推导数值、无写回执、通知状态未变。证据 `/tmp/xiaoqihou-notification-live-probe-v3-result.json`；前两轮失败保留。样本均为隔离合成数据，不能冒充真实账号在线验收。
+- 此变更仅后端解读，不改 Mobile/API/schema，不增加推送出口。继续现有发布控制器与 safety overlay；固定提交 G4、最终 PostgreSQL/集成/完整精确 CI、上线和验收仍待完成。已构建的 838 / Store 282 原生包保留，正式送审暂缓至后端修复通过。
+- 最终局部验证：59 项通知回归通过；同组隔离 PostgreSQL 59 项通过（仅使用本任务 55438 端口测试库）；System Map 检查通过。机器未提供全局 python3.12/ruff，地图使用现有 .venv/bin/python3.12，Python 编译检查通过；Ruff 缺失不冒充已通过。

@@ -57,10 +57,14 @@ def test_entitlements_reject_extra_capability_and_boolean_coercion():
     assert validate_entitlements(values, 'OTHERTEAM1')
 
 
+@pytest.mark.parametrize('source', [
+    '1ba724dcb62ac389a72e41eecf40fea7aaca27e3',
+    '83876750fcbb404255b7439482688fee82a490d4',
+    '0' * 40,
+])
 @pytest.mark.parametrize('mutation', ['none', 'source', 'eas', 'digest', 'team', 'risk', 'platform', 'family'])
-def test_candidate_binding_end_to_end(tmp_path, monkeypatch, mutation):
+def test_candidate_binding_end_to_end(tmp_path, monkeypatch, mutation, source):
     import scripts.check_store_ipa_capabilities as gate
-    source = gate.REVIEWED_JOURNEY_SOURCE
     plist = {'CFBundleIdentifier': 'life.executor.health', 'CFBundleVersion': '279',
              'CFBundleShortVersionString': '1.3.6', 'UIDeviceFamily': [1],
              'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait'],
@@ -96,7 +100,7 @@ def test_candidate_binding_end_to_end(tmp_path, monkeypatch, mutation):
         'com.apple.developer.healthkit': True, 'com.apple.developer.team-identifier': 'ABCDEFGHIJ', 'get-task-allow': False})
     failures = gate.validate_store_artifact(ipa, receipt, evidence, root=tmp_path,
                                           build_id='279', eas_build_id='eas-test', source_sha=source)
-    assert bool(failures) is (mutation != 'none')
+    assert bool(failures) is (mutation != 'none' or source == '0' * 40)
 
 
 def test_final_submit_requires_actual_ipa():
