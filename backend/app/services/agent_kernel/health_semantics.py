@@ -2675,6 +2675,9 @@ def _health_read_segment_has_target(text: str) -> bool:
 
 def health_read_has_nonself_subject(text: str) -> bool:
     """Detect explicit or concatenated non-current-user health subjects."""
+    from app.services.agent_kernel.body_measurement_review_scope import is_body_measurement_review_request
+    if is_body_measurement_review_request(text):
+        return False  # Whole-command owner proof; gateway binds each evidence window.
     from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request
     if is_bmi_read_request(text):
         return False  # Whole-command subject proof; gateway binds read authority.

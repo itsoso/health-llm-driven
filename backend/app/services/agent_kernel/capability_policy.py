@@ -2580,7 +2580,9 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_kernel.post_record_recovery_scope import post_record_recovery_scope_contract_payload
     from app.services.agent_kernel.medication_review_scope import medication_review_scope_contract_payload
     from app.services.agent_kernel.bmi_read_scope import bmi_read_scope_contract_payload
+    from app.services.agent_kernel.body_measurement_review_scope import body_measurement_review_scope_contract_payload
     return {
+        "body_measurement_review_scope": body_measurement_review_scope_contract_payload(),
         "bmi_read_scope": bmi_read_scope_contract_payload(),
         "post_record_recovery_scope": post_record_recovery_scope_contract_payload(),
         "medication_review_scope": medication_review_scope_contract_payload(),
@@ -2863,6 +2865,9 @@ def decide_tool_capability(
     from app.services.agent_kernel.medication_review_scope import has_medication_review_reference
     if owned_scope is None and has_medication_review_reference(snapshot.envelope.text):
         return _decision('block', 'health_query_semantics_unresolved', tool_name, args)
+    from app.services.agent_kernel.body_measurement_review_scope import has_body_measurement_review_reference
+    if owned_scope is None and has_body_measurement_review_reference(snapshot.envelope.text):
+        return _decision('block', 'longitudinal_read_scope_unresolved', tool_name, args)
     from app.services.agent_kernel.post_record_recovery_scope import has_post_record_recovery_reference
     if owned_scope is None and has_post_record_recovery_reference(snapshot.envelope.text):
         return _decision('block', 'longitudinal_read_scope_unresolved', tool_name, args)
@@ -3105,7 +3110,7 @@ def decide_tool_capability(
             for proposal in read_proposals
         )
         if (guarding_longitudinal_domain
-                and not (owned_scope is not None and set(owned_scope.limitations) & {'post_record_recovery_material_unverified', 'symptom_record_review'})
+                and not (owned_scope is not None and set(owned_scope.limitations) & {'post_record_recovery_material_unverified', 'symptom_record_review', 'body_measurement_review'})
                 and longitudinal_read_restrictions_unresolved(snapshot)):
             # Preserve the existing ownership denial when both checks fail;
             # ownership can change the rejection reason, never grant scope.
@@ -3146,7 +3151,8 @@ def decide_tool_capability(
             if (scope.workout_selection is not None or 'post_record_recovery_material_unverified' in scope.limitations
                     or 'medication_review_today_only' in scope.limitations or 'symptom_record_review' in scope.limitations
                     or 'medication_reminder_slot' in scope.limitations
-                    or 'daily_supplement_recorded_intakes' in scope.limitations):
+                    or 'daily_supplement_recorded_intakes' in scope.limitations
+                    or 'body_measurement_review' in scope.limitations):
                 raw_proposals = [args] if tool_name == 'health_query' else plan.get('queries') if isinstance(plan, dict) else None
                 allowed_fields = {'dimension', 'start_date', 'end_date', 'timezone'}
                 if 'symptom_record_review' in scope.limitations:

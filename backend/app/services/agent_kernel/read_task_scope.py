@@ -300,6 +300,21 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
+    from app.services.agent_kernel.body_measurement_review_scope import (
+        is_body_measurement_review_request, has_body_measurement_review_reference,
+    )
+    if is_body_measurement_review_request(snapshot.envelope.text):
+        zone = ZoneInfo(snapshot.context.timezone)
+        now = snapshot.context.current_time
+        today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+        return OwnedReadScope(tuple(
+            {'dimension': dimension,
+             'start_date': (today - timedelta(days=29 if dimension in {'weight', 'waist'} else 0)).isoformat(),
+             'end_date': today.isoformat(), 'timezone': snapshot.context.timezone}
+            for dimension in ('weight', 'waist', 'diet', 'workout')
+        ), ('body_measurement_review',), composite_advice=True)
+    if has_body_measurement_review_reference(snapshot.envelope.text):
+        return None
     from app.services.agent_kernel.medication_review_scope import (
         medication_reminder_read_request, has_medication_reminder_read_reference,
     )

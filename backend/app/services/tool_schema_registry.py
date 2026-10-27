@@ -51,6 +51,8 @@ dimension 选择指南 (按场景):
 
 【体重 / 血压 / 饮食 / 饮水】
   weight           — 体重历史
+  waist            — 腰围历史；体重腰围复盘入口中与 weight 一起查询，服务端绑定近30天。
+                     同次复盘的 diet/workout 只查今天；未来记录建议不授权新增记录。
   blood_pressure   — 血压历史
   diet             — 今日饮食记录
   water            — 今日饮水
@@ -102,6 +104,7 @@ illness 问"上一次"且没有给时间窗时省略 days, 后端查询全部病
                             "spo2",
                             "spo2_sleep_correlation",
                             "weight",
+                            "waist",
                             "bmi",
                             "blood_pressure",
                             "supplements",

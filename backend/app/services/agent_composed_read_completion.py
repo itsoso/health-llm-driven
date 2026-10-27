@@ -21,7 +21,7 @@ from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
 
-_LABELS = {"conversation": "原始输入", "medication": "用药", "heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
+_LABELS = {"weight": "体重", "waist": "腰围", "conversation": "原始输入", "medication": "用药", "heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
 _ACTUAL_SOURCES = {
     "workout": ("owned_actual_workout_records", {"workout_record", "exercise_record"}),
     "supplements": (
@@ -45,6 +45,8 @@ class ComposedReadCompletion:
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
+    "weight": ("id", "record_date", "source", "weight"),
+    "waist": ("id", "record_date", "source", "waist_cm"),
     "conversation": ("id", "conversation_id", "record_date", "reported_at", "content"),
     "medication": ("id", "medication_id", "medication_name", "record_kind", "record_date", "taken_time", "status", "actual_dosage", "skip_reason"),
     "heart_rate": ("record_date", "avg_heart_rate", "max_heart_rate", "min_heart_rate",
@@ -61,12 +63,15 @@ _EVIDENCE_FIELDS = {
                     "supplement_name", "dosage", "unit", "intake_time"),
 }
 _NUMERIC_FIELDS = frozenset({
+    "weight", "waist_cm",
     "quantity", "calories", "protein", "carbs", "fat", "fiber", "sleep_score",
     "total_sleep_duration", "deep_sleep_duration", "rem_sleep_duration",
     "light_sleep_duration", "awake_duration", "duration_seconds", "distance_meters",
     "avg_heart_rate", "max_heart_rate", "min_heart_rate", "resting_heart_rate", "dosage",
 })
 _FIELD_UNITS = {
+    "weight": {"weight": "kg"},
+    "waist": {"waist_cm": "cm"},
     "conversation": {},
     "medication": {},
     "heart_rate": {field: "beats_per_minute" for field in ('avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate')},
@@ -161,6 +166,8 @@ def _verified_evidence(bounds, verified, limitations):
 # Only clinically relevant returned fields become deterministic disclosures.
 # Names, arbitrary payload keys, and model requests never supply this vocabulary.
 _GAP_LABELS = {
+    "weight": {"weight": "体重"},
+    "waist": {"waist_cm": "腰围"},
     "conversation": {},
     "medication": {},
     "heart_rate": {"avg_heart_rate": "平均心率", "max_heart_rate": "最高心率", "min_heart_rate": "最低心率", "resting_heart_rate": "静息心率"},
@@ -676,6 +683,8 @@ def _completed_scope_invitation(text: str) -> bool:
 
 _RECORD_PROVENANCE = re.compile(r"模板(?:化)?|占位|固定来源")
 _RECORD_DIMENSIONS = {
+    "weight": re.compile(r"体重"),
+    "waist": re.compile(r"腰围"),
     "spo2": re.compile(r"血氧|SpO2", re.I),
     "diet": re.compile(r"饮食|早餐|午餐|晚餐|摄入"),
     "sleep": re.compile(r"睡眠|睡觉"),
@@ -970,6 +979,8 @@ def _facts(dimension: str, payload: dict) -> str:
                 '未查询结构化症状记录，不据此确认症状或药物因果关系。')
     if not rows:
         absence = {
+            "weight": "，不能据此判断体重趋势。",
+            "waist": "，不能据此判断腰围趋势。",
             "heart_rate": "，不能据此判断恢复程度或心率正常与否。",
             "spo2": "，不能判断血氧正常或异常；已排除不用于血氧判断的来源。",
             "diet": "，不代表没有进食。",
@@ -981,6 +992,18 @@ def _facts(dimension: str, payload: dict) -> str:
             return '血氧：已查询目标日期，但缺少可定位的睡眠时段；未用全天汇总替代所选夜间血氧，暂不能判断。'
         return f"{label}：目标日期没有可用记录" + absence[dimension]
     count = format_display_number(len(rows))
+    if dimension in {'weight', 'waist'}:
+        field, unit = ('weight', 'kg') if dimension == 'weight' else ('waist_cm', 'cm')
+        latest = max(rows, key=lambda row: (row['record_date'], row.get('id', 0)))
+        value = _summary_decimal(latest.get(field))
+        text = f"{label}：目标范围内已记录{count}条。"
+        if value is not None:
+            text += f"最近记录日期{latest['record_date']}，读数{_summary_display(value)} {unit}。"
+        else:
+            text += '最近记录缺少有效读数。'
+        if len({row['record_date'] for row in rows}) < 2:
+            text += '不足两个测量日期，不能判断趋势。'
+        return text
     if dimension == "diet":
         text = f"饮食：已记录{count}条。"
         known = [
@@ -1113,6 +1136,10 @@ def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> 
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []
+    if 'body_measurement_review' in scope.limitations:
+        lines.append('未指定体重腰围趋势范围，本次默认查询包含今天的最近30天已保存记录；'
+                     '饮食和运动只查询账号本地日期的今天。未记录不代表没有发生，数据不足不能判断趋势；'
+                     '体重腰围记录不能单独确诊代谢疾病。后续记录建议不会自动写入健康数据。')
     if 'symptom_record_review' in scope.limitations:
         lines.append('按账号本地日期查询，过去若干天包含今天；症状和服药持续时间来自本条自述，'
                      '不是历史日志，也不改变所请求的查询日期。')

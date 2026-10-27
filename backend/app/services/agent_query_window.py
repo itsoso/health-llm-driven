@@ -167,11 +167,13 @@ def read_calendar_health_query(
         raise ValueError('calendar_query_period_unsupported')
     # Heart-rate access is bound by the closed post-record recovery scope;
     # do not broaden the generic natural-language calendar resolver.
-    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate'}:
+    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate', 'weight', 'waist'}:
         raise ValueError("calendar_query_dimension_unsupported")
     from app.models.daily_health import DietRecord, GarminData
 
-    model = DietRecord if dimension == "diet" else GarminData
+    from app.models.weight import WeightRecord
+    from app.models.waist import WaistRecord
+    model = {'diet': DietRecord, 'weight': WeightRecord, 'waist': WaistRecord}.get(dimension, GarminData)
     rows = (db.query(model).filter(model.user_id == user_id,
                                   model.record_date >= window.start_date,
                                   model.record_date <= window.end_date)
@@ -182,6 +184,15 @@ def read_calendar_health_query(
         "dimension": dimension, "window": window.as_dict(), "records": [],
         "availability": "no_data", "limitations": [],
     }
+    if dimension in {'weight', 'waist'}:
+        keys = ('id', 'record_date', 'source', 'weight') if dimension == 'weight' else (
+            'id', 'record_date', 'source', 'waist_cm')
+        result['records'] = [{key: _serial(getattr(row, key)) for key in keys} for row in rows]
+        result['unit'] = 'kg' if dimension == 'weight' else 'cm'
+        result['limitations'] = ['recorded_measurements_only', 'not_a_metabolic_diagnosis']
+        if rows:
+            result['availability'] = 'available'
+        return _bounded_result(result)
     if dimension == "diet":
         keys = ("id", "record_date", "meal_type", "meal_time", "food_name", "food_items",
                 "quantity", "unit", "calories", "protein", "carbs", "fat", "fiber")

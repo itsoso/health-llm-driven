@@ -617,7 +617,7 @@ def validate_health_record(
 # 工具枚举白名单 (与 tool_schema_registry.HEALTH_TOOLS 对齐, 测试会比对一致性)
 _QUERY_DIMENSIONS = {
     "comprehensive", "garmin", "sleep", "heart_rate", "hrv", "activity",
-    "spo2", "spo2_sleep_correlation", "weight", "bmi", "blood_pressure",
+    "spo2", "spo2_sleep_correlation", "weight", "waist", "bmi", "blood_pressure",
     "supplements", "water", "diet", "exercise", "workout", "manual_exercise",
     "body_battery", "stress",
     "medical_exam", "genetic", "genetic_cognitive", "genetic_personality",
