@@ -2,7 +2,8 @@
 import React, { useRef, useState } from 'react';
 import type { LifeData, LifeTask } from '@/services/lifeNavigation';
 import { localDate } from './model';
-import { dailyStudy, daysUntil, examDate, phaseFor, questions, recordAnswer, addStudyDay, studyTask, wrongQuestions, questionHistory, type StudyQuestion, type Subject, type PracticeMode, practiceQuestions, practiceModes, comprehensiveSubject } from './examStudy';
+import { dailyStudy, daysUntil, examDate, phaseFor, questions, recordAnswer, addStudyDay, studyTask, wrongQuestions, questionHistory, type StudyQuestion, type Subject, comprehensiveSubject } from './examStudy';
+import { practiceQuestions, practiceModes, type PracticeMode } from './examHistory';
 import { paperAssignment, examPapers } from './examPapers';
 import css from './exam-study.module.css';
 import { useNavigationParam } from './useNavigationParam';
