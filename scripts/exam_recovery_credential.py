@@ -24,7 +24,7 @@ import time
 
 ATTEMPT = 'exam-a8-read-credential-v1'
 FAILED = 'a8cd1e7635eb697c0f0bc528382c98b3602893c3'
-OLD_SHA256 = 'e3b759a2e51b676de917501d2466f0f6de793c6d3bf9ddaa95b62fd1239e02a8'
+OLD_SHA256 = '699aa3167a7b44ba74309e265add3ff34433c25116b85fd019aa3bb040e34826'
 REPOSITORY = 'itsoso/health-llm-driven'
 CREDENTIAL = Path('/etc/reva-github-api/credential.json')
 STATE = Path('/var/lib/reva-release')
@@ -134,17 +134,17 @@ class SecureDirectory:
         except Exception:
             raise CredentialError('protected entry unavailable') from None
 
-    def read(self, name):
+    def read(self, name, *, private=True, max_bytes=MAX_INPUT):
         self.check()
         fd = None
         try:
             fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | os.O_CLOEXEC, dir_fd=self.fd)
             before = os.fstat(fd)
             need(stat.S_ISREG(before.st_mode) and before.st_uid == self.owner and
-                 stat.S_IMODE(before.st_mode) == 0o600 and before.st_nlink == 1 and
-                 0 < before.st_size <= MAX_INPUT, 'unsafe protected credential file')
+                 (stat.S_IMODE(before.st_mode) == 0o600 if private else not before.st_mode & 0o022) and before.st_nlink == 1 and
+                 0 < before.st_size <= max_bytes, 'unsafe protected credential file')
             chunks = []
-            remaining = MAX_INPUT + 1
+            remaining = max_bytes + 1
             while remaining:
                 chunk = os.read(fd, remaining)
                 if not chunk: break
@@ -348,15 +348,19 @@ def main():
     launcher = STATE / 'launcher.lock'
     bootstrap.secure(launcher, private=True)
     fd = os.open(launcher, os.O_RDWR | os.O_NOFOLLOW)
-    build = None; adapter = None
+    build = None; adapter = None; provider_fd = None
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         build = bootstrap._acquire_existing_build_lock(FAILED)
+        provider = recovery.load(source/'scripts/exam_provider_reconciliation.py','exam_provider_lock',bootstrap)
+        provider_fd, provider_check = provider.acquire_provider_lock(bootstrap)
         def check():
             bootstrap._assert_original_lock(launcher, fd)
             core._check_original_build_lock(bootstrap, FAILED, build)
+            provider_check()
         check(); bootstrap._recovery_process_proof()
         adapter = recovery.Adapter(source,bootstrap,server,core,lease_token,check)
+        provider.validate_current_credential(bootstrap)
         incoming = read_incoming(sys.stdin.buffer) if args.accept_exam_a8_read_credential_v1 else None
         with CredentialStore(CREDENTIAL) as store:
             result = refresh(adapter,store,incoming,STATE/ATTEMPT,
@@ -366,6 +370,7 @@ def main():
     finally:
         if adapter is not None: adapter.close()
         if build is not None: os.close(build)
+        if provider_fd is not None: os.close(provider_fd)
         os.close(fd)
 
 

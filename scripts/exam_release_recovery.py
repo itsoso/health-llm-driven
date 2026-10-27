@@ -345,7 +345,8 @@ class Adapter:
     def __init__(self, source, bootstrap, server, core, token, check):
         self.source, self.bootstrap, self.server, self.core = source, bootstrap, server, core
         self.recovery_sha, self.token, self.check = source.parent.name, token, check
-        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
+        self.provider = load(source / 'scripts/exam_provider_reconciliation.py', 'exam_fixed_provider', bootstrap)
+        self.provider_evidence = self.provider.assert_reconciled_competition(bootstrap)
         self.audit = STATE / ATTEMPT
         self.helper = load(source / 'scripts/exam_attempts_release.py', 'exam_forward_ddl', bootstrap)
         module = load(source / 'scripts/no_backup_preflight_proof.py', 'exam_original_no_backup', bootstrap)
@@ -398,6 +399,13 @@ class Adapter:
         self.original_laya = None
         self.dependencies = None
         self.review = self._review()
+        self._provider_guard()
+
+    def _provider_guard(self):
+        need(self.provider.assert_reconciled_competition(self.bootstrap) == self.provider_evidence,
+             'external provider history changed')
+        need(self.provider.historical_evidence(self.bootstrap, self.proof) == self.provider_evidence,
+             'external provider lease or workspace changed')
 
     def _runtime_inventory(self):
         root = self.transaction.layout.transaction_root
@@ -407,9 +415,9 @@ class Adapter:
 
     def _authority(self):
         self.check()
-        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
+        self._provider_guard()
         self.proof._assert_original_lease()
-        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
+        self._provider_guard()
 
     def _review(self):
         path = self.source.parent / 'exam-forward-g4.json'
@@ -485,7 +493,7 @@ class Adapter:
 
     def snapshot(self):
         self.check()
-        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
+        self._provider_guard()
         self.reset._revision_proof(FAILED, self.failed_source, self.bootstrap)
         result = {'lease_stage': self.proof._stage(self.failed_source),
                   'workspace': self.proof._workspace(self.failed_source),
@@ -493,7 +501,8 @@ class Adapter:
                   'original_runtime_journal_sha256': JOURNAL_PIN,
                   'original_runtime_journal': self.journal,
                   'previous_runtime_terminal': self.previous_terminal,
-                  'configuration': self._configuration(), 'g4_sha256': self._review()}
+                  'configuration': self._configuration(), 'g4_sha256': self._review(),
+                  'provider_reconciliation': self.provider_evidence}
         need(result['original_migration_intent'] == self.intent_identity)
         need({p.name for p in self.original_record.iterdir()} == {'intent.json'})
         self.proof._absent(LIVE / 'backend/.env.reva-release.tmp', Path('/var/lib/reva-health-evidence-runtime/enabled.env'), Path('/run/reva-health-evidence-activation'))
@@ -504,7 +513,7 @@ class Adapter:
             need(self.proof._file(self.transaction._terminal_marker_path(), 0o600)[1] == self.previous_terminal_identity)
             need(self.proof._file(self.transaction.layout.transaction_root / 'journal.json', 0o600)[1] == self.journal_identity)
         self.check()
-        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
+        self._provider_guard()
         return result
 
     def stopped(self):
@@ -758,16 +767,26 @@ def main():
     launcher = STATE / 'launcher.lock'
     bootstrap.secure(launcher, private=True)
     fd = os.open(launcher, os.O_RDWR | os.O_NOFOLLOW)
-    build = None; adapter = None
+    build = None; adapter = None; provider_fd = None
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
         build = bootstrap._acquire_existing_build_lock(FAILED)
+        provider = load(source / 'scripts/exam_provider_reconciliation.py', 'exam_provider_lock', bootstrap)
+        provider_fd, provider_check = provider.acquire_provider_lock(bootstrap)
+        credential_snapshot = credential_receipt = None
         def check():
             bootstrap._assert_original_lock(launcher, fd)
             core._check_original_build_lock(bootstrap, FAILED, build)
+            provider_check()
+            if credential_snapshot is not None:
+                need(provider.validate_recovery_credential(bootstrap, args.sha, credential_snapshot) == credential_receipt,
+                     'fixed credential receipt changed during recovery')
         check()
         bootstrap._recovery_process_proof()
         adapter = Adapter(source, bootstrap, server, core, token, check)
+        initial_snapshot = adapter.snapshot()
+        credential_receipt = provider.validate_recovery_credential(bootstrap, args.sha, initial_snapshot)
+        credential_snapshot = initial_snapshot
         result = recover(adapter, args.evidence_sha256, accept=args.accept_exam_a8_forward_acl_v1)
         check()
         print(json.dumps(result, sort_keys=True))
@@ -775,6 +794,7 @@ def main():
     finally:
         if adapter is not None: adapter.close()
         if build is not None: os.close(build)
+        if provider_fd is not None: os.close(provider_fd)
         os.close(fd)
 
 

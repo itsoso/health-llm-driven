@@ -165,20 +165,22 @@ def test_real_adapter_checks_competing_attempt_before_other_proof(monkeypatch, t
     def reject(state):
         calls.append(state)
         raise RuntimeError('competing exam recovery')
-    server = SimpleNamespace(assert_no_competing_exam_recovery=reject)
+    server = SimpleNamespace()
+    provider = SimpleNamespace(assert_reconciled_competition=reject)
     bootstrap = SimpleNamespace(STATE=tmp_path)
     def forbidden(*args, **kwargs): raise AssertionError('other proof reached first')
-    monkeypatch.setattr(m, 'load', forbidden)
+    monkeypatch.setattr(m, 'load', lambda path,*args: provider if path.name == 'exam_provider_reconciliation.py' else forbidden())
     if entry == 'constructor':
         action = lambda: m.Adapter(tmp_path/'candidate/source', bootstrap, server, None, 'token', lambda: None)
     else:
         a = object.__new__(m.Adapter)
         a.bootstrap, a.server, a.check = bootstrap, server, lambda: None
+        a.provider, a.provider_evidence = provider, None
         a.reset = SimpleNamespace(_revision_proof=forbidden)
         a.proof = SimpleNamespace(_assert_original_lease=forbidden)
         action = a.snapshot if entry == 'snapshot' else a._authority
     with pytest.raises(RuntimeError, match='competing exam recovery'): action()
-    assert calls == [tmp_path]
+    assert calls == [bootstrap]
 
 
 def test_competing_attempt_appearing_during_authority_proof_blocks_mutation(tmp_path):
@@ -187,7 +189,9 @@ def test_competing_attempt_appearing_during_authority_proof_blocks_mutation(tmp_
     def check(state):
         if competing[0]: raise RuntimeError('competing exam recovery')
     a.bootstrap = SimpleNamespace(STATE=tmp_path)
-    a.server = SimpleNamespace(assert_no_competing_exam_recovery=check)
+    a.server = SimpleNamespace()
+    a.provider = SimpleNamespace(assert_reconciled_competition=check, historical_evidence=lambda *args: None)
+    a.provider_evidence = None
     a.check = lambda: None
     a.proof = SimpleNamespace(_assert_original_lease=lambda: competing.__setitem__(0, True))
     with pytest.raises(RuntimeError, match='competing exam recovery'): a._authority()
