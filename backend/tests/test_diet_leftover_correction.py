@@ -173,14 +173,14 @@ def _clarification_followup(db, context, *, text='根据剩菜照片修正今天
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('caption,meal,request', [
+@pytest.mark.parametrize('caption,meal,request_text', [
     ('记录这餐，剩余这么多，计算实际摄入量', 'lunch', '根据剩菜照片修正今天午餐记录'),
     ('记录这餐 剩余这么多 计算下今晚真正摄入量', 'dinner', '根据剩菜照片修正今天晚餐记录'),
     ('今天午餐的剩菜照片\n[附图: 1张]', 'lunch', '根据剩菜照片修正今天午餐记录'),
 ])
-async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, context, monkeypatch, caption, meal, request):
+async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, context, monkeypatch, caption, meal, request_text):
     from app.services import diet_leftover_correction as subject
-    source, answer, current = _clarification_followup(db, context, text=request)
+    source, answer, current = _clarification_followup(db, context, text=request_text)
     source.content = caption
     context[4].meal_type = meal
     db.commit()
