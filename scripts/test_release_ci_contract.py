@@ -62,6 +62,24 @@ def _run_bodies(job: dict) -> str:
     )
 
 
+def test_backend_test_install_defers_bytecode_without_weakening_locked_install():
+    job = yaml.safe_load(CI_WORKFLOW.read_text())["jobs"]["backend-test-shards"]
+    step = next(step for step in job["steps"] if step.get("name") == "Install dependencies")
+    commands = [shlex.split(line) for line in step["run"].splitlines() if line.strip()]
+    assert commands == [
+        ["pip", "install", "--no-compile", "--require-hashes", "-r", "requirements.lock"],
+        ["pip", "install", "--no-compile", "-r", "requirements-dev.txt"],
+    ]
+    assert step["working-directory"] == "backend"
+    assert not step.get("continue-on-error", False)
+    # Imports still compile normally; never disable runtime checks or substitute
+    # a cached test result for execution to obtain an installation speedup.
+    assert not {"PYTHONDONTWRITEBYTECODE", "PYTHONOPTIMIZE"} & set(job.get("env", {}))
+    runner = next(step for step in job["steps"] if "Run isolated shards" in step.get("name", ""))
+    assert "run_ci_pytest_worker.py" in runner["run"]
+    assert not runner.get("continue-on-error", False)
+
+
 def test_frontend_mount_boundary_runs_in_real_linux_namespace():
     workflow = yaml.safe_load(CI_WORKFLOW.read_text())
     jobs = workflow['jobs']

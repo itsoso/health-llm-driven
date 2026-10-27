@@ -149,9 +149,11 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
+        # Short-lived test runners compile imported modules on demand instead of
+        # precompiling every installed package. Hash verification is unchanged.
         run: |
-          pip install --require-hashes -r requirements.lock
-          pip install -r requirements-dev.txt
+          pip install --no-compile --require-hashes -r requirements.lock
+          pip install --no-compile -r requirements-dev.txt
 
       - name: Run isolated shards (${{ matrix.label }})
         working-directory: backend
