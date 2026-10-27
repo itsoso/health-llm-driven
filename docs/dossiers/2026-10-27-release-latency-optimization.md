@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | G4 修复后复审，尚未推送 |
+| 状态 | completed |
+| 当前阶段 | G6 已独立核验生产；同版本由并行任务完成发布 |
 
 ## G1 范围
 
@@ -27,10 +27,29 @@ PASS。基线 f1b0d12421b0a0eb573d3b0280e7aa16306683f0。最近两轮完整 CI 4
 ## G3 证据
 
 - RED：分组计时刷新 unknown shard；权限规范化 66 个 tracked 文件执行 266 次权限命令，违反批量上限。新增分段计时两项在旧实现失败。
-- 定向首轮：53 passed；完整部署/无备份/CI 合约回归 322 passed。独立审查发现 AND-list 下 errexit 失效可能掩盖 Python 权限失败，第一版 NO-GO。已为每个 prerequisite/mutation 添加显式失败传播，测试同时覆盖独立 subshell 与实际 AND-list 上下文；修复后 69 项定向通过。第二轮独立审查 268 passed，但发现 stat 先输出再非零退出时被 test 命令替换吞掉错误；已拆开赋值与结果判断。旧实现独立/AND-list 两项 RED，修复后待第三位 reviewer 复审。
+- 定向首轮：53 passed；完整部署/无备份/CI 合约回归 322 passed。独立审查发现 AND-list 下 errexit 失效可能掩盖 Python 权限失败，第一版 NO-GO。已为每个 prerequisite/mutation 添加显式失败传播，测试同时覆盖独立 subshell 与实际 AND-list 上下文；修复后 69 项定向通过。第二轮独立审查 268 passed，但发现 stat 先输出再非零退出时被 test 命令替换吞掉错误；已拆开赋值与结果判断。旧实现独立/AND-list 两项 RED，第三轮独立复审 270 passed，失败注入通过；对重接主干后的 4f8fffed375006b783cb8ccc586552f1114d8fd5 逐字节等价复核后 G4 GO。
 - 同源 CI 日志离线回放：最长测试进程组 554.761 → 439.374 秒、542.367 → 431.308 秒。总测试进程耗时不变，不包含 runner 排队或环境准备，不是新 CI 实测。来源和非调度策略摘要见 `docs/reviews/2026-10-27-release-latency-replay.json`。
 - 本机同批 1000 个合成文件权限处理对照：旧 8004 次权限命令 / 83.996 秒，新 22 次 / 0.416 秒。chown/chmod 使用记录目标的桩隔离进程启动开销，不能宣称真实所有权已变更或生产同幅加速。真实 chmod、路径拒绝、忽略数据不变和失败传播另有回归。见 `docs/reviews/2026-10-27-permission-batch-benchmark.json`。
 
 ## G4–G6
 
-待固定提交独立审查、精确主干完整 CI、部署及线上核验。OTA 不适用。
+- G4 PASS：候选 `4f8fffed375006b783cb8ccc586552f1114d8fd5` 独立 GO；保留完整测试集合、执行期限与失败传播。
+- G5 PASS：[完整 CI 40438974052](https://github.com/itsoso/health-llm-driven/actions/runs/40438974052) 首轮成功，11 分 42 秒。紧邻前一轮 40436764319 为 10 分 59 秒，故不能宣称整轮 CI 已稳定加快。最慢后端测试步骤 547 → 484 秒；本轮关键 job 在 CI 创建后 140 秒启动，存在调度等待。
+- G6 PASS：[后端发布 40440607024](https://github.com/itsoso/health-llm-driven/actions/runs/40440607024) 由并行任务完成；本任务未重复部署。生产 SHA 与 SUCCEEDED 回执均绑定候选，runtime 终态 COMMITTED / code-only-no-backup，lease 不存在。health-backend、celery-worker、celery-beat 为 active；公网 `/api/v1/health` 200、匿名 `/api/v1/auth/me` 401。
+- 同版本 [OTA 40441500904](https://github.com/itsoso/health-llm-driven/actions/runs/40441500904) 由并行任务发布，服务器 SUCCEEDED、intent/verified 摘要独立核对；本任务改动本身不需要 OTA，不声明设备已接收。
+
+## 生产耗时实测
+
+| 环节 | 紧邻上一轮 2fed3eaa | 本轮 4f8fffed | 说明 |
+| --- | ---: | ---: | --- |
+| 完整 CI | 659 秒 | 702 秒 | 总时长增加 43 秒，不能用离线回放冒充实际收益 |
+| 最慢后端测试步骤 | 547 秒 | 484 秒 | 不含 runner 排队、安装和收尾 |
+| 后端发布工作流 | 364 秒 | 264 秒 | 减少 100 秒，约 27% |
+| 停写后至源码准备完成 | 90 秒 | 6 秒 | 同一远端 shell 时钟差值；包含 runtime prepare、fetch、checkout、权限 |
+| 权限规范化 | 旧版无独立计时 | 小于 1 秒计时分辨率 | 新版 checkout 与 permissions 均落在 elapsed=20 的秒桶，不表示零成本 |
+
+新版远端 checkpoint：writers_stopped=14、runtime_prepare=15、git_fetch=20、git_checkout=20、permissions=20、dependencies=65、schema=68、services_restarted=68。外层 finalized 从 303 秒降为 207 秒。保留所有健康与终态闸，不新增备份。
+
+并发记录：本任务 stage 在发现其他流程已建立同候选 canonical 目录后，于 intent 之前拒绝；未重试、覆盖或轮换授权。用户随后要求等待另一任务完成再接管。本任务独立读回成功回执及健康状态完成核验，不重放已成功发布。后续 Web 发布也已完成：独立读回 operation `a9aa1cc0e069434d9040dc012df96ce8` 为 FRONTEND_SUCCEEDED，publisher 为 2ce44daedc3bb80386fea7dd54bbdddf74a27ed6，保留后端 4f8fffed；生产 BUILD_ID 与其回执一致，前端 active，lease 不存在。用户确认接管后，本任务同步核验记录，不重复生产发布。
+
+仍需优化的主要方向是统一发布归属、减少重复 validate 和 runner 排队；后续相同分片策略的完整 CI 40442091206 为 707 秒，关键后端 job 延迟 139 秒启动；两个优化后样本均未证明整轮 CI 稳定加快。启动延迟混合调度与 runner 可用性，不能据此断言账户配额。减少 worker 可能延长串行执行，故本轮不做未经对照验证的并发或超时变更，也不能建立 P95 或保证固定发布时长。机器可读证据见 `docs/reviews/2026-10-27-release-latency-production.json`。
