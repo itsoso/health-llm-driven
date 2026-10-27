@@ -1045,7 +1045,8 @@ try:
 except (OSError, ValueError, subprocess.SubprocessError):
     raise SystemExit('tracked permission normalization failed')
 REVA_TRACKED_PERMISSIONS
-    test "$(stat -c '%U:%G' .)" = "root:root" || exit 1
+    repository_owner="$(stat -c '%U:%G' .)" || exit "$?"
+    test "$repository_owner" = "root:root" || exit 1
 )
 REMOTE_REPOSITORY_TRUST
 }

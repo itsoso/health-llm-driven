@@ -27,7 +27,7 @@ PASS。基线 f1b0d12421b0a0eb573d3b0280e7aa16306683f0。最近两轮完整 CI 4
 ## G3 证据
 
 - RED：分组计时刷新 unknown shard；权限规范化 66 个 tracked 文件执行 266 次权限命令，违反批量上限。新增分段计时两项在旧实现失败。
-- 定向首轮：53 passed；完整部署/无备份/CI 合约回归 322 passed。独立审查发现 AND-list 下 errexit 失效可能掩盖 Python 权限失败，第一版 NO-GO。已为每个 prerequisite/mutation 添加显式失败传播，测试同时覆盖独立 subshell 与实际 AND-list 上下文；修复后 69 项定向通过。G4 修复版待新 reviewer 复审。
+- 定向首轮：53 passed；完整部署/无备份/CI 合约回归 322 passed。独立审查发现 AND-list 下 errexit 失效可能掩盖 Python 权限失败，第一版 NO-GO。已为每个 prerequisite/mutation 添加显式失败传播，测试同时覆盖独立 subshell 与实际 AND-list 上下文；修复后 69 项定向通过。第二轮独立审查 268 passed，但发现 stat 先输出再非零退出时被 test 命令替换吞掉错误；已拆开赋值与结果判断。旧实现独立/AND-list 两项 RED，修复后待第三位 reviewer 复审。
 - 同源 CI 日志离线回放：最长测试进程组 554.761 → 439.374 秒、542.367 → 431.308 秒。总测试进程耗时不变，不包含 runner 排队或环境准备，不是新 CI 实测。来源和非调度策略摘要见 `docs/reviews/2026-10-27-release-latency-replay.json`。
 - 本机同批 1000 个合成文件权限处理对照：旧 8004 次权限命令 / 83.996 秒，新 22 次 / 0.416 秒。chown/chmod 使用记录目标的桩隔离进程启动开销，不能宣称真实所有权已变更或生产同幅加速。真实 chmod、路径拒绝、忽略数据不变和失败传播另有回归。见 `docs/reviews/2026-10-27-permission-batch-benchmark.json`。
 

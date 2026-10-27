@@ -541,7 +541,7 @@ def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
 
 
 @pytest.mark.parametrize("and_chain", [False, True])
-@pytest.mark.parametrize("fault", [None, "parent_symlink", "file_symlink", "hardlink", "command_failure", "metadata_failure"])
+@pytest.mark.parametrize("fault", [None, "parent_symlink", "file_symlink", "hardlink", "command_failure", "metadata_failure", "stat_after_output"])
 def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     tmp_path: Path, fault, and_chain,
 ):
@@ -631,6 +631,8 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
         _write_executable(fake_bin / "chown", "#!/bin/sh\n[ \"$1\" != -h ] || exit 23\nexit 0\n")
     if fault == "metadata_failure":
         _write_executable(fake_bin / "chown", "#!/bin/sh\nexit 23\n")
+    if fault == "stat_after_output":
+        _write_executable(fake_bin / "stat", "#!/bin/sh\nprintf 'root:root\\n'\nexit 17\n")
     result = subprocess.run(
         ["bash", "-c", generated.stdout.rstrip() + (" && printf permission-proof-accepted" if and_chain else "")],
         cwd=repo,
@@ -648,7 +650,7 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     if fault is not None:
         assert result.returncode != 0
         assert "permission-proof-accepted" not in result.stdout
-        if fault != "metadata_failure":
+        if fault not in {"metadata_failure", "stat_after_output"}:
             assert "tracked permission normalization failed" in result.stderr
         return
     assert result.returncode == 0, (result.stdout, result.stderr)
