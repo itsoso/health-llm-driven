@@ -73,3 +73,12 @@ it('opens an earlier mistake before the first unseen question',()=>{
  render(<Harness initial={data}/>);fireEvent.click(screen.getByRole('button',{name:'练习与错题'}));
  expect(screen.getByText(questions[3].prompt)).toBeTruthy();
 });
+
+describe('real paper daily plan', () => {
+ it('shows dated paper sections and two-hour allocation without replacing warmup history', () => {
+  render(<ExamStudyPanel data={blankData()} day="2026-10-27" edit={()=>{}} focus={()=>{}}/>);
+  expect(screen.getByText('本日已勾选完成 0 / 120 分钟计划')).toBeTruthy();
+  expect(screen.getByRole('link',{name:'打开2024年英语（二）原卷 ↗'}).getAttribute('href')).toContain('bbfa3fc');
+  expect(screen.getByText(/尚不支持真题在线自动判分/)).toBeTruthy();
+ });
+});
