@@ -50,7 +50,13 @@ def digest(value):
 
 
 def validate_terminal(marker, sha):
-    if not isinstance(marker, dict) or set(marker) != {
+    incident_mode = (
+        isinstance(marker, dict)
+        and sha == "a8cd1e7635eb697c0f0bc528382c98b3602893c3"
+        and marker.get("old_sha") == "83876750fcbb404255b7439482688fee82a490d4"
+        and marker.get("mode") == "code-only-no-backup"
+    )
+    if not isinstance(marker, dict) or set(marker) != ({
         "version",
         "old_sha",
         "candidate_sha",
@@ -60,7 +66,7 @@ def validate_terminal(marker, sha):
         "result",
         "transaction_id",
         "reap_name",
-    }:
+    } | ({"mode"} if incident_mode else set())):
         raise RetirementError("terminal inventory invalid")
     if (
         type(marker["version"]) is not int
@@ -84,6 +90,8 @@ def validate_terminal(marker, sha):
         "transaction_id": transaction,
         "reap_name": "runtime-state-transaction.reap-" + transaction,
     }
+    if incident_mode:
+        expected["mode"] = "code-only-no-backup"
     if marker != expected:
         raise RetirementError("finalized retained candidate required")
 
@@ -189,6 +197,8 @@ def workspace_evidence(b, sha):
         "home",
         "bin",
     }
+    if sha == "a8cd1e7635eb697c0f0bc528382c98b3602893c3":
+        required.remove("deployment.env")
     if {p.name for p in root.iterdir()} != required:
         raise RetirementError("only backend-only phase-complete failure supported")
     source = b.canonical_source(sha)
@@ -1547,11 +1557,29 @@ def closed_evidence(b, sha, receipt, *, historical=False):
     validate_configuration(b, source, sha, intent["live"]["configuration"])
     if workspace_evidence(b, sha) != intent["workspace"]:
         raise RetirementError("original failed workspace changed")
-    config, library = b._archives(sha)
-    if not os.path.lexists(config) and not os.path.lexists(library):
-        config, library = b.CONFIG, b.INSTALLED.parent
-    if b._installation_evidence(sha, config, library) != intent["installation"]:
-        raise RetirementError("closed installation changed")
+    retirement = b.STATE / "retired" / sha
+    if historical and sha == "a8cd1e7635eb697c0f0bc528382c98b3602893c3" and os.path.lexists(retirement):
+        private_directory(b, retirement)
+        b._inventory(retirement, {"intent.json", "completed.json"})
+        saved = b._read_json(retirement / "intent.json")
+        required = {"old_sha", "new_sha", "installation", "workspace", "recovery_receipt", "retirement_policy", "public_keys"}
+        expected_workspace = {"state": TERMINAL, "closure": digest(completed), "workspace": intent["workspace"]}
+        if (not isinstance(saved, dict) or set(saved) - {"cloud_key_reused"} != required
+                or ("cloud_key_reused" in saved and saved["cloud_key_reused"] is not True)
+                or saved.get("old_sha") != sha or saved.get("retirement_policy") != "no-backup-v1"
+                or not isinstance(saved.get("new_sha"), str) or re.fullmatch("[a-f0-9]{40}", saved["new_sha"]) is None
+                or saved["new_sha"] == sha or saved.get("recovery_receipt") != receipt
+                or saved.get("installation") != intent["installation"] or saved.get("workspace") != expected_workspace
+                or any(os.path.lexists(path) for path in b._archives(sha))
+                or b._read_json(retirement / "completed.json") != {"old_sha": sha, "new_sha": saved["new_sha"], "state": "RETIRED"}):
+            raise RetirementError("fixed exam no-copy retirement audit differs")
+        b._retired_public_keys(sha, saved)
+    else:
+        config, library = b._archives(sha)
+        if not os.path.lexists(config) and not os.path.lexists(library):
+            config, library = b.CONFIG, b.INSTALLED.parent
+        if b._installation_evidence(sha, config, library) != intent["installation"]:
+            raise RetirementError("closed installation changed")
     if b._recovery_file_identity(b.STATE / "launcher.lock") != intent["launcher"]:
         raise RetirementError("original launcher lock changed")
     # Future deployments legitimately replace the live terminal and processes.

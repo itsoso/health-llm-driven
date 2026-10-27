@@ -127,9 +127,8 @@ def test_no_finalization_or_success_receipt_written():
     assert ".finalize(" not in text and ".commit(" not in text
 
 
-def history_fixture(monkeypatch, tmp_path):
+def history_fixture(monkeypatch, tmp_path, sha="b" * 40):
     m = load()
-    sha = "b" * 40
     closing = "c" * 40
     receipt = "d" * 64
     root = tmp_path / m.ROOT_NAME / sha
@@ -1387,3 +1386,85 @@ def test_archive_service_identity_remains_strict(monkeypatch, tmp_path, field, v
     evidence["live"]["services"]["health-backend.service"][field] = value
     with pytest.raises(m.RetirementError):
         m.validate_live_snapshot(evidence["live"], "b" * 40)
+
+
+def test_fixed_exam_incident_accepts_only_exact_no_backup_terminal():
+    m = load()
+    sha = "a8cd1e7635eb697c0f0bc528382c98b3602893c3"
+    old = "83876750fcbb404255b7439482688fee82a490d4"
+    value = marker(sha)
+    transaction = hashlib.sha256(f"{old}:{sha}".encode()).hexdigest()[:32]
+    value.update(old_sha=old, transaction_id=transaction,
+                 reap_name="runtime-state-transaction.reap-" + transaction,
+                 mode="code-only-no-backup")
+    m.validate_terminal(value, sha)
+    for field, invalid in [("old_sha", "a" * 40), ("mode", "backup"),
+                           ("phase", "INSTALLED"), ("version", 2)]:
+        changed = dict(value, **{field: invalid})
+        with pytest.raises(m.RetirementError):
+            m.validate_terminal(changed, sha)
+    generic = marker()
+    generic["mode"] = "code-only-no-backup"
+    with pytest.raises(m.RetirementError):
+        m.validate_terminal(generic, "b" * 40)
+
+EXAM_FAILED_SHA='a8cd1e7635eb697c0f0bc528382c98b3602893c3'
+
+def exam_workspace_fixture(monkeypatch,tmp_path):
+    m,b,sha,root=workspace_fixture(monkeypatch,tmp_path)
+    for p in root.glob('*.json'):
+        value=json.loads(p.read_text());value['sha']=EXAM_FAILED_SHA;p.write_text(json.dumps(value))
+    target=tmp_path/EXAM_FAILED_SHA;root.rename(target)
+    (target/'deployment.env').unlink()
+    return m,b,target
+
+def test_exact_exam_failure_inventory_without_deployment_env_is_read_only(monkeypatch,tmp_path):
+    m,b,root=exam_workspace_fixture(monkeypatch,tmp_path)
+    before={p.name:p.read_bytes() for p in root.iterdir() if p.is_file()}
+    assert m.workspace_evidence(b,EXAM_FAILED_SHA)['executor_sha256']
+    assert before=={p.name:p.read_bytes() for p in root.iterdir() if p.is_file()}
+
+@pytest.mark.parametrize('fault',['env','build_lock','missing_phase','success','foreign_sha'])
+def test_exact_exam_failure_does_not_relax_other_inventory_or_phases(monkeypatch,tmp_path,fault):
+    m,b,root=exam_workspace_fixture(monkeypatch,tmp_path)
+    if fault=='env':(root/'deployment.env').write_text('unexpected')
+    if fault=='build_lock':(root/'build.lock').touch()
+    if fault=='missing_phase':(root/'prepared.json').unlink()
+    if fault=='success':(root/'completed.json').write_text(json.dumps({'sha':EXAM_FAILED_SHA,'state':'SUCCEEDED'}))
+    if fault=='foreign_sha':
+        old='f'*40;root.rename(tmp_path/old)
+        with pytest.raises(m.RetirementError):m.workspace_evidence(b,old)
+        return
+    with pytest.raises(m.RetirementError):m.workspace_evidence(b,EXAM_FAILED_SHA)
+
+def retired_exam_fixture(monkeypatch,tmp_path):
+    m,b,sha,receipt,evidence=history_fixture(monkeypatch,tmp_path,EXAM_FAILED_SHA)
+    monkeypatch.setattr(m,'validate_live_snapshot',lambda *a:None)
+    closure=json.loads((tmp_path/m.ROOT_NAME/sha/'completed.json').read_text())
+    saved={'old_sha':sha,'new_sha':'c'*40,'retirement_policy':'no-backup-v1',
+           'installation':evidence['installation'],'workspace':{'state':m.TERMINAL,'closure':m.digest(closure),'workspace':evidence['workspace']},
+           'public_keys':{'cloud.pub':'public','loopback.pub':'loop'},'recovery_receipt':receipt}
+    p=tmp_path/'retired'/sha;p.mkdir(parents=True)
+    (p/'intent.json').write_text(json.dumps(saved))
+    (p/'completed.json').write_text(json.dumps({'old_sha':sha,'new_sha':'c'*40,'state':'RETIRED'}))
+    b._retired_public_keys=lambda *a:saved['public_keys']
+    b._installation_evidence=lambda *a:(_ for _ in ()).throw(AssertionError('removed installation cannot be read'))
+    return m,b,sha,receipt,saved,p
+
+def test_fixed_exam_no_copy_retirement_history_survives_removed_installation(monkeypatch,tmp_path):
+    m,b,sha,receipt,saved,p=retired_exam_fixture(monkeypatch,tmp_path)
+    assert m.closed_evidence(b,sha,receipt,historical=True)==saved['workspace']
+
+@pytest.mark.parametrize('fault',['incomplete','receipt','installation','workspace','new_sha','policy','extra'])
+def test_fixed_exam_no_copy_requires_exact_completed_retirement(monkeypatch,tmp_path,fault):
+    m,b,sha,receipt,saved,p=retired_exam_fixture(monkeypatch,tmp_path)
+    if fault=='incomplete':(p/'completed.json').unlink()
+    if fault=='receipt':saved['recovery_receipt']='f'*64
+    if fault=='installation':saved['installation']={}
+    if fault=='workspace':saved['workspace']={}
+    if fault=='new_sha':saved['new_sha']=sha
+    if fault=='policy':saved['retirement_policy']='backup'
+    if fault=='extra':saved['unknown']=True
+    (p/'intent.json').write_text(json.dumps(saved))
+    with pytest.raises((m.RetirementError,FileNotFoundError)):
+        m.closed_evidence(b,sha,receipt,historical=True)

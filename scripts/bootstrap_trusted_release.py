@@ -1298,7 +1298,9 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         # SHA permanently, and finish audit writes before publishing any key.
         _write(record / "completed.json", json.dumps({"old_sha": old_sha, "new_sha": sha,
                "state": "RETIRED"}, sort_keys=True).encode())
-        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"}:
+        if workspace.get("state") in {"CLOSED_UNCHANGED_RELEASE", "CLOSED_DINNER_GUARD_RELEASE", "CLOSED_NATIVE_ONLY_VENDOR_UPLOAD"} or (
+                old_sha == "a8cd1e7635eb697c0f0bc528382c98b3602893c3"
+                and workspace.get("state") == "CLOSED_RETAINED_CANDIDATE_FAILURE"):
             # The no-copy closure already proved the revoked installation before
             # deletion. Reconsume its durable retirement audit now: this checks
             # canonical executor/public-key hashes, original closure receipt and

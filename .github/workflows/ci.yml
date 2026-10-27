@@ -373,6 +373,10 @@ jobs:
           scripts/test_deploy_no_backup.py
           scripts/test_daily_journey_release.py
           scripts/test_exam_attempts_release.py
+          scripts/test_exam_release_recovery.py
+          scripts/test_exam_recovery_lease.py
+          scripts/test_exam_provider_refresh.py
+          scripts/test_retained_candidate_retirement.py
           scripts/test_exam_release_wiring.py
           scripts/test_release_timing.py
           scripts/test_release_performance_report.py
@@ -626,7 +630,7 @@ jobs:
       - name: Verify bounded exam attempt migration on PostgreSQL
         env:
           EXAM_ATTEMPTS_RELEASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
-        run: python -m pytest -q --noconftest --no-cov scripts/test_exam_attempts_release_postgres.py
+        run: python -m pytest -q --noconftest --no-cov scripts/test_exam_attempts_release_postgres.py scripts/test_exam_attempts_recovery.py
 
       - name: Verify exam practice PostgreSQL transactions
         working-directory: backend

@@ -305,7 +305,9 @@ def apply_exact(connection, source, plan, runtime_role):
             connection.execute(text(statement))
     quoted = connection.dialect.identifier_preparer.quote(runtime_role)
     for table in TABLES:
+        connection.execute(text(f'REVOKE ALL PRIVILEGES ON TABLE public.{table} FROM {quoted}'))
         connection.execute(text(f'GRANT SELECT, INSERT ON TABLE public.{table} TO {quoted}'))
+    connection.execute(text(f'REVOKE ALL PRIVILEGES ON SEQUENCE public.life_exam_attempts_sequence_seq FROM {quoted}'))
     connection.execute(text(f'GRANT USAGE ON SEQUENCE public.life_exam_attempts_sequence_seq TO {quoted}'))
     evidence = schema_evidence(connection, runtime_role)
     proof = json.dumps({'binding': plan, 'schema': evidence}, sort_keys=True)

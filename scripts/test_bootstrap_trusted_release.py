@@ -1413,3 +1413,32 @@ def test_native_finalization_history_survives_following_rotation(monkeypatch, tm
     assert b.rotate(candidate, future, 0, PUBLIC)['state'] == 'INSTALLED'
     b._persistent_cloud_successor(SHA, PUBLIC)
     assert set(b._retired_history()) == {SHA, candidate}
+
+@pytest.mark.parametrize('fault',[None,'retirement_audit','foreign_sha'])
+def test_fixed_exam_retained_no_copy_rotation_rechecks_historical_audit(monkeypatch,tmp_path,fault):
+    import sys
+    failed='a8cd1e7635eb697c0f0bc528382c98b3602893c3' if fault!='foreign_sha' else 'd'*40
+    monkeypatch.setattr(sys.modules[__name__],'SHA',failed)
+    bootstrap,_=rotation_fixture(monkeypatch,tmp_path,succeeded=False)
+    workspace={'state':'CLOSED_RETAINED_CANDIDATE_FAILURE','closure':'c'*64,'workspace':{'manifest':'fixed'}}
+    observed=[]
+    def inspect(sha,*,recovery_receipt=None,historical=False):
+        observed.append((historical,bootstrap.CONFIG.exists()))
+        if not bootstrap.CONFIG.exists() and not historical:
+            raise bootstrap.BootstrapError('removed installation cannot be read as current')
+        return workspace
+    monkeypatch.setattr(bootstrap,'_workspace_evidence',inspect)
+    installed=[]
+    monkeypatch.setattr(bootstrap,'_install_locked',lambda *a,**k:installed.append(True) or {'state':'INSTALLED'})
+    write=bootstrap._write
+    def write_fault(path,raw):
+        write(path,raw)
+        if fault=='retirement_audit' and path==bootstrap.STATE/'retired'/failed/'completed.json':
+            saved=json.loads(path.read_text());saved['new_sha']='e'*40;path.write_text(json.dumps(saved))
+    monkeypatch.setattr(bootstrap,'_write',write_fault)
+    if fault:
+        with pytest.raises(bootstrap.BootstrapError):bootstrap.rotate(failed,NEW_SHA,200,HOST,recovery_receipt='c'*64)
+        assert not installed
+    else:
+        assert bootstrap.rotate(failed,NEW_SHA,200,HOST,recovery_receipt='c'*64)['state']=='INSTALLED'
+        assert (True,False) in observed and installed==[True]
