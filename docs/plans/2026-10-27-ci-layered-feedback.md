@@ -64,6 +64,8 @@ flowchart LR
 
 本轮入口 `scripts/ci_module_feedback.py --base origin/main --run` 收集已暂存、未暂存及未跟踪文件，使用代码内的有限登记。无法识别时返回 2 并要求常规回归，绝不返回“模块通过”。`--module` 是显式开发探针，不证明当前整个 diff 已覆盖。显示格式化和提示缓存是初始试点，完整登记以脚本为准。
 
+相同测试集合的本机单次对照：展示模块 99 项，默认全应用报告 77.06 秒、模块报告 29.49 秒；提示缓存 24 项，49.89 秒 → 9.78 秒。JUnit 用例身份/结果集合一致且无跳过，模块覆盖率分别 87.21% / 100%。这测量的是模块反馈入口的报告成本改善，不是完整 CI 提速或稳定延迟；证据见 `docs/reviews/2026-10-27-ci-local-module-feedback.json`。
+
 入口保留真实 conftest 与 fixture，局部模块覆盖率至少 80%；使用内存 SQLite、不可达本地 Redis，清除外部数据库和 pytest 注入环境，错误/超时非零退出、不重试。它不验证 PostgreSQL 语义，不替代跨域消费者测试；结果始终标记 `release_authority=false`、`full_ci_required=true`。现有 release-preflight 和可信发布器没有消费该结果。
 
 在将影响选集用于 CI 跳过前，先运行 shadow：同时计算选集并保留全量 CI，逐轮记录“漏掉的失败”、选集规模和耗时；主动注入消费者/fixture/共享依赖变更。任何漏选或图不完整都回到 full。覆盖率上下文或 testmon 可以提供运行时依赖证据，但没有执行到的路径、配置和动态注册仍需显式规则，不能只凭一次覆盖就授权跳过。[testmon 工作方式](https://www.testmon.org/)

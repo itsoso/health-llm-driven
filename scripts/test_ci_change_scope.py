@@ -334,3 +334,25 @@ def test_feedback_git_inventory_includes_staged_unstaged_and_untracked(tmp_path,
     changed=m.changed_paths('HEAD')
     assert changed == ['backend/app/utils/number_format.py','backend/tests/conftest.py']
     assert m.plan(changed)['mode']=='full_required'
+
+
+def test_feedback_git_inventory_preserves_cancelled_fixture_changes(tmp_path, monkeypatch):
+    m = feedback_module(); monkeypatch.setattr(m, 'ROOT', tmp_path)
+    def git(*argv):
+        return subprocess.run(['git','-C',str(tmp_path),*argv],check=True,capture_output=True,text=True)
+    git('init','-q')
+    fixture = tmp_path/'backend/tests/conftest.py'
+    source = tmp_path/'backend/app/utils/number_format.py'
+    for path in (fixture, source):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('baseline\n')
+    git('add','backend/tests/conftest.py','backend/app/utils/number_format.py')
+    git('-c','user.name=Synthetic Test','-c','user.email=test@example.test','commit','-qm','baseline')
+    fixture.write_text('staged fixture\n')
+    git('add','backend/tests/conftest.py')
+    fixture.write_text('baseline\n')
+    source.write_text('changed\n')
+    assert 'MM backend/tests/conftest.py' in git('status','--porcelain').stdout
+    changed = m.changed_paths('HEAD')
+    assert changed == ['backend/app/utils/number_format.py','backend/tests/conftest.py']
+    assert m.plan(changed)['mode'] == 'full_required'

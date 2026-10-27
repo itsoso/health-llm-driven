@@ -63,8 +63,12 @@ def changed_paths(base):
     sha = git('rev-parse', '--verify', base+'^{commit}').decode().strip()
     if not re.fullmatch(r'[0-9a-f]{40}', sha):
         raise ValueError('unresolved base revision')
-    # Includes staged + unstaged changes; no-renames includes both old and new paths.
-    raw = git('diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', sha, '--')
+    # Union every layer: a staged fixture edit can be cancelled in the working
+    # tree, so comparing only base to final bytes would hide a shared change.
+    options = ('--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z')
+    raw = git('diff', *options, sha, 'HEAD', '--')
+    raw += git('diff', '--cached', *options, 'HEAD', '--')
+    raw += git('diff', *options, '--')
     raw += git('ls-files', '--others', '--exclude-standard', '-z')
     if len(raw) > 1_000_000:
         raise ValueError('change inventory too large')

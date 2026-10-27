@@ -217,3 +217,7 @@ G3 进行中：报告旧实现 RED；模块入口缺失 RED；84 项现有 CI �
 G3 功能验证补充：展示模块含消费者 99 passed、覆盖率 87.21%，本机入口墙钟 35.74 秒；提示缓存 24 passed、覆盖率 100%，墙钟 10.01 秒。普通 fixture 与应用导入顺序保留；覆盖率数据/HTML 使用临时目录，不覆盖开发者原报告。此处只是局部反馈结果，不是整个后端覆盖率或 CI 墙钟提速。相同测试集合的报告策略对照仍在进行。
 
 后续 Agent：先读该分层设计，使用项目 Python 运行 `scripts/ci_module_feedback.py --base origin/main --run` 获取已登记模块的本地反馈；返回 2 代表需要常规完整验证，不能当成功。显式 `--module` 只表示手工探针。通过后仍按现有精确 SHA 完整 CI 与发布闸执行。影响选集在 CI shadow 对照、fixture 分层及发布端组合证据审查完成前，不得用此入口跳过 CI。
+
+G3/G4 修复记录：独立 reviewer 对 `e4aea2d011d25800d739f86cb8e5cb806a38ba39` 判 NO-GO，真实 Git 仓库复现共享 fixture 在 index 修改、工作树恢复基线时被净 diff 漏掉。新增相消 fixture 回归先 RED，再分别合并 BASE→HEAD、HEAD→index、index→工作树及 untracked；85 项合约回归通过，等待新 reviewer 重审。接入其他任务主干 `4199dff8844b38aee5cc95f5f0881cbbdcfef389`，无重叠应用改动。
+
+同测试集合对照已完成：展示模块 99 项，77.06→29.49 秒；提示缓存 24 项，49.89→9.78 秒。每组 JUnit 身份/结果多重集合完全一致、零 skip，正常应用 instrumentation 和 fixture 不变，模块报告要求至少 80%。单机每策略一次顺序样本，只证明本次局部反馈改善，不证明完整 CI 或 P95；详见本轮模块 JSON。此前“对照进行中”为过程记录，以本段为最新结果。
