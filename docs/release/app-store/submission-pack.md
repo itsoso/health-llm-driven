@@ -2,7 +2,7 @@
 
 > 2026-10-27 rebrand: 小气候 is saved in the editable App Store name record. The new name and icon require a newly built native candidate; previously accepted builds and screenshots do not validate this rebrand. Do not submit until candidate-bound checks are refreshed. See `docs/dossiers/2026-10-27-xiaoqihou-brand.md`.
 
-Status: ready for App Store submission.
+Status: preparing App Store submission; final gate pending.
 
 Current candidate: 1.3.3 (271), source `5ddd9402d22c8124bc84b578662ea87c1f6e432c`.
 Readiness uses the release owner's explicitly accepted simulator-risk path, not
