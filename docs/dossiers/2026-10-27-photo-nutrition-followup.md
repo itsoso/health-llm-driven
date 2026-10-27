@@ -2,7 +2,7 @@
 
 - 日期：2026-10-27
 - Controller：reva-workflow-router quick_fix；overlay：safety-gate；System Map 按需查询。
-- 状态：本地实现与回归；独立安全评审、PostgreSQL 扩展验证待收尾。发布受主干分叉阻断。
+- 状态：本地实现与回归；首轮独立审查 NO-GO 已修复，等待新固定 diff 重审；PostgreSQL 初轮验证通过。发布受主干分叉阻断。
 
 ## 问题与证据边界
 
@@ -14,7 +14,7 @@
 
 - 逐记录、逐营养项汇总已知值；未知保持 null，真实零保留；原始精度求和后复用展示格式化。附加 nutrition_coverage v1；保留旧 descriptor 信封 v1。
 - 新旧移动端卡片均不再展示 unsupported 全天充分/不足评价；展示“已知小计”或“已记录合计”和完整性说明。历史卡片由逐餐值重建小计。
-- 原句及有限等价完整句只查当前用户、当前会话最后一条图片消息，24 小时内，要求唯一、未删除、已绑定的 food asset 与本人原记录。新图未绑定时不跳过它选择更旧记录；不把最近一餐冒充最后一张照片。
+- 原句及有限等价完整句只查当前用户、当前会话最后一条图片消息，24 小时内，要求持久化图片列表恰好一张、唯一 ordinal=0、未删除、已绑定的 food asset 与本人原记录。新图未绑定时不跳过它选择更旧记录；不把最近一餐冒充最后一张照片。
 - 返回原记录编辑卡等待核对；不自动重放模型或写入。保留原日期、照片、精确营养基线与版本。保存复用现有带版本、幂等键的重新估算接口。定位失败给出饮食页原记录补算入口。
 - 编辑卡对未改食物的补算显示明确重新估算文案，不谎称份额已改。
 - 不修改数据库 schema、原始数据或 API 写权限；不读取或修复截图用户的真实记录。
@@ -23,10 +23,15 @@
 
 - Red：汇总新增 8 项全部失败；缺值移动卡 2 项失败；照片定位、普通流与 panel 新测试复现缺入口/分流问题。编辑卡新增测试发现补算按钮文案仍为普通保存。
 - Backend：`test_diet_summary_card`、`test_diet_summary_missing_nutrition`、`test_diet_photo_nutrition_repair`、`test_diet_photo_correction`、`test_diet_leftover_correction`、`test_meal_input_clarification`：189 passed。
-- Mobile：DietSummaryCard、RecordQualityCard、revaUiBlocks：66 passed；追加汇总边界测试待记录。
+- Mobile：DietSummaryCard、RecordQualityCard、revaUiBlocks：66 passed；追加汇总边界测试后 DietSummaryCard 单独 6 passed，合计 68 项。
 - `npx tsc --noEmit`、`git diff --check`、`./scripts/system-map-check.sh` 通过；无生成物漂移。
-- PostgreSQL 使用独立本地临时测试库与合成数据；执行结果待记录。初始集群 SQL_ASCII、测试误给 UTC-naive 列传 aware 时间导致的夹具问题已纠正为 UTF8 数据库及模型约定的 naive UTC；不修改产品时间语义。
+- PostgreSQL 使用独立本地临时测试库与合成数据；58 passed（照片定位/普通与 panel 流/原记录补算及现有 recalculate_nutrition 鉴权、失败零写、幂等、版本冲突、审计回执测试）；临时实例测试后停止。初始集群 SQL_ASCII、测试误给 UTC-naive 列传 aware 时间导致的夹具问题已纠正为 UTF8 数据库及模型约定的 naive UTC；不修改产品时间语义。
 - 未完成模拟器视觉验收、线上真实照片补算或部署后验收，不以 mocked estimator 结果代替生产模型质量。
+
+## 独立安全审查
+
+- `photo_nutrition_safety` 对 `d0610186b` 裁定 NO-GO：多图消息仅第一张生成 asset 时可能误认最后一张。已补多图单 asset、错位 ordinal、空列表、畸形列表 4 个失败测试，随后加单图列表及 ordinal=0 校验。
+- 修复后照片营养、照片编辑、剩余照片邻近回归 76 passed；PostgreSQL 新边界复测待记录。新固定 diff 待独立重审；禁止引用旧范围的 GO。
 
 ## 发布门禁
 

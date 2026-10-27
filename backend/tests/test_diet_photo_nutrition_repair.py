@@ -62,7 +62,8 @@ def test_opens_bound_record_preserving_revision_date_precision_and_no_write(db, 
 
 
 @pytest.mark.parametrize('damage', ['deleted', 'pending', 'expired', 'future', 'newer_unbound',
-    'multiple', 'other_owner', 'other_conversation', 'changed_input', 'no_food'])
+    'multiple', 'other_owner', 'other_conversation', 'changed_input', 'no_food',
+    'multi_image_one_asset', 'wrong_ordinal', 'empty_image_list', 'malformed_images'])
 def test_ambiguous_or_unowned_sources_only_clarify(db, context, damage):
     from app.models.agent_conversation import AgentConversation, AgentMessage
     from app.models.daily_health import DietPhotoAsset
@@ -72,6 +73,10 @@ def test_ambiguous_or_unowned_sources_only_clarify(db, context, damage):
     elif damage == 'expired': source.created_at = (NOW-timedelta(days=2)).replace(tzinfo=None)
     elif damage == 'future': source.created_at = (NOW+timedelta(days=1)).replace(tzinfo=None)
     elif damage == 'no_food': target.food_items = ''
+    elif damage == 'multi_image_one_asset': source.image_url = '["/synthetic/first.jpg", "/synthetic/last.jpg"]'
+    elif damage == 'wrong_ordinal': asset.ordinal = 1
+    elif damage == 'empty_image_list': source.image_url = '[]'
+    elif damage == 'malformed_images': source.image_url = 'not-json'
     elif damage == 'changed_input': current.content = '取消'
     elif damage == 'other_owner':
         from app.models.user import User

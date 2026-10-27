@@ -82,6 +82,15 @@ def _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id,
         AgentMessage.image_url != "").order_by(AgentMessage.id.desc()).first())
     if source is None or source.created_at is None:
         return missing
+    try:
+        source_images = json.loads(source.image_url)
+    except (TypeError, ValueError):
+        return missing
+    # A lone surviving asset does not establish which image in a multi-image
+    # message the user means. Require the unambiguous single-image binding.
+    if (not isinstance(source_images, list) or len(source_images) != 1
+            or not isinstance(source_images[0], str) or not source_images[0].strip()):
+        return missing
     created_at = source.created_at
     if created_at.tzinfo is None:  # AgentMessage.created_at stores naive UTC.
         created_at = created_at.replace(tzinfo=timezone.utc)
@@ -93,7 +102,7 @@ def _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id,
     if len(assets) != 1:
         return missing
     asset = assets[0]
-    if (asset.lifecycle != "attached" or asset.deleted_at is not None
+    if (asset.ordinal != 0 or asset.lifecycle != "attached" or asset.deleted_at is not None
             or asset.classification != "food" or asset.photo_draft_token is not None
             or not asset.diet_record_id):
         return missing
