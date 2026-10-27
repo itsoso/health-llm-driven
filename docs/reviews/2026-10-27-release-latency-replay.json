@@ -1,0 +1,25 @@
+{
+  "baseline_sha": "f1b0d12421b0a0eb573d3b0280e7aa16306683f0",
+  "release_authority": false,
+  "kind": "offline_replay_not_actual_ci",
+  "worker_count": 16,
+  "policy_sha256": "e860a3c888fb946daff80aea442ddaa97b50d59215f2d43b5b7e35fab5dae041",
+  "samples": [
+    {
+      "run_id": 40358356587,
+      "head_sha": "d47aea05be1d5c77632a52636776b0b478dd1fdd",
+      "before_max_process_seconds": 554.761,
+      "before_total_process_seconds": 6308.991,
+      "after_max_process_seconds": 439.374,
+      "after_total_process_seconds": 6308.991
+    },
+    {
+      "run_id": 40431390771,
+      "head_sha": "372dd6995bd8866ee91e35a35c1938343901a7e4",
+      "before_max_process_seconds": 542.367,
+      "before_total_process_seconds": 5756.856,
+      "after_max_process_seconds": 431.308,
+      "after_total_process_seconds": 5756.856
+    }
+  ]
+}

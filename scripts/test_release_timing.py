@@ -52,6 +52,7 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
         'release_timing_checkpoint remote_guard_started',
         "guard_stop_backend_writers '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN' /sys/fs/cgroup",
         'release_timing_checkpoint remote_writers_stopped',
+        'release_timing_checkpoint remote_runtime_prepare_completed',
         '$remote_git_sync',
         'release_timing_checkpoint remote_checkout_completed',
         '$remote_dependency_sync',
@@ -66,6 +67,19 @@ def test_guard_has_separate_remote_clock_and_dependency_schema_restart_boundarie
     assert offsets == sorted(offsets)
     for label in [x for x in boundaries if x.startswith('release_timing_checkpoint')]:
         assert label + ' &&' in body
+
+
+def test_checkout_timings_separate_fetch_checkout_and_permission_work():
+    source = (ROOT / 'deploy.sh').read_text()
+    body = source.split('remote_git_sync_command() {', 1)[1].split('verify_deployed_revision()', 1)[0]
+    ordered = ['git fetch origin main',
+               'release_timing_checkpoint remote_git_fetch_completed',
+               'git checkout -B main',
+               'release_timing_checkpoint remote_git_checkout_completed',
+               '$trust_normalization',
+               'release_timing_checkpoint remote_permissions_completed']
+    positions = [body.index(value) for value in ordered]
+    assert positions == sorted(positions)
 
 
 @pytest.mark.parametrize('installer_exit', [0, 23])

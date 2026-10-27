@@ -24,6 +24,17 @@ def refresh_catalog(catalog, logs, *, run_id, head_sha):
     labels = [row['label'] for row in catalog['shards']]
     if not labels or len(labels) != len(set(labels)):
         raise ValueError('catalog labels must be unique and nonempty')
+    processes = {}
+    for row in catalog['shards']:
+        groups = row.get('process_groups')
+        if groups is not None and (not isinstance(groups, list) or not groups):
+            raise ValueError('process groups must be nonempty')
+        names = [row['label']] if groups is None else [
+            row['label'] + '-' + group['label'] for group in groups]
+        for name in names:
+            if name in processes:
+                raise ValueError('duplicate process identity')
+            processes[name] = row['label']
     samples = {}
     for log in logs:
         pending = None
@@ -32,7 +43,7 @@ def refresh_catalog(catalog, logs, *, run_id, head_sha):
                 if pending is not None:
                     raise ValueError('missing process timing')
                 pending = json.loads(line.split('[ci-worker] ', 1)[1])['shard']
-                if pending not in labels or pending in samples:
+                if pending not in processes or pending in samples:
                     raise ValueError('unknown or duplicate shard')
             elif '[ci-shard-timing] ' in line:
                 value = json.loads(line.split('[ci-shard-timing] ', 1)[1])
@@ -50,15 +61,17 @@ def refresh_catalog(catalog, logs, *, run_id, head_sha):
                 pending = None
         if pending is not None:
             raise ValueError('missing process timing')
-    if set(samples) != set(labels):
-        raise ValueError('timings must cover every shard exactly once')
+    if set(samples) != set(processes):
+        raise ValueError('timings must cover every process exactly once')
     result = copy.deepcopy(catalog)
     for row in result['shards']:
-        row['scheduling_seconds'] = samples[row['label']]
+        row['scheduling_seconds'] = round(sum(
+            seconds for name, seconds in samples.items() if processes[name] == row['label']), 3)
     result['timing_source'] = {
         'run_id': run_id, 'head_sha': head_sha,
         'measurement': 'successful_attempt_process_wall_seconds',
-        'sample_count': len(samples), 'excluded_timeout_seconds': 0.0,
+        'sample_count': len(labels), 'process_sample_count': len(samples),
+        'excluded_timeout_seconds': 0.0,
         'note': 'All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.',
     }
     return result
@@ -140,8 +153,9 @@ def main():
     result = combine_samples(samples) if len(samples) > 1 else samples[0]
     # Preserve the existing one-shard-per-line catalog format for small diffs.
     compact = lambda value: json.dumps(value, separators=(',', ':'))
-    text = '{\n  "worker_count": ' + str(result['worker_count']) + ',\n'
-    text += '  "timing_source": ' + compact(result['timing_source']) + ',\n  "shards": [\n'
+    text = '{\n' + ''.join('  ' + json.dumps(key) + ': ' + compact(value) + ',\n'
+                           for key, value in result.items() if key != 'shards')
+    text += '  "shards": [\n'
     text += ',\n'.join('    ' + compact(row) for row in result['shards']) + '\n  ]\n}\n'
     args.output.write_text(text)
 

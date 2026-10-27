@@ -981,54 +981,69 @@ remote_repository_trust_normalization_command() {
 (
     set -euo pipefail
     echo '规范化受信发布工作树 ownership...'
+    test -d .git && test ! -L .git
     chown root:root .
     chmod 0755 .
     chown -R root:root .git
     chmod -R go-w .git
-    tracked_list="$(mktemp /tmp/reva-release-tracked.XXXXXX)"
-    trap '/bin/rm -f -- "$tracked_list"' EXIT
-    git ls-files --stage -z >"$tracked_list"
-    tracked_count=0
-    while IFS= read -r -d '' tracked_entry; do
-        tracked_count=$((tracked_count + 1))
-        metadata="${tracked_entry%%	*}"
-        tracked_path="${tracked_entry#*	}"
-        tracked_mode="${metadata%% *}"
-        test -n "$tracked_path"
-        test "$tracked_path" != "$tracked_entry"
-        case "$tracked_mode" in
-            100644)
-                test -f "$tracked_path"
-                test ! -L "$tracked_path"
-                chown root:root -- "$tracked_path"
-                chmod 0644 -- "$tracked_path"
-                ;;
-            100755)
-                test -f "$tracked_path"
-                test ! -L "$tracked_path"
-                chown root:root -- "$tracked_path"
-                chmod 0755 -- "$tracked_path"
-                ;;
-            120000)
-                test -L "$tracked_path"
-                chown -h root:root -- "$tracked_path"
-                ;;
-            *)
-                echo "unsupported tracked mode: $tracked_mode" >&2
-                exit 1
-                ;;
-        esac
-        parent="$(dirname -- "$tracked_path")"
-        while [ "$parent" != "." ]; do
-            chown root:root -- "$parent"
-            chmod 0755 -- "$parent"
-            parent="$(dirname -- "$parent")"
-        done
-    done <"$tracked_list"
-    test "$tracked_count" -gt 0
+    # Batch only index-selected paths; never recurse into ignored runtime data.
+    # Validate all paths first, secure each parent once, then process bounded
+    # argv batches. Isolated stdlib Python is independent of app dependencies.
+    /usr/bin/python3 -I -S -B - <<'REVA_TRACKED_PERMISSIONS'
+import os
+import stat
+import subprocess
+
+def require(condition):
+    if not condition:
+        raise ValueError('invalid tracked permission target')
+
+def batches(command, paths):
+    batch, size = [], 0
+    for path in paths:
+        cost = len(os.fsencode(path)) + 1
+        require(cost <= 32768)
+        if batch and (len(batch) >= 128 or size + cost > 32768):
+            subprocess.run(command + batch, check=True)
+            batch, size = [], 0
+        batch.append(path)
+        size += cost
+    if batch:
+        subprocess.run(command + batch, check=True)
+
+try:
+    raw = subprocess.check_output(['git', 'ls-files', '--stage', '-z'])
+    require(bool(raw) and raw.endswith(b'\0'))
+    paths, parents = set(), set()
+    groups = {'100644': [], '100755': [], '120000': []}
+    for entry in raw[:-1].split(b'\0'):
+        metadata, path_bytes = entry.split(b'\t', 1)
+        mode, oid, stage = metadata.decode('ascii').split()
+        path = os.fsdecode(path_bytes)
+        parts = path.split('/')
+        require(mode in groups and stage == '0' and path not in paths)
+        require(all(part not in ('', '.', '..', '.git') for part in parts))
+        paths.add(path)
+        for index in range(1, len(parts)):
+            parent = '/'.join(parts[:index])
+            if parent not in parents:
+                require(stat.S_ISDIR(os.lstat(parent).st_mode))
+                parents.add(parent)
+        info = os.lstat(path)
+        require(stat.S_ISLNK(info.st_mode) if mode == '120000' else
+                stat.S_ISREG(info.st_mode) and info.st_nlink == 1)
+        groups[mode].append(path)
+    directories = sorted(parents, key=lambda path: (path.count('/'), path))
+    batches(['chown', '-h', 'root:root', '--'], directories)
+    batches(['chmod', '0755', '--'], directories)
+    for mode, targets in groups.items():
+        batches(['chown', '-h', 'root:root', '--'], targets)
+        if mode != '120000':
+            batches(['chmod', '0755' if mode == '100755' else '0644', '--'], targets)
+except (OSError, ValueError, subprocess.SubprocessError):
+    raise SystemExit('tracked permission normalization failed')
+REVA_TRACKED_PERMISSIONS
     test "$(stat -c '%U:%G' .)" = "root:root"
-    /bin/rm -f -- "$tracked_list"
-    trap - EXIT
 )
 REMOTE_REPOSITORY_TRUST
 }
@@ -1057,9 +1072,12 @@ remote_git_sync_command() {
         ( (git fetch origin main && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ||
           (echo 'git fetch origin 失败或缺少目标 commit, 使用上传的 deploy bundle...' &&
            git fetch '$REMOTE_DEPLOY_BUNDLE' HEAD && git cat-file -e '$DEPLOY_EXPECTED_SHA^{commit}') ) &&
+        release_timing_checkpoint remote_git_fetch_completed &&
         git checkout -B main '$DEPLOY_EXPECTED_SHA' &&
         test "\$(git rev-parse HEAD)" = '$DEPLOY_EXPECTED_SHA' &&
-        $trust_normalization
+        release_timing_checkpoint remote_git_checkout_completed &&
+        $trust_normalization &&
+        release_timing_checkpoint remote_permissions_completed
 EOF
 }
 
@@ -3395,6 +3413,7 @@ deploy_backend() {
                 prepare-code '$ROLLBACK_CANDIDATE_COMMIT' '$DEPLOY_EXPECTED_SHA' \
                 '$REMOTE_RELEASE_LOCK_DIR' '$REMOTE_RELEASE_LOCK_TOKEN'; \
         fi && \
+        release_timing_checkpoint remote_runtime_prepare_completed && \
         cd $REMOTE_PATH && \
         $remote_git_sync && \
         release_timing_checkpoint remote_checkout_completed && \
