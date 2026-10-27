@@ -3,7 +3,7 @@
 The original photo snapshot is the absolute baseline even after a prior edit.
 Nothing in this module creates, updates or deletes a diet record or photo asset.
 """
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import base64
 import binascii
@@ -38,6 +38,11 @@ _NUMBERS = dict(zip('一二两三四五六七八九十半', (1,2,2,3,4,5,6,7,8,9
 def is_leftover_context(text):
     """A broad exclusion, never permission to read or write any record."""
     return bool(_LEFTOVER.search(str(text or ''))) or _requested_meal(text) is not None
+
+
+def is_leftover_correction_request(text):
+    """Only a complete current-turn request may enter the photo continuation."""
+    return _requested_meal(text) is not None
 
 
 def _requested_meal(text):
@@ -156,7 +161,54 @@ def _baseline(db, user_id, target):
     return foods,images
 
 
+def _clarified_photo(db, user_id, conversation_id, current_message_id, meal, now, timezone_name):
+    # Never search past another turn, infer a target from model prose, or use a
+    # previous day's photo for an explicit request about today's meal.
+    recent = (db.query(AgentMessage).join(AgentConversation).filter(
+        AgentConversation.user_id == user_id, AgentConversation.id == conversation_id,
+        AgentMessage.id < current_message_id).order_by(AgentMessage.id.desc()).limit(2).all())
+    if len(recent) != 2:
+        return None
+    answer, source = recent
+    meta = answer.meta if isinstance(answer.meta, dict) else {}
+    outcome = meta.get('turn_outcome')
+    if (answer.role != 'assistant' or source.role != 'user'
+            or meta.get('mode') != 'diet_photo_correction_proposal'
+            or meta.get('client_turn_finalized') is not True
+            or not isinstance(outcome, dict) or outcome.get('status') != 'waiting_for_user'
+            or outcome.get('reason_code') != 'leftover_details_required'
+            or not is_leftover_context(source.content) or source.created_at is None):
+        return None
+    created = source.created_at
+    if created.tzinfo is None:
+        created = created.replace(tzinfo=timezone.utc)
+    local_zone = ZoneInfo(timezone_name)
+    if (not timedelta(0) <= now - created <= timedelta(minutes=30)
+            or created.astimezone(local_zone).date() != now.astimezone(local_zone).date()):
+        return None
+    mentioned = {_MEALS[label] for label in _MEALS if label in source.content}
+    for label, value in (('今晚','dinner'), ('今早','breakfast'), ('今中午','lunch')):
+        if label in source.content:
+            mentioned.add(value)
+    if (mentioned and mentioned != {meal}) or re.search(r'昨天|昨日|前天|明天|明日', source.content):
+        return None
+    try:
+        urls = json.loads(source.image_url)
+        if not isinstance(urls, list) or len(urls) != 1 or not isinstance(urls[0], str):
+            return None
+        data_uri = read_owned_chat_image_data_uri(urls[0], user_id)
+        header, data = data_uri.split(',', 1)
+        media = {'data:image/jpeg;base64':'jpeg', 'data:image/png;base64':'png',
+                 'data:image/webp;base64':'webp'}.get(header)
+        if media is None or not base64.b64decode(data, validate=True):
+            return None
+    except (TypeError, ValueError, OSError, binascii.Error):
+        return None
+    return [{'base64':data, 'type':media}]
+
+
 async def build_leftover_proposal(db,user_id,conversation_id,current_message_id,text,images,now,timezone_name):
+    images = images or []
     meal=_requested_meal(text)
     if meal is None:
         return _clarify('剩余照片不会记为新吃的一餐。请明确要修正的餐次，例如“根据剩菜照片修正今天午餐记录”。')
@@ -165,8 +217,14 @@ async def build_leftover_proposal(db,user_id,conversation_id,current_message_id,
     current=(db.query(AgentMessage).join(AgentConversation)
         .filter(AgentConversation.user_id==user_id,AgentConversation.id==conversation_id,
                 AgentMessage.id==current_message_id,AgentMessage.role=='user').first())
-    if (current is None or current.content not in {text, f'{text}\n[附图: {len(images)}张]'}
-            or not current.image_url):
+    if current is None or current.content not in {text, f'{text}\n[附图: {len(images)}张]'}:
+        return _clarify('无法核实本次照片来源，请从原餐记录点击修正本餐。')
+    if not images and not current.image_url:
+        images = _clarified_photo(db, user_id, conversation_id, current_message_id,
+                                 meal, now, timezone_name)
+        if images is None:
+            return _clarify('没有找到紧接本次补充、且与今天指定餐次一致的剩菜照片。请重新附上该餐的剩菜照片并说明餐次，或从原餐记录点击修正本餐。')
+    elif not current.image_url:
         return _clarify('无法核实本次照片来源，请从原餐记录点击修正本餐。')
     if len(images)!=1:
         return _clarify('请发送一张能看清整份剩余餐食的照片；本次没有新增或修改记录。')

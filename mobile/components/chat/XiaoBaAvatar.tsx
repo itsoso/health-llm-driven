@@ -1,6 +1,5 @@
 import React from 'react';
-import { StyleSheet, View, ViewStyle } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
+import { Image, StyleSheet, View, ViewStyle } from 'react-native';
 
 import {
   revaColors as C,
@@ -16,15 +15,13 @@ const STATE_COLOR: Record<XiaoBaAvatarState, string> = {
   listening: C.greenBright,
 };
 
-// 小巴标 · 脉冲(founder 2026-07-16 定版:白底 + 细绿环 + 绿脉冲)。
-// 头像走内联 SVG(react-native-svg)而非旧的 icon.png —— 精确控制"白底/绿标/绿环"
-// 三要素,和 App 图标(浅底脉冲,走原生构建单独换)同一支笔。脉冲路径 = logo 锁版 01。
-const PULSE_PATH = 'M4 24h6l3.5 9L21 12l4.5 24L31 20l2.5 4H44';
+// Chat and launcher share the selected cloud-agent artwork.
+const BRAND_ICON = require('../../assets/images/icon.png');
 
 export default function XiaoBaAvatar({
   size = 32,
   state = 'idle',
-  label = '小巴形象',
+  label = '小气候形象',
   style,
 }: {
   size?: number;
@@ -33,8 +30,6 @@ export default function XiaoBaAvatar({
   style?: ViewStyle;
 }) {
   const radius = size / 2;
-  const ring = Math.max(1.5, size * 0.045); // 细绿环,随尺寸微调
-  const mark = size * 0.6;
   return (
     <View
       accessible
@@ -42,20 +37,11 @@ export default function XiaoBaAvatar({
       accessibilityLabel={label}
       style={[
         styles.avatar,
-        { width: size, height: size, borderRadius: radius, borderWidth: ring },
+        { width: size, height: size, borderRadius: radius },
         style,
       ]}
     >
-      <Svg width={mark} height={mark} viewBox="0 0 48 48">
-        <Path
-          d={PULSE_PATH}
-          fill="none"
-          stroke={C.green500}
-          strokeWidth={3.4}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </Svg>
+      <Image source={BRAND_ICON} style={{ width: size, height: size }} resizeMode="cover" accessible={false} />
       <View
         style={[
           styles.statusDot,
@@ -78,8 +64,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     overflow: 'hidden',
-    backgroundColor: C.surface, // 白底
-    borderColor: C.green500, // 细绿环(borderWidth 按 size 传入)
+    backgroundColor: C.surface,
     ...revaShadows.sm,
   },
   statusDot: {

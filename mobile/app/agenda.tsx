@@ -75,13 +75,13 @@ const SNOOZABLE_ACTION_MENU: AgendaMenuItem[] = [
   { label: '30 分钟后提醒', action: 'snooze' },
   { label: '跳过', action: 'skip' },
   { label: '调整计划', action: 'adjust' },
-  { label: '问小巴', action: 'ask' },
+  { label: '问小气候', action: 'ask' },
   { label: '取消', action: 'cancel' },
 ];
 const ACTIONABLE_MENU: AgendaMenuItem[] = [
   { label: '跳过', action: 'skip' },
   { label: '调整计划', action: 'adjust' },
-  { label: '问小巴', action: 'ask' },
+  { label: '问小气候', action: 'ask' },
   { label: '取消', action: 'cancel' },
 ];
 const REVIEW_MENU: AgendaMenuItem[] = [
@@ -91,7 +91,7 @@ const REVIEW_MENU: AgendaMenuItem[] = [
 const LATER_ACTIONABLE_MENU: AgendaMenuItem[] = [
   { label: '跳过', action: 'skip' },
   { label: '调整计划', action: 'adjust' },
-  { label: '问小巴', action: 'ask' },
+  { label: '问小气候', action: 'ask' },
   { label: '取消', action: 'cancel' },
 ];
 const FUTURE_REVIEW_MENU: AgendaMenuItem[] = [
@@ -249,7 +249,7 @@ export default function AgendaScreen() {
       ActionSheetIOS.showActionSheetWithOptions(
         {
           title: '为什么跳过？',
-          message: '这会帮助小巴减少不合适的安排。',
+          message: '这会帮助小气候减少不合适的安排。',
           options: [...SKIP_REASONS.map(reason => reason.label), '取消'],
           cancelButtonIndex,
         },
@@ -262,7 +262,7 @@ export default function AgendaScreen() {
     }
     Alert.alert(
       '为什么跳过？',
-      '这会帮助小巴减少不合适的安排。',
+      '这会帮助小气候减少不合适的安排。',
       [
         ...SKIP_REASONS.map(reason => ({
           text: reason.label,
@@ -393,8 +393,8 @@ export default function AgendaScreen() {
           hitSlop={10}
           style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}
           accessibilityRole="button"
-          accessibilityLabel="返回小巴"
-          accessibilityHint="回到与小巴的对话"
+          accessibilityLabel="返回小气候"
+          accessibilityHint="回到与小气候的对话"
         >
           <Ionicons name="chevron-back" size={23} color={C.ink1} />
         </Pressable>
@@ -420,7 +420,7 @@ export default function AgendaScreen() {
       ) : isError ? (
         <StateView icon="cloud-offline-outline" title="暂时无法加载" actionLabel="重试" onAction={() => refetch()} />
       ) : (data?.items.length ?? 0) === 0 ? (
-        <StateView icon="checkmark-circle-outline" title="今天没有待处理行动" actionLabel="返回小巴" onAction={handleBack} />
+        <StateView icon="checkmark-circle-outline" title="今天没有待处理行动" actionLabel="返回小气候" onAction={handleBack} />
       ) : (
         <SectionList
           sections={sections}
@@ -539,9 +539,9 @@ function AgendaRow({
             onPress={onAsk}
             style={({ pressed }) => [styles.askButton, pressed && styles.pressed]}
             accessibilityRole="button"
-            accessibilityLabel={`询问小巴 ${title}`}
+            accessibilityLabel={`询问小气候 ${title}`}
           >
-            <Text style={styles.askButtonText}>问小巴</Text>
+            <Text style={styles.askButtonText}>问小气候</Text>
           </Pressable>
         ) : null}
         {!handled ? (

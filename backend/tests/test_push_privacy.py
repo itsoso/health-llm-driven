@@ -471,7 +471,7 @@ def test_medication_reminder_no_drug_name_on_lock_screen(db):
     assert "二甲双胍" not in kwargs["title"]
     assert "二甲双胍" not in kwargs["content"]
     assert "500mg" not in kwargs["content"]
-    assert "点开与小巴查看" in kwargs["content"]
+    assert "点开与小气候查看" in kwargs["content"]
     assert "medication_name" not in kwargs["data"]
     assert "dosage" not in kwargs["data"]
     assert kwargs["data"]["medication_ids"] == [med.id]

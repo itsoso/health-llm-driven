@@ -11,7 +11,7 @@
  * 字段兜底解析 —— label (新) 优先于 detail (旧)。纯函数, 无副作用, 便于单测。映射:
  *   - accepted   → "已收到，正在准备…" (首 token 前 8s 的确定性反馈)
  *   - vision     → "识别图片中"
- *   - thinking   → detail 非空时**原样显示 detail**, 否则 "小巴正在思考"
+ *   - thinking   → detail 非空时**原样显示 detail**, 否则 "小气候正在思考"
  *   - tool       → label 存在时**原样显示 label** (已是完整人话); 否则 detail 存在时
  *                  `正在${detail}`; 都无 → "调用工具中"
  *   - synthesis  → "整理回复中"
@@ -41,7 +41,7 @@ export function statusStagePhrase(data: StatusEventData | null | undefined): str
       return '识别图片中';
     case 'thinking':
       // detail 非空 → 原样显示 (后端文案优先); 否则默认思考短语。
-      return detail ?? '小巴正在思考';
+      return detail ?? '小气候正在思考';
     case 'tool':
       // label (新进度家族, 已是完整人话) 优先; 否则回退旧 detail 拼接; 都无 → 默认。
       if (label) return label;

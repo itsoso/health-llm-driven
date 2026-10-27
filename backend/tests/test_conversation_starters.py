@@ -119,8 +119,8 @@ def test_cold_start_endpoint_synthesizes_opener_with_three_action_quick_replies(
     assert opener is not None
     assert opener["source"] == "cold_start"
     assert isinstance(opener["text"], str) and opener["text"].strip()
-    # 小巴 self-intro is present in the synthetic greeting.
-    assert "小巴" in opener["text"]
+    # 小气候 self-intro is present in the synthetic greeting.
+    assert "小气候" in opener["text"]
 
     qrs = opener["quick_replies"]
     assert len(qrs) == 3

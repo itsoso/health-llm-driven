@@ -984,13 +984,13 @@ export function DietShareSheet({
                 disabled={sharing}
                 activeOpacity={0.82}
                 accessibilityRole="button"
-                accessibilityLabel="问小巴复盘今日饮食"
+                accessibilityLabel="问小气候复盘今日饮食"
               >
                 <View style={styles.agentReviewIcon}>
                   <Ionicons name="chatbubble-ellipses-outline" size={17} color={C.green600} />
                 </View>
                 <View style={{ flex: 1, minWidth: 0 }}>
-                  <Text style={styles.agentReviewTitle}>问小巴复盘今日饮食</Text>
+                  <Text style={styles.agentReviewTitle}>问小气候复盘今日饮食</Text>
                   <Text style={styles.agentReviewSubtitle}>读取数据库记录，再看全天热量和下一餐</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={18} color={C.ink3} />

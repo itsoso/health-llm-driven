@@ -36,7 +36,7 @@ describe('Mobile LlmModelPicker', () => {
     const onSelect = jest.fn();
     const view = render(<LlmModelPicker canSelectModel={false} currentLabel="Qwen3.7 Plus"
       currentModelId="qwen3.7-plus" options={options} savingModelId={null} onSelect={onSelect} />);
-    expect(view.getByText('小巴')).toBeTruthy();
+    expect(view.getByText('小气候')).toBeTruthy();
     expect(view.queryByLabelText(/切换 AI 模型/)).toBeNull();
     expect(view.queryByTestId('icon-chevron-down')).toBeNull();
     expect(onSelect).not.toHaveBeenCalled();
@@ -49,7 +49,7 @@ describe('Mobile LlmModelPicker', () => {
     expect(view.queryByText(/tokenplan/i)).toBeNull();
     expect(view.getByText('qwen3.7-plus')).toBeTruthy();
   });
-  it('uses 小巴 as the visible assistant persona', () => {
+  it('uses 小气候 as the visible assistant persona', () => {
     const onSelect = jest.fn();
     const { getByText, queryByText } = render(
       <LlmModelPicker canSelectModel
@@ -61,11 +61,11 @@ describe('Mobile LlmModelPicker', () => {
       />,
     );
 
-    expect(getByText('小巴')).toBeTruthy();
+    expect(getByText('小气候')).toBeTruthy();
     expect(queryByText('健康 Agent')).toBeNull();
   });
 
-  it('renders the header 小巴 title with stronger brand scale', () => {
+  it('renders the header 小气候 title with stronger brand scale', () => {
     const onSelect = jest.fn();
     const { getByLabelText, getByTestId, getByText } = render(
       <LlmModelPicker canSelectModel
@@ -78,7 +78,7 @@ describe('Mobile LlmModelPicker', () => {
       />,
     );
 
-    const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
+    const titleStyle = StyleSheet.flatten(getByText('小气候').props.style);
     const triggerStyle = StyleSheet.flatten(
       getByLabelText('切换 AI 模型，当前 Qwen3.7 Plus').props.style,
     );

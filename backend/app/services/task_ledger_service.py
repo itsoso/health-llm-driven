@@ -2,7 +2,7 @@
 
 只读聚合五个来源,统一 shape ``{kind, title, status, when, source}``:
 
-1. write_intents — pending 全量 + 最近 48h 已裁决(小巴刚替你办完/你刚驳回的)
+1. write_intents — pending 全量 + 最近 48h 已裁决(小气候刚替你办完/你刚驳回的)
 2. desktop_jobs — active(queued/running)
 3. agenda — 未来 48h 的排期项(复用 agenda_service.range_view,不自写 SQL)
 4. heartbeat — 最近 emitted 的情境心跳提示(Slice 2 遥测源未落库,见 TODO)

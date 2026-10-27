@@ -14,7 +14,7 @@ describe('RegistrationInviteLanding', () => {
     window.history.replaceState(null, '', `/open/invite#token=${token}`);
     render(<RegistrationInviteLanding />);
 
-    expect(await screen.findByRole('link', { name: '在小巴健康中打开' })).toHaveAttribute(
+    expect(await screen.findByRole('link', { name: '在小气候中打开' })).toHaveAttribute(
       'href',
       `health://invite?token=${token}`,
     );
@@ -39,7 +39,7 @@ describe('RegistrationInviteLanding', () => {
     render(<RegistrationInviteLanding />);
 
     expect(await screen.findByRole('alert')).toHaveTextContent('注册链接无效或不完整');
-    expect(screen.queryByRole('link', { name: '在小巴健康中打开' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: '在小气候中打开' })).not.toBeInTheDocument();
     await waitFor(() => expect(window.location.href).not.toContain(token));
     expect(window.location.search).toBe('');
     expect(window.location.hash).toBe('');

@@ -1540,7 +1540,7 @@ describe('useChatEngine', () => {
     expect(result.current.messages).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ role: 'user', content: '第二条继续补充' }),
-        expect.objectContaining({ role: 'assistant', content: '小巴处理中，已加入队列。' }),
+        expect.objectContaining({ role: 'assistant', content: '小气候处理中，已加入队列。' }),
       ]),
     );
     expect(mockStreamChat).toHaveBeenCalledTimes(1);
@@ -3565,7 +3565,7 @@ describe('useChatEngine', () => {
 
     expect(result.current.activeTurn).toMatchObject({
       phase: 'running', recoverable: true,
-      label: '小巴还在处理，正在同步完整回答。',
+      label: '小气候还在处理，正在同步完整回答。',
     });
     expect(result.current.activeTurn.retryMode).toBeUndefined();
     expect(result.current.messages.find(message => message.role === 'assistant')?.completionStatus)

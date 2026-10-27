@@ -108,7 +108,7 @@ export function useMediaPicker() {
       const maxImages = imageLimit(requestedLimit);
       const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相册权限', '请在系统设置中允许小巴访问相册');
+        Alert.alert('需要相册权限', '请在系统设置中允许小气候访问相册');
         return;
       }
       const remaining = maxImages - pendingImagesRef.current.length;
@@ -149,7 +149,7 @@ export function useMediaPicker() {
       }
       const perm = await ImagePicker.requestCameraPermissionsAsync();
       if (!perm.granted) {
-        Alert.alert('需要相机权限', '请在系统设置中允许小巴使用相机');
+        Alert.alert('需要相机权限', '请在系统设置中允许小气候使用相机');
         return [];
       }
       const result = await ImagePicker.launchCameraAsync({

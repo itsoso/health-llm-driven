@@ -73,7 +73,7 @@ async def _reply_ai_permission_error(
     detail = exc.detail if isinstance(exc.detail, dict) else {}
     code = detail.get("code")
     messages = {
-        "ai_consent_required": "请先在小巴健康 App 的设置中阅读并确认 AI 数据使用授权；撤回后需重新确认才能使用 AI。",
+        "ai_consent_required": "请先在小气候 App 的设置中阅读并确认 AI 数据使用授权；撤回后需重新确认才能使用 AI。",
         "ai_consent_unavailable": "暂时无法核验 AI 数据使用授权，请稍后重试。",
         "ai_recipient_not_disclosed": "当前 AI 服务尚未完成数据使用披露，暂不可用，请在 App 中使用已披露的服务。",
     }

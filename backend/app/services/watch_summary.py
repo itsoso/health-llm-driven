@@ -250,7 +250,7 @@ def _agent_reminder_items(db: Session, user_id: int) -> List[Dict[str, Any]]:
             "time_window": local_at.strftime("%H:%M"),
             "source": {"object_type": "smart_reminder", "object_id": reminder.id},
             "runtime_context": {
-                "current_state_summary": "小巴已创建的提醒,手表刷新今日摘要时可执行。",
+                "current_state_summary": "小气候已创建的提醒,手表刷新今日摘要时可执行。",
                 "replan_reason": "agent_scheduled_reminder",
                 "safety_boundary": "这是提醒任务,不代表手表通知已实际送达。",
             },

@@ -368,7 +368,7 @@ export function RecordQualityCardView(props: RecordQualityViewProps) {
               可截图分享
             </Text>
             <Text maxFontSizeMultiplier={1.1} style={styles.shareStripTag}>
-              #饮食记录 #小巴
+              #饮食记录 #小气候
             </Text>
           </View>
           <View style={styles.shareMetricRow}>

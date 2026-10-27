@@ -231,7 +231,7 @@ function ChatBubbleInner({
     || !!processingStatusLabel
   );
   const recoveryNoticeOnly = !!item.recoveryPending
-    && visibleMarkdown.trim() === '小巴还在处理，正在同步完整回答。';
+    && visibleMarkdown.trim() === '小气候还在处理，正在同步完整回答。';
   const rawVisibleAssistantMarkdown = (
     showProcessingPanel && (placeholderOnly || recoveryNoticeOnly)
       ? ''
@@ -901,7 +901,7 @@ function ChatBubbleInner({
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || '');
       if (message === 'photo_permission_denied') {
-        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小巴添加照片。');
+        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小气候添加照片。');
         return;
       }
       toast.show('保存失败，请稍后重试', 'error');
@@ -2797,7 +2797,7 @@ function ThinkingStepsPanel({
       <View
         testID="assistant-thinking-panel"
         style={styles.thinkingAnalysisCard}
-        accessibilityLabel={`小巴正在分析,当前步骤:${visibleStep}`}
+        accessibilityLabel={`小气候正在分析,当前步骤:${visibleStep}`}
       >
         <View style={styles.thinkingAnalysisHeader}>
           <View style={styles.thinkingIndicatorWrap}>

@@ -164,11 +164,11 @@ class OpenerSuggestion:
 
 # ─────────────── cold-start: synthesized onboarding opener ───────────────
 
-# 小巴 (边牧人格) 自我介绍 + 一个具体的第一步邀请。确定性模板 (无 LLM), 供
+# 小气候 (云朵伙伴) 自我介绍 + 一个具体的第一步邀请。确定性模板 (无 LLM), 供
 # 零数据新用户走既有 opener 通道拿到非空开场白。严禁量化/命令式健康处方 —
 # 全是"记录一件小事"的邀请, 守 guidance_validator 红线 (无剂量/无祈使饮食/无训练指令)。
 _COLD_START_OPENER_TEXT = (
-    "嗨，我是小巴，你的健康参谋 🐾。这里还看不到你的健康数据，"
+    "嗨，我是小气候，你的健康参谋。这里还看不到你的健康数据，"
     "我们从记录一件小事开始吧——拍张今天的饭、记一下体重，或连上你的手表，"
     "有了第一笔，我就能陪你一起往下看。"
 )
@@ -181,7 +181,7 @@ def synthesize_cold_start_opener() -> OpenerSuggestion:
     warm first-step invitation instead of a blank chat. The three quick replies
     carry an `action` (COLD_START_ACTIONS) so the client handles them via LOCAL
     navigation (open photo picker / weight sheet / device link) rather than
-    sending text. Persona: 小巴, a faithful, gentle border collie (🐾); the copy
+    sending text. Persona: 小气候, a faithful, gentle personal health companion; the copy
     stays invitational — no quantified or imperative health prescription.
     """
     return OpenerSuggestion(

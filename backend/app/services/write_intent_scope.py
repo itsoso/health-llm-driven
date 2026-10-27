@@ -64,6 +64,8 @@ _CAPABILITY_SUBJECTS = (
     "这个助手",
     "该助手",
     "系统",
+    "小气候",
+    "小巴健康",
     "小巴",
     "应用",
     "平台",
@@ -220,7 +222,7 @@ _HYPOTHETICAL_PREFIX_RE = re.compile(
     r"^(?:如果|假如|假使|假设|假定|设想|倘若|若是|要是|万一)"
 )
 _POLITE_CONDITIONAL_PREFIX_RE = re.compile(
-    r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|小巴可以|小巴能)"
+    r"^(?:如果|假如)(?:可以|方便|方便的话|你方便|你可以|你能|(?:小气候|小巴健康|小巴)(?:可以|能))"
 )
 _DEFERRED_CONDITION_PREFIX_RE = re.compile(
     r"^(?:"
@@ -429,7 +431,7 @@ _UPDATE_ACTION_RE = re.compile(
 )
 _THIRD_PARTY_UPDATE_ORDER_RE = re.compile(
     r"^(?!我(?:要|想|来|自己|本人))"
-    r"[\u4e00-\u9fff]{1,12}(?:希望|想|要求|建议|指示|让我|叫我|嘱咐我|让小巴|让系统)"
+    r"[\u4e00-\u9fff]{1,12}(?:希望|想|要求|建议|指示|让我|叫我|嘱咐我|让(?:小气候|小巴健康|小巴)|让系统)"
 )
 _THIRD_PARTY_UPDATE_BENEFICIARY_RE = re.compile(
     r"^(?:替|给|为)(?!(?:我|本人|自己|我自己)(?:把|将))"
@@ -851,7 +853,7 @@ _DIRECT_REQUEST_MODIFIERS = (
     "就",
     "你",
 )
-_VOCATIVE_PREFIXES = ("小巴你", "小巴", "助手你", "助手")
+_VOCATIVE_PREFIXES = ("小气候你", "小气候", "小巴健康你", "小巴健康", "小巴你", "小巴", "助手你", "助手")
 _DENIAL_SCOPE_INTRO_ENDINGS = (
     "执行",
     "执行以下操作",
@@ -1128,7 +1130,7 @@ def is_write_capability_question(value: str) -> bool:
         return False
     before_subject_action = after_subject[:subject_action_position]
     if (
-        subject == "小巴"
+        subject in {"小气候", "小巴健康", "小巴"}
         and not has_inquiry_cue
         and (
             "你能帮我" in before_action

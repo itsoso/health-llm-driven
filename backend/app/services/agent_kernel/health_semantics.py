@@ -1850,7 +1850,7 @@ def resolve_illness_entity(value: str) -> HealthEntityResolution:
 
 
 _ILLNESS_MUTATION_LEADING_SCAFFOLD_RE = re.compile(
-    r"^(?:请(?:你|您)?|麻烦(?:你|您)?|小巴|你能|可不可以|能不能|可以|能|"
+    r"^(?:请(?:你|您)?|麻烦(?:你|您)?|小气候|小巴健康|小巴|你能|可不可以|能不能|可以|能|"
     r"帮我|给我|替我|把|将|我想|"
     r"更新|修改|更正|修正|调整|删除|删掉|移除|清除|清掉|"
     r"记录一下|记一下|记录|记下|新增|录入|保存|写入|存下来|"

@@ -44,7 +44,7 @@ describe('real router menu round trips', () => {
     expect(view.getPathname()).toBe('/settings');
     fireEvent.press(view.getByText(entry));
     expect(view.getPathname()).toBe(path);
-    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    fireEvent.press(view.getByRole('button', { name: '返回小气候' }));
     expect(view.getPathname()).toBe('/chat');
     expect(view.getByText('打开设置')).toBeTruthy();
   });

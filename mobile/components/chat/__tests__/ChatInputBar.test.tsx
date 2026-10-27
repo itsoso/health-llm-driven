@@ -708,7 +708,7 @@ describe('ChatInputBar', () => {
 
     const surface = StyleSheet.flatten(getByTestId('wechat-composer-input').props.style);
     expect(surface.borderColor).toBe(revaColors.green500);
-    expect(getByLabelText('消息输入框').props.placeholder).toBe('问小巴，或点麦克风说话');
+    expect(getByLabelText('消息输入框').props.placeholder).toBe('问小气候，或点麦克风说话');
   });
 
   it('does not add a third quick-action rail when the empty composer is focused', () => {
@@ -1218,7 +1218,7 @@ describe('ChatInputBar', () => {
     await waitFor(() => expect(getByLabelText('实时语音转文字')).toBeTruthy());
   });
 
-  it('keeps typed send available while 小巴 is streaming', async () => {
+  it('keeps typed send available while 小气候 is streaming', async () => {
     const onSend = jest.fn().mockResolvedValue(true);
     const view = render(
       <ChatInputBar onSend={onSend} isStreaming />,
@@ -1236,7 +1236,7 @@ describe('ChatInputBar', () => {
     expect(onSend).toHaveBeenCalledWith('继续补充一个问题', null, undefined);
   });
 
-  it('allows realtime dictation to start while 小巴 is streaming', async () => {
+  it('allows realtime dictation to start while 小气候 is streaming', async () => {
     const view = render(
       <ChatInputBar onSend={jest.fn()} isStreaming />,
     );

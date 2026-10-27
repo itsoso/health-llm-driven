@@ -629,3 +629,27 @@ def test_goal_destination_language_is_not_misread_as_third_party_arrival(
     assert _event_fact_has_non_current_subject(text) is False
     if text.startswith(("创建", "设置")):
         assert authorized_health_record_clauses(text) != ()
+
+
+@pytest.mark.parametrize("name", ("小气候", "小巴", "小巴健康"))
+@pytest.mark.parametrize(
+    "template",
+    ("请问{name}能帮我记录口腔溃疡吗？", "我想知道{name}能不能帮我记录口腔溃疡", "{name}会帮我记录口腔溃疡吗？"),
+)
+def test_brand_alias_capability_questions_do_not_authorize_write(name, template):
+    text = template.format(name=name)
+    assert is_write_capability_question(text) is True
+    assert has_explicit_authorizing_write_request(text) is False
+
+
+@pytest.mark.parametrize("name", ("小气候", "小巴", "小巴健康"))
+def test_brand_alias_direct_request_preserves_owner_and_negation(name):
+    assert has_explicit_authorizing_write_request(f"{name}请你记录口腔溃疡") is True
+    assert has_explicit_authorizing_write_request(f"我没有授权{name}帮我记录口腔溃疡") is False
+    assert authorized_health_record_clauses(f"{name}帮我记录我妈妈的血压120/80") == ()
+
+
+@pytest.mark.parametrize("name", ("小气候", "小巴", "小巴健康"))
+@pytest.mark.parametrize("suffix", ("你能帮我记录一下口腔溃疡吗", "麻烦你记录口腔溃疡", "替我记录口腔溃疡"))
+def test_brand_alias_explicit_vocative_remains_authorized(name, suffix):
+    assert has_explicit_authorizing_write_request(name + suffix) is True

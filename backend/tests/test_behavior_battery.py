@@ -1,4 +1,4 @@
-"""小巴核心行为 battery runner — R3(确定性回归,CI 阻断)。
+"""小气候核心行为 battery runner — R3(确定性回归,CI 阻断)。
 
 加载 evals/behavior/xiaoba_core.yaml,把每条 case 的 checks 断言到**确定性层**
 (意图分类/确认档位/工具子集/卡片门控/兜底话术/remember 医疗硬闸/快路由上下文保留)。

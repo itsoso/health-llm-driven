@@ -37,7 +37,7 @@ describe('ChatView message time', () => {
     ]);
 
     expect(screen.getByLabelText(/你发送于/)).toHaveAttribute('title', expect.stringContaining('2026'));
-    expect(screen.getByLabelText(/小巴回复于/)).toHaveAttribute('title', expect.stringContaining('2026'));
+    expect(screen.getByLabelText(/小气候回复于/)).toHaveAttribute('title', expect.stringContaining('2026'));
     expect(screen.getAllByTestId('message-hover-time')).toHaveLength(2);
   });
 
@@ -59,7 +59,7 @@ describe('ChatView message time', () => {
 
     for (const row of [
       screen.getByLabelText(/你发送于/),
-      screen.getByLabelText(/小巴回复于/),
+      screen.getByLabelText(/小气候回复于/),
     ]) {
       expect(row).toHaveClass('relative');
     }

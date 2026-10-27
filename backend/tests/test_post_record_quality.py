@@ -219,7 +219,7 @@ def test_diet_quality_response_uses_today_totals_and_actionable_routes(db, auth_
         "fiber": None,
     }
     assert card["data"]["adjust_record"] == adjust["payload"]["patch"]["adjust_record"]
-    assert all("问小巴" not in action["label"] for action in card["actions"])
+    assert all("问小气候" not in action["label"] for action in card["actions"])
     publish = card["actions"][2]
     assert publish["id"] == "share-with-peers"
     assert publish["action"] == "route.open"
@@ -556,7 +556,7 @@ def test_diet_adjust_seed_rejects_other_owner_write_response_metadata():
 
 
 def test_exercise_actions_unchanged_by_diet_adjust_work():
-    # 本次只改 diet;exercise 卡 actions 保持不变(查看运动记录/继续记录/问小巴恢复)。
+    # 本次只改 diet;exercise 卡 actions 保持不变(查看运动记录/继续记录/问小气候恢复)。
     response = build_post_record_quality_response(
         "exercise",
         {"exercise_type": "俯卧撑", "sets": 3, "reps": 20, "duration": 8},

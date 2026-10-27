@@ -665,7 +665,7 @@ def _diet_next_meal_detail(
         "context": context_line,
         "options": options,
         "rationale": rationale[:3],
-        "continue_prompt": "可以继续在这里问小巴：如果只能外卖，下一餐怎么选。",
+        "continue_prompt": "可以继续在这里问小气候：如果只能外卖，下一餐怎么选。",
     }
 
 
@@ -1048,7 +1048,7 @@ def build_post_record_quality_response(
                     _route_action("open-record", "继续记录", "/(tabs)/record"),
                     _chat_prompt_action(
                         "ask-recovery",
-                        "问小巴恢复",
+                        "问小气候恢复",
                         (
                             "基于我刚记录的运动，结合最近恢复、睡眠和心率数据，"
                             "给我今天剩余时间的恢复建议。"

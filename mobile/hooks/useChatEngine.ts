@@ -64,7 +64,7 @@ export interface UIMessage extends ChatMessage {
   currentStatus?: string;
   imageUris?: string[];
   isBriefing?: boolean;
-  // 2026-07 State A「小巴先开口」: 用户发第一条消息时, 把当时可见的开场气泡文本
+  // 2026-07 State A「小气候先开口」: 用户发第一条消息时, 把当时可见的开场气泡文本
   // 作为一条合成 assistant 消息注入到流顶, 保住上下文连续性。仅本地展示,
   // 从不 POST 到后端历史, reload 后不恢复(与 isBriefing 一样是 ephemeral)。
   localOnly?: boolean;
@@ -551,10 +551,10 @@ const PENDING_STREAM_STARTED_AT_KEY = 'chat:pending_stream_started_at:v1';
 const ACTIVE_TURN_KEY = 'chat:active_turn:v1';
 const PENDING_STREAM_TTL_MS = 10 * 60 * 1000;
 const THINKING_PLACEHOLDER = '⏳ AI 正在思考中...';
-const QUEUED_TURN_PLACEHOLDER = '小巴处理中，已加入队列。';
+const QUEUED_TURN_PLACEHOLDER = '小气候处理中，已加入队列。';
 const SERVER_BUSY_TURN_PLACEHOLDER = '上一条仍在处理，本条已排队。';
 const SERVER_BUSY_RETRY_DELAYS_MS = [1000, 2000, 4000, 8000, 15000, 30000] as const;
-const STREAM_RECOVERY_NOTICE = '小巴还在处理，正在同步完整回答。';
+const STREAM_RECOVERY_NOTICE = '小气候还在处理，正在同步完整回答。';
 const STREAM_RECOVERY_PENDING_NOTICE = '完整回答尚未同步，消息已保存。稍后返回会话可继续同步。';
 // Single-flight retries cover roughly one minute after transport loss. Focus
 // and foreground history reloads remain available once this window expires.

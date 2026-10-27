@@ -35,7 +35,7 @@ describe('menu destinations always have an exit', () => {
       mockNavigate.mockClear();
       mockLoading = loading;
       const view = render(<Screen />);
-      fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+      fireEvent.press(view.getByRole('button', { name: '返回小气候' }));
       expect(mockNavigate).toHaveBeenLastCalledWith('/(tabs)/chat');
       expect(mockNavigate).toHaveBeenCalledTimes(1);
       view.unmount();

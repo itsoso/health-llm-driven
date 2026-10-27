@@ -219,7 +219,7 @@ def test_action_card_already_graded_ignored(db):
 
 
 def test_action_card_with_self_reported_adherence_ignored(db):
-    """用户已在小巴 opener 反馈过做没做, 不应继续展示同一张复盘卡."""
+    """用户已在小气候 opener 反馈过做没做, 不应继续展示同一张复盘卡."""
     from app.models.action_card import ActionCard
 
     now = datetime.now(timezone.utc)
@@ -633,7 +633,7 @@ def test_synthesize_cold_start_opener_shape_and_actions():
     out = synthesize_cold_start_opener()
     assert out.source == "cold_start"
     assert out.source_id is None
-    assert out.text and "小巴" in out.text  # 小巴 self-intro
+    assert out.text and "小气候" in out.text  # 小气候 self-intro
     assert [qr.action for qr in out.quick_replies] == list(COLD_START_ACTIONS)
 
     d = asdict(out)

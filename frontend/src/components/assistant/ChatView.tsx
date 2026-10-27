@@ -306,7 +306,7 @@ const MessageRow = memo(function MessageRow({
   cancelLongPress,
 }: MessageRowProps) {
   const sentAtFull = formatMessageFullTime(msg.created_at);
-  const accessibilityPrefix = msg.role === 'user' ? '你发送于' : '小巴回复于';
+  const accessibilityPrefix = msg.role === 'user' ? '你发送于' : '小气候回复于';
   // done/history can attach cards to an existing narrative. Cards supplement the
   // answer; never replace its markdown, evidence boundary or completion status.
   const cardEl = msg.role === 'assistant' && msg.card_type && msg.card_data
@@ -356,7 +356,7 @@ const MessageRow = memo(function MessageRow({
       <div className={`${msg.role === 'user' ? 'max-w-[min(80%,34rem)] rounded-[1.25rem] px-4 py-2.5' : 'min-w-0 flex-1'} ${msg.role === 'user' ? STYLE.userBubbleClass : STYLE.assistantTextClass}`}>
         {msg.role === 'assistant' ? (
           <div>
-            <div className="mb-2 text-[12px] font-semibold tracking-[0.04em] text-[#948F80]">健康小巴</div>
+            <div className="mb-2 text-[12px] font-semibold tracking-[0.04em] text-[#948F80]">小气候</div>
             <div className="text-[15px] leading-7">
               <AssistantBody content={msg.content} streaming={!done} />
             </div>

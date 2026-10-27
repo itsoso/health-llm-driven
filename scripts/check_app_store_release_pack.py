@@ -133,13 +133,14 @@ MEDICAL_CITATION_REVIEW_TERMS = (
     "做医疗决定前请咨询医生",
 )
 CURRENT_AGENT_NATIVE_ENTRY_TERMS = [
-    "打开即进入小巴",
+    "打开即进入小气候",
     "今日计划",
     "记录",
     "个人中心",
 ]
 CURRENT_POSITIONING_TERM = "健康参谋"  # 2026-07-05 定位语终裁:参谋家族("小巴,你忠实的健康参谋")
 STALE_USER_VISIBLE_RELEASE_TERMS = [
+    "小巴",
     "Reva",
     "阿衡",  # 2026-07-05 改名小巴;旧人格名不得再出现在发布材料
     "复元",
@@ -292,7 +293,7 @@ def validate_privacy_policy_copy(web_copy: str, mobile_copy: str) -> list[str]:
             failures.append(f"stale privacy-policy brand: {stale}")
 
     for required in (
-        "小巴",
+        "小气候",
         "睿为健康",
         "2026-08-05",
         "HealthKit",

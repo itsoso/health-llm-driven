@@ -134,7 +134,7 @@ function getSelfReportedAdherence(reply: string): number | null {
 }
 
 /**
- * State A「小巴先开口」连续性: 把发送第一条消息时可见的开场气泡文本融成一句,
+ * State A「小气候先开口」连续性: 把发送第一条消息时可见的开场气泡文本融成一句,
  * 作为合成 assistant 消息注入到流顶。opener 优先, 退化到记忆-only 气泡文本。
  * 返回 null → 当时没有可见开场(纯问候块) → 不注入。
  */
@@ -267,7 +267,7 @@ export default function ChatScreen() {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error || '');
       if (message === 'photo_permission_denied') {
-        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小巴添加照片。');
+        Alert.alert('需要照片权限', '请在 iPhone 设置中允许小气候添加照片。');
       } else {
         Alert.alert('保存失败', '请稍后重试。');
       }
@@ -525,8 +525,8 @@ export default function ChatScreen() {
     return () => subscription.remove();
   }, [scheduleScrollToEnd]);
 
-  // 「小巴先开口」键盘礼仪 (State A, 2026-07):
-  // 只在小巴没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小巴有开场消息时
+  // 「小气候先开口」键盘礼仪 (State A, 2026-07):
+  // 只在小气候没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小气候有开场消息时
   // 不抢键盘, 让话先被看见(点输入框/chip 照常唤起)。有历史的对话也不弹。
   // opener fetch 是异步的: 首次 focus 时可能还没落定, 用 startersReady flag 推迟 bump 决定;
   // fetch 出错 → treat as blank → 照旧 bump。键盘已弹起后 opener 才到达 → 不回收(无 dismiss jank)。
@@ -557,7 +557,7 @@ export default function ChatScreen() {
   );
 
   // opener fetch 落定后补一次 bump 决定: 若 focus 时 fetch 还没回、这里落定后
-  // 判定小巴确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
+  // 判定小气候确实没话 → 唤起键盘。落定后有 opener/记忆 → 保持不弹。
   useEffect(() => {
     if (!startersReady) return;
     if (!focusBumpedRef.current && shouldBumpKeyboard()) {
@@ -1035,7 +1035,7 @@ export default function ChatScreen() {
     });
   }, [windowWidth]);
   const insets = useSafeAreaInsets();
-  // 小巴是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
+  // 小气候是 agent-native 主屏,没有底部 Tab Bar。键盘弹起时直接为键盘留位;
   // 收起时 = 动态底部安全区(home indicator 由这里补) + 呼吸空间,
   // 输入栏悬浮在 home indicator 之上而非压进去(founder 2026-07-05: 参考阿福)。
   const bottomSpacerHeight = keyboardVisible
@@ -1095,7 +1095,7 @@ export default function ChatScreen() {
               ? '部分完成，请查看未完成的事项'
             : activeTurn.phase === 'waiting_for_user'
               ? '等待你确认或补充信息'
-              : '小巴正在处理…'
+              : '小气候正在处理…'
         ),
         tone: activeTurnHasErrorTone
           ? 'error' as const
@@ -1532,9 +1532,9 @@ export default function ChatScreen() {
 
 function AgentHomeBootstrapLoading() {
   return (
-    <View accessibilityLabel="正在准备小巴" style={styles.bootstrapLoading}>
+    <View accessibilityLabel="正在准备小气候" style={styles.bootstrapLoading}>
       <ActivityIndicator size="small" color={C.green500} />
-      <Text style={txt.bootstrapLoading}>正在准备小巴…</Text>
+      <Text style={txt.bootstrapLoading}>正在准备小气候…</Text>
     </View>
   );
 }

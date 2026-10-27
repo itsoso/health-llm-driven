@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '隐私政策 | 小巴',
-  description: '小巴如何处理 HealthKit、健康记录、图片、语音音频、位置、AI 上下文和账号删除请求。',
+  title: '隐私政策 | 小气候',
+  description: '小气候如何处理 HealthKit、健康记录、图片、语音音频、位置、AI 上下文和账号删除请求。',
   robots: { index: true, follow: true },
 };
 
@@ -54,8 +54,8 @@ const sections = [
   {
     title: '可选餐厅地点查询',
     body: [
-      '饮食分享地点编辑器会单独征求本次高德地图查询同意。定位时，经小巴健康服务器向高德地图发送当次精确坐标；搜索时，仅发送主动提交的搜索词和城市（如有）。用途是查找附近餐厅和地址，不发送账号标识、照片或健康记录。',
-      '小巴健康不保存查询坐标、搜索词或候选，不用于广告或追踪。系统定位权限不等于第三方查询同意；拒绝仍可手填。关闭编辑器、撤回本次查询或切到后台会停止后续查询；已发送的请求无法收回。',
+      '饮食分享地点编辑器会单独征求本次高德地图查询同意。定位时，经小气候服务器向高德地图发送当次精确坐标；搜索时，仅发送主动提交的搜索词和城市（如有）。用途是查找附近餐厅和地址，不发送账号标识、照片或健康记录。',
+      '小气候不保存查询坐标、搜索词或候选，不用于广告或追踪。系统定位权限不等于第三方查询同意；拒绝仍可手填。关闭编辑器、撤回本次查询或切到后台会停止后续查询；已发送的请求无法收回。',
       '附近餐厅仅是候选，不是到店证明；历史餐食不自动套用当前位置。地点名称由你确认后才公开在分享图片和文字中，不写入饮食记录、常住地址或足迹。',
     ],
   },
@@ -77,14 +77,14 @@ const sections = [
   {
     title: '医疗边界',
     body: [
-      '小巴提供记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。',
+      '小气候提供记录、趋势解读和生活方式建议，不提供诊断、急救分诊、处方、治疗方案或药物剂量调整。',
       '出现胸痛、严重呼吸困难、意识异常、持续高热、严重低血糖等紧急情况时，请立即联系医生或当地急救服务。',
     ],
   },
   {
     title: '联系我们',
     body: [
-      '小巴由睿为健康运营。如需行使访问、更正、删除或撤回授权等权利，请在 App 内提交删除请求，或发送邮件至 support@executor.life。',
+      '小气候由睿为健康运营。如需行使访问、更正、删除或撤回授权等权利，请在 App 内提交删除请求，或发送邮件至 support@executor.life。',
     ],
   },
 ];
@@ -93,7 +93,7 @@ export default function PrivacyPage() {
   return (
     <main className="min-h-screen bg-slate-50 px-4 py-10 text-slate-900">
       <article className="mx-auto max-w-3xl rounded-2xl border border-slate-200 bg-white p-6 shadow-sm md:p-10">
-        <p className="text-sm font-semibold text-teal-700">小巴 / 睿为健康</p>
+        <p className="text-sm font-semibold text-teal-700">小气候 / 睿为健康</p>
         <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950">隐私政策</h1>
         <p className="mt-4 text-sm leading-6 text-slate-600">
           生效日期: 2026-08-05。最近更新: 2026-10-18。第三方 AI 和高德地点查询授权独立于本隐私政策和系统权限。

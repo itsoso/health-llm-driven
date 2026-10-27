@@ -67,7 +67,7 @@ export default function LlmModelPicker({
     onSelect(canonicalModelId(modelId));
   };
 
-  if (!canSelectModel) return <span className="font-medium text-[#29261F]">小巴</span>;
+  if (!canSelectModel) return <span className="font-medium text-[#29261F]">小气候</span>;
 
   return (
     <div ref={rootRef} className="relative z-[80] min-w-0">

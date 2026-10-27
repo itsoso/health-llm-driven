@@ -158,8 +158,8 @@ function SpecialistScorecardContent({ name }: { name: string }) {
             </View>
 
             <AgentFeedbackLink
-              label="跟小巴复盘这个专家建议"
-              accessibilityLabel="跟小巴复盘这个专家建议"
+              label="跟小气候复盘这个专家建议"
+              accessibilityLabel="跟小气候复盘这个专家建议"
               prompt={`请基于${label}方向近 30 天可归因建议的成绩单，分析哪些建议有效、哪些偏离，并给出下一轮建议应如何调整。需要临床复核的指标不做自动有效性判断。`}
               context={createSpecialistScorecardAgentContext({ label, data: data as any })}
               badge={data.hit_rate === null ? `${label}暂无可归因评分` : `${label}命中率 ${data.hit_rate.toFixed(0)}%`}

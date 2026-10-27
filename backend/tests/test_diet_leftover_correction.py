@@ -153,6 +153,96 @@ async def test_stream_short_circuits_generic_capture_and_returns_no_saved_receip
     assert done['cards'][0]['data']['adjust_record']['record_id']==context[4].id
 
 
+def _clarification_followup(db, context, *, text='根据剩菜照片修正今天午餐记录'):
+    from app.models.agent_conversation import AgentMessage
+    from datetime import timedelta
+    source = context[3]
+    source.content = '记录这餐，剩余这么多，计算实际摄入量'
+    # AgentMessage stores naive UTC, including in non-UTC PostgreSQL sessions.
+    source.created_at = (NOW - timedelta(minutes=5)).replace(tzinfo=None)
+    answer = AgentMessage(conversation_id=context[1].id, role='assistant', content='请明确餐次',
+        created_at=(NOW - timedelta(minutes=4)).replace(tzinfo=None), meta={
+            'mode':'diet_photo_correction_proposal', 'client_turn_finalized':True,
+            'turn_outcome':{'status':'waiting_for_user','reason_code':'leftover_details_required'}})
+    db.add(answer)
+    db.flush()
+    followup = AgentMessage(conversation_id=context[1].id, role='user', content=text, created_at=NOW.replace(tzinfo=None))
+    db.add(followup)
+    db.commit()
+    return source, answer, followup
+
+
+@pytest.mark.asyncio
+async def test_text_followup_uses_only_immediately_clarified_owned_photo(db, context, monkeypatch):
+    from app.services import diet_leftover_correction as subject
+    source, answer, current = _clarification_followup(db, context)
+    monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
+    vision = AsyncMock(return_value={'comparable':True,'full_plate_visible':True,'items':[
+        {'index':0,'remaining_fraction':.5,'confidence':.9},
+        {'index':1,'remaining_fraction':.25,'confidence':.9}]})
+    monkeypatch.setattr(subject, 'estimate_leftovers', vision)
+    result = await subject.build_leftover_proposal(db, context[0].id, context[1].id,
+        current.id, current.content, [], NOW, 'Asia/Shanghai')
+    assert result['cards'][0]['data']['adjust_record']['record_id'] == context[4].id
+    assert context[4].calories == 450
+    assert vision.await_count == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('damage', ['expired','other_owner','intervening','wrong_mode','unfinalized',
+    'wrong_reason','multi_image','missing_image','other_meal','other_day','changed_current'])
+async def test_unbound_leftover_followup_never_calls_vision(db, context, monkeypatch, damage):
+    from app.services import diet_leftover_correction as subject
+    from app.models.agent_conversation import AgentMessage
+    from datetime import timedelta
+    source, answer, current = _clarification_followup(db, context)
+    uid = context[0].id
+    if damage == 'expired': source.created_at = (NOW - timedelta(hours=2)).replace(tzinfo=None)
+    elif damage == 'other_owner': uid += 1000
+    elif damage == 'intervening': answer.role = 'user'
+    elif damage == 'wrong_mode': answer.meta = {**answer.meta, 'mode':'chat'}
+    elif damage == 'unfinalized': answer.meta = {**answer.meta, 'client_turn_finalized':False}
+    elif damage == 'wrong_reason': answer.meta = {**answer.meta, 'turn_outcome':{'reason_code':'other'}}
+    elif damage == 'multi_image': source.image_url = '["/one.jpg","/two.jpg"]'
+    elif damage == 'missing_image': source.image_url = None
+    elif damage == 'other_meal': source.content = '记录晚餐剩余部分'
+    elif damage == 'other_day': source.content = '昨天午餐剩余部分'
+    elif damage == 'changed_current': current.content = '不要修改'
+    db.commit()
+    vision = AsyncMock()
+    monkeypatch.setattr(subject, 'estimate_leftovers', vision)
+    result = await subject.build_leftover_proposal(db, uid, context[1].id, current.id,
+        '根据剩菜照片修正今天午餐记录', [], NOW, 'Asia/Shanghai')
+    assert result['cards'] == []
+    vision.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_text_followup_stream_stays_in_confirmation_flow(db, context, monkeypatch):
+    from app.services.agent_executor import AgentExecutor
+    from app.services import diet_leftover_correction as subject
+    source, answer, current = _clarification_followup(db, context)
+    db.delete(current)
+    db.commit()
+    monkeypatch.setattr(subject, 'read_owned_chat_image_data_uri', lambda *_:'data:image/jpeg;base64,c3ludGhldGlj')
+    monkeypatch.setattr(subject, 'estimate_leftovers', AsyncMock(return_value={
+        'comparable':True,'full_plate_visible':True,'items':[
+            {'index':0,'remaining_fraction':.5,'confidence':.9},
+            {'index':1,'remaining_fraction':.25,'confidence':.9}]}))
+    executor = AgentExecutor(db)
+    monkeypatch.setattr(executor, '_agent_kernel_reference_now', lambda:NOW)
+    monkeypatch.setattr(executor, '_should_preprocess_attached_images', lambda *_:True)
+    async def no_generic(*_a, **_kw):
+        pytest.fail('explicit leftover followup must not enter generic read/write inference')
+    monkeypatch.setattr(executor, '_call_llm_stream', no_generic)
+    events = [e async for e in executor.run_stream(user_id=context[0].id,
+        conversation_id=context[1].id, message='根据剩菜照片修正今天午餐记录', channel='typed')]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    assert done['write_receipts'] == []
+    assert done['turn_outcome']['reason_code'] == 'leftover_confirmation_required'
+    assert done['cards'][0]['data']['adjust_record']['record_id'] == context[4].id
+
+
 @pytest.mark.asyncio
 async def test_confirmation_updates_same_record_once_and_stale_replay_conflicts(db,client,context,auth_user_and_headers,monkeypatch):
     from app.services.ai.food_recognition import food_recognition_service

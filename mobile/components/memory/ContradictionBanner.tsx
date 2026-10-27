@@ -1,5 +1,5 @@
 /**
- * 矛盾裁决横幅 — 小巴对同一件事记了两个方向互斥的说法时, 并排让用户留下对的那条 (走 supersede).
+ * 矛盾裁决横幅 — 小气候对同一件事记了两个方向互斥的说法时, 并排让用户留下对的那条 (走 supersede).
  * 从 app/memory.tsx 抽出, 保持屏文件精简。
  */
 import React from 'react';
@@ -31,7 +31,7 @@ export default function ContradictionBanner({ pairs, onKeep, onCollapse, disable
         </Pressable>
       </View>
       <Text style={[txt.hint, { color: tone.fg }]}>
-        小巴对同一件事记了两个说法，帮它留下对的那个。
+        小气候对同一件事记了两个说法，帮它留下对的那个。
       </Text>
       {pairs.map((pair) => (
         <View key={`${pair.a.id}:${pair.b.id}`} style={[styles.pairWrap, { borderTopColor: tone.solid }]}>

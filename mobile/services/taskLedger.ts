@@ -1,7 +1,7 @@
 import api from './api';
 
 /**
- * 统一任务账本(Harness Slice 4)— 「小巴的任务」五源只读聚合。
+ * 统一任务账本(Harness Slice 4)— 「小气候的任务」五源只读聚合。
  * 后端 GET /agent/tasks:write_intents / desktop_jobs / agenda / heartbeat / recipes
  * 统一 shape;单源失败进 failed_sources(fail-loud),不整包 500。
  * v1 只读:无取消/重试。

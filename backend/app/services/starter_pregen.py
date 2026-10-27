@@ -36,16 +36,15 @@ from sqlalchemy.orm import Session
 
 logger = logging.getLogger(__name__)
 
-# Redis key namespace. v2 rejects every health-evidence query/payload; bumping all
-# namespaces makes any legacy health entries and in-flight claims unreachable.
-# be decoded into the new shape.
-_ENTRY_PREFIX = "starter_pregen:v2"
-_INFLIGHT_PREFIX = "starter_pregen:inflight:v2"
-_METRIC_PREFIX = "starter_pregen:metric:v2"
+# v3 invalidates previous-brand answers while retaining v2 health-evidence exclusions.
+# Bump entries, indexes and claims together so old in-flight work stays isolated.
+_ENTRY_PREFIX = "starter_pregen:v3"
+_INFLIGHT_PREFIX = "starter_pregen:inflight:v3"
+_METRIC_PREFIX = "starter_pregen:metric:v3"
 # Per-user index SET of a user's live entry keys — invalidate_pregen clears via
 # SMEMBERS+DEL rather than a full-keyspace scan_iter (C3: scans are O(keyspace)
 # and ran on EVERY mutation). The index self-expires well beyond any entry TTL.
-_INDEX_PREFIX = "starter_pregen:idx:v2"
+_INDEX_PREFIX = "starter_pregen:idx:v3"
 _INDEX_TTL_SECONDS = 24 * 60 * 60
 # An in-flight claim self-expires so a crashed pregen can't wedge a chip forever.
 _INFLIGHT_TTL_SECONDS = 120

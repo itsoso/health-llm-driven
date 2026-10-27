@@ -264,7 +264,7 @@ def _verify_pages(*, include_connection, include_edu=False):
         privacy_marker = '可选城市足迹与分享' if include_connection else '可选足迹与分享'
         routes=[('/privacy',privacy_marker)]
         if include_connection:
-            routes.extend([('/connect/health', '小巴健康 · 数据连接'),
+            routes.extend([('/connect/health', '小气候 · 数据连接'),
                            ('/connect/kbase', '登录知识库'), ('/login', '<html')])
             if include_edu:
                 routes.append(('/connect/edu', '登录Edu'))

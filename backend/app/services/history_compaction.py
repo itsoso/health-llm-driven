@@ -195,7 +195,7 @@ def _extract_receipt_lines(texts: List[str]) -> List[str]:
 async def _summarize(prior_summary: str, turns: List[Dict[str, str]]) -> Optional[str]:
     """flash 档叙事折叠。失败返回 None(调用方 fail-open)。"""
     convo = "\n".join(
-        f"{'用户' if m['role'] == 'user' else '小巴'}: {(m['content'] or '')[:500]}"
+        f"{'用户' if m['role'] == 'user' else '小气候'}: {(m['content'] or '')[:500]}"
         for m in turns
     )
     prompt = (

@@ -178,13 +178,13 @@ describe('AgendaScreen', () => {
 
   it('returns through the stack and falls back to chat for a cold deep link', () => {
     const first = render(<AgendaScreen />);
-    fireEvent.press(first.getByLabelText('返回小巴'));
+    fireEvent.press(first.getByLabelText('返回小气候'));
     expect(mockBack).toHaveBeenCalledTimes(1);
     first.unmount();
 
     mockCanGoBack = false;
     const second = render(<AgendaScreen />);
-    fireEvent.press(second.getByLabelText('返回小巴'));
+    fireEvent.press(second.getByLabelText('返回小气候'));
     expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/chat');
   });
 
@@ -347,7 +347,7 @@ describe('AgendaScreen', () => {
 
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
-    expect(menuOptions).toEqual(['跳过', '调整计划', '问小巴', '取消']);
+    expect(menuOptions).toEqual(['跳过', '调整计划', '问小气候', '取消']);
   });
 
   it('does not offer persistence it cannot honor for independent medication rows', () => {
@@ -367,7 +367,7 @@ describe('AgendaScreen', () => {
 
     fireEvent.press(getByLabelText('管理 晨间用药'));
 
-    expect(menuOptions).toEqual(['跳过', '调整计划', '问小巴', '取消']);
+    expect(menuOptions).toEqual(['跳过', '调整计划', '问小气候', '取消']);
   });
 
   it('keeps future review items free of duplicate ask and defer actions', () => {

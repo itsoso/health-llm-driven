@@ -594,10 +594,10 @@ export default function WorkoutDetailScreen() {
                 activeOpacity={0.75}
                 style={[S.aiToolBtn, S.agentReviewBtn]}
                 accessibilityRole="button"
-                accessibilityLabel="跟小巴复盘本次运动"
+                accessibilityLabel="跟小气候复盘本次运动"
               >
                 <Ionicons name="chatbubble-ellipses-outline" size={15} color={C.green500} />
-                <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟小巴复盘这次</Text>
+                <Text style={[T.agentReviewBtn, { marginLeft: 4 }]}>跟小气候复盘这次</Text>
               </TouchableOpacity>
               {hasAnalysis && !postAnalyzing && (
                 <TouchableOpacity

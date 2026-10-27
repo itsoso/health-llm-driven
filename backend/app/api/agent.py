@@ -1014,7 +1014,7 @@ def _reserve_agent_capacity(db: Session, *, user_id: int, origin: str) -> str:
         if exc.scope == "user":
             detail = "你已有请求正在处理，请等待完成后再试"
         else:
-            detail = "小巴当前请求较多，请稍后再试"
+            detail = "小气候当前请求较多，请稍后再试"
         raise HTTPException(status_code=429, detail=detail) from exc
 
 
@@ -3136,7 +3136,7 @@ def list_agent_tools(
     }
 
 
-@router.get("/tasks", summary="统一任务账本 — 小巴的任务(五源只读聚合)")
+@router.get("/tasks", summary="统一任务账本 — 小气候的任务(五源只读聚合)")
 def agent_tasks(
     current_user: User = Depends(get_current_user_required),
     db: Session = Depends(get_db),

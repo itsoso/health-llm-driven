@@ -50,7 +50,7 @@ describe('EmptyStateHome', () => {
     expect(onOpenMemory).not.toHaveBeenCalled();
   });
 
-  it('renders 小巴 as a branded assistant avatar in the opening bubble', () => {
+  it('renders 小气候 as a branded assistant avatar in the opening bubble', () => {
     const opener = {
       text: '今天就是「提前晚餐」的检验日，做到了吗？',
       source: 'action_card_due',
@@ -66,7 +66,7 @@ describe('EmptyStateHome', () => {
       />,
     );
 
-    expect(getByLabelText('小巴形象')).toBeTruthy();
+    expect(getByLabelText('小气候形象')).toBeTruthy();
   });
 
   it('renders quick replies below the bubble including a 换个话题 chip, all routed to onQuickReply', () => {

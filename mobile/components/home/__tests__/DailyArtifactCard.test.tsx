@@ -207,13 +207,13 @@ describe('DailyArtifactCard', () => {
     expect(onPressAction).toHaveBeenCalledWith(artifact.top_action);
   });
 
-  it('uses 小巴 as the visible assistant persona for the ask action', () => {
+  it('uses 小气候 as the visible assistant persona for the ask action', () => {
     const { getByLabelText, getByText, queryByLabelText } = render(
       <DailyArtifactCard artifact={makeArtifact()} />,
     );
 
-    expect(getByText('问小巴')).toBeTruthy();
-    expect(getByLabelText('询问小巴今日行动')).toBeTruthy();
+    expect(getByText('问小气候')).toBeTruthy();
+    expect(getByLabelText('询问小气候今日行动')).toBeTruthy();
     expect(queryByLabelText('询问 Reva 今日行动')).toBeNull();
   });
 

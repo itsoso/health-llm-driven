@@ -28,7 +28,7 @@ def package(tmp_path):
         "CFBundleIdentifier": "life.executor.health",
         "CFBundleShortVersionString": "1.3.4",
         "CFBundleVersion": "272",
-        "CFBundleDisplayName": "小巴健康",
+        "CFBundleDisplayName": "小气候",
     }
     expo = {
         "EXUpdatesRuntimeVersion": "1.3.4",
@@ -213,7 +213,7 @@ def test_public_assembly_never_copies_private_files(guard, tmp_path):
             "bundle": "life.executor.health",
             "version": "1.3.4",
             "build": "272",
-            "title": "小巴健康",
+            "title": "小气候",
         },
     )
     assert {p.name for p in output.iterdir()} == {

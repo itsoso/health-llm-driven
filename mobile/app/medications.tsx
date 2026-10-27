@@ -118,14 +118,14 @@ export default function MedicationsScreen() {
       const medication = existing ?? await addMedication({
         name: medicationDraft.name,
         dosage: medicationDraft.dose,
-        notes: '来自小巴用药草稿, 由用户确认后写入。',
+        notes: '来自小气候用药草稿, 由用户确认后写入。',
       });
       await logMedication({
         medication_id: medication.id,
         taken_time: currentTimeLabel(),
         status: 'taken',
         actual_dosage: medicationDraft.dose,
-        notes: '小巴用药草稿确认记录。',
+        notes: '小气候用药草稿确认记录。',
       });
       return medication;
     },
@@ -188,7 +188,7 @@ export default function MedicationsScreen() {
                 <Ionicons name="sparkles-outline" size={18} color={C.green500} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={txt.draftTitle}>{medicationDraft.needsReview ? '这条内容需要核对' : '小巴识别到用药草稿'}</Text>
+                <Text style={txt.draftTitle}>{medicationDraft.needsReview ? '这条内容需要核对' : '小气候识别到用药草稿'}</Text>
                 <Text style={txt.draftHint}>{medicationDraft.needsReview ? '这段文字包含查询或操作指令，不能直接作为药名记录。' : '请核对药名和剂量，仅在实际服用后确认。'}</Text>
               </View>
             </View>
@@ -257,8 +257,8 @@ export default function MedicationsScreen() {
         )}
         {activeMedications.length > 0 && (
           <AgentFeedbackLink
-            label="跟小巴整理用药问题"
-            accessibilityLabel="跟小巴整理用药问题"
+            label="跟小气候整理用药问题"
+            accessibilityLabel="跟小气候整理用药问题"
             prompt="请基于我的在用药品列表, 帮我整理今天的用药执行情况、可能需要向医生确认的问题、近期不适该如何描述。不要建议我自行停药、换药或改剂量。"
             context={createMedicationAgentContext({
               date: today,

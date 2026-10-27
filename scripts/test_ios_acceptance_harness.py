@@ -210,7 +210,7 @@ def test_today_context_acceptance_matches_the_current_agent_native_surface() -> 
 
     assert "testTodayContextCanOpenAndDismiss" in source
     assert 'app.buttons["打开今日计划"]' in source
-    assert 'app.buttons["返回小巴"]' in source
+    assert 'app.buttons["返回小气候"]' in source
     assert 'app.descendants(matching: .any)["返回"]' in source
     assert "backToChat.exists || genericBack.exists" in source
     assert 'app.buttons["关闭当前提示"]' in source

@@ -791,12 +791,12 @@ export function DietShareComposer({
               {onAskReva ? (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="问小巴复盘今日饮食"
+                  accessibilityLabel="问小气候复盘今日饮食"
                   onPress={() => { void askRevaAfterDismissal(); }}
                   style={({ pressed }) => [styles.textActionButton, pressed ? styles.buttonPressed : null]}
                 >
                   <Ionicons name="sparkles-outline" size={17} color={C.green600} />
-                  <Text style={styles.textAction}>问小巴复盘今日饮食</Text>
+                  <Text style={styles.textAction}>问小气候复盘今日饮食</Text>
                 </Pressable>
               ) : null}
             </ScrollView>

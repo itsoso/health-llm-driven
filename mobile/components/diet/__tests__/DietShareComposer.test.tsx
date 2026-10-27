@@ -418,7 +418,7 @@ describe('DietShareComposer', () => {
     const view = renderComposer({ onAskReva });
     await reachPreview(view);
     const modal = view.UNSAFE_getByType(Modal);
-    const button = view.getByLabelText('问小巴复盘今日饮食');
+    const button = view.getByLabelText('问小气候复盘今日饮食');
     fireEvent.press(button);
     fireEvent.press(button);
     await waitFor(() => expect(modal.props.visible).toBe(false));
@@ -435,7 +435,7 @@ describe('DietShareComposer', () => {
     const view = renderComposer({ onAskReva });
     await reachPreview(view);
     const modal = view.UNSAFE_getByType(Modal);
-    fireEvent.press(view.getByLabelText('问小巴复盘今日饮食'));
+    fireEvent.press(view.getByLabelText('问小气候复盘今日饮食'));
     await waitFor(() => expect(onAskReva).toHaveBeenCalledTimes(1));
     expect(modal.props.visible).toBe(false);
     expect(view.onClose).toHaveBeenCalledTimes(1);

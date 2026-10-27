@@ -116,7 +116,7 @@ function LedgerGroup({ title, items }: { title: string; items: TaskLedgerItem[] 
 }
 
 /**
- * 「小巴的任务」内联面板(agent-native:占据对话页消息区,不跳独立页)。
+ * 「小气候的任务」内联面板(agent-native:占据对话页消息区,不跳独立页)。
  * 加载失败显式呈现 + 重试;部分来源失败(failed_sources)也如实标出,不装全绿。
  */
 export default function TaskLedgerPanel({ onClose }: { onClose?: () => void }) {
@@ -148,7 +148,7 @@ export default function TaskLedgerPanel({ onClose }: { onClose?: () => void }) {
     <View style={styles.panel} testID="task-ledger-panel">
       <View style={styles.header}>
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle}>小巴的任务</Text>
+          <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle}>小气候的任务</Text>
           <Text maxFontSizeMultiplier={1.2} style={txt.headerSub}>
             后台进行、待确认与即将到来的事(只读)
           </Text>

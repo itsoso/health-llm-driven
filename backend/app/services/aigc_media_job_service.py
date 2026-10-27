@@ -1047,7 +1047,7 @@ class AIGCMediaJobService:
             "kind": job.kind,
             "status": projection["status"],
             "progress": projection["progress"],
-            "title": "小巴创作",
+            "title": "小气候创作",
             "spec": projection["spec"],
             "error_message": projection["error_message"],
             "error_code": projection["error_code"],
@@ -1365,8 +1365,8 @@ class AIGCMediaJobService:
             result = await PushService(self.db).send_notification(
                 user_id=int(job.user_id),
                 notification_type="aigc_media_completed",
-                title="小巴创作已完成",
-                content="你的创作结果已准备好，打开小巴即可查看。",
+                title="小气候创作已完成",
+                content="你的创作结果已准备好，打开小气候即可查看。",
                 data={
                     "rule_id": f"aigc_media_completed:{job.id}",
                     "job_id": job.id,

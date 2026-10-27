@@ -1,6 +1,6 @@
 # iOS App Review Adapted Checklist
 
-> Purpose: adapt proven App Review operating practices into 小巴's release gate. This is not a generic checklist; it is the repo-level contract for what must be checked before App Store submission.
+> Purpose: adapt proven App Review operating practices into 小气候's release gate. This is not a generic checklist; it is the repo-level contract for what must be checked before App Store submission.
 
 ## Automated Gate
 
@@ -22,12 +22,12 @@ The gate must fail on high-confidence review risks:
 
 Before upload or submit for review, the release owner must check:
 
-- Review Notes explain what 小巴 does, what it does not do, and where the reviewer can find the main flows.
+- Review Notes explain what 小气候 does, what it does not do, and where the reviewer can find the main flows.
 - Demo account, reviewer path, and any required seed data are reachable without private owner-only state.
 - Screenshots contain no private health data, phone numbers, raw identifiers, internal tools, debug overlays, or non-production environment labels.
 - HealthKit, notification, microphone, camera, and location permission prompts are contextual and optional unless the user explicitly starts that feature.
 - Any paywall, subscription, or purchase copy uses Apple-compliant wording and does not route to external payment.
-- Medical boundary is visible: 小巴 provides health records, trend interpretation, and lifestyle suggestions, not diagnosis, emergency triage, prescriptions, or medication-dose decisions.
+- Medical boundary is visible: 小气候 provides health records, trend interpretation, and lifestyle suggestions, not diagnosis, emergency triage, prescriptions, or medication-dose decisions.
 - The standard binary is iPhone portrait only and does not contain Watch, Rokid, Siri intents or background location capabilities.
 - App Privacy responses match the checked-in nutrition-label declaration and have been published, not merely saved as a draft.
 - App Information declares the regulated medical device status. This release must be `No`; a `Yes` assessment requires regulatory evidence and blocks submission.
@@ -42,7 +42,7 @@ The Kuaishou review checklist is useful for Aheng in four ways:
 - Keep reviewer access boring and deterministic: reviewer notes, demo account, data state, and navigation path must match the submitted binary.
 - Convert repeated rejection classes into repo gates or reusable skills instead of keeping them as tribal knowledge.
 
-## 小巴 Mapping
+## 小气候 Mapping
 
 | Review Risk | Aheng Surface | Required Control |
 | --- | --- | --- |
@@ -50,7 +50,7 @@ The Kuaishou review checklist is useful for Aheng in four ways:
 | External payment or redeem code | Subscription, account, settings, release docs | Automated redline scan plus manual paywall review |
 | Forced permissions | Onboarding, recording, HealthKit, notification prompts | Contextual request only; no app-wide blocking copy |
 | Empty or unfinished pages | Settings, detail routes, dynamic cards | No dead-end route in submitted build |
-| Unsafe medical claims | 小巴 chat, DynamicView cards, health reports | Medical boundary copy plus deterministic safety rules |
+| Unsafe medical claims | 小气候 chat, DynamicView cards, health reports | Medical boundary copy plus deterministic safety rules |
 | Missing regulatory declaration | App Information, Health & Fitness category | Explicit `Regulated Medical Devices: No` confirmation or stop for regulatory review |
 | Reviewer cannot reproduce core flow | Review Notes, demo account, seed data | Final-submit gate and manual reviewer walkthrough |
 

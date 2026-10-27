@@ -186,7 +186,7 @@ function ConnectionContent() {
   return (
     <div className="min-h-[70vh] bg-slate-50 px-4 py-10 sm:py-16">
       <section aria-labelledby="connection-title" className="mx-auto max-w-xl rounded-3xl border border-slate-200 bg-white p-6 shadow-sm sm:p-9">
-        <p className="mb-3 text-sm font-semibold text-indigo-600">小巴健康 · 数据连接</p>
+        <p className="mb-3 text-sm font-semibold text-indigo-600">小气候 · 数据连接</p>
         <h1 id="connection-title" className="text-2xl font-semibold text-slate-900">{request ? '允许读取健康数据？' : '管理健康数据连接'}</h1>
         {user && !needsLogin && !isLoading && (
           <div className="my-6 rounded-xl bg-slate-50 p-4 text-sm text-slate-600">

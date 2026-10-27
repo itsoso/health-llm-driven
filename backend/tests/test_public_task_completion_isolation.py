@@ -37,7 +37,7 @@ async def test_public_completion_never_builds_personal_twin(
         return {'available': True, 'aqi': 52, 'aqi_description': '良'}
 
     async def provider(messages, tools):
-        yield {'type': 'content', 'text': '杭州明天18至24度。来源报告AQI52，良；观测时间未知。' if '杭州' in message else '我是小巴，可以协助整理健康记录。'}
+        yield {'type': 'content', 'text': '杭州明天18至24度。来源报告AQI52，良；观测时间未知。' if '杭州' in message else '我是小气候，可以协助整理健康记录。'}
         yield {'type': 'finish', 'finish_reason': 'stop'}
 
     monkeypatch.setattr(executor, '_read_environment_in_process', environment)

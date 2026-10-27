@@ -12406,7 +12406,7 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * 统一任务账本 — 小巴的任务(五源只读聚合)
+         * 统一任务账本 — 小气候的任务(五源只读聚合)
          * @description Slice 4 v1:write_intents / desktop_jobs / agenda / heartbeat / recipes
          *     五源只读聚合成统一 shape ``{kind, title, status, when, source}``。
          *     单源失败计入 ``failed_sources``(fail-loud,不整包 500);取消/重试留 v2。

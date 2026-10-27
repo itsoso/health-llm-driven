@@ -37,7 +37,7 @@ it('shows saved full text and historical evidence limits; analysis only prefills
   expect(screen.getByText('2026-10-18 13:01（UTC+08:00）')).toBeTruthy();
   expect(screen.getByText(/未经本次重新核验/)).toBeTruthy();
   expect(mockDismissTo).not.toHaveBeenCalled();
-  fireEvent.press(screen.getByRole('button', { name: '让小巴解读这条推送' }));
+  fireEvent.press(screen.getByRole('button', { name: '让小气候解读这条推送' }));
   expect(mockDismissTo).toHaveBeenCalledWith({
     pathname: '/(tabs)/chat', params: {
       prompt: '请解读这条历史推送，说明其中指标的含义、结论的局限和需要核实的问题。',
@@ -60,7 +60,7 @@ it('shows loading then a retryable failure without an analysis action', async ()
   mockGetDetail.mockReturnValueOnce(new Promise((_, fail) => { reject = fail; }));
   const screen = renderWithProviders(<NotificationDetailScreen />);
   expect(screen.getByLabelText('正在读取推送')).toBeTruthy();
-  expect(screen.queryByText('让小巴解读这条推送')).toBeNull();
+  expect(screen.queryByText('让小气候解读这条推送')).toBeNull();
   await act(async () => { reject(new Error('network')); });
   fireEvent.press(await screen.findByRole('button', { name: '重试' }));
   expect(await screen.findByText(detail.content)).toBeTruthy();
@@ -90,7 +90,7 @@ it('hides cached content and late responses from another owner', async () => {
   screen.rerender(<NotificationDetailScreen />);
   await act(async () => { resolveOld(detail); });
   expect(screen.queryByText(detail.content)).toBeNull();
-  expect(screen.queryByText('让小巴解读这条推送')).toBeNull();
+  expect(screen.queryByText('让小气候解读这条推送')).toBeNull();
 });
 
 it('does not show previous owner cached content on account switch', async () => {

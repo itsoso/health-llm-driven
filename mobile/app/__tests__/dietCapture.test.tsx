@@ -178,7 +178,7 @@ describe('DietScreen capture deeplink', () => {
   it('returns the daily diet analysis entry to the main Agent with context', async () => {
     const view = render(<DietScreen />);
     await act(async () => { await Promise.resolve(); });
-    fireEvent.press(view.getByRole('button', { name: '跟小巴详细聊今日饮食' }));
+    fireEvent.press(view.getByRole('button', { name: '跟小气候详细聊今日饮食' }));
     expect(mockReturnToChatWithContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       prompt: '今天饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。',
       context: {},
@@ -190,7 +190,7 @@ describe('DietScreen capture deeplink', () => {
     mockRouteParams.date = '2026-08-01';
     const view = render(<DietScreen />);
     await act(async () => { await Promise.resolve(); });
-    fireEvent.press(view.getByRole('button', { name: '跟小巴详细聊今日饮食' }));
+    fireEvent.press(view.getByRole('button', { name: '跟小气候详细聊今日饮食' }));
     expect(mockReturnToChatWithContext).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
       prompt: '2026-08-01饮食结构怎么样? 蛋白质够吗? 帮我给出下一餐调整建议。',
     }));
@@ -198,14 +198,14 @@ describe('DietScreen capture deeplink', () => {
   it('exposes an accessible back action that returns to the previous screen', async () => {
     const view = render(<DietScreen />);
     await act(async () => { await Promise.resolve(); });
-    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    fireEvent.press(view.getByRole('button', { name: '返回小气候' }));
     expect(mockRouterBack).toHaveBeenCalledTimes(1);
   });
   it('returns a directly opened diet screen to chat', async () => {
     mockCanGoBack = false;
     const view = render(<DietScreen />);
     await act(async () => { await Promise.resolve(); });
-    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    fireEvent.press(view.getByRole('button', { name: '返回小气候' }));
     expect(mockRouterReplace).toHaveBeenCalledWith('/(tabs)/chat');
     expect(mockRouterBack).not.toHaveBeenCalled();
   });

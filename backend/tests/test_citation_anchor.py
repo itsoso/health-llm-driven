@@ -9,7 +9,7 @@ test_citation_anchor — P1 数字锚定核验(shadow)单测。
     空 twin 安全 / total=0 → ratio=1.0
   - shadow 接线 helper: 异常吞点计数暴露(不静默),开关关时跳过
 
-fixtures 用对比评测(evals/comparative)里**真实小巴回答**的 verbatim 片段,
+fixtures 用对比评测(evals/comparative)里**真实小气候回答**的 verbatim 片段,
 确保抽取逻辑对真实产出稳健(而非只对合成文本)。
 """
 
@@ -23,7 +23,7 @@ from app.services.citation_anchor import (
 from app.twin.schema import HealthTwin, TwinMeta
 
 
-# ─────────────────────────── 真实小巴回答片段(verbatim) ────────────────
+# ─────────────────────────── 真实小气候回答片段(verbatim) ────────────────
 
 # state_sleep_hrv_readout(个人恢复状态,大量个人日读数,markdown 表)。
 XIAOBA_SLEEP_HRV = """## 恢复状态评估：近两天明显下滑 ⚠️
@@ -287,7 +287,7 @@ def test_anchor_report_no_personal_claims_ratio_one():
 
 
 def test_anchor_report_real_answer_against_matching_twin():
-    """真实小巴回答 + 对得上的 twin → 大部分个人读数 anchored。"""
+    """真实小气候回答 + 对得上的 twin → 大部分个人读数 anchored。"""
     t = _twin()
     p = t.physiological
     p.hrv_latest = 42.0

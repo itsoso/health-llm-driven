@@ -127,7 +127,7 @@ export default function MedicalExamImportFlow({
     try {
       const permission = await ImagePicker.requestCameraPermissionsAsync();
       if (!permission.granted) {
-        setError('需要相机权限。请在系统设置中允许小巴使用相机后重试。');
+        setError('需要相机权限。请在系统设置中允许小气候使用相机后重试。');
         setStatus('error');
         return;
       }
@@ -154,7 +154,7 @@ export default function MedicalExamImportFlow({
     try {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (!permission.granted) {
-        setError('需要照片权限。请在系统设置中允许小巴访问照片后重试。');
+        setError('需要照片权限。请在系统设置中允许小气候访问照片后重试。');
         setStatus('error');
         return;
       }
@@ -355,7 +355,7 @@ export default function MedicalExamImportFlow({
             <Ionicons name="checkmark" size={30} color={C.greenOn} />
           </View>
           <Text style={styles.stateTitle}>已保存到健康档案</Text>
-          <Text style={styles.stateBody}>小巴现在可以在对话中引用这份报告。</Text>
+          <Text style={styles.stateBody}>小气候现在可以在对话中引用这份报告。</Text>
           <TouchableOpacity style={[styles.primaryButton, styles.doneButton]} onPress={close}>
             <Text style={styles.primaryButtonText}>完成</Text>
           </TouchableOpacity>

@@ -6,7 +6,7 @@
  *
  * 半高 + 拖拽下滑关 + 抓手全部由根 Stack 的 presentation:'formSheet' + sheetAllowedDetents
  * 原生提供 (见 app/_layout.tsx 的 <Stack.Screen name="today-sheet">), 本文件零手搓动画。
- * 内容与 /(tabs)/today 整屏路由复用同一 TodayContent (mode="sheet": 不渲染「返回小巴」,
+ * 内容与 /(tabs)/today 整屏路由复用同一 TodayContent (mode="sheet": 不渲染「返回小气候」,
  * 靠抓手 + 下滑关)。
  */
 

@@ -69,7 +69,7 @@ describe('MedicationsScreen', () => {
     const screen = renderWithProviders(<MedicationsScreen />);
 
     await waitFor(() => {
-      expect(screen.getByText('小巴识别到用药草稿')).toBeTruthy();
+      expect(screen.getByText('小气候识别到用药草稿')).toBeTruthy();
     });
     expect(screen.getByText('替普瑞酮胶囊（施维舒）')).toBeTruthy();
     expect(screen.getByText('20mg')).toBeTruthy();

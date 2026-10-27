@@ -77,7 +77,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
 
     private func draftValue(_ field: XCUIElement) -> String {
         let current = (field.value as? String) ?? ""
-        return current == "问小巴，或点麦克风说话" ? "" : current
+        return current == "问小气候，或点麦克风说话" ? "" : current
     }
 
     private func selectAllText(_ field: XCUIElement) {
@@ -266,7 +266,7 @@ final class XiaobaAcceptanceUITests: XCTestCase {
         }
 
         openToday.tap()
-        let backToChat = app.buttons["返回小巴"]
+        let backToChat = app.buttons["返回小气候"]
         let genericBack = app.descendants(matching: .any)["返回"]
         let contextOpened = backToChat.waitForExistence(timeout: 10)
             || genericBack.waitForExistence(timeout: 10)

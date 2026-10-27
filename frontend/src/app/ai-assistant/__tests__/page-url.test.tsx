@@ -580,7 +580,7 @@ describe('ai-assistant URL state', () => {
     fireEvent.click(screen.getByTitle('发送'));
 
     expect(screen.getByText('第二条')).toBeInTheDocument();
-    expect(await screen.findByText('小巴处理中，已加入队列。')).toBeInTheDocument();
+    expect(await screen.findByText('小气候处理中，已加入队列。')).toBeInTheDocument();
     expect(streamMessage).toHaveBeenCalledTimes(1);
 
     finishFirst?.();

@@ -245,13 +245,13 @@ function buildQuickDraftReviewHint(draft: DietRecordCreate): string {
   if (portionCheckNames.length > 0) {
     const visibleNames = portionCheckNames.slice(0, 2).join('、');
     const suffix = portionCheckNames.length > 2 ? `等 ${portionCheckNames.length} 项` : '';
-    return `小巴建议先核对：${visibleNames}${suffix}的份量；${writeVerb}才写入今天饮食。`;
+    return `小气候建议先核对：${visibleNames}${suffix}的份量；${writeVerb}才写入今天饮食。`;
   }
   if (quickDraftNeedsWholeReview(draft)) {
-    return `小巴建议先核对整餐识别结果和份量；${writeVerb}才写入今天饮食。`;
+    return `小气候建议先核对整餐识别结果和份量；${writeVerb}才写入今天饮食。`;
   }
   if (foods.length > 0) {
-    return `小巴已拆出 ${foods.length} 项食物；${writeVerb}才写入今天饮食。`;
+    return `小气候已拆出 ${foods.length} 项食物；${writeVerb}才写入今天饮食。`;
   }
   return `先核对食物和份量；${writeVerb}才写入今天饮食。`;
 }
@@ -1412,7 +1412,7 @@ export default function DietScreen() {
     <SafeAreaView style={styles.safe} edges={['top']}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => backOrChat(router)} style={styles.backBtn}
-          accessibilityRole="button" accessibilityLabel="返回小巴"
+          accessibilityRole="button" accessibilityLabel="返回小气候"
           accessibilityHint="返回打开饮食记录前的页面">
           <Ionicons name="chevron-back" size={24} color={C.ink1} />
         </TouchableOpacity>
@@ -1455,10 +1455,10 @@ export default function DietScreen() {
             onPress={handleChatDiet}
             activeOpacity={0.75}
             accessibilityRole="button"
-            accessibilityLabel="跟小巴详细聊今日饮食"
+            accessibilityLabel="跟小气候详细聊今日饮食"
           >
             <Ionicons name="chatbubble-ellipses-outline" size={16} color={C.green500} />
-            <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟小巴详细聊{dateLabel}饮食</Text>
+            <Text style={[txt.agentLinkText, { color: C.green500 }]}>跟小气候详细聊{dateLabel}饮食</Text>
             <Ionicons name="chevron-forward" size={15} color={C.green500} style={{ marginLeft: 'auto' }} />
           </TouchableOpacity>
         )}

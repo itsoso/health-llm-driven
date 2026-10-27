@@ -57,7 +57,7 @@ describe('exam explanation navigation', () => {
   });
 
   it('unwinds modal history and carries the report and original read-only prompt into main chat', () => {
-    fireEvent.press(render(<ExamExplainScreen />).getByLabelText('跟小巴讨论这些异常项'));
+    fireEvent.press(render(<ExamExplainScreen />).getByLabelText('跟小气候讨论这些异常项'));
     expect(mockRouter.dismissTo).toHaveBeenCalledWith({
       pathname: '/(tabs)/chat',
       params: {

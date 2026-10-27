@@ -182,7 +182,7 @@ def verify_app(app, *, version, channel, runner=subprocess.run, now=None, requir
         "bundle": BUNDLE,
         "version": version,
         "build": build,
-        "title": info.get("CFBundleDisplayName", "小巴健康"),
+        "title": info.get("CFBundleDisplayName", "小气候"),
         "runtime": version,
         "channel": channel,
         "device_count": len(devices),

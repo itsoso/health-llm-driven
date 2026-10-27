@@ -34,7 +34,7 @@ interface ChatHeaderProps {
 }
 
 /**
- * 会诊页顶部 header surface：模型选择器 (小巴 ⌄) + 新建/历史/工具三个动作。
+ * 会诊页顶部 header surface：模型选择器 (小气候 ⌄) + 新建/历史/工具三个动作。
  * 当前轮运行状态只在 assistant turn 内展示，避免顶部和消息区重复。
  * 纯 props 驱动, 无本地状态。testID 「chat-header-surface」+ a11y 标签保持稳定 (测试引用)。
  */

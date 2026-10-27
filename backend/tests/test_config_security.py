@@ -97,7 +97,7 @@ def test_production_invitation_rollout_requires_dedicated_sms_config(missing_fie
     values = {
         "aliyun_sms_access_key_id": "invite-access-id",
         "aliyun_sms_access_key_secret": "invite-access-secret",
-        "registration_invitation_sms_sign_name": "小巴邀请",
+        "registration_invitation_sms_sign_name": "小气候邀请",
         "registration_invitation_sms_template_code": "SMS_INVITE_123",
     }
     secret = values[missing_field]
@@ -133,7 +133,7 @@ def test_production_invitation_sms_accepts_effective_fallback_access_keys():
         registration_invitation_enforcement_enabled=True,
         aliyun_access_key_id="fallback-id",
         aliyun_access_key_secret="fallback-secret",
-        registration_invitation_sms_sign_name="小巴邀请",
+        registration_invitation_sms_sign_name="小气候邀请",
         registration_invitation_sms_template_code="SMS_INVITE_123",
     )
 
@@ -182,7 +182,7 @@ def test_production_invitation_sms_rejects_partial_dedicated_pair_instead_of_mix
         aliyun_access_key_secret="fallback-secret",
         aliyun_sms_access_key_id=dedicated_id,
         aliyun_sms_access_key_secret=dedicated_secret,
-        registration_invitation_sms_sign_name="小巴邀请",
+        registration_invitation_sms_sign_name="小气候邀请",
         registration_invitation_sms_template_code="SMS_INVITE_123",
     )
 
@@ -192,7 +192,7 @@ def test_production_invitation_sms_rejects_partial_dedicated_pair_instead_of_mix
 
 @pytest.mark.parametrize(
     ("invite_sign", "invite_template"),
-    [("OTP签名", "SMS_INVITE_123"), ("小巴邀请", "SMS_OTP_123")],
+    [("OTP签名", "SMS_INVITE_123"), ("小气候邀请", "SMS_OTP_123")],
 )
 def test_production_invitation_sms_rejects_otp_sign_or_template_reuse(
     invite_sign, invite_template

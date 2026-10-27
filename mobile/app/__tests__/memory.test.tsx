@@ -100,7 +100,7 @@ describe('MemoryScreen — 记忆透明可纠', () => {
 
     const { getByText, findByText } = render(<MemoryScreen />, { wrapper });
 
-    expect(getByText('小巴对你的了解')).toBeTruthy();
+    expect(getByText('小气候对你的了解')).toBeTruthy();
     expect(await findByText('你的 LDL 高于 3.4 mmol/L')).toBeTruthy();
     expect(getByText('你对鱼油 对其响应良好 ALT 下降')).toBeTruthy();
   });

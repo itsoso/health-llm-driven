@@ -522,7 +522,7 @@ describe('ChatScreen', () => {
 
     const view = render(<ChatScreen />);
 
-    expect(view.getByLabelText('正在准备小巴')).toBeTruthy();
+    expect(view.getByLabelText('正在准备小气候')).toBeTruthy();
     expect(view.queryByText('今天的健康状况如何？')).toBeNull();
     expect(view.queryByText(/今天先确认午餐记录/)).toBeNull();
 
@@ -540,7 +540,7 @@ describe('ChatScreen', () => {
       resolveMemory([{ id: 1, type: 'diet', type_label: '饮食', content: '关注晚餐时间' }]);
       await Promise.resolve();
     });
-    expect(view.getByLabelText('正在准备小巴')).toBeTruthy();
+    expect(view.getByLabelText('正在准备小气候')).toBeTruthy();
     expect(view.queryByText(/今天先确认午餐记录/)).toBeNull();
 
     await act(async () => {
@@ -548,7 +548,7 @@ describe('ChatScreen', () => {
       await Promise.resolve();
     });
     await waitFor(() => {
-      expect(view.queryByLabelText('正在准备小巴')).toBeNull();
+      expect(view.queryByLabelText('正在准备小气候')).toBeNull();
       expect(view.getByText(/今天先确认午餐记录/)).toBeTruthy();
       expect(view.queryByText('依据 1 条饮食')).toBeNull();
       expect(view.queryByText('查询全天饮食')).toBeNull();
@@ -556,7 +556,7 @@ describe('ChatScreen', () => {
   });
 
   it('empty chat with nothing to say auto-summons keyboard once opener fetch settles, and bumps on 新建对话', async () => {
-    // 小巴没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
+    // 小气候没话可说(opener 缺席 + 无记忆) → fetch 落定后才唤起键盘。
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
 
@@ -600,8 +600,8 @@ describe('ChatScreen', () => {
     expect(bar().props.captureMealPhotoToken).toBeGreaterThan(before);
   });
 
-  it('does NOT summon the keyboard when 小巴 has an opening message (opener present)', async () => {
-    // 小巴有开场消息 → 让话被看见, 不抢键盘。
+  it('does NOT summon the keyboard when 小气候 has an opening message (opener present)', async () => {
+    // 小气候有开场消息 → 让话被看见, 不抢键盘。
     mockFetchConversationStarters.mockResolvedValue({
       opener: {
         text: '今天就是「提前晚餐」的检验日，做到了吗？',
@@ -623,7 +623,7 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(getByText(/今天就是「提前晚餐」的检验日，做到了吗？/)).toBeTruthy();
     });
-    // 键盘 token 始终保持 0 —— 小巴有话说时不弹键盘。
+    // 键盘 token 始终保持 0 —— 小气候有话说时不弹键盘。
     expect(bar().props.autoFocusToken).toBe(0);
   });
 
@@ -902,7 +902,7 @@ describe('ChatScreen', () => {
   it('shows a visible history entry on the private coach page', async () => {
     const { getAllByText, getByLabelText } = render(<ChatScreen />);
 
-    expect(getAllByText('小巴').length).toBeGreaterThan(0);
+    expect(getAllByText('小气候').length).toBeGreaterThan(0);
     await waitFor(() => {
       expect(getByLabelText('对话历史')).toBeTruthy();
     });
@@ -915,9 +915,9 @@ describe('ChatScreen', () => {
     });
   });
 
-  it('shows 小巴 in the header and hides the model name inline (revealed on pull-down)', async () => {
+  it('shows 小气候 in the header and hides the model name inline (revealed on pull-down)', async () => {
     mockAdminUser = true;
-    // Agent-native header (2026-07-03): 只露品牌名「小巴 ⌄」, 模型名收进下拉 sheet。
+    // Agent-native header (2026-07-03): 只露品牌名「小气候 ⌄」, 模型名收进下拉 sheet。
     // 当前模型仍进 picker trigger 的 accessibilityLabel(供读屏 + 打开 sheet 时勾选)。
     mockLlmPreference = {
       model_id: 'qwen3.7-plus',
@@ -937,7 +937,7 @@ describe('ChatScreen', () => {
 
     // 品牌名可见。
     await waitFor(() => {
-      expect(getByText('小巴')).toBeTruthy();
+      expect(getByText('小气候')).toBeTruthy();
     });
     // 模型名(完整 or 压缩)都不再内联显示在 header。
     expect(queryByText('Qwen3.7 Plus 推理 · 阿里')).toBeNull();
@@ -1248,9 +1248,9 @@ describe('ChatScreen', () => {
 
     // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
     await waitFor(() => {
-      expect(getByLabelText('向小巴提问: 分析我的睡眠质量')).toBeTruthy();
+      expect(getByLabelText('向小气候提问: 分析我的睡眠质量')).toBeTruthy();
     });
-    fireEvent.press(getByLabelText('向小巴提问: 分析我的睡眠质量'));
+    fireEvent.press(getByLabelText('向小气候提问: 分析我的睡眠质量'));
     expect(mockSendMessage).toHaveBeenCalledWith(
       '分析我的睡眠质量',
       null,
@@ -1276,7 +1276,7 @@ describe('ChatScreen', () => {
 
     await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
     expect(queryByLabelText('拍照记一餐')).toBeNull();
-    expect(queryByLabelText('向小巴提问: 分析我的睡眠质量')).toBeNull();
+    expect(queryByLabelText('向小气候提问: 分析我的睡眠质量')).toBeNull();
   });
 
   it('hides the composer chips row once the conversation has messages', async () => {
@@ -1306,7 +1306,7 @@ describe('ChatScreen', () => {
 
     // 后端返回的 onboarding chip 原样渲染进 composer 行。
     await waitFor(() => {
-      expect(getByLabelText('向小巴提问: 连接我的 Garmin / Apple Watch')).toBeTruthy();
+      expect(getByLabelText('向小气候提问: 连接我的 Garmin / Apple Watch')).toBeTruthy();
     });
     // DEFAULT_SUGGESTIONS 的文案(假设有历史数据)不出现。
     expect(queryByText('今天的健康状况如何？')).toBeNull();
@@ -1485,12 +1485,12 @@ describe('ChatScreen', () => {
     mockActiveTurn = {
       phase: 'generating',
       recoverable: false,
-      label: '小巴正在整理…',
+      label: '小气候正在整理…',
       turnId: 'turn-current',
     };
 
     const view = render(<ChatScreen />);
-    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+    expect(view.getByText('小气候正在整理…')).toBeTruthy();
 
     act(() => {
       keyboardListeners.keyboardDidShow({
@@ -1498,7 +1498,7 @@ describe('ChatScreen', () => {
       });
     });
 
-    expect(view.getByText('小巴正在整理…')).toBeTruthy();
+    expect(view.getByText('小气候正在整理…')).toBeTruthy();
     expect(view.queryByText('复查血脂四项')).toBeNull();
     keyboardSpy.mockRestore();
   });

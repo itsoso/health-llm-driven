@@ -151,7 +151,7 @@ fi
 
 run_in "${MOBILE_DIR}" xcrun devicectl device install app --device "${DEVICE_ID}" "${APP_PATH}"
 if ! run_in "${MOBILE_DIR}" xcrun devicectl device process launch --device "${DEVICE_ID}" life.executor.health; then
-  echo "△ App installed, but launch needs an unlocked iPhone. Unlock it and open 小巴 once." >&2
+  echo "△ App installed, but launch needs an unlocked iPhone. Unlock it and open 小气候 once." >&2
   exit 3
 fi
 

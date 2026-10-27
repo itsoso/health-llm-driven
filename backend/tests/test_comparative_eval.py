@@ -128,7 +128,7 @@ def test_collect_merges_jsonl_and_manual(tmp_path):
                 "arm": "xiaoba",
                 "prompt_id": "fact_0",
                 "family": "fact",
-                "answer": "小巴回答",
+                "answer": "小气候回答",
                 "latency_ms": 100,
                 "cost": None,
                 "requires_personal_data": False,

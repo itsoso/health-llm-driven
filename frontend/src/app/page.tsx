@@ -19,7 +19,7 @@ export default function Home() {
           <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-700">Mobile RC</p>
-              <h1 className="mt-1 text-2xl font-bold text-slate-950">小巴 iPhone 版</h1>
+              <h1 className="mt-1 text-2xl font-bold text-slate-950">小气候 iPhone 版</h1>
               <p className="mt-2 text-sm text-slate-600">不走 TestFlight, 保留登录状态直接更新</p>
             </div>
             <Link

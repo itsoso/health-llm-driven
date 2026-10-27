@@ -31,10 +31,10 @@ describe('RevaOnboardingScreen demo mode', () => {
     expect(getByText('今日最重要行动')).toBeTruthy();
   });
 
-  it('enters the 小巴 hub without writing demo data', () => {
+  it('enters the 小气候 hub without writing demo data', () => {
     const { getByText } = render(<RevaOnboardingScreen />);
 
-    fireEvent.press(getByText('进入小巴'));
+    fireEvent.press(getByText('进入小气候'));
 
     expect(mockReplace).toHaveBeenCalledWith('/reva');
   });

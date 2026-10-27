@@ -172,8 +172,8 @@ export default function ExamExplainScreen() {
 
           <AgentFeedbackLink
             navigationMode="return"
-            label="跟小巴讨论这些异常项"
-            accessibilityLabel="跟小巴讨论这些异常项"
+            label="跟小气候讨论这些异常项"
+            accessibilityLabel="跟小气候讨论这些异常项"
             prompt="请基于我这份体检/化验报告，解释异常项、风险优先级和未来30天该做什么。"
             context={createExamExplainAgentContext(data as any)}
             badge={`体检异常 ${data.abnormal_items.length} 项`}

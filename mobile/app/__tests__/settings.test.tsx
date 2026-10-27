@@ -182,7 +182,7 @@ describe('SettingsScreen', () => {
   it('returns from the personal tab to chat even with tab history', () => {
     mockCanGoBack = true;
     const view = render(<MeScreen />);
-    fireEvent.press(view.getByRole('button', { name: '返回小巴' }));
+    fireEvent.press(view.getByRole('button', { name: '返回小气候' }));
     expect(mockNavigate).toHaveBeenCalledWith('/(tabs)/chat');
     expect(mockBack).not.toHaveBeenCalled();
     expect(view.getByText('个人中心与设置')).toBeTruthy();

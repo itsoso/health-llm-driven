@@ -1,6 +1,6 @@
 /**
  * 「我的配方」管理 sheet(Harness Slice 3)— 从聊天页 ⋯ 菜单进入。
- * v1:列表 + 删除。执行入口是对话本身(对小巴精确说出触发短语)。
+ * v1:列表 + 删除。执行入口是对话本身(对小气候精确说出触发短语)。
  * 加载失败显式呈现 + 重试;删除失败如实报错,不静默吞。
  */
 import React, { useCallback, useEffect, useState } from 'react';
@@ -131,7 +131,7 @@ export default function RecipeManagerSheet({
             <View style={{ flex: 1, minWidth: 0 }}>
               <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle}>我的配方</Text>
               <Text maxFontSizeMultiplier={1.2} style={txt.headerSub}>
-                对小巴精确说出触发短语即可一键重放；敏感步骤仍需确认
+                对小气候精确说出触发短语即可一键重放；敏感步骤仍需确认
               </Text>
             </View>
             <TouchableOpacity

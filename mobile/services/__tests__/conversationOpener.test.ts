@@ -72,7 +72,7 @@ describe('fetchConversationOpener', () => {
     mockGet.mockResolvedValueOnce({
       data: {
         opener: {
-          text: '嗨，我是小巴 🐾 先把第一条数据交给我吧。',
+          text: '嗨，我是小气候 🐾 先把第一条数据交给我吧。',
           source: 'cold_start',
           source_id: null,
           quick_replies: [

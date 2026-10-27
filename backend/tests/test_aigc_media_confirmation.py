@@ -1115,7 +1115,7 @@ async def test_confirmed_job_replaces_persisted_confirmation_card(
         "kind": "text_to_video",
         "status": "failed",
         "progress": 0,
-        "title": "小巴创作",
+        "title": "小气候创作",
         "error_message": "创作服务授权异常，已通知管理员。",
         "error_code": "provider_auth_failed",
         "can_retry": True,

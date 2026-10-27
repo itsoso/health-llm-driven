@@ -458,7 +458,7 @@ AGENT_OPS: Dict[str, Dict[str, Any]] = {
     },
     "remember": {
         # 无结构化类型的个人属性/事实(鞋码/衣码/喜好/习惯等)→ MemoryFact 三元组(可召回)。
-        # 补齐"档案属性"缺口:此前小巴主动说"补充进档案"却无工具可写, 用户给了值也 0 工具调用。
+        # 补齐"档案属性"缺口:此前小气候主动说"补充进档案"却无工具可写, 用户给了值也 0 工具调用。
         "create": {
             "tool": "health_record", "record_type": "remember", "confirm": "typed_only",
             "via": "health_record(remember) → POST /memory-facts(写 MemoryFact 三元组)",

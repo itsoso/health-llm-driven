@@ -87,9 +87,9 @@ export default function NotificationDetailScreen() {
             })}
           >
             <Ionicons name="chatbubble-ellipses-outline" size={20} color={c.bgPrimary} />
-            <Text style={styles.analyzeText}>让小巴解读这条推送</Text>
+            <Text style={styles.analyzeText}>让小气候解读这条推送</Text>
           </TouchableOpacity>
-          <Text style={styles.hint}>确认发送后，小巴会解读这条历史推送。</Text>
+          <Text style={styles.hint}>确认发送后，小气候会解读这条历史推送。</Text>
         </ScrollView>
       )}
     </SafeAreaView>

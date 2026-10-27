@@ -397,7 +397,7 @@ def test_privacy_policy_copy_rejects_stale_brand_and_missing_controls():
 
 def test_privacy_policy_copy_accepts_current_web_and_mobile_contract():
     required = (
-        "小巴 睿为健康 2026-08-05 HealthKit AI 模型服务 精确位置 语音音频 客户端事件 "
+        "小气候 睿为健康 2026-08-05 HealthKit AI 模型服务 精确位置 语音音频 客户端事件 "
         "删除账号与数据 删除请求编号 7 天 support@executor.life 广告 营销 不提供诊断 处方 药物剂量调整"
     )
 
@@ -1298,7 +1298,7 @@ def test_release_narrative_rejects_stale_public_positioning():
     assert "release text contains stale user-visible term: 健康守护者" in failures  # 2026-07-05 定位语终裁回参谋家族
     assert "release text contains stale user-visible term: 今日 / 小巴 / 记录 / 我" in failures
     assert "release text contains stale user-visible term: 今日、小巴、记录、我" in failures
-    assert "release text must describe current agent-native entry: 打开即进入小巴" in failures
+    assert "release text must describe current agent-native entry: 打开即进入小气候" in failures
     assert "release text must include current positioning term: 健康参谋" in failures
 
 
@@ -1333,7 +1333,7 @@ def test_app_review_redlines_allow_current_medical_boundary_disclaimers():
     failures = validate_app_review_redlines(
         {
             "docs/release/app-store/submission-pack.md": (
-                "小巴提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、"
+                "小气候提供健康记录、趋势解读和生活方式建议,不提供诊断、急救分诊、"
                 "处方、治疗方案或药物剂量调整。任何医疗决策请咨询医生。"
             )
         }

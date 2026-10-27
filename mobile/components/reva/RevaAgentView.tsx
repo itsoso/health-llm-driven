@@ -153,7 +153,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
       <View style={styles.header}>
         <RevaMark size={32} />
         <View style={{ flex: 1 }}>
-          <Text style={styles.brand}>小巴</Text>
+          <Text style={styles.brand}>小气候</Text>
           <View style={styles.statusRow}>
             <View style={styles.statusDot} />
             <Text style={styles.statusText}>了解你的全部健康数据</Text>
@@ -187,7 +187,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
         >
           {messages.length === 0 ? (
             <View style={styles.empty}>
-              <Text style={styles.emptyText}>问问小巴 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>
+              <Text style={styles.emptyText}>问问小气候 —— 它了解你的体检异常项、手环数据和 90 天计划。</Text>
             </View>
           ) : (
             messages.map(m => <RevaBubble key={m.id} message={m} />)
@@ -204,7 +204,7 @@ export function RevaAgentView({ bottomInset = 0 }: { bottomInset?: number }) {
           </ScrollView>
           <View style={styles.inputBar}>
             <TextInput
-              value={draft} onChangeText={setDraft} placeholder="问问小巴…" placeholderTextColor={C.ink3}
+              value={draft} onChangeText={setDraft} placeholder="问问小气候…" placeholderTextColor={C.ink3}
               style={styles.input} returnKeyType="send" onSubmitEditing={() => submit()}
             />
             <Pressable

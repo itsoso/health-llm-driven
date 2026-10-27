@@ -45,7 +45,7 @@ async function loadSharedConversation(
 
 function roleLabel(role: string) {
   if (role === 'user') return '用户';
-  if (role === 'assistant') return '健康小巴';
+  if (role === 'assistant') return '小气候';
   return '记录';
 }
 
@@ -101,7 +101,7 @@ export default async function SharedPage({
           <div className="text-xs font-medium text-teal-700">Health Agent Share</div>
           <h1 className="mt-2 text-2xl font-bold leading-tight">{data.title}</h1>
           <div className="mt-2 text-xs text-slate-500">
-            {data.sharer_name ? `${data.sharer_name} 分享` : '健康小巴分享'}
+            {data.sharer_name ? `${data.sharer_name} 分享` : '小气候分享'}
             {data.created_at ? ` · ${data.created_at.slice(0, 10)}` : ''}
           </div>
         </div>

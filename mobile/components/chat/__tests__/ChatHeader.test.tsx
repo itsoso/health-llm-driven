@@ -44,8 +44,8 @@ describe('ChatHeader', () => {
       />,
     );
 
-    const avatarStyle = StyleSheet.flatten(getByLabelText('小巴形象').props.style);
-    const titleStyle = StyleSheet.flatten(getByText('小巴').props.style);
+    const avatarStyle = StyleSheet.flatten(getByLabelText('小气候形象').props.style);
+    const titleStyle = StyleSheet.flatten(getByText('小气候').props.style);
     expect(avatarStyle).toEqual(expect.objectContaining({ width: 22, height: 22 }));
     expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 20, lineHeight: 25 }));
   });

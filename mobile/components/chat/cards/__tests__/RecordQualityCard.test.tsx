@@ -257,7 +257,7 @@ describe('RecordQualityCard inline diet adjuster', () => {
     expect(getAllByText('37/112g').length).toBeGreaterThanOrEqual(1);
     expect(getByText('下一餐')).toBeTruthy();
     expect(getAllByText('晚餐优先 40g 蛋白，少油少刺激。').length).toBeGreaterThanOrEqual(1);
-    expect(getByText('#饮食记录 #小巴')).toBeTruthy();
+    expect(getByText('#饮食记录 #小气候')).toBeTruthy();
   });
 
   it('shows seven-day recording consistency without a streak or ranking', () => {

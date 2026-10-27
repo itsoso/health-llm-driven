@@ -148,7 +148,7 @@ describe('extractRevaUiBlocks', () => {
   it('shows a readable fallback when an assistant message only contains a malformed dynamic UI block', () => {
     const result = extractRevaUiBlocks('```reva-ui\nnot-json\n```');
 
-    expect(result.text).toBe('这张动态卡片暂时无法显示，请让小巴用文字说明。');
+    expect(result.text).toBe('这张动态卡片暂时无法显示，请让小气候用文字说明。');
     expect(result.cards).toEqual([]);
   });
 

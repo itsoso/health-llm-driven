@@ -241,10 +241,10 @@ export default function DailyArtifactCard({
               disabled={busy || !artifact}
               onPress={() => artifact && onAskReva?.(artifact)}
               accessibilityRole="button"
-              accessibilityLabel="询问小巴今日行动"
+              accessibilityLabel="询问小气候今日行动"
             >
               <Icon name="messages-square" size={16} color={C.green600} />
-              <Text style={styles.askText}>问小巴</Text>
+              <Text style={styles.askText}>问小气候</Text>
             </Pressable>
           </View>
 

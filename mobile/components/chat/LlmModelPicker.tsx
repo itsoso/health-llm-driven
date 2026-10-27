@@ -76,7 +76,7 @@ export default function LlmModelPicker({
 
   if (!canSelectModel) {
     return <View style={[styles.root, isHeader && styles.rootHeader]}>
-      <Text maxFontSizeMultiplier={1.2} style={isHeader ? txt.headerTitle : txt.triggerTitle}>小巴</Text>
+      <Text maxFontSizeMultiplier={1.2} style={isHeader ? txt.headerTitle : txt.triggerTitle}>小气候</Text>
     </View>;
   }
 
@@ -90,10 +90,10 @@ export default function LlmModelPicker({
         accessibilityLabel={`切换 AI 模型，当前 ${currentLabel}`}
       >
         {isHeader ? (
-          // Agent-native header: 只露品牌名 "小巴 ⌄"，模型名收进下拉 sheet。
+          // Agent-native header: 只露品牌名 "小气候 ⌄"，模型名收进下拉 sheet。
           // 切换中给一个 ActivityIndicator 替代 chevron，保留可感知反馈。
           <View style={styles.headerTitleRow}>
-            <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle} numberOfLines={1}>小巴</Text>
+            <Text maxFontSizeMultiplier={1.2} style={txt.headerTitle} numberOfLines={1}>小气候</Text>
             {savingModelId ? (
               <ActivityIndicator size="small" color={C.ink3} />
             ) : (
@@ -103,7 +103,7 @@ export default function LlmModelPicker({
         ) : (
           <>
             <Ionicons name="hardware-chip-outline" size={15} color={C.green500} />
-            <Text style={txt.triggerTitle} numberOfLines={1}>小巴</Text>
+            <Text style={txt.triggerTitle} numberOfLines={1}>小气候</Text>
             <Text style={txt.triggerModel} numberOfLines={1}>
               {savingModelId ? '切换中...' : currentLabel}
             </Text>

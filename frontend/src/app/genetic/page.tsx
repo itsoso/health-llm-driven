@@ -516,7 +516,7 @@ function GeneticContent() {
           </div>
         )}
 
-        {/* 跨页「提问」: 把当前分类的基因数据带去小巴对话 (预填, 不自动发送)。
+        {/* 跨页「提问」: 把当前分类的基因数据带去小气候对话 (预填, 不自动发送)。
             契约 ?prompt=<encoded> 与 Mac / 后端动态卡 chat?prompt=... 一致。 */}
         {!isLoading && variants.length > 0 && (
           <div className="mb-6 flex justify-end">
@@ -528,7 +528,7 @@ function GeneticContent() {
               }}
               className="inline-flex items-center gap-1.5 px-4 py-2 bg-white border border-teal-300 text-teal-700 rounded-lg text-sm font-medium hover:bg-teal-50 transition"
             >
-              💬 就这些位点提问小巴
+              💬 就这些位点提问小气候
             </button>
           </div>
         )}

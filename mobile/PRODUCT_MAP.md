@@ -76,7 +76,7 @@ mobile/hooks/
   useNotifications.ts         ⭐ APNs 收到推送的路由分发 (handleNotificationResponse)
 
 mobile/components/chat/
-  ConversationSheet.tsx       小巴对话历史 bottom sheet; 按简报/周报置顶, 选择后 loadConversation
+  ConversationSheet.tsx       小气候对话历史 bottom sheet; 按简报/周报置顶, 选择后 loadConversation
 
 mobile/components/
   dashboard/HomeHeader.tsx    主页 hero 卡片

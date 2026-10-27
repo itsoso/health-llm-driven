@@ -118,7 +118,7 @@ class TestSecurityHeaders:
         assert headers.get("X-XSS-Protection") == "1; mode=block"
         assert headers.get("Referrer-Policy") == "strict-origin-when-cross-origin"
         policy = headers.get("Permissions-Policy", "")
-        # 小巴在用户主动触发时支持同源图片上传与实时语音；不得放开给跨源页面。
+        # 小气候在用户主动触发时支持同源图片上传与实时语音；不得放开给跨源页面。
         assert "camera=(self)" in policy
         assert "microphone=(self)" in policy
         assert "geolocation=(self)" in policy

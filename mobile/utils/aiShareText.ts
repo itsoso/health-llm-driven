@@ -158,7 +158,7 @@ function buildDietShareMessage(content: string, style: 'compact' | 'xiaohongshu'
   const protein = extractFirst(/蛋白(?:质)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
   const carbs = extractFirst(/碳水(?:化合物)?\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
   const fat = extractFirst(/脂肪\s*(\d+(?:\.\d+)?)\s*g/iu, flattened);
-  const nextMatch = flattened.match(/(下一步|下一餐建议|早餐建议|午餐建议|晚餐建议|加餐建议|建议)[:：]\s*(.+?)(?:\s*(?:#|— 小巴(?:健康)?)|$)/iu);
+  const nextMatch = flattened.match(/(下一步|下一餐建议|早餐建议|午餐建议|晚餐建议|加餐建议|建议)[:：]\s*(.+?)(?:\s*(?:#|— (?:小气候|小巴(?:健康)?))|$)/iu);
   const nextPrefix = nextMatch?.[1] || '';
   const nextBody = stripInlineMarkdown(nextMatch?.[2] || '');
   const nextAction = nextBody && /^(早餐|午餐|晚餐|加餐)建议$/u.test(nextPrefix)
@@ -265,7 +265,7 @@ function toXiaohongshuPlainLines(content: string): string[] {
     .filter(line => !/^[-:| ]+$/u.test(line))
     .filter(line => !/^---+$/u.test(line))
     .filter(line => !/^今日建议[:：]?$/u.test(line))
-    .filter(line => !/^小巴(?:健康)?$/u.test(line))
+    .filter(line => !/^(?:小气候|小巴(?:健康)?)$/u.test(line))
     .filter(line => !/^仅作健康管理参考/u.test(line))
     .filter(line => !/^#/.test(line))
     .filter(line => !/^指标：数值/u.test(line));

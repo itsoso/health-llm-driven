@@ -9,12 +9,12 @@ import {
 
 describe('agent-native mobile shell', () => {
   it('uses Xiaoba as the single primary entry instead of private coach wording', () => {
-    expect(getMainTabLabels()).toEqual(['今日', '小巴', '记录', '我']);
+    expect(getMainTabLabels()).toEqual(['今日', '小气候', '记录', '我']);
     expect(getMainTabLabels()).not.toContain('私教');
   });
 
   it('keeps the assistant tab accessibility label aligned with Xiaoba', () => {
-    expect(getMainTabAccessibilityLabels().chat).toBe('小巴，与忠实的健康参谋对话');
+    expect(getMainTabAccessibilityLabels().chat).toBe('小气候，与忠实的健康参谋对话');
   });
 
   it('pins the tab route segments — deep links depend on "chat" staying stable', () => {

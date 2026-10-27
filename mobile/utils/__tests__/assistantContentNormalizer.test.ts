@@ -57,7 +57,7 @@ describe('normalizeAssistantContent', () => {
       '```',
     ].join('\n'));
 
-    expect(result.text).toBe('这张动态卡片暂时无法显示，请让小巴用文字说明。');
+    expect(result.text).toBe('这张动态卡片暂时无法显示，请让小气候用文字说明。');
     expect(result.text).not.toContain('must-not-leak');
     expect(result.cards).toEqual([]);
     expect(result.qualityFlags).toContain('malformed_protocol_block');

@@ -137,7 +137,7 @@ function LegacyProgressScreen() {
                 这段时间还没有 AI 建议
               </Text>
               <Text style={[styles.emptySub, { color: c.labelTertiary }]}>
-                小巴主动产建议:{'\n'}
+                小气候主动产建议:{'\n'}
                 · Safety 触发的告警 (心率/睡眠/血压异常){'\n'}
                 · 周日 21:07 自动生成的本周建议{'\n'}
                 · Specialist 在你提问时产出的建议
@@ -211,7 +211,7 @@ function LegacyProgressScreen() {
                     验证中 ({data.verifying_cards.length})
                   </Text>
                   <Text style={[styles.sectionSub, { color: c.labelTertiary }]}>
-                    你已接受并做完, 等小巴拉数据评估
+                    你已接受并做完, 等小气候拉数据评估
                   </Text>
                   {data.verifying_cards.map(card => (
                     <CardRow
@@ -232,7 +232,7 @@ function LegacyProgressScreen() {
                     已闭环 ({data.closed_cards.length})
                   </Text>
                   <Text style={[styles.sectionSub, { color: c.labelTertiary }]}>
-                    小巴自动评估完成, 看 metric 旅程
+                    小气候自动评估完成, 看 metric 旅程
                   </Text>
                   {data.closed_cards.map(card => (
                     <CardRow

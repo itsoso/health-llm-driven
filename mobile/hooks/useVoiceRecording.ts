@@ -144,7 +144,7 @@ export function useVoiceRecording(opts?: {
       }
       if (!perm.granted) {
         emitTerminal('failed', 'microphone_permission_denied');
-        Alert.alert('需要麦克风权限', '请在 iPhone 设置 → 小巴 → 麦克风 中开启权限');
+        Alert.alert('需要麦克风权限', '请在 iPhone 设置 → 小气候 → 麦克风 中开启权限');
         return false;
       }
 

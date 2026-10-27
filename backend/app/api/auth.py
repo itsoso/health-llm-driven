@@ -333,7 +333,7 @@ def _create_verified_phone_user(db: Session, phone: str, now: datetime) -> User:
 
     user = User(
         username=_unique_phone_username(db, phone), email=None, hashed_password=None,
-        name="小巴用户", phone=phone, phone_verified_at=now,
+        name="小气候用户", phone=phone, phone_verified_at=now,
         is_active=True, is_approved=bool(settings.auth_phone_registration_auto_approve),
         onboarding_completed=False,
     )
@@ -882,7 +882,7 @@ async def invited_phone_registration(
             username=_unique_phone_username(db, phone),
             email=None,
             hashed_password=None,
-            name="小巴用户",
+            name="小气候用户",
             phone=phone,
             phone_verified_at=now,
             is_active=True,

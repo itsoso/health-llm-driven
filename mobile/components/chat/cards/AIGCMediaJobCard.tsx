@@ -248,8 +248,8 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
   }, [resultUrl]);
 
   const detail = useMemo(() => {
-    if (status === 'queued') return '小巴已提交任务，正在等待百炼处理。';
-    if (status === 'running' && progress < 75) return '可离开此页面，完成后小巴会通知你。';
+    if (status === 'queued') return '小气候已提交任务，正在等待百炼处理。';
+    if (status === 'running' && progress < 75) return '可离开此页面，完成后小气候会通知你。';
     if (status === 'running') return '生成已接近完成，正在保存到你的私有空间。';
     if (status === 'succeeded') return '结果仅对当前账号可见。';
     if (status === 'submission_unknown') return '提交结果待核验，已停止自动重试以避免重复生成。';
@@ -374,7 +374,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
     <CardShell
       icon="sparkles-outline"
       iconColor={meta.color}
-      title={data.title || '小巴创作'}
+      title={data.title || '小气候创作'}
       badge={kindLabel(String(data.kind || ''))}
       badgeColor={C.green500}
       style={styles.shell}
@@ -447,7 +447,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
             style={styles.image}
             contentFit="cover"
             transition={160}
-            accessibilityLabel="小巴生成的图片"
+            accessibilityLabel="小气候生成的图片"
           />
         </View>
       ) : null}
@@ -462,7 +462,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
               nativeControls
               contentFit="contain"
               fullscreenOptions={{ enable: true }}
-              accessibilityLabel="小巴生成的短视频"
+              accessibilityLabel="小气候生成的短视频"
             />
             {!playbackStarted ? (
               <Pressable
@@ -529,7 +529,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobCardData) {
 
 export const AIGCMediaJobCardSpec: CardSpec<AIGCMediaJobCardData> = {
   type: 'aigc_media_job',
-  label: '小巴创作任务',
+  label: '小气候创作任务',
   match() {
     return null;
   },

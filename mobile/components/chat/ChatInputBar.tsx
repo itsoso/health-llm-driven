@@ -1060,7 +1060,7 @@ export default function ChatInputBar({
     ) {
       Alert.alert(
         '先处理已选图片',
-        '为避免误记，小巴不会把普通附件自动当成餐食照片。请先发送或移除已选图片，再开始拍照记餐。',
+        '为避免误记，小气候不会把普通附件自动当成餐食照片。请先发送或移除已选图片，再开始拍照记餐。',
       );
       return [];
     }
@@ -1328,7 +1328,7 @@ export default function ChatInputBar({
               <TextInput
                 ref={textInputRef}
                 style={[styles.textInput, { height: textInputHeight, pointerEvents: 'auto' }]}
-                placeholder="问小巴，或点麦克风说话"
+                placeholder="问小气候，或点麦克风说话"
                 placeholderTextColor={C.ink3}
                 value={input}
                 onChangeText={handleInputChange}

@@ -1,13 +1,13 @@
 /**
- * EmptyStateHome — 小巴 会诊页「新对话」空状态首屏。
+ * EmptyStateHome — 小气候 会诊页「新对话」空状态首屏。
  *
  * 从 chat.tsx 抽出来（chat.tsx 500 行预算收紧）。纯 props-driven，
  * 所有 handler（发送 / 记忆跳转 / opener 快回复 / 埋点）仍留在 chat.tsx，
  * 本组件只负责排版与视觉。
  *
- * 「小巴先开口」(State A, 2026-07 founder CDS):
- * - system content 不再是卡片家具, 而是小巴在流里的开场消息气泡:
- *   30pt 小巴品牌头像 + 气泡(非对称圆角, surface + hairline)。
+ * 「小气候先开口」(State A, 2026-07 founder CDS):
+ * - system content 不再是卡片家具, 而是小气候在流里的开场消息气泡:
+ *   30pt 小气候品牌头像 + 气泡(非对称圆角, surface + hairline)。
  * - 问候语(早上好/下午好…)折进气泡当第一句, opener.text 接在后面。
  * - 记忆 footnote 在气泡内部(hairline 分隔): 书签图标 + 清洗过的记忆文本 + 「校准」入口。
  * - quick replies 在气泡外下方(chips), 追加一个「换个话题」中性 chip。
@@ -408,7 +408,7 @@ export default function EmptyStateHome({
   }
 
   // 冷启动第三态 (onboarding 但 opener 因故未到 + 无记忆) → Quick Start 卡:
-  // 三个首次价值动作, 视觉与开场气泡一致 (小巴品牌头像 + 非对称圆角气泡 + Reva tokens)。
+  // 三个首次价值动作, 视觉与开场气泡一致 (小气候品牌头像 + 非对称圆角气泡 + Reva tokens)。
   // opener 正常到达时上面已 return, 不会走到这里 → 不会气泡 + 卡 + chips 三层堆叠。
   if (onboarding && onQuickAction) {
     return (
@@ -419,7 +419,7 @@ export default function EmptyStateHome({
           <View style={styles.bubble}>
             <Text style={txt.bubbleBody}>
               <Text style={txt.greetingInline}>{greeting}。</Text>
-              我是小巴，你的健康参谋。先从这三件事之一开始，我就能帮你看懂身体。
+              我是小气候，你的健康参谋。先从这三件事之一开始，我就能帮你看懂身体。
             </Text>
             <View style={styles.quickStartRow}>
               {QUICK_START_ACTIONS.map(({ action, icon }) => (

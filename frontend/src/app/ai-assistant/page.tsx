@@ -7,7 +7,7 @@
  * 跟 mobile chat tab 同管道, 共享 LLM_PROVIDER (默认 TokenPlan).
  *
  * 历史: 该路由从 nav / dashboard / footer / 测试里被引, 但 page.tsx 一直缺,
- * 用户访问就 404. 此页用小巴 stream + ChatView 渲染.
+ * 用户访问就 404. 此页用小气候 stream + ChatView 渲染.
  */
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
@@ -430,7 +430,7 @@ function AIAssistantInner() {
       setMessages(prev => [
         ...prev,
         { id: userMessageId, role: 'user', content: text, created_at: now },
-        { id: assistantMessageId, role: 'assistant', content: '小巴处理中，已加入队列。', created_at: now },
+        { id: assistantMessageId, role: 'assistant', content: '小气候处理中，已加入队列。', created_at: now },
       ]);
       return;
     }
@@ -845,7 +845,7 @@ function AIAssistantInner() {
       );
       const shareUrl = res.data.share_url;
       if (navigator.share) {
-        await navigator.share({ title: '小巴健康 · 对话节选', text: '我分享了一段小巴健康对话', url: shareUrl });
+        await navigator.share({ title: '小气候 · 对话节选', text: '我分享了一段小气候对话', url: shareUrl });
       } else {
         await navigator.clipboard?.writeText(shareUrl);
         window.alert('分享链接已复制');

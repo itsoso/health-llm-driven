@@ -364,7 +364,7 @@ describe('renderCard', () => {
     });
 
     const html = renderToStaticMarkup(r!);
-    expect(html).toContain('小巴创作');
+    expect(html).toContain('小气候创作');
     expect(html).toContain('已完成');
     expect(html).toContain('/api/v1/upload/files/aigc/7/output.png');
     expect(html).not.toContain('aliyuncs.com');
@@ -732,7 +732,7 @@ describe('renderCard', () => {
       actions: [
         {
           id: 'open-health-chat',
-          label: '打开小巴',
+          label: '打开小气候',
           action: 'route.open',
           payload: { route: '/(tabs)/chat?prompt=test' },
           style: 'primary',
@@ -741,7 +741,7 @@ describe('renderCard', () => {
     });
 
     const html = renderToStaticMarkup(r!);
-    expect(html).toContain('打开小巴');
+    expect(html).toContain('打开小气候');
     expect(html).toContain('/(tabs)/chat?prompt=test');
   });
 
@@ -763,7 +763,7 @@ describe('renderCard', () => {
                 summary: '晚餐优先补 40g 蛋白。',
                 options: ['鱼/豆腐 + 熟蔬菜', '鸡胸 + 南瓜'],
                 rationale: ['午餐后蛋白仍有缺口'],
-                continue_prompt: '可以继续问小巴：如果只能外卖，怎么选。',
+                continue_prompt: '可以继续问小气候：如果只能外卖，怎么选。',
               },
             },
           },
@@ -858,7 +858,7 @@ describe('renderServerCards', () => {
         actions: [
           {
             id: 'open-health-chat',
-            label: '打开小巴',
+            label: '打开小气候',
             action: 'route.open',
             payload: { route: '/(tabs)/chat?prompt=test' },
           },

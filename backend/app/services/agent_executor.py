@@ -3333,8 +3333,8 @@ _RECEIPT_TYPE_LABELS = {
     "blood_pressure_record": "血压",
     "medication_log": "用药",
     "supplement_log": "补剂",
-    "aigc_media_confirmation": "小巴创作草稿",
-    "aigc_media_job": "小巴创作",
+    "aigc_media_confirmation": "小气候创作草稿",
+    "aigc_media_job": "小气候创作",
     "mood_record": "心情",
     "health_checkin": "鼻炎打卡",
     "smart_reminder": "提醒",
@@ -17830,8 +17830,9 @@ class AgentExecutor:
             )
             record_write_requested = False
 
-        from app.services.diet_leftover_correction import is_leftover_context
-        if images and is_leftover_context(message) and self._has_food_photo_purpose(message):
+        from app.services.diet_leftover_correction import is_leftover_context, is_leftover_correction_request
+        if ((images and is_leftover_context(message) and self._has_food_photo_purpose(message))
+                or (not images and is_leftover_correction_request(message))):
             from app.services.diet_leftover_correction import build_leftover_proposal
 
             allowed = (health_evidence_turn is None and not read_only_tools
@@ -18574,7 +18575,7 @@ class AgentExecutor:
         yield {
             "event": "agent_start",
             "data": {
-                "message": "小巴正在分析...",
+                "message": "小气候正在分析...",
                 # 让客户端在 done 之前就知道本轮会话 ID。
                 # 新会话首次发送后如果用户切走页面，回来可以按这个 ID 拉取后端后台任务落库的最终回复。
                 "conversation_id": conv.id,
@@ -23340,7 +23341,7 @@ class AgentExecutor:
                              or self._has_isolated_report_scope())
         if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
             return (
-                "你是 Reva 健康助手小巴。用户正在反馈对话质量。结合历史原话和实际工具结果，"
+                "你是 Reva 健康助手小气候。用户正在反馈对话质量。结合历史原话和实际工具结果，"
                 "明确上一轮哪里没有完成任务，简短回应；不要把反馈当作新的健康查询或写入授权。"
                 "不得声称操作完成，也不提供未经核实的健康建议。历史回答仅是先前回答，不是本轮核验事实。"
             )
@@ -29048,7 +29049,7 @@ class AgentExecutor:
             return await self._api_post(f"{base}/checkin/", headers, payload)
 
         # remember: 无结构化类型的个人属性/事实(鞋码/衣码/喜好/习惯/生日昵称等)→ 写
-        # MemoryFact 三元组(可召回)。补齐"档案属性"缺口 —— 此前小巴会主动说"补充进档案"
+        # MemoryFact 三元组(可召回)。补齐"档案属性"缺口 —— 此前小气候会主动说"补充进档案"
         # 却无工具可写, 用户给了值也 0 工具调用 → 落进饮食味的兜底话术(founder 2026-07-17
         # 实测:鞋码 42.5 记不下来还被要求补早餐)。subject 默认"用户", tier=semantic(稳定属性)。
         if rtype == "remember":

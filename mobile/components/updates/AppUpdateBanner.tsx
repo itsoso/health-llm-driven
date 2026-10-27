@@ -39,7 +39,7 @@ export default function AppUpdateBanner() {
           color={isRequired ? s.warning.solid : c.brand}
         />
         <View style={styles.copy}>
-          <Text style={styles.title}>{isRequired ? '需要更新小巴' : '建议更新小巴'}</Text>
+          <Text style={styles.title}>{isRequired ? '需要更新小气候' : '建议更新小气候'}</Text>
           <Text style={styles.body}>
             {error ?? (isRequired
               ? '当前版本需要原生升级后才能继续获得新能力'

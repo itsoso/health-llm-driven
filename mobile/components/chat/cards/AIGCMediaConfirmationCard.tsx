@@ -305,7 +305,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
     <CardShell
       icon="sparkles-outline"
       iconColor={C.green600}
-      title={data.title || '小巴创作草稿'}
+      title={data.title || '小气候创作草稿'}
       badge={kindLabel(String(data.kind || ''))}
       badgeColor={C.green500}
     >
@@ -390,7 +390,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
           <Text maxFontSizeMultiplier={1.2} style={styles.stateNoticeText}>
             {canConfirm
               ? '草稿已过期，点击下方可重新确认生成。'
-              : '草稿已超过可恢复时间，请重新向小巴发起创作。'}
+              : '草稿已超过可恢复时间，请重新向小气候发起创作。'}
           </Text>
         </View>
       ) : null}
@@ -435,7 +435,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationCardDat
 
 export const AIGCMediaConfirmationCardSpec: CardSpec<AIGCMediaConfirmationCardData> = {
   type: 'aigc_media_confirmation',
-  label: '小巴创作确认',
+  label: '小气候创作确认',
   match: () => null,
   build: () => null,
   render: (data) => <AIGCMediaConfirmationCardView {...data} />,

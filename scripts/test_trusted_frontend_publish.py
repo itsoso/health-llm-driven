@@ -326,7 +326,7 @@ def test_complete_page_readback_accepts_csr_login_without_translated_text(monkey
             privacy_source = (Path(__file__).parents[1] / 'frontend/src/app/privacy/page.tsx').read_text()
             import re
             privacy_title = re.search(r"title: '(可选[^']*足迹与分享)'", privacy_source).group(1)
-            return {'privacy': privacy_title, 'connect/health': '小巴健康 · 数据连接',
+            return {'privacy': privacy_title, 'connect/health': '小气候 · 数据连接',
                     'connect/kbase': '登录知识库 <meta name="referrer" content="strict-origin">',
                     'connect/edu': '登录Edu <meta name="referrer" content="strict-origin">',
                     'login': '<!DOCTYPE html><html><body><div id="root"></div></body></html>'}[path].encode()

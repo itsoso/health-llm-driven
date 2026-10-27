@@ -52,7 +52,7 @@ export function useBiometricLock(isAuthenticated: boolean) {
 
   const authenticate = useCallback(async () => {
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: '解锁小巴',
+      promptMessage: '解锁小气候',
       fallbackLabel: '使用密码',
       disableDeviceFallback: false,
     });

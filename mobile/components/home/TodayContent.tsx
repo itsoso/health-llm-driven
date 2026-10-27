@@ -1,15 +1,15 @@
 /**
- * 今日内容主体 —— 小巴 agent-native shell 内的时间线详情正文 (2026-07-06 抽出).
+ * 今日内容主体 —— 小气候 agent-native shell 内的时间线详情正文 (2026-07-06 抽出).
  *
  * 从 app/(tabs)/today.tsx 抽出, 让两处入口复用同一份卡片组装:
- *   - 深链/通知落地的 /(tabs)/today 整屏路由 (mode="screen", 顶部有「返回小巴」)
+ *   - 深链/通知落地的 /(tabs)/today 整屏路由 (mode="screen", 顶部有「返回小气候」)
  *   - 聊天上滑出的今日半屏 sheet /today-sheet (mode="sheet", 用原生抓手 + 下滑关, 不渲染返回条)
  *
  * 首页从上到下:
- *   问候头 → 小巴动态今日行动 → 待确认写入 → 接下来 → 用药/补剂摘要
+ *   问候头 → 小气候动态今日行动 → 待确认写入 → 接下来 → 用药/补剂摘要
  *   → 身体信号 → 情境天气 → 90 天周期兜底 → 快捷动作
  *
- * 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小巴话题)已移出今日详情,
+ * 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小气候话题)已移出今日详情,
  * 见个人中心的「健康分析」分组(各组件路由仍可达)。
  * 数据缺失走"待记录"占位, 不掩盖空状态.
  */
@@ -116,7 +116,7 @@ interface TwinSnapshot {
 
 /**
  * 呈现模式:
- *   - "screen": 深链/通知落地的整屏 (顶部渲染「返回小巴」)。
+ *   - "screen": 深链/通知落地的整屏 (顶部渲染「返回小气候」)。
  *   - "sheet":  聊天上滑出的半屏 formSheet (用原生抓手 + 下滑关, 不渲染返回条; 不占 top 安全区)。
  */
 // 'inline':嵌进聊天页的动态 UI 面板(agent-native:不跳独立页,今日以卡在对话里展开)。
@@ -539,7 +539,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
       ]}
       refreshControl={<RefreshControl refreshing={manualRefreshing} onRefresh={onRefresh} />}
     >
-      {/* 0 · 返回小巴 (agent-native shell: 无底部 Tab Bar, chat 是主屏)。
+      {/* 0 · 返回小气候 (agent-native shell: 无底部 Tab Bar, chat 是主屏)。
           sheet 模式下改用原生抓手 + 下滑关, 不渲染返回条。 */}
       {isSheet ? null : <BackToChatBar />}
 
@@ -609,7 +609,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
         />
       ) : null}
 
-      {/* 待你确认(Write 层 v0:小巴提议替你写一件事,确认才执行;空态不渲染) */}
+      {/* 待你确认(Write 层 v0:小气候提议替你写一件事,确认才执行;空态不渲染) */}
       <WriteIntentCard />
 
       {/* 3 · 接下来:只保留未完成且马上相关的行动条 */}
@@ -647,7 +647,7 @@ export default function TodayContent({ mode = 'screen' }: { mode?: TodayContentM
       {/* 7 · 90 天代谢周期兜底:没有当下行动时才露出,长期复盘主入口在「健康分析」。 */}
       {!hasAgentPrimaryAction && !heroHasNow ? <RevaCycleStrip /> : null}
 
-      {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小巴话题)
+      {/* 深度分析(结果归因 / 生物年龄 / 抗衰下一步 / 设备一致性 / 小气候话题)
           已移出首页 → 「我」tab 的「健康分析」分组(信息架构:首页只留日常驱动)。 */}
 
       {isLoading && (

@@ -24,7 +24,7 @@ def _invite_sms_config(monkeypatch):
     monkeypatch.setattr(settings, "registration_invitation_rollout_enabled", True)
     monkeypatch.setattr(settings, "aliyun_sms_access_key_id", "invite-key")
     monkeypatch.setattr(settings, "aliyun_sms_access_key_secret", "invite-secret")
-    monkeypatch.setattr(settings, "registration_invitation_sms_sign_name", "小巴邀请")
+    monkeypatch.setattr(settings, "registration_invitation_sms_sign_name", "小气候邀请")
     monkeypatch.setattr(
         settings,
         "registration_invitation_sms_template_code",
@@ -115,7 +115,7 @@ def test_enterprise_aliyun_ack_marks_sent_and_uses_dedicated_template(db, monkey
     assert prepared.invitation.last_send_error_code is None
     params = _Client.captured_params
     assert params["Action"] == "SendSms"
-    assert params["SignName"] == "小巴邀请"
+    assert params["SignName"] == "小气候邀请"
     assert params["TemplateCode"] == "SMS_INVITE_123"
     assert params["TemplateCode"] != settings.aliyun_sms_template_code
     assert params["PhoneNumbers"] == "13800138000"
@@ -168,7 +168,7 @@ def test_delivery_rejects_partial_dedicated_access_key_pair_without_http(
 
 @pytest.mark.parametrize(
     ("invite_sign", "invite_template"),
-    [("OTP签名", "SMS_INVITE_123"), ("小巴邀请", "SMS_OTP_123")],
+    [("OTP签名", "SMS_INVITE_123"), ("小气候邀请", "SMS_OTP_123")],
 )
 def test_production_delivery_rejects_reused_otp_sign_or_template_without_http(
     db, monkeypatch, invite_sign, invite_template
@@ -355,7 +355,7 @@ def test_invite_transport_does_not_change_existing_otp_template_config(db, monke
 
     _deliver(db, prepared, monkeypatch)
 
-    assert _Client.captured_params["SignName"] == "小巴邀请"
+    assert _Client.captured_params["SignName"] == "小气候邀请"
     assert _Client.captured_params["TemplateCode"] == "SMS_INVITE_123"
     assert settings.aliyun_sms_sign_name == "OTP签名"
     assert settings.aliyun_sms_template_code == "SMS_OTP_456"

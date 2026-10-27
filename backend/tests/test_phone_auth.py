@@ -423,7 +423,7 @@ def test_phone_code_pnvs_rejection_fails_loud(client, monkeypatch):
 
 def test_phone_code_prefers_enterprise_sms_channel_over_pnvs(client, monkeypatch):
     _configure_pnvs(monkeypatch)
-    monkeypatch.setattr(settings, "aliyun_sms_sign_name", "小巴", raising=False)
+    monkeypatch.setattr(settings, "aliyun_sms_sign_name", "小气候", raising=False)
     monkeypatch.setattr(settings, "aliyun_sms_template_code", "SMS_654321", raising=False)
 
     captured = {}
@@ -458,4 +458,4 @@ def test_phone_code_prefers_enterprise_sms_channel_over_pnvs(client, monkeypatch
 
     assert response.status_code == 200
     assert captured["url"] == "https://dysmsapi.aliyuncs.com/"
-    assert captured["params"]["SignName"] == "小巴"
+    assert captured["params"]["SignName"] == "小气候"

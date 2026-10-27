@@ -68,11 +68,11 @@ describe('RevaAgentView', () => {
     );
   });
 
-  it('keeps the standalone 小巴 composer usable while a reply is streaming', () => {
+  it('keeps the standalone 小气候 composer usable while a reply is streaming', () => {
     mockIsStreaming = true;
     const { getByPlaceholderText, getByLabelText } = render(<RevaAgentView />);
 
-    const input = getByPlaceholderText('问问小巴…');
+    const input = getByPlaceholderText('问问小气候…');
     fireEvent.changeText(input, '继续补充');
     fireEvent.press(getByLabelText('发送消息'));
 

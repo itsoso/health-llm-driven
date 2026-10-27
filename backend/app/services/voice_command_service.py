@@ -126,7 +126,7 @@ class VoiceCommandService:
             executor._finish_agent_kernel_turn(status="failed")
             return {
                 "command_type": draft["command_type"],
-                "message": "语音记录暂未完成，请在小巴对话中重试。",
+                "message": "语音记录暂未完成，请在小气候对话中重试。",
                 "data": draft["data"],
                 "requires_confirmation": False,
                 "execution_status": "failed",
@@ -141,7 +141,7 @@ class VoiceCommandService:
             executor._finish_agent_kernel_turn(status="pending_confirmation")
             return {
                 "command_type": draft["command_type"],
-                "message": "已识别这条记录，请在小巴对话中确认后写入。",
+                "message": "已识别这条记录，请在小气候对话中确认后写入。",
                 "data": draft["data"],
                 "requires_confirmation": True,
                 "execution_status": "pending_confirmation",
@@ -153,7 +153,7 @@ class VoiceCommandService:
             executor._finish_agent_kernel_turn(status="blocked_or_failed")
             return {
                 "command_type": draft["command_type"],
-                "message": "这条语音记录未写入，请在小巴对话中补充或确认。",
+                "message": "这条语音记录未写入，请在小气候对话中补充或确认。",
                 "data": draft["data"],
                 "requires_confirmation": False,
                 "execution_status": "blocked_or_failed",
@@ -176,7 +176,7 @@ class VoiceCommandService:
         executor._finish_agent_kernel_turn(status="unverified_result")
         return {
             "command_type": draft["command_type"],
-            "message": "记录尚未取得可验证回执，请在小巴对话中确认结果。",
+            "message": "记录尚未取得可验证回执，请在小气候对话中确认结果。",
             "data": draft["data"],
             "requires_confirmation": False,
             "execution_status": "unverified_result",

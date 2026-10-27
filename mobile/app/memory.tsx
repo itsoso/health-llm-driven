@@ -1,14 +1,14 @@
 /**
- * 「小巴对你的了解」— 记忆透明可纠 (Slice 5, 2026-07-07).
+ * 「小气候对你的了解」— 记忆透明可纠 (Slice 5, 2026-07-07).
  *
- * 让用户看见小巴根据对话/数据记住了什么, 并能一键纠正:
+ * 让用户看见小气候根据对话/数据记住了什么, 并能一键纠正:
  * - 每条记忆 = 人读句子 + 视觉弱化的置信度 + 「不对」(dismiss) / 「确认」(reinforce)
  *   双动作, 乐观更新 + 失败回滚 toast.
  * - 低置信 (effective_confidence < 0.4) 默认折叠, 防"满屏噪音事实"
  *   (简报记忆过度抽取的历史坑).
  * - 进屏推导矛盾对 (同 subject、谓词方向互斥) → 顶部横幅并排让用户裁决, 走 supersede.
  *
- * 人格 = 小巴 (忠实的边牧参谋): 忠实呈现它记住的, 不臆造; 你说不对就改。
+ * 人格 = 小气候 (忠实的边牧参谋): 忠实呈现它记住的, 不臆造; 你说不对就改。
  */
 import React, { useMemo, useState } from 'react';
 import {
@@ -166,7 +166,7 @@ export default function MemoryScreen() {
         <Pressable onPress={() => router.back()} hitSlop={8} accessibilityLabel="返回">
           <Ionicons name="chevron-back" size={24} color={c.labelPrimary} />
         </Pressable>
-        <Text style={txt.title}>小巴对你的了解</Text>
+        <Text style={txt.title}>小气候对你的了解</Text>
         <View style={{ width: 24 }} />
       </View>
 
@@ -194,15 +194,15 @@ export default function MemoryScreen() {
 
         {/* Hero */}
         <View style={styles.heroCard}>
-          <Text style={txt.heroTitle}>小巴记住了你 {totalAll} 条</Text>
+          <Text style={txt.heroTitle}>小气候记住了你 {totalAll} 条</Text>
           <Text style={txt.heroHint}>
-            这些是小巴从你的对话和数据里记下的。看到不对的，点「不对」它就不再用；点「确认」让它记得更牢。
+            这些是小气候从你的对话和数据里记下的。看到不对的，点「不对」它就不再用；点「确认」让它记得更牢。
           </Text>
         </View>
 
         <AgentFeedbackLink
-          label="跟小巴聊聊这些记忆"
-          accessibilityLabel="跟小巴聊聊这些记忆"
+          label="跟小气候聊聊这些记忆"
+          accessibilityLabel="跟小气候聊聊这些记忆"
           prompt="请基于你当前关于我的记忆，帮我找出可能不准确、过期或需要补充的内容，并说明这些记忆会怎样影响你给我的健康建议。"
           context={createMemoryAgentContext({ facts: high as any, stats: statsQuery.data as any })}
           badge={`记忆 ${totalAll} 条`}
@@ -219,7 +219,7 @@ export default function MemoryScreen() {
           <View style={styles.emptyWrap}>
             <Ionicons name="sparkles-outline" size={34} color={c.labelTertiary} />
             <Text style={txt.empty}>
-              小巴还没记下关于你的事{'\n'}
+              小气候还没记下关于你的事{'\n'}
               多聊几次，它会自动记住你的过敏、偏好、病史这类长期信息
             </Text>
           </View>

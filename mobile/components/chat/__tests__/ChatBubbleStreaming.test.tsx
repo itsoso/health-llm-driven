@@ -517,11 +517,11 @@ describe('ChatBubble streaming degraded render', () => {
 
   it('shows history synchronization without pretending the model is still analyzing', () => {
     const { getByText, queryByText, queryByTestId, queryByLabelText } = renderBubble({
-      id: 'assistant-recovery', role: 'assistant', content: '小巴还在处理，正在同步完整回答。',
+      id: 'assistant-recovery', role: 'assistant', content: '小气候还在处理，正在同步完整回答。',
       streaming: true, recoveryPending: true, thinkingSteps: ['正在理解你的问题'],
     });
     expect(getByText('正在同步回答')).toBeTruthy();
-    expect(queryByText('小巴还在处理，正在同步完整回答。')).toBeNull();
+    expect(queryByText('小气候还在处理，正在同步完整回答。')).toBeNull();
     expect(queryByText('正在分析')).toBeNull();
     expect(queryByText('正在理解你的问题')).toBeNull();
     expect(queryByTestId('assistant-thinking-indicator')).toBeNull();
@@ -591,7 +591,7 @@ describe('ChatBubble streaming degraded render', () => {
     expect(mockMarkdownMount).toHaveBeenCalled();
     expect(getByText('正在分析')).toBeTruthy();
     expect(getByText('读取健康数据')).toBeTruthy();
-    expect(queryByText('小巴正在思考')).toBeNull();
+    expect(queryByText('小气候正在思考')).toBeNull();
     expect(queryByText('2/2')).toBeNull();
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByLabelText(/当前步骤:读取健康数据/)).toBeTruthy();

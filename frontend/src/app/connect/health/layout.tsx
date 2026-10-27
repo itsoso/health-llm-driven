@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 import type { ReactNode } from 'react';
 
 export const metadata: Metadata = {
-  title: '健康数据连接 | 小巴健康',
+  title: '健康数据连接 | 小气候',
   robots: { index: false, follow: false },
   referrer: 'no-referrer',
 };

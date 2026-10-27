@@ -1244,7 +1244,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
   const isImage = mediaType.startsWith('image/');
   const isVideo = mediaType.startsWith('video/');
   const detail = status === 'queued'
-    ? '小巴已提交任务，正在等待百炼处理。'
+    ? '小气候已提交任务，正在等待百炼处理。'
     : status === 'running'
       ? '生成完成后会自动保存到你的私有空间。'
       : status === 'succeeded'
@@ -1272,7 +1272,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
   return (
     <CardShell
       emoji="✦"
-      title={data.title || '小巴创作'}
+      title={data.title || '小气候创作'}
       badge={aigcKindLabel(String(data.kind || ''))}
       badgeColor="#16805C"
       bg="#F1FAF5"
@@ -1308,7 +1308,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
         <a href={resultURL} target="_blank" rel="noreferrer" className="mt-3 block overflow-hidden rounded-xl ring-1 ring-emerald-100">
           <Image
             src={resultURL}
-            alt="小巴生成的图片"
+            alt="小气候生成的图片"
             width={768}
             height={768}
             unoptimized
@@ -1332,7 +1332,7 @@ export function AIGCMediaJobCardView(initialData: AIGCMediaJobData) {
 
 export const AIGCMediaJobCardSpec: CardSpec<AIGCMediaJobData> = {
   type: 'aigc_media_job',
-  label: '小巴创作任务',
+  label: '小气候创作任务',
   match() { return null; },
   build() { return null; },
   render: (data) => <AIGCMediaJobCardView {...data} />,
@@ -1553,7 +1553,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
     || submitting
     || isDispatching;
   return (
-    <CardShell emoji="✦" title={data.title || '小巴创作草稿'} badge={aigcKindLabel(String(data.kind || ''))} badgeColor="#16805C" bg="#F1FAF5" border="#BFE4D1">
+    <CardShell emoji="✦" title={data.title || '小气候创作草稿'} badge={aigcKindLabel(String(data.kind || ''))} badgeColor="#16805C" bg="#F1FAF5" border="#BFE4D1">
       <div className="mb-2">
         <div className="mb-1 text-xs font-extrabold text-slate-800">将发送的完整创作描述</div>
         {outboundPrompt ? (
@@ -1573,7 +1573,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
         <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">
           {canConfirm
             ? '草稿已过期，点击下方可重新确认生成。'
-            : '草稿已超过可恢复时间，请重新向小巴发起创作。'}
+            : '草稿已超过可恢复时间，请重新向小气候发起创作。'}
         </div>
       )}
       {isDispatching && (
@@ -1611,7 +1611,7 @@ export function AIGCMediaConfirmationCardView(data: AIGCMediaConfirmationData) {
 
 export const AIGCMediaConfirmationCardSpec: CardSpec<AIGCMediaConfirmationData> = {
   type: 'aigc_media_confirmation',
-  label: '小巴创作确认',
+  label: '小气候创作确认',
   match() { return null; },
   build() { return null; },
   render: (data) => <AIGCMediaConfirmationCardView {...data} />,
