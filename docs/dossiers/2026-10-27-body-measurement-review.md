@@ -71,3 +71,7 @@ GO 不代替发布 Gate：主干分叉及无关脏工作树的阻断保持；真
 最终整合候选 `f94abc2319acffd5eca4000a34150ffcbec2ca76` 已推送，累计独立安全审查 GO。CI `40458513886` 检出真实模型证明缺失，以及 `test_genui_table` 仍期待旧“脂肪偏高”观察的过时断言。仅更新该测试为精确已知小计、记录覆盖及空观察列表，保留流事件顺序、数据来源与持久化检查；产品代码不变。相关 GenUI 回归77项通过，独立 reviewer 对测试修正 GO、独立9项通过。
 
 在 f94 的干净源码运行标准 `harness_llm_regression_gate.py --include-live-llm --json`：12项invariants、50项health_agent_core、5项真实orchestrator、12项trajectory contract和9项golden均通过，无基线回归。首轮未加载模型配置导致调用失败；使用项目既有模型配置后重新运行通过。全程仅使用仓库合成夹具及内存SQLite，不访问生产健康数据。真实评测不是截图原记录补算验收。新提交仍须精确CI通过后才能发布。
+
+### 工具结构快照同步
+
+候选 `4dd84ebd0746b5204b93aae6ed796d09653d652d` 的真实模型评测再次完整通过。CI `40459596488` 中第16分片检出旧工具结构快照未包含本任务已审的 `health_query.dimension=waist`。修正测试时不重写历史快照：先断言唯一 waist 且精确位于 weight/bmi 之间，从递归副本中仅移除此新增项，再验证原结构hash。其余工具字段/枚举继续冻结。prompt sections及body scope共97项通过，独立复核GO、目标测试通过；产品schema不再修改。

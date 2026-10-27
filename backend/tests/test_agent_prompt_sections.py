@@ -112,5 +112,14 @@ def test_prompt_corrections_do_not_change_tool_schema_structure():
         return value
 
     contract = json.loads((Path(__file__).parent / 'fixtures/prompt_tool_contract_round2.json').read_text())
-    serialized = json.dumps(without_descriptions(HEALTH_TOOLS), sort_keys=True, ensure_ascii=False)
+    structure = without_descriptions(HEALTH_TOOLS)
+    # The later body-review feature adds exactly one reviewed read dimension.
+    # Keep the original freeze for every other tool, field and enum value.
+    query = next(t['function'] for t in structure if t['function']['name'] == 'health_query')
+    dimensions = query['parameters']['properties']['dimension']['enum']
+    assert dimensions.count('waist') == 1
+    waist_index = dimensions.index('waist')
+    assert dimensions[waist_index - 1:waist_index + 2] == ['weight', 'waist', 'bmi']
+    dimensions.remove('waist')
+    serialized = json.dumps(structure, sort_keys=True, ensure_ascii=False)
     assert hashlib.sha256(serialized.encode()).hexdigest() == contract['schema_structure_sha256']
