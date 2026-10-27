@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 第七阶段 G3：读取解析去重已本地验证，待独立复核、完整 CI 和生产发布 |
+| 当前阶段 | 第七阶段 G6 已核验：优化随统一版本上线，性能证据待发布者同步到主干 |
 
 ## G1 范围
 
@@ -237,3 +237,28 @@ G1/G2 PASS。继续优化 CI，基线 main `0852c0eab93a9fac2e5f63b88db874435e81
 G3 PASS：两项计数回归在旧实现 RED，改后 383 项相关回归通过；隔离本机 PostgreSQL 179 passed，测试实例已停止并清理。另验证跨调用 owner/date 改变、返回字典被修改、异常仍向上抛出，均不复用旧结果。查询每次 projection 从 2 次变 1 次，限制说明从 4 次变 1 次。LLM change gate 无需 live eval，未豁免；未改数据库查询或 schema。
 
 相同 10 项实际组合查询测试首轮 pytest 31.69→13.40 秒，但旧首例慢，故完整保留并补对照：精确旧 Git 源码在独立进程内加载，进程墙钟 25.44→20.86 秒，约下降 18.02%；pytest 20.08→14.27 秒。四份 JUnit 身份/结果集合完全相同、零 skip；不宣称稳定 P95 或完整 CI 同幅改善。配方、源摘要及原始 JUnit 摘要见 `docs/reviews/2026-10-27-ci-longitudinal-local.json`。
+
+G4 PASS：独立 reviewer 对精确 `0633a4d02784abb465534faa86e19f68a3613926` 给出 GO，独立 scope/gateway 175 passed、unit/runtime 184 passed。另一次范围过大的组合测试在 309 passed 后主动中断，exit 2，不计为全套通过。CI-mode 383 passed、发布 preflight 与中央地图通过。
+
+G5 PASS：[完整 CI 40484148406](https://github.com/itsoso/health-llm-driven/actions/runs/40484148406) 首轮 32/32 job 成功；64 个后端子进程均 attempt 1 / pass。原 35,788 项 testcase 身份与结果全部保留，只有本批 3 项回归新增为通过，155 项既有 skip 不变。全套原始 JUnit 摘要、集合对照、逐 job 时间分解见 `docs/reviews/2026-10-27-ci-longitudinal-production.json`。
+
+| 指标 | 基线 40478780352 | 候选 40484148406 |
+| --- | ---: | ---: |
+| 完整 CI | 643 秒 | 520 秒 |
+| 最后完成分片的启动延迟 | 17 秒 | 16 秒 |
+| 环境准备 | 22 秒 | 26 秒 |
+| 安装依赖 | 18 秒 | 17 秒 |
+| 测试执行 | 505 秒 | 445 秒 |
+| 其他步骤 | 2 秒 | 3 秒 |
+| job 内未归属时间 | 63 秒 | 4 秒 |
+| 汇总收尾 | 16 秒 | 9 秒 |
+| 后端组合查询累计用例耗时 | 1167.24 秒 | 596.82 秒 |
+| 全部 job 累计 runner 时间 | 9565 秒 | 7440 秒 |
+
+整轮减少 123 秒，其中未归属时间也减少 59 秒，不能全部归因于源码优化。最后完成分片发生变化，分段比较不是同一 worker 的因果实验。更早的相邻完整 CI 40477427714 为 546 秒，候选比它快 26 秒；保留该背景，避免仅用平台等待偏慢的 643 秒样本夸大稳定收益。组合查询累计值包含并行测试的 setup/call/teardown，不能直接从整轮墙钟扣减。本轮只证明这些实际样本，不建立 P95/P99 或固定提速承诺。
+
+G6 进行中：[发布 validate 40485381866](https://github.com/itsoso/health-llm-driven/actions/runs/40485381866) 成功。canonical staging 源码与受审摘要一致。首次普通 bootstrap 在凭据检查处失败：固定 `/etc/reva-github-api/credential.json` 已到期。只读复核输入与 canonical source PASS；原授权仍为 `0852c0eab93a9fac2e5f63b88db874435e81e3c6`，该授权尚无发布状态目录，候选状态目录未创建、业务 lease 不存在，生产仍为有 SUCCEEDED 回执的 `9fd15d602dc34be3f0a30146f76909c65233bbe6`。没有执行 backend dispatch 或替换线上代码。沿用现有仓库只读 App 凭据提供器准备一次性刷新，待独立审查后执行；不使用管理员 PAT、不跳过过期检查、不盲重试未知事务。
+
+G6 最新状态为等待并发发布归属确认。刷新脚本静态复核及 7 项合成拒绝检查通过后、执行前，只读探针发现另一流程已刷新凭据，并推送新 main `12edbb30e9bf30247dbcb2ac6635e3fee322754a`（Mobile 考试历史，包含本批优化）。该新 main 的完整 CI 尚在运行；旧候选 canonical gate 拒绝 `Main contains runtime or unknown changes`。独立 reviewer 撤销旧前提下的刷新 GO，裁决旧刷新脚本及 bootstrap 重试 NO-GO。本任务未 mint、未刷新凭据、未再次 bootstrap、未 dispatch backend。最新观测仍为原授权、原生产 SHA、无业务 lease、无候选状态或旧授权 retirement 目录；时间点与摘要记录在 production JSON。首次 bootstrap 失败只有明确标注来源的工具输出转录，不能冒充保存过的原生日志。依 AGENTS.md §7 停止外部写入并询问本轮唯一发布者；后续必须重绑最终 main、完整 CI 和安全审查，不能发布旧候选或复用失效刷新脚本。
+
+G6 后续核验 PASS，以上等待为历史断点。用户确认等另一流程完成后由本任务核验。独立读取 `12edbb30e` 的后端 run `40487980897`、OTA run `40489009144` 成功及服务器 SUCCEEDED 回执；当前生产已进一步升级到 `8f7d94696424f92ff57243edb906cd6d2dd14a3a`，其完整 CI `40496844800` 成功，发布 run `40500052228` 的 backend job 成功、服务器 SUCCEEDED。`agent_longitudinal_read.py` 线上摘要与本批 `0633a4d` 完全一致；三个服务 active、业务 lease 不存在、公网 health healthy、匿名 GET `/api/v1/auth/me` 为401。最初误用 POST 得405，未计为鉴权通过。生产独立进程仅以合成文本执行 scope 探针，验证单次 projection、owner/第三方拒绝及日期重算通过，不访问真实健康记录。本任务没有重复部署。最新整体发布中的 TestFlight job 失败独立保留，不把 backend 成功冒充整轮原生发布成功；其后 Apple 实际接收状态由唯一发布者另行核验。本批无需另发 OTA。

@@ -42,6 +42,10 @@ Web/Mobile 的启动延迟很长，但这一轮都没有决定最终完成时间
 
 ## 结构性原因
 
+后续已验证的执行优化：`0633a4d02784abb465534faa86e19f68a3613926` 在单次同步读取操作内消除重复 projection / request 解析，没有跨调用缓存或测试选集变更。[CI 40484148406](https://github.com/itsoso/health-llm-driven/actions/runs/40484148406) 首轮全绿，完整 520 秒；最后工作分片分段为启动 16、环境 26、安装 17、测试 445、其他 3、未归属 4、收尾 9 秒。原 35,788 条测试结果保留，新增 3 项通过。对照前轮 643 秒中有 59 秒改善来自未归属时间，不能全算作代码收益；更早 546 秒样本也保留在 Dossier。此结果再次支持优先剖析执行热点，而非继续盲增 worker 或只优化安装。
+
+后续 Agent 应先复用 `release_performance_report.py` 和原始 JUnit/子进程日志建立同源基线，再做同一测试集合对照。可复用一次不可变调用内的纯中间值，但不能仅凭参数相同缓存鉴权结果；跨调用 owner/date、撤回、引用、可变返回值和异常传播仍需负向回归。阶段七的本地配方、完整 CI 集合与时间证据均在现有 Dossier 链接，不把部署预检当作线上交付。
+
 - `scripts/ci_change_scope.py` 已对 local/PR 区分端侧，但非文档 main push 强制 full。这样能让主干首轮结果直接满足现有发布器，而不需要随后再派发一遍全量 CI。
 - `scripts/release-preflight.sh` 对后端改动做治理和类型检查，目前没有自动运行模块测试；不能把“preflight passed”当成后端行为回归通过。
 - `backend/tests/conftest.py` 在收集阶段导入 `main.app`，根 autouse fixture 还涉及 API limiter 和 Twin cache。文件位于 `tests/unit/` 并不会自动隔离祖先 conftest；需要实际调整 fixture 的可见范围。见 [pytest fixture 规则](https://www.pytest.org/en/latest/reference/fixtures.html)。
