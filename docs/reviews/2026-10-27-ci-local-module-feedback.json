@@ -1,0 +1,86 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "measurement": "Local functional pilot and matched single-pair report comparison; not CI wall time.",
+  "source_base_sha": "5b45d4ca0017fc16ae87a086539bfdcdb2462c30",
+  "environment": "macOS Python 3.12.13 hash-locked project environment; synthetic data, in-memory SQLite, disabled local Redis",
+  "pilot_results": [
+    {
+      "module": "display-format",
+      "exit_code": 0,
+      "wall_seconds": 35.743
+    },
+    {
+      "module": "prompt-cache",
+      "exit_code": 0,
+      "wall_seconds": 10.007
+    }
+  ],
+  "failed_experiments": [
+    {
+      "variant": "Named coverage source modules",
+      "outcome": "Collection failed after early package import caused duplicate SQLAlchemy registration; rejected."
+    },
+    {
+      "variant": "Display direct tests only",
+      "outcome": "67 tests passed but module coverage 75.12% failed required 80%; added existing consumer tests, threshold unchanged."
+    }
+  ],
+  "limitations": [
+    "Not full impact analysis or release qualification.",
+    "Module coverage is not global application coverage.",
+    "No change to main CI selection, fixtures or application code."
+  ],
+  "matched_benchmark": {
+    "rows": [
+      {
+        "module": "display-format",
+        "variant": "global_report",
+        "wall_seconds": 77.056,
+        "exit_code": 0,
+        "testcase_results": 99,
+        "skipped": 0,
+        "manifest_sha256": "6431c94e88b89075cb035299d61fa710e2228327379ff2b6c4b4e50c4a517ba4",
+        "junit_sha256": "e963000c34e4908be78465f8d8e30c62b762938013c11b824c87310756ea0c8a"
+      },
+      {
+        "module": "display-format",
+        "variant": "module_report",
+        "wall_seconds": 29.489,
+        "exit_code": 0,
+        "testcase_results": 99,
+        "skipped": 0,
+        "manifest_sha256": "6431c94e88b89075cb035299d61fa710e2228327379ff2b6c4b4e50c4a517ba4",
+        "junit_sha256": "472b03de506ea514d48b3414ddcfc03513ff57e4b4f59f981408ea1869ec45a9"
+      },
+      {
+        "module": "prompt-cache",
+        "variant": "global_report",
+        "wall_seconds": 49.888,
+        "exit_code": 0,
+        "testcase_results": 24,
+        "skipped": 0,
+        "manifest_sha256": "b8b0b179d3ad132de7acc1aa08b3f23b3d2d86d53b81118c7efb55859a86f6d2",
+        "junit_sha256": "26bb7d395a8d2e7e5560f459039ebd344ffe8a6fd9ea3562e1693bd924f01971"
+      },
+      {
+        "module": "prompt-cache",
+        "variant": "module_report",
+        "wall_seconds": 9.78,
+        "exit_code": 0,
+        "testcase_results": 24,
+        "skipped": 0,
+        "manifest_sha256": "b8b0b179d3ad132de7acc1aa08b3f23b3d2d86d53b81118c7efb55859a86f6d2",
+        "junit_sha256": "f412f5b4c4f093cf6834453715412c0cf417df90a8edd219fdaba854044856da"
+      }
+    ],
+    "testcase_identity_and_outcomes_equal": true,
+    "limitations": [
+      "One sequential local sample per variant; not a CI or stable latency claim.",
+      "Both variants run identical tests and normal application instrumentation/fixtures.",
+      "Global reporting covers the whole app; module reporting requires 80% for declared sources only.",
+      "Temporary coverage data and HTML destinations prevent overwriting developer reports."
+    ]
+  },
+  "reviewed_base_sha": "4199dff8844b38aee5cc95f5f0881cbbdcfef389"
+}

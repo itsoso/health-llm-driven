@@ -178,3 +178,38 @@ def test_raw_names_and_payloads_do_not_enter_report():
     j['jobs'][0]['untrusted'] = 'DO_NOT_EMIT'
     result = json.dumps(module().summarize([r], {12: j}))
     assert 'DO_NOT_EMIT' not in result
+
+
+def test_critical_path_partitions_wall_without_adding_parallel_jobs():
+    r, j = sample()
+    job = j['jobs'][0]
+    job['steps'] = [
+        dict(name='Install dependencies', started_at='2026-10-10T00:00:12Z', completed_at='2026-10-10T00:00:22Z'),
+        dict(name='Run isolated shards (balanced-01)', started_at='2026-10-10T00:00:22Z', completed_at='2026-10-10T00:01:02Z'),
+    ]
+    aggregate = dict(job, id=24, name='backend-tests', steps=[],
+                     started_at='2026-10-10T00:01:12Z', completed_at='2026-10-10T00:01:15Z')
+    j['jobs'].append(aggregate); j['total_count'] = 2
+    row = module().summarize([r], {12:j})['runs'][0]
+    path = row['critical_path_breakdown']
+    assert path['start_delay_seconds'] == 10
+    assert path['step_seconds'] == {'dependency_install':10, 'test_execution':40}
+    assert path['unattributed_job_seconds'] == 10
+    assert path['after_critical_job_seconds'] == 5
+    assert sum(path['step_seconds'].values()) + path['start_delay_seconds'] + path['unattributed_job_seconds'] + path['after_critical_job_seconds'] == row['wall_seconds'] == 75
+
+
+@pytest.mark.parametrize('start,end', [('00:00:09','00:00:20'), ('00:00:15','00:01:11'), ('00:00:15','00:00:14')])
+def test_breakdown_rejects_steps_outside_job_or_negative(start,end):
+    r,j=sample()
+    j['jobs'][0]['steps']=[dict(name='Install dependencies', started_at=f'2026-10-10T{start}Z', completed_at=f'2026-10-10T{end}Z')]
+    with pytest.raises(ValueError):
+        module().summarize([r],{12:j})
+
+
+def test_breakdown_does_not_double_count_overlapping_steps():
+    r,j=sample()
+    j['jobs'][0]['steps']=[dict(name='unknown private name',started_at='2026-10-10T00:00:15Z',completed_at='2026-10-10T00:00:25Z'),
+                          dict(name='Install dependencies',started_at='2026-10-10T00:00:20Z',completed_at='2026-10-10T00:00:30Z')]
+    with pytest.raises(ValueError):
+        module().summarize([r],{12:j})

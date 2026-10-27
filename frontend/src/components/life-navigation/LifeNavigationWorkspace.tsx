@@ -234,7 +234,7 @@ function SessionWorkspace({ owner }: {
   {tab === '今日' || tab === '周计划' ? <MorningReadingPanel owner={owner} day={day}/> : null}
   <fieldset className={css.fieldset} disabled={busy}>
   {tab === '记事本' ? <NotebookPanel notes={draft.notebook ?? []} onChange={notes => edit(d => { d.notebook = notes; })}/> : null}
-  {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} day={day} edit={edit} saveAnswer={saveStudy} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
+  {tab === '备考学习' ? <ExamStudyPanel key={day} data={draft} persistedData={workspace.data} day={day} edit={edit} saveAnswer={saveStudy} focus={task => { focusSave(focusStart({ ...draft.focus, focus_minutes: task.estimated_minutes || 25, rounds: 1 }, task.id, Date.now())); setTab('时段导航'); }}/> : null}
   {tab === '今日' ? <>
     <nav className={css.quickLinks} aria-label="今日快捷导航"><a href="#life-today-tasks">今日任务</a><a href="#life-today-schedule">时间安排</a><a href="#life-today-notes">日记录</a></nav>
     <section className={css.focusCard} aria-label="今日重点">

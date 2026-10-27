@@ -93,3 +93,38 @@ it('does not show saved old-plan results as completion of new real-paper work', 
  expect(screen.getByText('本日已勾选完成 0 / 120 分钟计划')).toBeTruthy();
  expect(screen.queryByDisplayValue('旧计划的结果')).toBeNull();
 });
+
+it('returns to a saved answer after next and keeps it readable after remount',async()=>{
+ render(<Harness/>);fireEvent.click(screen.getByRole('button',{name:'练习与错题'}));
+ fireEvent.click(screen.getByRole('radio',{name:'A. cancel permanently'}));
+ fireEvent.click(screen.getByRole('button',{name:'核对答案并记录'}));
+ await waitFor(()=>expect(screen.getByText('作答已保存，可刷新或继续下一题')).toBeTruthy());
+ fireEvent.click(screen.getByRole('button',{name:'下一题'}));
+ fireEvent.click(screen.getByRole('button',{name:'上一题'}));
+ expect(screen.getByText(questions[0].prompt)).toBeTruthy();
+ expect(screen.getByRole('region',{name:'已保存作答记录'})).toHaveTextContent('作答：A');
+ expect(screen.queryByRole('button',{name:'核对答案并记录'})).toBeNull();
+ cleanup(); const saved=blankData();recordAnswer(saved,'2026-10-23',questions[0],0);
+ render(<Harness initial={saved}/>);fireEvent.click(screen.getByRole('button',{name:'练习与错题'}));
+ fireEvent.click(screen.getByRole('button',{name:'答题历史'}));
+ expect(screen.getByRole('region',{name:'已保存作答记录'})).toHaveTextContent('2026-10-23');
+ expect(screen.getByRole('region',{name:'已保存作答记录'})).toHaveTextContent('作答：A');
+});
+it('retains corrected mistakes in the mistake archive with first and latest answers',()=>{
+ const saved=blankData();recordAnswer(saved,'2026-10-23',questions[0],0);recordAnswer(saved,'2026-10-23',questions[0],1);
+ render(<Harness initial={saved}/>);fireEvent.click(screen.getByRole('button',{name:'练习与错题'}));
+ fireEvent.click(screen.getByRole('button',{name:'错题本'}));
+ const history=screen.getByRole('region',{name:'已保存作答记录'});
+ expect(history).toHaveTextContent('首次作答');expect(history).toHaveTextContent('作答：A');
+ expect(history).toHaveTextContent('最近复练');expect(history).toHaveTextContent('作答：B');
+ expect(history).toHaveTextContent('已复练答对');
+});
+it('does not present a failed answer draft as persisted history',async()=>{
+ function FailedHarness(){const [draft,setDraft]=useState(blankData());const [persisted]=useState(blankData());return <ExamStudyPanel data={draft} persistedData={persisted} day="2026-10-24" edit={()=>{}} focus={()=>{}} saveAnswer={async fn=>{const next=copy(draft);fn(next);setDraft(next);throw Error('连接失败');}}/>;}
+ render(<FailedHarness/>);fireEvent.click(screen.getByRole('button',{name:'练习与错题'}));
+ fireEvent.click(screen.getByRole('radio',{name:'A. cancel permanently'}));fireEvent.click(screen.getByRole('button',{name:'核对答案并记录'}));
+ await waitFor(()=>expect(screen.getByRole('alert')).toHaveTextContent('连接失败'));
+ fireEvent.click(screen.getByRole('button',{name:'答题历史'}));
+ expect(screen.queryByRole('region',{name:'已保存作答记录'})).toBeNull();
+ expect(screen.getByText(/本科目暂无已保存答题记录/)).toBeTruthy();
+});

@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CLASSIFIER = ROOT / "scripts" / "ci_change_scope.py"
@@ -255,3 +257,102 @@ def test_pr_and_local_keep_scoped_feedback_while_docs_push_stays_light():
 
 def test_unknown_event_fails_closed_even_for_documentation():
     assert _load_classifier().classify_changes(["README.md"], event_name="unknown")["full"]
+
+
+def feedback_module():
+    spec = importlib.util.spec_from_file_location('ci_module_feedback', ROOT / 'scripts/ci_module_feedback.py')
+    result = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(result)
+    return result
+
+
+def test_module_feedback_is_not_release_authority_or_complete_impact_proof():
+    m = feedback_module()
+    plan = m.plan(['backend/app/utils/number_format.py', 'docs/example.md'])
+    assert plan['mode'] == 'module_feedback'
+    assert plan['modules'] == ['display-format']
+    assert plan['tests'] == ['tests/test_calendar_query_presentation.py', 'tests/test_genui_table.py',
+                             'tests/test_number_format.py', 'tests/test_report_cards.py']
+    assert plan['release_authority'] is False and plan['full_ci_required'] is True
+    assert plan['impact_coverage'] == 'declared_local_checks_only'
+    argv = m.pytest_command(plan)
+    assert '--noconftest' not in argv and '--no-cov' not in argv and '-k' not in argv
+    assert '--cov-fail-under=80' in argv
+    config = m.coverage_report_config(plan, Path('/tmp/feedback-test'))
+    assert str(ROOT/'backend/app/utils/number_format.py') in config
+    assert str(ROOT/'backend/app/services/genui/table_builder.py') in config
+    assert '[run]' not in config  # Do not alter application import/instrumentation order.
+
+
+@pytest.mark.parametrize('paths', [[], ['backend/tests/conftest.py'], ['backend/app/services/agent_executor.py'],
+    ['backend/app/utils/number_format.py', 'backend/app/api/auth.py'], ['.github/workflows/ci.yml'],
+    ['../backend/app/utils/number_format.py'], ['/backend/app/utils/number_format.py'],
+    ['backend/app/utils/number_format.py\n'], ['backend//app/utils/number_format.py']])
+def test_uncertain_feedback_scope_refuses_narrow_execution(paths):
+    m = feedback_module(); plan = m.plan(paths)
+    assert plan['mode'] == 'full_required' and plan['tests'] == []
+    with pytest.raises(ValueError):
+        m.pytest_command(plan)
+
+
+def test_feedback_combines_declared_modules_and_isolates_local_data():
+    m = feedback_module()
+    plan = m.plan(['backend/app/utils/number_format.py', 'backend/app/services/llm/prompt_cache.py'])
+    assert plan['modules'] == ['display-format','prompt-cache']
+    assert len(plan['tests']) == len(set(plan['tests'])) == 6
+    env = m.feedback_environment({'TEST_DATABASE_URL':'postgresql://prod/db', 'DATABASE_URL':'prod',
+        'REDIS_URL':'redis://prod/0', 'PYTEST_ADDOPTS':'--deselect=anything', 'PYTEST_PLUGINS':'unexpected'})
+    assert env['DATABASE_URL'] == 'sqlite:///:memory:'
+    assert env['REDIS_URL'] == 'redis://127.0.0.1:1/0'
+    assert 'TEST_DATABASE_URL' not in env and 'PYTEST_ADDOPTS' not in env and 'PYTEST_PLUGINS' not in env
+
+
+def test_feedback_failure_is_not_hidden_by_successful_plan(monkeypatch):
+    m = feedback_module()
+    monkeypatch.setattr(m, 'execute', lambda plan: 7)
+    assert m.main(['--module','display-format','--run']) == 7
+
+
+def test_feedback_real_child_failure_and_environment_propagate(monkeypatch):
+    m = feedback_module()
+    monkeypatch.setenv('TEST_DATABASE_URL','postgresql://must-not-use/test')
+    monkeypatch.setattr(m, 'pytest_command', lambda _: [sys.executable, '-c',
+        "import os; assert 'TEST_DATABASE_URL' not in os.environ; assert os.environ['DATABASE_URL']=='sqlite:///:memory:'; raise SystemExit(7)"])
+    assert m.execute(m.plan(['backend/app/utils/number_format.py'])) == 7
+
+
+def test_feedback_git_inventory_includes_staged_unstaged_and_untracked(tmp_path, monkeypatch):
+    m = feedback_module(); monkeypatch.setattr(m, 'ROOT', tmp_path)
+    def git(*argv):
+        return subprocess.run(['git','-C',str(tmp_path),*argv],check=True,capture_output=True,text=True)
+    git('init','-q')
+    tracked=tmp_path/'backend/app/utils/number_format.py'; tracked.parent.mkdir(parents=True); tracked.write_text('old\n')
+    git('add','backend/app/utils/number_format.py')
+    git('-c','user.name=Synthetic Test','-c','user.email=test@example.test','commit','-qm','baseline')
+    tracked.write_text('staged\n'); git('add','backend/app/utils/number_format.py'); tracked.write_text('unstaged\n')
+    extra=tmp_path/'backend/tests/conftest.py'; extra.parent.mkdir(parents=True); extra.write_text('# new shared fixture\n')
+    changed=m.changed_paths('HEAD')
+    assert changed == ['backend/app/utils/number_format.py','backend/tests/conftest.py']
+    assert m.plan(changed)['mode']=='full_required'
+
+
+def test_feedback_git_inventory_preserves_cancelled_fixture_changes(tmp_path, monkeypatch):
+    m = feedback_module(); monkeypatch.setattr(m, 'ROOT', tmp_path)
+    def git(*argv):
+        return subprocess.run(['git','-C',str(tmp_path),*argv],check=True,capture_output=True,text=True)
+    git('init','-q')
+    fixture = tmp_path/'backend/tests/conftest.py'
+    source = tmp_path/'backend/app/utils/number_format.py'
+    for path in (fixture, source):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text('baseline\n')
+    git('add','backend/tests/conftest.py','backend/app/utils/number_format.py')
+    git('-c','user.name=Synthetic Test','-c','user.email=test@example.test','commit','-qm','baseline')
+    fixture.write_text('staged fixture\n')
+    git('add','backend/tests/conftest.py')
+    fixture.write_text('baseline\n')
+    source.write_text('changed\n')
+    assert 'MM backend/tests/conftest.py' in git('status','--porcelain').stdout
+    changed = m.changed_paths('HEAD')
+    assert changed == ['backend/app/utils/number_format.py','backend/tests/conftest.py']
+    assert m.plan(changed)['mode'] == 'full_required'

@@ -2,27 +2,35 @@ import React, { useRef, useState } from 'react';
 import { Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import type { LifeData, LifeTask } from '../../services/lifeNavigation';
 import { localDate } from '../../utils/lifeNavigationModel';
-import { addStudyDay, dailyStudy, daysUntil, examDate, phaseFor, questions, questionHistory, recordAnswer, studyTask, wrongQuestions, practiceQuestions, practiceModes, comprehensiveSubject, type Subject, type PracticeMode } from '../../utils/examStudy';
+import { addStudyDay, dailyStudy, daysUntil, examDate, phaseFor, questions, questionHistory, recordAnswer, studyTask, wrongQuestions, comprehensiveSubject, type Subject, type StudyQuestion } from '../../utils/examStudy';
+import { practiceQuestions, practiceModes, type PracticeMode } from '../../utils/examHistory';
 import { paperAssignment, examPapers } from '../../utils/examPapers';
 import { useLifeControls } from './Controls';
 
-type Props = {data:LifeData; day:string; disabled:boolean; edit:(change:(data:LifeData)=>void)=>void; saveAnswer:(change:(data:LifeData)=>void)=>Promise<void>; focus:(task:LifeTask)=>void};
-export default function ExamStudyPanel({data,day,disabled,edit,saveAnswer,focus}:Props) {
+type Props = {data:LifeData; persistedData:LifeData; day:string; disabled:boolean; edit:(change:(data:LifeData)=>void)=>void; saveAnswer:(change:(data:LifeData)=>void)=>Promise<void>; focus:(task:LifeTask)=>void};
+export default function ExamStudyPanel({data,persistedData,day,disabled,edit,saveAnswer,focus}:Props) {
  const [persistence,setPersistence]=useState<'idle'|'saving'|'saved'|'failed'>('idle');
  const submitting=useRef(false);
  const {c,text,button,field}=useLifeControls(disabled||persistence==='saving');
  const [section,setSection]=useState('每日计划'),[subject,setSubject]=useState<Subject>('英语'),[mode,setMode]=useState<PracticeMode>('next');
  const [selected,setSelected]=useState(''),[choice,setChoice]=useState<number|null>(null);
  const [feedback,setFeedback]=useState<{id:string;correct:boolean}|null>(null),[error,setError]=useState(''),[writingHint,setWritingHint]=useState(false);
+ const [trail,setTrail]=useState<string[]>([]),[reviewing,setReviewing]=useState(false),[retryId,setRetryId]=useState('');
  const assignment=paperAssignment(day);
- const plan=dailyStudy(day),wrong=wrongQuestions(data,day),remaining=daysUntil(localDate());
- const available=practiceQuestions(data,day,subject,mode);
+ const plan=dailyStudy(day),wrong=wrongQuestions(persistedData,day),remaining=daysUntil(localDate());
+ const available=practiceQuestions(persistedData,day,subject,mode);
  const pinned=feedback?questions.find(item=>item.id===feedback.id&&item.subject===subject):undefined;
- const q=pinned??available.find(item=>item.id===selected)??available[0];
+ const q=pinned??questions.find(item=>item.id===selected&&item.subject===subject)??available[0];
  const answer=feedback?.id===q?.id?feedback:null;
- const reset=()=>{setChoice(null);setFeedback(null);};
- const startPractice=(s:Subject,nextMode:PracticeMode='next')=>{setSubject(s);setMode(nextMode);setSelected('');reset();setSection('练习与错题');};
- const nextQuestion=()=>{const index=available.findIndex(item=>item.id===q?.id);setSelected((available[index+1]??available[0])?.id??'');reset();};
+ const records=q?questionHistory(persistedData,q,day):[];
+ const readOnly=records.length>0&&!answer&&retryId!==q?.id&&(reviewing||mode==='history'||mode==='mistakes');
+ const savedQuestions=questions.filter(item=>item.subject===subject&&item.id!==q?.id&&questionHistory(persistedData,item,day).length>0);
+ const previousId=trail.at(-1)??savedQuestions.at(-1)?.id;
+ const reset=()=>{setChoice(null);setFeedback(null);setPersistence('idle');setRetryId('');setError('');};
+ const pick=(item:StudyQuestion)=>{if(q&&q.id!==item.id)setTrail(t=>[...t,q.id]);setSelected(item.id);reset();setReviewing(false);};
+ const startPractice=(s:Subject,nextMode:PracticeMode='next')=>{setSubject(s);setMode(nextMode);setSelected('');reset();setTrail([]);setReviewing(false);setSection('练习与错题');};
+ const nextQuestion=()=>{const index=available.findIndex(item=>item.id===q?.id);const next=available[index+1]??available[0];if(next&&next.id!==q?.id)pick(next);};
+ const previousQuestion=()=>{if(!previousId)return;setTrail(t=>t.slice(0,-1));setSelected(previousId);reset();setReviewing(true);};
  const mutate=(change:(d:LifeData)=>void)=>{if(disabled)return;try{edit(change);setError('');}catch(e){setError(e instanceof Error?e.message:'修改失败，请重试。');}};
  const open=async(url:string)=>{try{await Linking.openURL(url);}catch{setError('无法打开资料，请检查网络后重试。');}};
  const heading=(title:string)=><Text accessibilityRole="header" style={{fontSize:20,lineHeight:28,fontWeight:'600',color:c.labelPrimary}}>{title}</Text>;
@@ -52,15 +60,16 @@ export default function ExamStudyPanel({data,day,disabled,edit,saveAnswer,focus}
    {text('先用旧年真题分段摸底，记录正确数和耗时；分段结果不折算整卷成绩。')}
   </>}
   {section==='练习与错题'&&<>
-   {heading('每日专项与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(data,item,day).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
+   {heading('每日专项与错题复练')}{text(`已练 ${questions.filter(item=>questionHistory(persistedData,item,day).length).length} / ${questions.length} 题 · 待复练 ${wrong.length} 题`)}
    {text('原创专项题库，与上方历年真题训练配合使用。首次答案与最近复练分别保留。')}
    <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{practiceModes.map(m=>button(m.label,()=>startPractice(subject,m.key),mode===m.key))}</View>
-   {text(`${day} · ${mode==='all'?'全部题库包含已做旧题；继续新题请切换「按进度练习」。':mode==='wrong'?'这里只显示待复练错题。':'优先未做专项题，每次最多6题，做完继续补入；次日顺序更新，已做记录保留。'}`)}
+   {text(`${day} · ${mode==='all'?'全部题库包含已做旧题；继续新题请切换「按进度练习」。':mode==='history'?'回看已保存的首次答案、最近复练与解析；仅查看不会改写记录。':mode==='mistakes'?'保留有错误记录的题，复练答对后仍可回看。只保留每日首次和最近复练，被覆盖的中间尝试无法恢复。':mode==='wrong'?'这里只显示仍需复练的错题；答对后仍可在错题本回看。':'按日期轮换未做专项题，每次最多6题，做完继续补入；题库有限，已做记录保留。'}`)}
    <View style={{flexDirection:'row',gap:8}}>{(['英语','数学','逻辑'] as const).map(s=>button(s,()=>startPractice(s,mode),subject===s))}</View>
-   <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled"><View style={{flexDirection:'row',gap:8}}>{available.map(item=>button(item.topic,()=>{setSelected(item.id);reset();},q?.id===item.id))}</View></ScrollView>
-   {q?<View style={card}>{heading(q.topic)}{text(q.prompt)}{!answer&&questionHistory(data,q,day).at(-1)&&text(`上次作答：${questionHistory(data,q,day).at(-1)!.date} · ${questionHistory(data,q,day).at(-1)!.status==='done'?'答对':'待复练'}。当前为主动再练。`)}{q.options.map((option,i)=><Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||!!answer}} disabled={disabled||!!answer} onPress={()=>setChoice(i)} style={{padding:14,minHeight:48,borderWidth:1,borderRadius:10,borderColor:choice===i?c.brand:c.separator}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
-    {answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':'本次答错，已加入待复练')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{text(persistence==='saving'?'正在保存作答…':persistence==='saved'?'作答已保存，可刷新或继续下一题':'作答尚未保存')}{persistence==='failed'&&button('重试保存作答',()=>{void submit();})}{button('下一题',nextQuestion,persistence!=='saved')}{button('重新作答',()=>{setMode('all');reset();},persistence!=='saved')}</View>:button('核对答案并记录',()=>{void submit();},choice===null)}
-   </View>:<View style={{gap:8}}>{text(mode==='next'?'本科目当前没有未做题。题库有限，不把旧题冒充新题；可复练错题或继续真题安排。':'本科目暂无待复练题。')}{button('进入真题训练',()=>setSection('真题与路线'))}</View>}
+   <ScrollView horizontal showsHorizontalScrollIndicator keyboardShouldPersistTaps="handled"><View style={{flexDirection:'row',gap:8}}>{available.map(item=>button(`${item.topic}${wrong.some(w=>w.id===item.id)?' · 待复练':questionHistory(persistedData,item,day).length?' · 已做':' · 未做'}`,()=>pick(item),q?.id===item.id))}</View></ScrollView>
+   {q?<View style={card}>{heading(q.topic)}{text(q.prompt)}{!readOnly&&!answer&&records.at(-1)&&text(`上次作答：${records.at(-1)!.date} · ${records.at(-1)!.status==='done'?'答对':'待复练'}。当前为主动再练。`)}{q.options.map((option,i)=><Pressable key={option} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||persistence==='saving'||!!answer||readOnly}} disabled={disabled||persistence==='saving'||!!answer||readOnly} onPress={()=>setChoice(i)} style={{padding:14,minHeight:48,borderWidth:1,borderRadius:10,borderColor:choice===i?c.brand:c.separator}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
+    {readOnly?<View accessibilityLabel="已保存作答记录" style={{gap:10}}>{heading(`${records.at(-1)?.status==='done'?(records.length>1||records[0].improvement?'已复练答对':'首次答对'):'待复练'} · 正确答案 ${String.fromCharCode(65+q.answer)}`)}{records.map(record=><View key={record.id} style={{gap:6}}>{text(`${record.date} · 首次作答`)}{text(record.result)}{!!record.improvement&&<>{text('最近复练')}{text(record.improvement)}</>}</View>)}{button('重新作答',()=>{setRetryId(q.id);setChoice(null);})}</View>:answer?<View accessibilityLiveRegion="polite" style={{gap:10}}>{heading(answer.correct?'本次答对':persistence==='saved'?'本次答错，已加入待复练':'本次答错')}{text(`正确答案 ${String.fromCharCode(65+q.answer)}`)}{text(q.explanation)}{text(persistence==='saving'?'正在保存作答…':persistence==='saved'?'作答已保存，可刷新或继续下一题':'作答尚未保存')}{persistence==='failed'&&button('重试保存作答',()=>{void submit();})}{button('重新作答',()=>{setRetryId(q.id);setChoice(null);setFeedback(null);},persistence!=='saved')}</View>:button('核对答案并记录',()=>{void submit();},choice===null)}
+    <View accessibilityLabel="题目翻页" style={{flexDirection:'row',gap:8}}>{button('上一题',previousQuestion,!previousId||persistence==='saving'||persistence==='failed')}{button('下一题',nextQuestion,persistence==='saving'||persistence==='failed'||!available.some(item=>item.id!==q.id))}</View>
+   </View>:<View style={{gap:8}}>{text(mode==='next'?'本科目当前没有未做题。题库有限，不把旧题冒充新题；可复练错题或继续真题安排。':mode==='history'?'本科目暂无已保存答题记录。':mode==='mistakes'?'本科目暂无已保存错题。':'本科目暂无待复练题。')}{button('进入真题训练',()=>setSection('真题与路线'))}</View>}
    <View style={card}>{heading('固定写作示例')}{text('企业试行四天工作制后销售额增长，管理者认为应全面推广。用20分钟列出论证漏洞并写一段分析。')}{button(writingHint?'收起分析提示':'展开分析提示',()=>setWritingHint(!writingHint))}{writingHint&&text('检查同期营销、季节性和人员变化；试点是否代表所有部门；销售额是否等于效率或利润。说明每个漏洞怎样削弱结论。此练习不自动评分。')}</View>
   </>}
   {section==='真题与路线'&&<>

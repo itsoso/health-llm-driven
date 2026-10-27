@@ -338,7 +338,7 @@ it('saves the native study plan and answers through owner-scoped revision CAS',a
  fireEvent.press(view.getByLabelText('加入当日计划'));
  fireEvent.press(view.getByLabelText('练习与错题'));fireEvent.press(view.getByLabelText('全部题库'));
  fireEvent.press(view.getByLabelText('A. cancel permanently'));fireEvent.press(view.getByLabelText('核对答案并记录'));
- expect(view.getByText('本次答错，已加入待复练')).toBeTruthy();
+ expect(view.getByText('本次答错')).toBeTruthy();
  expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
  await waitFor(()=>view.getByText('已保存个人安排'));
  const [owner,revision,data]=(saveLifeWorkspace as jest.Mock).mock.calls[0];expect(owner).toBe(1);expect(revision).toBe(0);
@@ -364,4 +364,64 @@ it('keeps study record dates fixed so editing a task cannot orphan its practice 
  fireEvent.press(view.getByLabelText('展开任务 备考练习｜英语 · 词义与搭配'));
  expect(view.getByText('备考记录日期固定；请在目标日期新建计划或复练。')).toBeTruthy();
  expect(view.queryAllByLabelText(/^任务日期 /)).toHaveLength(0);
+});
+
+it('returns to the saved previous study answer and reads history after remount',async()=>{
+ let persisted=workspace();
+ (saveLifeWorkspace as jest.Mock).mockImplementation(async(_owner,revision,data)=>{persisted={...persisted,revision:revision+1,data};return persisted;});
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('练习与错题'));fireEvent.press(view.getByLabelText('全部题库'));
+ fireEvent.press(view.getByLabelText('A. cancel permanently'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ await waitFor(()=>view.getByText('作答已保存，可刷新或继续下一题'));
+ fireEvent.press(view.getByLabelText('下一题'));fireEvent.press(view.getByLabelText('上一题'));
+ expect(view.getByText(/作答：A；正确答案：B/)).toBeTruthy();
+ expect(view.getByText('2026-10-27 · 首次作答')).toBeTruthy();
+ expect(view.queryByLabelText('核对答案并记录')).toBeNull();
+ expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
+ view.unmount();(fetchLifeWorkspace as jest.Mock).mockResolvedValue(persisted);
+ const reopened=render(<Screen/>);await waitFor(()=>reopened.getByLabelText('备考学习'));
+ fireEvent.press(reopened.getByLabelText('备考学习'));fireEvent.press(reopened.getByLabelText('练习与错题'));fireEvent.press(reopened.getByLabelText('答题历史'));
+ expect(reopened.getByText(/作答：A；正确答案：B/)).toBeTruthy();
+ expect(reopened.getByText('2026-10-27 · 首次作答')).toBeTruthy();
+ expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
+});
+it('keeps corrected native mistakes in the archive with first and latest answers',async()=>{
+ const {recordAnswer,questions}=require('../../utils/examStudy');const data=blankData();
+ recordAnswer(data,'2026-10-26',questions[0],0);recordAnswer(data,'2026-10-26',questions[0],1);
+ (fetchLifeWorkspace as jest.Mock).mockResolvedValue({...workspace(),data});
+ const view=render(<Screen/>);await waitFor(()=>view.getByLabelText('备考学习'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('练习与错题'));fireEvent.press(view.getByLabelText('错题本'));
+ expect(view.getByText('已复练答对 · 正确答案 B')).toBeTruthy();
+ expect(view.getByText(/作答：A；正确答案：B/)).toBeTruthy();expect(view.getByText(/作答：B；正确答案：B/)).toBeTruthy();
+ expect(view.getByText('最近复练')).toBeTruthy();expect(view.queryByLabelText('核对答案并记录')).toBeNull();
+ fireEvent.press(view.getByLabelText('待复练'));expect(view.getByText('本科目暂无待复练题。')).toBeTruthy();
+ expect(saveLifeWorkspace).not.toHaveBeenCalled();
+});
+it('does not promote a rejected native answer draft to saved history or mistake archive',async()=>{
+ (saveLifeWorkspace as jest.Mock).mockRejectedValue({response:{status:409}});
+ const view=render(<Screen/>);await waitFor(()=>view.getByText('还没有个人安排。'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('练习与错题'));fireEvent.press(view.getByLabelText('全部题库'));
+ fireEvent.press(view.getByLabelText('A. cancel permanently'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ await waitFor(()=>view.getByText('作答尚未保存'));
+ expect(view.queryByText('本次答错，已加入待复练')).toBeNull();
+ expect(view.getByText('已练 0 / 80 题 · 待复练 0 题')).toBeTruthy();
+ expect(view.getByLabelText('下一题').props.accessibilityState.disabled).toBe(true);
+ fireEvent.press(view.getByLabelText('答题历史'));expect(view.getByText('本科目暂无已保存答题记录。')).toBeTruthy();
+ expect(view.queryByText(/作答：A；正确答案：B/)).toBeNull();
+ fireEvent.press(view.getByLabelText('错题本'));expect(view.getByText('本科目暂无已保存错题。')).toBeTruthy();
+ expect(view.queryByText('作答已保存，可刷新或继续下一题')).toBeNull();
+});
+it('makes a native history view read-only until an explicit retry is requested',async()=>{
+ const {recordAnswer,questions}=require('../../utils/examStudy');const data=blankData();recordAnswer(data,'2026-10-26',questions[0],0);
+ (fetchLifeWorkspace as jest.Mock).mockResolvedValue({...workspace(),data});
+ (saveLifeWorkspace as jest.Mock).mockImplementation(async(_owner,revision,next)=>({...workspace(),revision:revision+1,data:next}));
+ const view=render(<Screen/>);await waitFor(()=>view.getByLabelText('备考学习'));
+ fireEvent.press(view.getByLabelText('备考学习'));fireEvent.press(view.getByLabelText('练习与错题'));fireEvent.press(view.getByLabelText('答题历史'));
+ expect(view.getByLabelText('B. delay until later').props.accessibilityState.disabled).toBe(true);
+ fireEvent.press(view.getByLabelText('重新作答'));fireEvent.press(view.getByLabelText('B. delay until later'));fireEvent.press(view.getByLabelText('核对答案并记录'));
+ await waitFor(()=>view.getByText('作答已保存，可刷新或继续下一题'));
+ fireEvent.press(view.getByLabelText('错题本'));
+ expect(view.getByText('已复练答对 · 正确答案 B')).toBeTruthy();
+ expect(view.getByText('2026-10-26 · 首次作答')).toBeTruthy();expect(view.getByText('2026-10-27 · 首次作答')).toBeTruthy();
+ expect(saveLifeWorkspace).toHaveBeenCalledTimes(1);
 });

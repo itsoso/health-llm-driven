@@ -1,0 +1,1575 @@
+{
+  "schema_version": "release_performance.v1",
+  "release_authority": false,
+  "limitations": [
+    "observed sample; not a stable latency guarantee",
+    "start delay includes dependencies and scheduling; not pure queue time",
+    "critical breakdown partitions the last work job timeline; not a complete dependency-graph reconstruction",
+    "job metadata does not prove vendor, server receipt, Apple processing or user acceptance",
+    "wall includes initial scheduling and prior attempts; retry runs excluded from first-attempt summaries",
+    "native vendor steps combine queue, execution and polling; no invented subphase timings"
+  ],
+  "cohorts": [
+    {
+      "kind": "ci-backend-16-workers",
+      "observed_runs": 3,
+      "outcomes": {
+        "success": 3
+      },
+      "retry_runs": 0,
+      "first_attempt_success": {
+        "sample_count": 3,
+        "min_seconds": 573.0,
+        "median_seconds": 576.0,
+        "max_seconds": 586.0
+      }
+    }
+  ],
+  "runs": [
+    {
+      "run_id": 40460622845,
+      "sha": "9fd15d602dc34be3f0a30146f76909c65233bbe6",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 586.0,
+      "attempt_execution_span_seconds": 584.0,
+      "runner_seconds": 8688.0,
+      "critical_job": "backend-test-balanced-09",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 37.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 32.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 18.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 11.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 18.0
+        }
+      ],
+      "job_breakdown": [
+        {
+          "job": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 15.0,
+          "step_seconds": {
+            "environment_setup": 7.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 8.0
+        },
+        {
+          "job": "other",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 11.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 3.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "mac-build",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 174.0,
+          "step_seconds": {
+            "build": 99.0,
+            "environment_setup": 10.0,
+            "other_steps": 62.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "docs-quality",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 18.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 11.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-quality",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 243.0,
+          "step_seconds": {
+            "dependency_install": 37.0,
+            "environment_setup": 8.0,
+            "other_steps": 194.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "agent-runtime-postgres",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 447.0,
+          "step_seconds": {
+            "dependency_install": 32.0,
+            "environment_setup": 28.0,
+            "other_steps": 31.0,
+            "test_execution": 352.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-05",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 369.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 24.0,
+            "other_steps": 2.0,
+            "test_execution": 323.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-02",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 351.0,
+          "step_seconds": {
+            "dependency_install": 14.0,
+            "environment_setup": 23.0,
+            "other_steps": 2.0,
+            "test_execution": 309.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-13",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 504.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 21.0,
+            "other_steps": 1.0,
+            "test_execution": 462.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-01",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 431.0,
+          "step_seconds": {
+            "dependency_install": 14.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 392.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-14",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 528.0,
+          "step_seconds": {
+            "dependency_install": 19.0,
+            "environment_setup": 22.0,
+            "other_steps": 2.0,
+            "test_execution": 483.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-06",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 454.0,
+          "step_seconds": {
+            "dependency_install": 18.0,
+            "environment_setup": 22.0,
+            "other_steps": 2.0,
+            "test_execution": 409.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-03",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 297.0,
+          "step_seconds": {
+            "dependency_install": 13.0,
+            "environment_setup": 17.0,
+            "other_steps": 9.0,
+            "test_execution": 255.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-10",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 514.0,
+          "step_seconds": {
+            "dependency_install": 19.0,
+            "environment_setup": 24.0,
+            "other_steps": 2.0,
+            "test_execution": 464.0
+          },
+          "unattributed_job_seconds": 5.0
+        },
+        {
+          "job": "backend-test-balanced-15",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 284.0,
+          "step_seconds": {
+            "dependency_install": 11.0,
+            "environment_setup": 17.0,
+            "other_steps": 2.0,
+            "test_execution": 251.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-09",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 554.0,
+          "step_seconds": {
+            "dependency_install": 19.0,
+            "environment_setup": 23.0,
+            "other_steps": 3.0,
+            "test_execution": 505.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-11",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 525.0,
+          "step_seconds": {
+            "dependency_install": 19.0,
+            "environment_setup": 26.0,
+            "other_steps": 2.0,
+            "test_execution": 473.0
+          },
+          "unattributed_job_seconds": 5.0
+        },
+        {
+          "job": "backend-test-balanced-04",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 480.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 22.0,
+            "other_steps": 2.0,
+            "test_execution": 436.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-07",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 297.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 17.0,
+            "other_steps": 2.0,
+            "test_execution": 258.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-16",
+          "start_delay_seconds": 33.0,
+          "execution_seconds": 440.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 19.0,
+            "other_steps": 2.0,
+            "test_execution": 401.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-12",
+          "start_delay_seconds": 20.0,
+          "execution_seconds": 414.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 22.0,
+            "other_steps": 1.0,
+            "test_execution": 370.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-08",
+          "start_delay_seconds": 19.0,
+          "execution_seconds": 372.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 20.0,
+            "other_steps": 2.0,
+            "test_execution": 331.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "release-invariants",
+          "start_delay_seconds": 40.0,
+          "execution_seconds": 288.0,
+          "step_seconds": {
+            "environment_setup": 13.0,
+            "other_steps": 74.0,
+            "test_execution": 197.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "retained-runner-startup",
+          "start_delay_seconds": 263.0,
+          "execution_seconds": 43.0,
+          "step_seconds": {
+            "environment_setup": 3.0,
+            "other_steps": 37.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "frontend-artifact-integration",
+          "start_delay_seconds": 305.0,
+          "execution_seconds": 165.0,
+          "step_seconds": {
+            "environment_setup": 11.0,
+            "other_steps": 151.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "frontend-build",
+          "start_delay_seconds": 196.0,
+          "execution_seconds": 149.0,
+          "step_seconds": {
+            "build": 35.0,
+            "dependency_install": 13.0,
+            "environment_setup": 10.0,
+            "other_steps": 31.0,
+            "test_execution": 57.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "type-drift",
+          "start_delay_seconds": 318.0,
+          "execution_seconds": 54.0,
+          "step_seconds": {
+            "environment_setup": 7.0,
+            "other_steps": 45.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "ota-runner-startup",
+          "start_delay_seconds": 308.0,
+          "execution_seconds": 92.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 83.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "mobile-typecheck",
+          "start_delay_seconds": 318.0,
+          "execution_seconds": 165.0,
+          "step_seconds": {
+            "dependency_install": 18.0,
+            "environment_setup": 6.0,
+            "other_steps": 28.0,
+            "test_execution": 110.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "release-tests",
+          "start_delay_seconds": 402.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 1.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-tests",
+          "start_delay_seconds": 576.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-release-ready-v1",
+          "start_delay_seconds": 582.0,
+          "execution_seconds": 4.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 4.0
+        }
+      ],
+      "critical_path_breakdown": {
+        "job": "backend-test-balanced-09",
+        "start_delay_seconds": 20.0,
+        "execution_seconds": 554.0,
+        "step_seconds": {
+          "dependency_install": 19.0,
+          "environment_setup": 23.0,
+          "other_steps": 3.0,
+          "test_execution": 505.0
+        },
+        "unattributed_job_seconds": 4.0,
+        "after_critical_job_seconds": 12.0
+      },
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified"
+    },
+    {
+      "run_id": 40468093798,
+      "sha": "38be6d970f7973c878057bb708a3a13d6939f2f1",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 576.0,
+      "attempt_execution_span_seconds": 574.0,
+      "runner_seconds": 8636.0,
+      "critical_job": "backend-test-balanced-09",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 35.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 24.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 18.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 11.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 20.0
+        }
+      ],
+      "job_breakdown": [
+        {
+          "job": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 10.0,
+          "step_seconds": {
+            "environment_setup": 6.0,
+            "other_steps": 1.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "other",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 10.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 2.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "mac-build",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 184.0,
+          "step_seconds": {
+            "build": 108.0,
+            "environment_setup": 7.0,
+            "other_steps": 67.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "docs-quality",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 21.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 12.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "agent-runtime-postgres",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 407.0,
+          "step_seconds": {
+            "dependency_install": 35.0,
+            "environment_setup": 37.0,
+            "other_steps": 28.0,
+            "test_execution": 302.0
+          },
+          "unattributed_job_seconds": 5.0
+        },
+        {
+          "job": "backend-quality",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 145.0,
+          "step_seconds": {
+            "dependency_install": 24.0,
+            "environment_setup": 9.0,
+            "other_steps": 110.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-11",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 488.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 22.0,
+            "other_steps": 2.0,
+            "test_execution": 448.0
+          },
+          "unattributed_job_seconds": 1.0
+        },
+        {
+          "job": "backend-test-balanced-14",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 336.0,
+          "step_seconds": {
+            "dependency_install": 13.0,
+            "environment_setup": 19.0,
+            "other_steps": 2.0,
+            "test_execution": 300.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-07",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 486.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 20.0,
+            "other_steps": 2.0,
+            "test_execution": 446.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-01",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 512.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 20.0,
+            "other_steps": 2.0,
+            "test_execution": 470.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-02",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 487.0,
+          "step_seconds": {
+            "dependency_install": 18.0,
+            "environment_setup": 24.0,
+            "other_steps": 2.0,
+            "test_execution": 439.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-05",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 499.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 24.0,
+            "other_steps": 2.0,
+            "test_execution": 453.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-09",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 552.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 23.0,
+            "other_steps": 2.0,
+            "test_execution": 509.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-03",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 275.0,
+          "step_seconds": {
+            "dependency_install": 13.0,
+            "environment_setup": 18.0,
+            "other_steps": 2.0,
+            "test_execution": 239.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-08",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 256.0,
+          "step_seconds": {
+            "dependency_install": 11.0,
+            "environment_setup": 16.0,
+            "other_steps": 1.0,
+            "test_execution": 225.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-04",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 498.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 29.0,
+            "other_steps": 2.0,
+            "test_execution": 446.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-10",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 486.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 446.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-06",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 387.0,
+          "step_seconds": {
+            "dependency_install": 14.0,
+            "environment_setup": 23.0,
+            "other_steps": 2.0,
+            "test_execution": 344.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-16",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 468.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 23.0,
+            "other_steps": 1.0,
+            "test_execution": 425.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-15",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 542.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 20.0,
+            "other_steps": 1.0,
+            "test_execution": 502.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-13",
+          "start_delay_seconds": 25.0,
+          "execution_seconds": 292.0,
+          "step_seconds": {
+            "dependency_install": 13.0,
+            "environment_setup": 16.0,
+            "other_steps": 2.0,
+            "test_execution": 259.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-12",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 373.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 23.0,
+            "other_steps": 2.0,
+            "test_execution": 330.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "release-invariants",
+          "start_delay_seconds": 37.0,
+          "execution_seconds": 254.0,
+          "step_seconds": {
+            "environment_setup": 14.0,
+            "other_steps": 61.0,
+            "test_execution": 176.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "type-drift",
+          "start_delay_seconds": 161.0,
+          "execution_seconds": 68.0,
+          "step_seconds": {
+            "environment_setup": 7.0,
+            "other_steps": 59.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "frontend-build",
+          "start_delay_seconds": 291.0,
+          "execution_seconds": 154.0,
+          "step_seconds": {
+            "build": 36.0,
+            "dependency_install": 14.0,
+            "environment_setup": 10.0,
+            "other_steps": 32.0,
+            "test_execution": 59.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "retained-runner-startup",
+          "start_delay_seconds": 272.0,
+          "execution_seconds": 43.0,
+          "step_seconds": {
+            "environment_setup": 4.0,
+            "other_steps": 38.0
+          },
+          "unattributed_job_seconds": 1.0
+        },
+        {
+          "job": "frontend-artifact-integration",
+          "start_delay_seconds": 200.0,
+          "execution_seconds": 114.0,
+          "step_seconds": {
+            "environment_setup": 7.0,
+            "other_steps": 104.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "ota-runner-startup",
+          "start_delay_seconds": 231.0,
+          "execution_seconds": 102.0,
+          "step_seconds": {
+            "environment_setup": 4.0,
+            "other_steps": 96.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "mobile-typecheck",
+          "start_delay_seconds": 293.0,
+          "execution_seconds": 179.0,
+          "step_seconds": {
+            "dependency_install": 20.0,
+            "environment_setup": 14.0,
+            "other_steps": 31.0,
+            "test_execution": 111.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "release-tests",
+          "start_delay_seconds": 335.0,
+          "execution_seconds": 2.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-tests",
+          "start_delay_seconds": 568.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-release-ready-v1",
+          "start_delay_seconds": 573.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 1.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 2.0
+        }
+      ],
+      "critical_path_breakdown": {
+        "job": "backend-test-balanced-09",
+        "start_delay_seconds": 14.0,
+        "execution_seconds": 552.0,
+        "step_seconds": {
+          "dependency_install": 16.0,
+          "environment_setup": 23.0,
+          "other_steps": 2.0,
+          "test_execution": 509.0
+        },
+        "unattributed_job_seconds": 2.0,
+        "after_critical_job_seconds": 10.0
+      },
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified"
+    },
+    {
+      "run_id": 40469166838,
+      "sha": "ea55da9c01c50154f460bd208666e3f76686dbb5",
+      "workflow": "CI",
+      "kind": "ci-backend-16-workers",
+      "attempt": 1,
+      "conclusion": "success",
+      "all_active_jobs_succeeded": true,
+      "wall_seconds": 573.0,
+      "attempt_execution_span_seconds": 571.0,
+      "runner_seconds": 8756.0,
+      "critical_job": "backend-test-balanced-15",
+      "phases": [
+        {
+          "phase": "dependency_install",
+          "job": "agent-runtime-postgres",
+          "conclusion": "success",
+          "seconds": 37.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-quality",
+          "conclusion": "success",
+          "seconds": 35.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-16",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-13",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-12",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-02",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-10",
+          "conclusion": "success",
+          "seconds": 10.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-03",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-11",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-15",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-07",
+          "conclusion": "success",
+          "seconds": 19.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-14",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-05",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-09",
+          "conclusion": "success",
+          "seconds": 14.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-04",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-01",
+          "conclusion": "success",
+          "seconds": 13.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-06",
+          "conclusion": "success",
+          "seconds": 16.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "backend-test-balanced-08",
+          "conclusion": "success",
+          "seconds": 15.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "mobile-typecheck",
+          "conclusion": "success",
+          "seconds": 17.0
+        },
+        {
+          "phase": "dependency_install",
+          "job": "frontend-build",
+          "conclusion": "success",
+          "seconds": 12.0
+        }
+      ],
+      "job_breakdown": [
+        {
+          "job": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 10.0,
+          "step_seconds": {
+            "environment_setup": 7.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "other",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 10.0,
+          "step_seconds": {
+            "environment_setup": 6.0,
+            "other_steps": 2.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "agent-runtime-postgres",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 476.0,
+          "step_seconds": {
+            "dependency_install": 37.0,
+            "environment_setup": 28.0,
+            "other_steps": 35.0,
+            "test_execution": 373.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "docs-quality",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 17.0,
+          "step_seconds": {
+            "environment_setup": 6.0,
+            "other_steps": 9.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "mac-build",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 131.0,
+          "step_seconds": {
+            "build": 71.0,
+            "environment_setup": 6.0,
+            "other_steps": 52.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-quality",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 206.0,
+          "step_seconds": {
+            "dependency_install": 35.0,
+            "environment_setup": 19.0,
+            "other_steps": 150.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-16",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 373.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 20.0,
+            "other_steps": 2.0,
+            "test_execution": 333.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-13",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 520.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 25.0,
+            "other_steps": 3.0,
+            "test_execution": 471.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-12",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 448.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 26.0,
+            "other_steps": 2.0,
+            "test_execution": 402.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-02",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 473.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 433.0
+          },
+          "unattributed_job_seconds": 1.0
+        },
+        {
+          "job": "backend-test-balanced-10",
+          "start_delay_seconds": 26.0,
+          "execution_seconds": 299.0,
+          "step_seconds": {
+            "dependency_install": 10.0,
+            "environment_setup": 17.0,
+            "other_steps": 2.0,
+            "test_execution": 266.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-03",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 485.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 23.0,
+            "other_steps": 2.0,
+            "test_execution": 442.0
+          },
+          "unattributed_job_seconds": 1.0
+        },
+        {
+          "job": "backend-test-balanced-11",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 393.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 22.0,
+            "other_steps": 2.0,
+            "test_execution": 350.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-15",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 547.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 25.0,
+            "other_steps": 2.0,
+            "test_execution": 499.0
+          },
+          "unattributed_job_seconds": 5.0
+        },
+        {
+          "job": "backend-test-balanced-07",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 483.0,
+          "step_seconds": {
+            "dependency_install": 19.0,
+            "environment_setup": 26.0,
+            "other_steps": 2.0,
+            "test_execution": 434.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-14",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 534.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 26.0,
+            "other_steps": 3.0,
+            "test_execution": 485.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-05",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 529.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 488.0
+          },
+          "unattributed_job_seconds": 1.0
+        },
+        {
+          "job": "backend-test-balanced-09",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 418.0,
+          "step_seconds": {
+            "dependency_install": 14.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 377.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-04",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 483.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 23.0,
+            "other_steps": 3.0,
+            "test_execution": 437.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "backend-test-balanced-01",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 289.0,
+          "step_seconds": {
+            "dependency_install": 13.0,
+            "environment_setup": 18.0,
+            "other_steps": 1.0,
+            "test_execution": 254.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-test-balanced-06",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 385.0,
+          "step_seconds": {
+            "dependency_install": 16.0,
+            "environment_setup": 21.0,
+            "other_steps": 2.0,
+            "test_execution": 344.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "backend-test-balanced-08",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 348.0,
+          "step_seconds": {
+            "dependency_install": 15.0,
+            "environment_setup": 19.0,
+            "other_steps": 1.0,
+            "test_execution": 310.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "release-invariants",
+          "start_delay_seconds": 34.0,
+          "execution_seconds": 287.0,
+          "step_seconds": {
+            "environment_setup": 12.0,
+            "other_steps": 74.0,
+            "test_execution": 199.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "frontend-artifact-integration",
+          "start_delay_seconds": 147.0,
+          "execution_seconds": 114.0,
+          "step_seconds": {
+            "environment_setup": 11.0,
+            "other_steps": 101.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "mobile-typecheck",
+          "start_delay_seconds": 326.0,
+          "execution_seconds": 163.0,
+          "step_seconds": {
+            "dependency_install": 17.0,
+            "environment_setup": 11.0,
+            "other_steps": 28.0,
+            "test_execution": 105.0
+          },
+          "unattributed_job_seconds": 2.0
+        },
+        {
+          "job": "frontend-build",
+          "start_delay_seconds": 223.0,
+          "execution_seconds": 122.0,
+          "step_seconds": {
+            "build": 28.0,
+            "dependency_install": 12.0,
+            "environment_setup": 10.0,
+            "other_steps": 25.0,
+            "test_execution": 44.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "ota-runner-startup",
+          "start_delay_seconds": 263.0,
+          "execution_seconds": 91.0,
+          "step_seconds": {
+            "environment_setup": 5.0,
+            "other_steps": 82.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "type-drift",
+          "start_delay_seconds": 323.0,
+          "execution_seconds": 74.0,
+          "step_seconds": {
+            "environment_setup": 10.0,
+            "other_steps": 60.0
+          },
+          "unattributed_job_seconds": 4.0
+        },
+        {
+          "job": "retained-runner-startup",
+          "start_delay_seconds": 305.0,
+          "execution_seconds": 38.0,
+          "step_seconds": {
+            "environment_setup": 4.0,
+            "other_steps": 31.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "release-tests",
+          "start_delay_seconds": 356.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-tests",
+          "start_delay_seconds": 564.0,
+          "execution_seconds": 3.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 3.0
+        },
+        {
+          "job": "backend-release-ready-v1",
+          "start_delay_seconds": 569.0,
+          "execution_seconds": 4.0,
+          "step_seconds": {
+            "environment_setup": 0.0,
+            "other_steps": 0.0
+          },
+          "unattributed_job_seconds": 4.0
+        }
+      ],
+      "critical_path_breakdown": {
+        "job": "backend-test-balanced-15",
+        "start_delay_seconds": 15.0,
+        "execution_seconds": 547.0,
+        "step_seconds": {
+          "dependency_install": 16.0,
+          "environment_setup": 25.0,
+          "other_steps": 2.0,
+          "test_execution": 499.0
+        },
+        "unattributed_job_seconds": 5.0,
+        "after_critical_job_seconds": 11.0
+      },
+      "production_state": "unverified",
+      "apple_processing_seconds": null,
+      "tester_availability": "unverified"
+    }
+  ]
+}
