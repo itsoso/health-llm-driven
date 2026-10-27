@@ -1,44 +1,15 @@
-import React, { useState } from 'react';
+import React from 'react';
 import { fireEvent, render, waitFor } from '@testing-library/react-native';
 import ExamStudyPanel from '../ExamStudyPanel';
-import { blankData, copy } from '../../../utils/lifeNavigationModel';
-import { questions, recordAnswer } from '../../../utils/examStudy';
-import type { LifeData } from '../../../services/lifeNavigation';
-
-function Harness({initial=blankData()}: {initial?:LifeData}) {
- const [data,setData]=useState(initial);
- const [persisted,setPersisted]=useState(initial);
- return <ExamStudyPanel data={data} persistedData={persisted} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async fn=>{const next=copy(data);fn(next);setData(next);setPersisted(next);}} edit={fn=>setData(prev=>{const next=copy(prev);fn(next);return next;})}/>;
-}
-it('resumes progress and retains answer feedback before advancing',async()=>{
- const data=blankData();recordAnswer(data,'2026-10-25',questions[0],questions[0].answer);
- const view=render(<Harness initial={data}/>);
- fireEvent.press(view.getByLabelText('练习与错题'));
- expect(view.getByText(questions[1].prompt)).toBeTruthy();
- fireEvent.press(view.getByLabelText('C. Less commuting does not guarantee higher productivity.'));
- fireEvent.press(view.getByLabelText('核对答案并记录'));
- expect(view.getByText('本次答对')).toBeTruthy();
- expect(view.getByText(questions[1].explanation)).toBeTruthy();
- await waitFor(()=>view.getByText('作答已保存，可刷新或继续下一题'));
- fireEvent.press(view.getByLabelText('下一题'));
- expect(view.getByText(questions[2].prompt)).toBeTruthy();
+import { blankData } from '../../../utils/lifeNavigationModel';
+import { fetchExamPractice } from '../../../services/examPractice';
+jest.mock('../../../services/examPractice',()=>({fetchExamPractice:jest.fn(),fetchExamAttempts:jest.fn(),submitExamAttempt:jest.fn()}));
+beforeEach(()=>{jest.clearAllMocks();(fetchExamPractice as jest.Mock).mockResolvedValue({catalog_version:'server',day:'2026-10-26',today:'2026-10-26',questions:[{id:'server-l1',version:1,subject:'逻辑',topic:'服务端逻辑',prompt:'服务端新题',options:['甲','乙'],source:'原创',difficulty:'基础'}],progress:[],queue:['server-l1'],plan:[],total_minutes:120,legacy_notice:''});});
+it('opens the scheduled subject from the owner server bank without creating study records',async()=>{
+ const edit=jest.fn();const view=render(<ExamStudyPanel owner={7} data={blankData()} day="2026-10-26" disabled={false} focus={jest.fn()} edit={edit}/>);
+ fireEvent.press(view.getByLabelText('练习逻辑'));await waitFor(()=>view.getByText('服务端新题'));expect(fetchExamPractice).toHaveBeenCalledWith(7,'2026-10-26');expect(edit).not.toHaveBeenCalled();
 });
-it('opens the scheduled subject without creating study records',()=>{
- const edit=jest.fn();const view=render(<ExamStudyPanel data={blankData()} persistedData={blankData()} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async()=>{}} edit={edit}/>);
- fireEvent.press(view.getByLabelText('练习逻辑'));
- expect(view.getByText(questions.find(q=>q.id==='l01')!.prompt)).toBeTruthy();
- expect(edit).not.toHaveBeenCalled();
-});
-it('leaves exhausted practice empty and lets the learner explicitly view the full bank',()=>{
- const data=blankData();questions.filter(q=>q.subject==='英语').forEach(q=>recordAnswer(data,'2026-10-25',q,q.answer));
- const view=render(<Harness initial={data}/>);fireEvent.press(view.getByLabelText('练习与错题'));
- expect(view.getByText(/本科目当前没有未做题/)).toBeTruthy();
- fireEvent.press(view.getByLabelText('全部题库'));
- expect(view.getByText(questions[0].prompt)).toBeTruthy();
-});
-
-it('prioritizes a previous mistake when the first question is still unseen',()=>{
- const data=blankData();recordAnswer(data,'2026-10-25',questions[3],0);
- const view=render(<Harness initial={data}/>);fireEvent.press(view.getByLabelText('练习与错题'));
- expect(view.getByText(questions[3].prompt)).toBeTruthy();
+it('keeps manual planning and paper references while practice saves separately',()=>{
+ const edit=jest.fn();const view=render(<ExamStudyPanel owner={7} data={blankData()} day="2026-10-28" disabled={false} focus={jest.fn()} edit={edit}/>);
+ expect(view.getByText('练习答案独立保存到当前账号。计划和笔记仍需点顶部「保存」。')).toBeTruthy();fireEvent.press(view.getByLabelText('加入当日计划'));expect(edit).toHaveBeenCalledTimes(1);expect(fetchExamPractice).not.toHaveBeenCalled();fireEvent.press(view.getByLabelText('真题与路线'));expect(view.getByText('2024—2026 年真题库')).toBeTruthy();
 });

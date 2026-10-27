@@ -1,0 +1,3465 @@
+{
+  "catalog_version": "2026-10-28.v1",
+  "questions": [
+    {
+      "id": "e01",
+      "subject": "英语",
+      "topic": "词义与搭配",
+      "prompt": "The company decided to postpone the launch until the safety review was complete. “postpone” means:",
+      "options": [
+        "cancel permanently",
+        "delay until later",
+        "announce publicly",
+        "speed up"
+      ],
+      "answer": 1,
+      "explanation": "postpone = 延后，不是永久取消。until 引导的条件提示：等待安全审查完成后再发布。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e02",
+      "subject": "英语",
+      "topic": "逻辑关系",
+      "prompt": "Although remote work reduced commuting time, it did not necessarily improve productivity. Which statement is supported?",
+      "options": [
+        "Remote work always lowers productivity.",
+        "Commuting time and productivity are the same.",
+        "Less commuting does not guarantee higher productivity.",
+        "All workers prefer working remotely."
+      ],
+      "answer": 2,
+      "explanation": "although 表示让步；not necessarily 是“不一定”。原句未声称生产率一定下降。注意 always / all。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e03",
+      "subject": "英语",
+      "topic": "主旨",
+      "prompt": "A store introduced self-checkout to cut waiting time. But many customers needed assistance. The manager added staff to guide users rather than removing the machines. The passage mainly describes:",
+      "options": [
+        "A complete failure of technology.",
+        "An adjustment to how new technology is used.",
+        "Why staff should be replaced.",
+        "A fall in demand for shopping."
+      ],
+      "answer": 1,
+      "explanation": "重点在问题出现后的调整。保留机器并增加引导，不能概括为技术彻底失败。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e04",
+      "subject": "英语",
+      "topic": "因果与相关",
+      "prompt": "A survey found that employees who exercised regularly reported less stress. The researchers warned that the survey could not establish causation. What can we conclude?",
+      "options": [
+        "Exercise certainly caused lower stress.",
+        "Lower stress prevented exercise.",
+        "Exercise and reported stress were associated.",
+        "The survey proved exercise useless."
+      ],
+      "answer": 2,
+      "explanation": "associated 表示关联。调查不能排除其他变量或反向因果，不能选“确定导致”。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e05",
+      "subject": "英语",
+      "topic": "指代",
+      "prompt": "Small firms often lack the funds to train employees. This can limit their ability to adopt new tools. “This” refers to:",
+      "options": [
+        "The lack of funds for training.",
+        "The size of the tools.",
+        "Employees adopting tools.",
+        "The existence of large firms."
+      ],
+      "answer": 0,
+      "explanation": "This 承接上一句的培训资金不足。将候选含义代回原句检验。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e06",
+      "subject": "英语",
+      "topic": "态度",
+      "prompt": "The proposal is promising, but its costs and long-term effects remain uncertain. The author’s attitude is:",
+      "options": [
+        "Unconditionally supportive.",
+        "Entirely dismissive.",
+        "Cautiously positive.",
+        "Indifferent."
+      ],
+      "answer": 2,
+      "explanation": "promising 是正面评价，but 后是不确定性，因此是谨慎乐观。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e07",
+      "subject": "英语",
+      "topic": "细节",
+      "prompt": "The library is open every weekday except Wednesday, when it closes for maintenance. On which day is it closed?",
+      "options": [
+        "Monday",
+        "Tuesday",
+        "Wednesday",
+        "Friday"
+      ],
+      "answer": 2,
+      "explanation": "except 表示排除，条件定位时不要忽略限定词。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e08",
+      "subject": "英语",
+      "topic": "条件",
+      "prompt": "The new policy may help small businesses, provided that the application process is simplified. The benefit depends on:",
+      "options": [
+        "Reducing the number of businesses.",
+        "Making applications easier.",
+        "Removing all regulations.",
+        "Raising application fees."
+      ],
+      "answer": 1,
+      "explanation": "provided that = 条件是。其余选项均超出原文。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m01",
+      "subject": "数学",
+      "topic": "百分比",
+      "prompt": "商品先涨价 20%，再降价 20%，最终价格与原价相比如何？",
+      "options": [
+        "不变",
+        "降低 4%",
+        "提高 4%",
+        "降低 20%"
+      ],
+      "answer": 1,
+      "explanation": "设原价100，100×1.2×0.8=96。两次百分比的基数不同。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m02",
+      "subject": "数学",
+      "topic": "加权平均",
+      "prompt": "甲组10人平均分80，乙组20人平均分65，总平均分是多少？",
+      "options": [
+        "70",
+        "72.5",
+        "75",
+        "77.5"
+      ],
+      "answer": 0,
+      "explanation": "(10×80+20×65)÷30=70，不能直接平均两组平均分。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m03",
+      "subject": "数学",
+      "topic": "条件充分性",
+      "prompt": "判断 x 是否大于0。（1）x²=4；（2）x+1=3。以下哪项正确？",
+      "options": [
+        "仅（1）充分",
+        "仅（2）充分",
+        "各自都充分",
+        "合起来也不充分"
+      ],
+      "answer": 1,
+      "explanation": "（1）x=±2，不能确定；（2）x=2，可以确定。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m04",
+      "subject": "数学",
+      "topic": "排列组合",
+      "prompt": "从5人中选2人组成小组，不区分职位，有多少种选法？",
+      "options": [
+        "10",
+        "20",
+        "25",
+        "5"
+      ],
+      "answer": 0,
+      "explanation": "不区分顺序：C(5,2)=5×4÷2=10。区分正副职位才是20。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m05",
+      "subject": "数学",
+      "topic": "概率",
+      "prompt": "同时掷两枚均匀硬币，恰好一个正面的概率为？",
+      "options": [
+        "1/4",
+        "1/2",
+        "3/4",
+        "1"
+      ],
+      "answer": 1,
+      "explanation": "四个等可能结果中正反、反正满足条件，概率2/4。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m06",
+      "subject": "数学",
+      "topic": "方程应用",
+      "prompt": "甲完成工作需6天，乙需3天，两人合作需几天？",
+      "options": [
+        "1",
+        "2",
+        "3",
+        "4.5"
+      ],
+      "answer": 1,
+      "explanation": "效率相加1/6+1/3=1/2，完成一份工作需2天。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l01",
+      "subject": "逻辑",
+      "topic": "必要条件",
+      "prompt": "只有通过安全审查，产品才能发布。产品已经发布，可以推出？",
+      "options": [
+        "产品一定畅销",
+        "产品通过了安全审查",
+        "通过审查的产品都已发布",
+        "没有产品未通过审查"
+      ],
+      "answer": 1,
+      "explanation": "只有P才Q，表示Q→P。发布推出通过审查，反之不成立。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l02",
+      "subject": "逻辑",
+      "topic": "否定后件",
+      "prompt": "如果下雨，比赛就取消。比赛没有取消。可以推出？",
+      "options": [
+        "没有下雨",
+        "下雨了",
+        "比赛一定在室内",
+        "无法判断是否下雨"
+      ],
+      "answer": 0,
+      "explanation": "P→Q，非Q→非P。否定后件可以否定前件。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l03",
+      "subject": "逻辑",
+      "topic": "削弱",
+      "prompt": "店铺换招牌后销售额上涨，店主认为招牌导致增长。哪项最能削弱？",
+      "options": [
+        "招牌颜色鲜艳",
+        "店主喜欢招牌",
+        "同期竞争店停业，客流转入",
+        "招牌变大"
+      ],
+      "answer": 2,
+      "explanation": "竞争店停业提供另一种合理原因，削弱原来的因果归因。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l04",
+      "subject": "逻辑",
+      "topic": "集合",
+      "prompt": "所有项目经理都参加培训。有些受训者懂法语。能否推出有项目经理懂法语？",
+      "options": [
+        "一定能",
+        "一定没有",
+        "不能确定",
+        "所有经理都懂"
+      ],
+      "answer": 2,
+      "explanation": "懂法语者可能在项目经理集合之外，也可能有交集，不能确定。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l05",
+      "subject": "逻辑",
+      "topic": "加强",
+      "prompt": "研究者认为提醒短信能减少爽约。哪项最支持？",
+      "options": [
+        "短信便宜",
+        "随机分组后收到短信组爽约率低于未收到组",
+        "多数人有手机",
+        "医院喜欢短信"
+      ],
+      "answer": 1,
+      "explanation": "随机对照更好控制其他因素，直接提供效果证据；成本不是效果。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l06",
+      "subject": "逻辑",
+      "topic": "命题否定",
+      "prompt": "“所有参加者都交了作业”的否定是？",
+      "options": [
+        "所有人都没交",
+        "有参加者没交",
+        "有参加者交了",
+        "只有一人交了"
+      ],
+      "answer": 1,
+      "explanation": "全称肯定的否定是特称否定：至少一人未交。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e101",
+      "subject": "英语",
+      "topic": "让步与结论",
+      "prompt": "A manufacturer automated its packing line. Output increased, yet customers reported more damaged deliveries. The firm kept the machines but introduced a final human inspection. What does the decision suggest?",
+      "options": [
+        "The firm abandoned automation completely.",
+        "Customers preferred slower deliveries in every case.",
+        "Higher output alone did not guarantee acceptable quality.",
+        "Human inspectors caused the original damage."
+      ],
+      "answer": 2,
+      "explanation": "yet 后指出质量问题，最终保留机器并增加人工检查，说明只提高产量不够。没有证据说明全面放弃自动化、消费者普遍偏好或损坏原因。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e102",
+      "subject": "英语",
+      "topic": "范围限定",
+      "prompt": "Several firms in a small survey reported lower rent after moving outside the city centre. The report did not measure commuting costs. Which conclusion is justified?",
+      "options": [
+        "Moving always reduces total business costs.",
+        "Some surveyed firms paid less rent after moving.",
+        "Commuting costs fell for every employee.",
+        "The city centre no longer attracts businesses."
+      ],
+      "answer": 1,
+      "explanation": "several 和 small survey 限定了样本，lower rent 仅说明租金。总成本还包含通勤等未测项目，不能由局部样本推及所有公司。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e103",
+      "subject": "英语",
+      "topic": "转折后的重点",
+      "prompt": "Online courses make lectures available to more people. Access, however, is only a first step: learners still need time, feedback and opportunities to practise. The author mainly argues that:",
+      "options": [
+        "Recorded lectures should be removed.",
+        "Wider access needs support to produce learning.",
+        "Access to lectures guarantees learning.",
+        "Teachers should avoid giving feedback."
+      ],
+      "answer": 1,
+      "explanation": "however 把重点转到学习还需要时间、反馈和练习。作者认可扩大可及性，但反对把可及性直接等同于学习效果。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e104",
+      "subject": "英语",
+      "topic": "语境词义",
+      "prompt": "The company will retain experienced staff during the restructuring because their knowledge is difficult to replace. In this sentence, “retain” means:",
+      "options": [
+        "keep rather than lose",
+        "replace immediately",
+        "pay less than before",
+        "move overseas"
+      ],
+      "answer": 0,
+      "explanation": "because 后的“知识难以替代”解释了保留员工的原因。retain 在这里表示留住，不是立即更换或降薪。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e105",
+      "subject": "英语",
+      "topic": "例证作用",
+      "prompt": "A restaurant may sell more meals after lowering prices, but earn less profit. This example illustrates why managers should distinguish revenue from earnings after costs. Why is the restaurant mentioned?",
+      "options": [
+        "To prove restaurants should never cut prices.",
+        "To show that stronger sales need not mean higher profit.",
+        "To establish that all costs are fixed.",
+        "To recommend opening more restaurants."
+      ],
+      "answer": 1,
+      "explanation": "例子服务于“收入与扣除成本后的收益不同”这一观点。它展示一种可能性，不是对所有降价行为作结论。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e106",
+      "subject": "英语",
+      "topic": "指代与衔接",
+      "prompt": "The city improved bus frequency and made fares easier to understand. These changes attracted passengers who had previously driven to work. “These changes” refers to:",
+      "options": [
+        "Passengers driving more frequently.",
+        "Higher fares and fewer bus routes.",
+        "More frequent buses and clearer fares.",
+        "The closing of city workplaces."
+      ],
+      "answer": 2,
+      "explanation": "复数指示语 These changes 承接前句的两项改变：班次更密、票价更易理解。其余选项要么颠倒含义，要么没有出现。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e107",
+      "subject": "英语",
+      "topic": "相关与因果边界",
+      "prompt": "Workers who used a planning app completed more tasks in an observational study. The researchers noted that highly organised workers might be more likely to choose the app. What concern is raised?",
+      "options": [
+        "The app cannot run on phones.",
+        "User selection may partly explain the observed difference.",
+        "All workers were randomly assigned.",
+        "Completing tasks is impossible to measure."
+      ],
+      "answer": 1,
+      "explanation": "原本更有条理的人可能主动选择应用，形成自我选择偏差。观察到的差异因此不一定全部来自应用本身。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e108",
+      "subject": "英语",
+      "topic": "作者态度",
+      "prompt": "The trial results are encouraging, but the sample is small and the follow-up lasted only a month. Larger studies are needed before broad adoption. The author is:",
+      "options": [
+        "Hopeful while reserving judgment.",
+        "Certain that adoption will fail.",
+        "Uninterested in any further evidence.",
+        "Fully confident in immediate universal adoption."
+      ],
+      "answer": 0,
+      "explanation": "encouraging 表达积极判断，小样本、短随访和需要更大研究保留了结论。态度是有希望但审慎。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e109",
+      "subject": "英语",
+      "topic": "必要条件表达",
+      "prompt": "A refund will be issued only if the item is returned within thirty days. A customer received a refund under this rule. What must be true?",
+      "options": [
+        "Every item returned within thirty days gets a refund.",
+        "The customer paid in cash.",
+        "The item was returned within thirty days.",
+        "The item had never been used."
+      ],
+      "answer": 2,
+      "explanation": "A only if B 表示 A→B。拿到退款可推出满足三十天内退货这一必要条件，但无法反推只要按时退货就一定退款。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e110",
+      "subject": "英语",
+      "topic": "反事实信息",
+      "prompt": "The retailer had expected the new branch to be profitable within a year. Two years later, it was still losing money. Which statement is supported?",
+      "options": [
+        "The branch exceeded the original profit expectation.",
+        "The retailer never made a forecast.",
+        "The branch was closed before opening.",
+        "The branch had not met the original profitability timetable."
+      ],
+      "answer": 3,
+      "explanation": "原预期一年内盈利，实际两年后仍亏损，直接说明没有按原时间表盈利。不能推出是否最终关闭或今后表现。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e111",
+      "subject": "英语",
+      "topic": "标题概括",
+      "prompt": "Many employers once treated training as a one-off event. Rapid changes in tools now require employees to revisit skills throughout their careers. Short courses work best when linked to real tasks and regular feedback. Which title best fits?",
+      "options": [
+        "Why Tools Never Change",
+        "The End of Workplace Learning",
+        "How to Avoid Feedback at Work",
+        "From One-Off Training to Continuous Learning"
+      ],
+      "answer": 3,
+      "explanation": "全文从一次性培训转向贯穿职业生涯的持续学习，并说明任务与反馈的重要性。最佳标题覆盖这一主线。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e112",
+      "subject": "英语",
+      "topic": "比例与数量",
+      "prompt": "The share of customers using cash fell from 40% to 30%, while the total number of customers doubled. What follows about the number of cash users?",
+      "options": [
+        "It increased despite the lower share.",
+        "It fell by half.",
+        "It stayed exactly the same.",
+        "It fell by ten customers."
+      ],
+      "answer": 0,
+      "explanation": "设原客户100人，现金用户40人；新客户200人，现金用户60人。比例下降不等于绝对数量下降。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e113",
+      "subject": "英语",
+      "topic": "隐含前提",
+      "prompt": "A company plans to replace printed manuals with online guides to make instructions easier to access. Which condition is most directly needed for this benefit?",
+      "options": [
+        "Printed manuals contain no useful information.",
+        "All competitors use identical software.",
+        "The company stops updating its instructions.",
+        "Intended users can reach and use the online guides."
+      ],
+      "answer": 3,
+      "explanation": "“更易获取”的收益以目标用户确实能访问和使用在线指南为前提。无需假设纸质内容毫无价值或竞争者一致。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e114",
+      "subject": "英语",
+      "topic": "对比对象",
+      "prompt": "Compared with firms that expanded rapidly, firms that grew slowly held more cash during the downturn. The report did not compare their profits. What was actually compared?",
+      "options": [
+        "Profits earned before and after expansion.",
+        "The personal income of their customers.",
+        "Cash holdings of firms with different growth rates.",
+        "Cash holdings of every firm in the world."
+      ],
+      "answer": 2,
+      "explanation": "比较的是不同增长速度企业在衰退期间的现金持有量。原文明确未比较利润，不能换成盈利能力的结论。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e115",
+      "subject": "英语",
+      "topic": "避免绝对化",
+      "prompt": "The new tool can shorten routine editing tasks, though complex revisions still require experienced editors. Which statement matches the passage?",
+      "options": [
+        "Experienced editors are no longer needed.",
+        "Every editing task now takes less time.",
+        "Complex revisions have become unnecessary.",
+        "The tool may help routine work without replacing all expertise."
+      ],
+      "answer": 3,
+      "explanation": "can 和 routine 限定工具作用，though 后强调复杂修订仍需经验。选项必须同时保留收益与边界。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e116",
+      "subject": "英语",
+      "topic": "推测的证据强度",
+      "prompt": "Empty office desks may indicate more remote working, but they could also reflect staff being on leave. Without attendance records, the reason remains unclear. The passage emphasises:",
+      "options": [
+        "The same observation can have different explanations.",
+        "A single visible sign proves one explanation.",
+        "Remote working has ended everywhere.",
+        "Staff never take leave."
+      ],
+      "answer": 0,
+      "explanation": "空桌既可由远程办公也可由休假解释。缺少考勤信息时应保留多个假说，不能把表面现象当作原因证明。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e117",
+      "subject": "英语",
+      "topic": "词组辨析",
+      "prompt": "The committee ruled out a price increase for this quarter but said it might reconsider next year. “ruled out” most nearly means:",
+      "options": [
+        "Required by law immediately.",
+        "Made more likely than before.",
+        "Excluded as an option for now.",
+        "Approved for every future period."
+      ],
+      "answer": 2,
+      "explanation": "rule out 表示排除。this quarter 与 might reconsider next year 限定当前季度，不能理解为永久排除或已经批准。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e118",
+      "subject": "英语",
+      "topic": "先后顺序",
+      "prompt": "Applicants must submit a draft before receiving feedback. They then have a week to revise it before final submission. What happens immediately after feedback in the described process?",
+      "options": [
+        "The application is automatically accepted.",
+        "No further changes are allowed.",
+        "Applicants receive a refund.",
+        "Applicants have an opportunity to revise the draft."
+      ],
+      "answer": 3,
+      "explanation": "submit draft → receive feedback → revise → final submission。题目问反馈后的阶段，定位 then 后的信息即可。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e119",
+      "subject": "英语",
+      "topic": "论证的限制",
+      "prompt": "A start-up reports that users love its service, citing comments from its most active customers. However, it has not asked people who stopped using it. The main limitation is:",
+      "options": [
+        "Comments are necessarily false.",
+        "The evidence may omit dissatisfied former users.",
+        "Active customers cannot express opinions.",
+        "A service can never have loyal users."
+      ],
+      "answer": 1,
+      "explanation": "只询问活跃用户会遗漏流失者的体验，样本可能偏向满意人群。局限是覆盖不足，不是所有反馈必定虚假。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e120",
+      "subject": "英语",
+      "topic": "段落推理",
+      "prompt": "A town subsidised home insulation. Household energy use fell, but a mild winter occurred at the same time. To judge the subsidy’s effect, analysts should account for weather. Why?",
+      "options": [
+        "Weather may explain part of the observed reduction.",
+        "Insulation cannot affect energy use.",
+        "Mild winters always increase heating demand.",
+        "Subsidies determine the temperature."
+      ],
+      "answer": 0,
+      "explanation": "暖冬本身可能减少供暖能耗，是同时变化的因素。控制天气才能更接近识别补贴影响，不能直接把全部下降归于补贴。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m101",
+      "subject": "数学",
+      "topic": "利润率与售价",
+      "prompt": "某商品成本为80元，按成本的25%加价出售，再按标价打九折。每件利润是多少元？",
+      "options": [
+        "18",
+        "10",
+        "20",
+        "25"
+      ],
+      "answer": 1,
+      "explanation": "标价80×1.25=100元，实际售价100×0.9=90元，利润90−80=10元。利润率以成本为分母，折扣以标价为基数。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m102",
+      "subject": "数学",
+      "topic": "混合溶液",
+      "prompt": "将100克质量分数为20%的盐水与100克质量分数为40%的盐水混合，不发生损耗。混合后盐的质量分数为？",
+      "options": [
+        "20%",
+        "40%",
+        "30%",
+        "60%"
+      ],
+      "answer": 2,
+      "explanation": "盐的总质量为100×20%+100×40%=60克，总质量200克，60÷200=30%。本题两份等质量才可直接平均浓度。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m103",
+      "subject": "数学",
+      "topic": "行程与平均速度",
+      "prompt": "汽车以60千米/小时行驶去程，以40千米/小时沿同一路线返回。往返全程的平均速度为多少千米/小时？",
+      "options": [
+        "45",
+        "50",
+        "52",
+        "48"
+      ],
+      "answer": 3,
+      "explanation": "设单程120千米，去程2小时、返程3小时，总路程240千米，总时间5小时，平均速度48。等路程不能直接算速度的算术平均。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m104",
+      "subject": "数学",
+      "topic": "工程合作",
+      "prompt": "甲独做某项工作需12天，乙独做需6天。两人合作2天后，余下工作由乙独做，还需几天？",
+      "options": [
+        "1",
+        "3",
+        "2",
+        "4"
+      ],
+      "answer": 1,
+      "explanation": "合作效率1/12+1/6=1/4，2天完成1/2；剩余1/2由乙做，需要(1/2)÷(1/6)=3天。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m105",
+      "subject": "数学",
+      "topic": "集合计数",
+      "prompt": "班级40人中，25人选英语课，20人选逻辑课，每人至少选一门。两门都选的有多少人？",
+      "options": [
+        "10",
+        "15",
+        "5",
+        "20"
+      ],
+      "answer": 2,
+      "explanation": "容斥：两门都选=25+20−40=5。题干的“每人至少一门”确保并集是全班40人。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m106",
+      "subject": "数学",
+      "topic": "排列与职位",
+      "prompt": "从6人中选出组长和副组长各1名，一人不能兼任，有多少种安排？",
+      "options": [
+        "15",
+        "36",
+        "12",
+        "30"
+      ],
+      "answer": 3,
+      "explanation": "两个职位不同，先选组长6种，再选副组长5种，共6×5=30种。若不区分职位才用组合。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m107",
+      "subject": "数学",
+      "topic": "不放回抽取",
+      "prompt": "袋中有3个红球和2个蓝球，各球被抽到的机会相同。依次不放回抽2个球，两球都是红球的概率为？",
+      "options": [
+        "3/10",
+        "3/5",
+        "9/25",
+        "1/5"
+      ],
+      "answer": 0,
+      "explanation": "第一次红球3/5，已取走一红球后第二次红球2/4，相乘为6/20=3/10。不放回时分母和红球数均变化。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m108",
+      "subject": "数学",
+      "topic": "独立事件",
+      "prompt": "某设备每次启动成功的概率为0.8，两次启动相互独立。两次中至少一次成功的概率为？",
+      "options": [
+        "0.64",
+        "0.8",
+        "0.96",
+        "0.4"
+      ],
+      "answer": 2,
+      "explanation": "用对立事件：两次均失败的概率0.2×0.2=0.04，至少一次成功为1−0.04=0.96。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m109",
+      "subject": "数学",
+      "topic": "一元二次方程",
+      "prompt": "若 x 为正数且 x²−5x+6=0，则 x 的所有可能值为？",
+      "options": [
+        "仅2",
+        "2或3",
+        "仅3",
+        "−2或−3"
+      ],
+      "answer": 1,
+      "explanation": "因式分解为(x−2)(x−3)=0，两个根2和3均满足正数条件，不能只保留其中一个。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m110",
+      "subject": "数学",
+      "topic": "绝对值",
+      "prompt": "满足 |x−2|=3 的所有实数 x 为？",
+      "options": [
+        "−1或5",
+        "只有5",
+        "−5或1",
+        "只有−1"
+      ],
+      "answer": 0,
+      "explanation": "绝对值等于3，内部表达式可为3或−3：x−2=3或x−2=−3，解得5或−1。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m111",
+      "subject": "数学",
+      "topic": "等差数列",
+      "prompt": "等差数列首项为3，公差为2，前10项的和是多少？",
+      "options": [
+        "100",
+        "110",
+        "120",
+        "130"
+      ],
+      "answer": 2,
+      "explanation": "第10项=3+9×2=21，前10项和=10×(3+21)÷2=120。注意末项包含9个公差。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m112",
+      "subject": "数学",
+      "topic": "几何面积",
+      "prompt": "直角三角形两条直角边长分别为6和8，其内切圆半径为？",
+      "options": [
+        "1",
+        "3",
+        "4",
+        "2"
+      ],
+      "answer": 3,
+      "explanation": "斜边10，面积6×8÷2=24，半周长(6+8+10)÷2=12。面积=内切圆半径×半周长，所以半径2。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m113",
+      "subject": "数学",
+      "topic": "几何体积",
+      "prompt": "圆柱底面半径由2变为4，高由6变为3，新体积是原体积的几倍？",
+      "options": [
+        "2",
+        "1",
+        "4",
+        "8"
+      ],
+      "answer": 0,
+      "explanation": "圆柱体积πr²h。半径扩大2倍使底面积变4倍，高减半，体积比例4×1/2=2。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m114",
+      "subject": "数学",
+      "topic": "均值与中位数",
+      "prompt": "五个数据为2、4、4、5、20，它们的平均数与中位数分别为？",
+      "options": [
+        "4和7",
+        "7和4",
+        "7和5",
+        "5和4"
+      ],
+      "answer": 1,
+      "explanation": "总和35，平均数35÷5=7；已排序后第3个数4是中位数。较大的20会抬高平均数。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m115",
+      "subject": "数学",
+      "topic": "整除与余数",
+      "prompt": "一个整数除以5余3，则这个整数的2倍除以5余几？",
+      "options": [
+        "0",
+        "2",
+        "3",
+        "1"
+      ],
+      "answer": 3,
+      "explanation": "设整数为5k+3，2倍为10k+6=5(2k+1)+1，因此余1。余数必须小于除数。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m116",
+      "subject": "数学",
+      "topic": "比例分配",
+      "prompt": "甲乙丙按2∶3∶5分配奖金，乙比甲多400元。丙分得多少元？",
+      "options": [
+        "800",
+        "1200",
+        "1600",
+        "2000"
+      ],
+      "answer": 3,
+      "explanation": "乙与甲差1份，对应400元，丙5份即2000元。不要把400误当成全部奖金。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m117",
+      "subject": "数学",
+      "topic": "不等式范围",
+      "prompt": "已知 x>0 且 x+4/x 的最小值为某个数，该最小值是多少？",
+      "options": [
+        "2",
+        "4",
+        "5",
+        "8"
+      ],
+      "answer": 1,
+      "explanation": "由均值不等式x+4/x≥2√4=4，x=2时等号成立。只给下界还需确认可以取到。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m118",
+      "subject": "数学",
+      "topic": "复利增长",
+      "prompt": "某指标初值为100，连续两年每年增长10%。两年后指标值为？",
+      "options": [
+        "121",
+        "120",
+        "110",
+        "122"
+      ],
+      "answer": 0,
+      "explanation": "每年的基数都更新：100×1.1×1.1=121，不能把两年的增长简单相加为20%。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m119",
+      "subject": "数学",
+      "topic": "分段计价",
+      "prompt": "快递首重1千克收费10元，超过1千克的部分每千克收费3元，不足1千克按1千克计。寄3.2千克物品需多少元？",
+      "options": [
+        "19",
+        "16",
+        "16.6",
+        "22"
+      ],
+      "answer": 0,
+      "explanation": "超过首重2.2千克，向上计3个续重单位，收费10+3×3=19元。不能对总重量重复计算首重。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "m120",
+      "subject": "数学",
+      "topic": "条件充分性辨析",
+      "prompt": "要确定实数 x 是否等于2。（1）x²=4；（2）x>0。下列判断正确的是？",
+      "options": [
+        "仅（1）充分",
+        "仅（2）充分",
+        "两条件单独均不充分，联合充分",
+        "两条件各自都充分"
+      ],
+      "answer": 2,
+      "explanation": "（1）允许±2，不能唯一确定；（2）允许任意正数，也不充分。联合后排除−2，只剩2。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l101",
+      "subject": "逻辑",
+      "topic": "充分条件链",
+      "prompt": "所有通过复核的项目都获得拨款，所有获得拨款的项目都要提交月报。项目甲通过复核。必能推出？",
+      "options": [
+        "甲要提交月报",
+        "所有提交月报的项目都通过复核",
+        "甲已经结项",
+        "没有其他项目获得拨款"
+      ],
+      "answer": 0,
+      "explanation": "通过复核→获得拨款→提交月报。顺着充分条件链可推出甲需提交月报，不能把整个链条倒过来。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l102",
+      "subject": "逻辑",
+      "topic": "必要条件逆否",
+      "prompt": "只有完成培训的人才能值夜班。小林没有完成培训。依据该规则，必能推出？",
+      "options": [
+        "小林已经值过夜班",
+        "完成培训的人都值夜班",
+        "其他人都没完成培训",
+        "小林不能值夜班"
+      ],
+      "answer": 3,
+      "explanation": "值夜班→完成培训，其逆否为未完成培训→不能值夜班。完成培训仅是必要条件，并不保证一定值夜班。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l103",
+      "subject": "逻辑",
+      "topic": "选言推理",
+      "prompt": "服务器故障由电源异常或网络异常至少一项造成。检查确定电源正常。根据这两个前提，必能推出？",
+      "options": [
+        "两项都异常",
+        "网络异常",
+        "两项都正常",
+        "故障原因无法判断"
+      ],
+      "answer": 1,
+      "explanation": "P或Q至少一个成立，否定P后必须保留Q。本题前提已把原因限制在两项内，不能自行加入第三种原因。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l104",
+      "subject": "逻辑",
+      "topic": "合取命题否定",
+      "prompt": "“甲参加会议并且乙提交报告”的逻辑否定为？",
+      "options": [
+        "甲不参会且乙不交报告",
+        "甲参会但乙不交报告",
+        "甲不参会而乙交报告",
+        "甲不参会或乙不交报告，至少一项成立"
+      ],
+      "answer": 3,
+      "explanation": "非(P且Q)=非P或非Q。只要至少一个条件未满足，原来的合取命题就为假；不要求两项都失败。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l105",
+      "subject": "逻辑",
+      "topic": "条件命题否定",
+      "prompt": "“如果方案获批，那么预算增加”的逻辑否定为？",
+      "options": [
+        "方案获批且预算没有增加",
+        "方案未获批且预算增加",
+        "方案未获批或预算增加",
+        "预算增加且方案获批"
+      ],
+      "answer": 0,
+      "explanation": "P→Q 的否定是P且非Q，即出现承诺的前件但未出现后件。否定前件本身并不能推翻条件命题。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l106",
+      "subject": "逻辑",
+      "topic": "量词转换",
+      "prompt": "“并非所有新员工都接受过财务培训”等价于？",
+      "options": [
+        "所有新员工都未接受财务培训",
+        "至少有一名老员工接受培训",
+        "至少有一名新员工未接受财务培训",
+        "只有一名新员工接受培训"
+      ],
+      "answer": 2,
+      "explanation": "否定全称命题得到存在反例：至少一名新员工没接受过财务培训。“不是所有”不等于“所有都不”。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l107",
+      "subject": "逻辑",
+      "topic": "集合传递",
+      "prompt": "所有审计员都熟悉会计准则，没有临时员工熟悉会计准则。可以推出？",
+      "options": [
+        "所有非临时员工都是审计员",
+        "所有懂准则的人都是审计员",
+        "没有人熟悉会计准则",
+        "没有审计员是临时员工"
+      ],
+      "answer": 3,
+      "explanation": "审计员集合包含于熟悉准则者，临时员工集合与熟悉准则者无交集，因此两者也无交集。不能由此扩大为所有非临时员工。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l108",
+      "subject": "逻辑",
+      "topic": "排序约束",
+      "prompt": "甲、乙、丙三人分别排在第1、2、3位。甲不在第1位，乙排在丙之前。以下哪种排序不可能？",
+      "options": [
+        "甲在第2位",
+        "丙在第1位",
+        "甲在第3位",
+        "乙在第1位"
+      ],
+      "answer": 1,
+      "explanation": "乙必须在丙之前，所以丙不可能排第1。允许的顺序为乙甲丙、乙丙甲：甲可在第2或第3，乙可在第1。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l109",
+      "subject": "逻辑",
+      "topic": "最少保证数",
+      "prompt": "抽屉里只有红、蓝、绿三种颜色的袜子，每种至少5只。不看颜色任取，至少取几只才能保证有两只同色？",
+      "options": [
+        "3",
+        "2",
+        "4",
+        "6"
+      ],
+      "answer": 2,
+      "explanation": "最不利情况先取三只各不相同。第4只只能属于已有三色之一，因此保证一对。三只可能无同色。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l110",
+      "subject": "逻辑",
+      "topic": "因果削弱",
+      "prompt": "某部门换了办公椅后请假率下降，经理据此认为新椅子降低了请假率。哪项若为真最能削弱该归因？",
+      "options": [
+        "新椅子有多种颜色",
+        "同期公司取消了无理由请假政策",
+        "椅子可以调节高度",
+        "员工愿意讨论新椅子"
+      ],
+      "answer": 1,
+      "explanation": "请假政策同期收紧提供直接影响请假率的另一原因。其他选项涉及外观或偏好，没有同等强度的替代解释。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l111",
+      "subject": "逻辑",
+      "topic": "因果加强",
+      "prompt": "学校认为新的阅读课程提高了阅读成绩。哪项若为真，最能增强这个判断？",
+      "options": [
+        "课程宣传册印刷精美",
+        "随机分组且其他条件相近时，新课程组提升明显更多",
+        "教师普遍喜欢课程名称",
+        "部分学生购买了更多书架"
+      ],
+      "answer": 1,
+      "explanation": "随机分组减少起点差异，其他条件相近减少混杂，组间成绩提升差异直接支持课程效果。喜欢名称不证明效果。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l112",
+      "subject": "逻辑",
+      "topic": "代表性偏差",
+      "prompt": "某调查只邀请付费会员填写问卷，据此宣布所有使用者都满意。该推理最主要的问题是？",
+      "options": [
+        "问卷不能询问满意度",
+        "付费会员一定说谎",
+        "满意度永远无法研究",
+        "样本未必代表未付费及已流失的使用者"
+      ],
+      "answer": 3,
+      "explanation": "付费会员是经过选择的群体，未覆盖其他用户。问题在外推与代表性，而不是断言所有答卷不可信。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l113",
+      "subject": "逻辑",
+      "topic": "比例与基数",
+      "prompt": "甲工厂不合格率为1%，乙工厂为2%，所以甲的不合格品数量一定更少。这个结论缺少什么关键条件？",
+      "options": [
+        "两厂产量或可比较的产量基数",
+        "两厂名称长度相同",
+        "工人都喜欢工作",
+        "厂房颜色一致"
+      ],
+      "answer": 0,
+      "explanation": "数量=产量×不合格率。若甲产量远大于乙，即使比例低，不合格品绝对数量也可能更高。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l114",
+      "subject": "逻辑",
+      "topic": "幸存者偏差",
+      "prompt": "一本书只访谈创业成功者，发现他们常熬夜，因此建议熬夜可以提高创业成功率。最应补充哪类信息？",
+      "options": [
+        "成功者喜欢哪种咖啡",
+        "书的印刷数量",
+        "成功者住所的装修",
+        "创业失败者的熬夜情况及其他差异"
+      ],
+      "answer": 3,
+      "explanation": "只观察成功者无法知道熬夜在失败者中是否也常见，也无法排除其他差异。需要完整比较群体，而不是把幸存者特征当因果。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l115",
+      "subject": "逻辑",
+      "topic": "指标替代",
+      "prompt": "公司把客服“平均通话时间缩短”视为服务质量必然提高。哪项最直接指出这一推断的漏洞？",
+      "options": [
+        "通话变短可能来自过早挂断，未解决客户问题",
+        "客服电话号码可能很长",
+        "客服人员需要休息",
+        "有些客户不使用电话"
+      ],
+      "answer": 0,
+      "explanation": "通话时长是过程指标，不等于问题解决率。过早挂断可使指标变好而服务变差，直接反驳必然联系。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l116",
+      "subject": "逻辑",
+      "topic": "共同原因",
+      "prompt": "调查发现购买参考书多的人考试成绩较好，据此断言多买书导致成绩提高。以下哪项提出了这一关联的另一种因果解释？",
+      "options": [
+        "参考书价格有高有低",
+        "书店每天开门",
+        "学习投入更高的学生本来成绩更好，也更愿意买书",
+        "考试有不同科目"
+      ],
+      "answer": 2,
+      "explanation": "学习投入可能同时影响买书与成绩，是共同原因，说明观察到的关联不一定是买书单向导致成绩提高。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l117",
+      "subject": "逻辑",
+      "topic": "类比边界",
+      "prompt": "某软件在大型企业提高了协作效率，销售人员认为个体商户使用后也必然同样受益。哪项信息最能检验这个类比？",
+      "options": [
+        "两类用户是否有相似的协作任务与使用成本",
+        "软件图标是否漂亮",
+        "销售人员是否使用手机",
+        "大型企业的办公楼有几层"
+      ],
+      "answer": 0,
+      "explanation": "类比需要对结论有关的相似性。任务、人数和使用成本会影响收益；外观与办公楼层数不是关键联系。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l118",
+      "subject": "逻辑",
+      "topic": "区分证据与结论",
+      "prompt": "某产品广告说“没有发现用户投诉，所以产品没有缺陷”。哪项最能说明证据不足？",
+      "options": [
+        "广告篇幅较短",
+        "产品包装使用蓝色",
+        "用户可能不知道投诉渠道，未投诉不等于无缺陷",
+        "广告没有出现价格"
+      ],
+      "answer": 2,
+      "explanation": "缺少投诉记录不等于缺少缺陷，报告渠道或用户行为会影响是否被观察到。证据缺失不能直接当作不存在的证据。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l119",
+      "subject": "逻辑",
+      "topic": "互斥选项推理",
+      "prompt": "某活动只选线上或线下一种形式。如果选线下就必须租场地。已知没有租场地且活动已按规则举办。可以推出？",
+      "options": [
+        "两种形式同时举办",
+        "活动选择了线上形式",
+        "活动没有举办",
+        "线上活动必须租场地"
+      ],
+      "answer": 1,
+      "explanation": "线下→租场地，未租→非线下；又因活动只能在线上、线下中选一种，故为线上。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "l120",
+      "subject": "逻辑",
+      "topic": "反例与全称结论",
+      "prompt": "有人声称“所有低价产品的质量都差”。下列哪项若得到可靠证实，足以否定这句话？",
+      "options": [
+        "有一个高价产品质量差",
+        "有一个低价产品质量差",
+        "有一个低价产品质量好",
+        "多数高价产品质量好"
+      ],
+      "answer": 2,
+      "explanation": "全称结论只需一个属于前件但不满足后件的反例即可推翻：低价且质量好。高价产品不属于该全称命题的范围。",
+      "version": 1,
+      "source": "原创基础与专项练习（原80题）",
+      "difficulty": "基础"
+    },
+    {
+      "id": "e201",
+      "version": 1,
+      "subject": "英语",
+      "topic": "论据与结论",
+      "prompt": "A firm cut its training budget, and errors rose that quarter. Yet it also hired many inexperienced workers. Which conclusion is best supported?",
+      "options": [
+        "The budget cut was the only cause of errors.",
+        "New workers never benefit from training.",
+        "Several changes may explain the rise in errors.",
+        "Restoring the budget will eliminate all errors."
+      ],
+      "answer": 2,
+      "explanation": "同期存在培训预算与员工经验两项变化，不能将错误增加唯一归因于预算。may保留了材料中的不确定性。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e202",
+      "version": 1,
+      "subject": "英语",
+      "topic": "价格与需求",
+      "prompt": "Sales fell after prices increased. The director notes that a rival opened nearby during the same period. Why is the rival mentioned?",
+      "options": [
+        "To offer another possible explanation for the sales decline.",
+        "To prove price has no effect on sales.",
+        "To show that the rival is more profitable.",
+        "To recommend closing the store."
+      ],
+      "answer": 0,
+      "explanation": "新竞争者是销售下降的替代解释；不能据此证明价格完全无影响，也没有利润或关店证据。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e203",
+      "version": 1,
+      "subject": "英语",
+      "topic": "作者态度",
+      "prompt": "The new tool could save time, but the trial was short and involved only expert users. Wider adoption should wait for broader tests. The author is:",
+      "options": [
+        "unreservedly enthusiastic",
+        "cautiously interested",
+        "completely opposed",
+        "unconcerned with evidence"
+      ],
+      "answer": 1,
+      "explanation": "could save time表示认可潜力，短期且专家样本的限制支持进一步测试，属于谨慎关注。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e204",
+      "version": 1,
+      "subject": "英语",
+      "topic": "语境词义",
+      "prompt": "The company sought to mitigate the damage by informing customers promptly. Here, “mitigate” most nearly means:",
+      "options": [
+        "conceal",
+        "measure precisely",
+        "make permanent",
+        "reduce the severity of"
+      ],
+      "answer": 3,
+      "explanation": "mitigate damage表示减轻损害，不是隐藏信息、精确测量或使损害永久化。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e205",
+      "version": 1,
+      "subject": "英语",
+      "topic": "主旨与边界",
+      "prompt": "Remote services widen access for people far from cities. However, unreliable internet can exclude those who need them most. The main point is that:",
+      "options": [
+        "remote services should be banned",
+        "distance is the only barrier to access",
+        "broader access also depends on reliable infrastructure",
+        "internet access guarantees good service"
+      ],
+      "answer": 2,
+      "explanation": "先肯定远程服务扩大覆盖，再指出网络条件限制；主旨是覆盖潜力需要基础设施支持。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e206",
+      "version": 1,
+      "subject": "英语",
+      "topic": "条件含义",
+      "prompt": "Applicants may receive a grant only if their project passes an independent review. Which statement must be true?",
+      "options": [
+        "Every reviewed project receives a grant.",
+        "Receiving a grant requires passing the review.",
+        "Rejected applicants never submitted a project.",
+        "Independent reviews guarantee success."
+      ],
+      "answer": 1,
+      "explanation": "A only if B表示A必须满足B，即获资助→通过审查；不能反推通过审查必获资助。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e207",
+      "version": 1,
+      "subject": "英语",
+      "topic": "时间限定",
+      "prompt": "The museum will remain closed until Friday and reopen on Friday morning. When can visitors first enter?",
+      "options": [
+        "Thursday morning",
+        "Thursday evening",
+        "Friday morning",
+        "Saturday morning"
+      ],
+      "answer": 2,
+      "explanation": "后半句明确给出Friday morning。阅读时优先使用明确时间而非自行推断until是否包含终点。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e208",
+      "version": 1,
+      "subject": "英语",
+      "topic": "比较口径",
+      "prompt": "Brand A sold more units than Brand B, but each unit of A cost much less. What cannot be determined from this information?",
+      "options": [
+        "Which brand sold more units.",
+        "Whether A had a lower unit price.",
+        "Whether B had a higher unit price.",
+        "Which brand earned more sales revenue."
+      ],
+      "answer": 3,
+      "explanation": "收入=销量×单价。只知道销量和单价的相反排序，没有具体倍数，无法比较总收入。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e209",
+      "version": 1,
+      "subject": "英语",
+      "topic": "指代",
+      "prompt": "Managers first listed the assumptions behind the forecast. They then tested each one against recent data. “They” refers to:",
+      "options": [
+        "managers",
+        "assumptions",
+        "forecasts",
+        "recent data"
+      ],
+      "answer": 0,
+      "explanation": "代词They的执行主体与上一句主语Managers一致；assumptions不会主动进行测试。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e210",
+      "version": 1,
+      "subject": "英语",
+      "topic": "让步关系",
+      "prompt": "Even though demand recovered, the plant remained idle because key parts were unavailable. Why did the plant remain idle?",
+      "options": [
+        "Demand was still falling.",
+        "The plant lacked necessary parts.",
+        "Customers rejected all its products.",
+        "Production costs had become zero."
+      ],
+      "answer": 1,
+      "explanation": "because后的关键零件缺货是直接原因；even though指出需求恢复这一让步条件。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e211",
+      "version": 1,
+      "subject": "英语",
+      "topic": "证据范围",
+      "prompt": "In a survey of 200 volunteers, 60% preferred flexible hours. Which claim stays within the evidence?",
+      "options": [
+        "All workers prefer flexible hours.",
+        "Flexible hours always increase output.",
+        "Most respondents in this survey preferred flexible hours.",
+        "Volunteers are representative of every occupation."
+      ],
+      "answer": 2,
+      "explanation": "调查支持的是本次受访者中的多数偏好，志愿样本不保证代表全部劳动者，也未测产出。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e212",
+      "version": 1,
+      "subject": "英语",
+      "topic": "反事实辨析",
+      "prompt": "Had the backup system worked, fewer files would have been lost. The sentence implies that:",
+      "options": [
+        "no files were lost",
+        "the backup system worked perfectly",
+        "all lost files can be recovered",
+        "the backup system did not work as intended"
+      ],
+      "answer": 3,
+      "explanation": "Had...worked是对过去的虚拟条件，暗示备份系统没有按预期工作；并未承诺恢复全部文件。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e213",
+      "version": 1,
+      "subject": "英语",
+      "topic": "目的定位",
+      "prompt": "The team published its test procedure so that other researchers could repeat the experiment. The purpose was to:",
+      "options": [
+        "support reproducibility",
+        "prevent criticism",
+        "replace the results with opinions",
+        "guarantee identical findings in every setting"
+      ],
+      "answer": 0,
+      "explanation": "so that明确引出目的：使他人复现实验。开放方法有助于复现，但不保证所有条件下结果完全相同。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e214",
+      "version": 1,
+      "subject": "英语",
+      "topic": "隐含前提",
+      "prompt": "The plan assumes that customers will accept a longer delivery time in exchange for a lower price. Its success therefore depends partly on:",
+      "options": [
+        "competitors leaving the market",
+        "customers valuing savings more than speed in this trade-off",
+        "delivery times becoming irrelevant to everyone",
+        "prices rising every year"
+      ],
+      "answer": 1,
+      "explanation": "方案的交换条件是低价补偿等待；成立需要目标客户在该权衡中愿意牺牲速度，而非所有人都不在意时间。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e215",
+      "version": 1,
+      "subject": "英语",
+      "topic": "语境词义",
+      "prompt": "The pilot results were preliminary and should not be treated as a final verdict. “preliminary” means:",
+      "options": [
+        "fraudulent",
+        "irrelevant",
+        "early and not yet final",
+        "universally accepted"
+      ],
+      "answer": 2,
+      "explanation": "preliminary意为初步的，后半句not...final提供直接释义；初步不等于欺诈或无关。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e216",
+      "version": 1,
+      "subject": "英语",
+      "topic": "转折重点",
+      "prompt": "The software was inexpensive to buy. Its maintenance, however, required specialist staff. What does the passage emphasize?",
+      "options": [
+        "The software had no purchase cost.",
+        "Specialists cannot maintain software.",
+        "Maintenance was free.",
+        "A low purchase price may hide substantial ongoing costs."
+      ],
+      "answer": 3,
+      "explanation": "however将重点转向维护人力，提示初始价格不代表全生命周期成本；原文没有断言确切费用。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e217",
+      "version": 1,
+      "subject": "英语",
+      "topic": "相关与因果",
+      "prompt": "Students who used the library more often received higher grades. No other factors were controlled. Which interpretation is most careful?",
+      "options": [
+        "Library use and grades were associated, but causation is uncertain.",
+        "Library visits necessarily raised every grade.",
+        "Good grades made libraries unnecessary.",
+        "The association proves that motivation has no role."
+      ],
+      "answer": 0,
+      "explanation": "未控制其他因素，可能存在学习动机等混杂变量；只能确认所述相关关系。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e218",
+      "version": 1,
+      "subject": "英语",
+      "topic": "必要与充分",
+      "prompt": "The device works only when connected to a power supply, but a connection alone does not ensure it works. Power connection is:",
+      "options": [
+        "sufficient but unnecessary",
+        "necessary but not sufficient",
+        "neither necessary nor sufficient",
+        "both necessary and sufficient"
+      ],
+      "answer": 1,
+      "explanation": "only when给出必要条件，alone does not ensure明确否认充分性。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e219",
+      "version": 1,
+      "subject": "英语",
+      "topic": "主旨",
+      "prompt": "A city planted trees to cool streets. Survival rates were poor where watering was irregular. The lesson is that planting targets should be accompanied by maintenance plans. The passage mainly stresses:",
+      "options": [
+        "counting planted trees is always harmful",
+        "trees cannot cool streets",
+        "long-term care matters alongside initial installation",
+        "watering is the only factor affecting survival"
+      ],
+      "answer": 2,
+      "explanation": "结论句强调建设与维护并重，不否定绿化价值，也未声称浇水是唯一因素。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e220",
+      "version": 1,
+      "subject": "英语",
+      "topic": "段落功能",
+      "prompt": "After describing a successful trial, the writer lists three settings in which the approach may fail. This second part primarily:",
+      "options": [
+        "withdraws every earlier finding",
+        "changes the topic without explanation",
+        "proves the trial was fabricated",
+        "defines limits on generalizing the result"
+      ],
+      "answer": 3,
+      "explanation": "成功试验后的失败场景用于限定适用范围；边界说明不等于推翻全部结果。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e221",
+      "version": 1,
+      "subject": "英语",
+      "topic": "数量辨析",
+      "prompt": "Fewer than half of the respondents supported the proposal. Which statement is accurate?",
+      "options": [
+        "Less than 50% of respondents supported it.",
+        "Exactly 50% supported it.",
+        "No respondent supported it.",
+        "A majority supported it."
+      ],
+      "answer": 0,
+      "explanation": "fewer than half严格少于一半，不等于恰好一半或无人支持。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e222",
+      "version": 1,
+      "subject": "英语",
+      "topic": "动词辨析",
+      "prompt": "The board deferred its decision until more evidence became available. “deferred” is closest to:",
+      "options": [
+        "reversed permanently",
+        "postponed",
+        "approved unanimously",
+        "announced publicly"
+      ],
+      "answer": 1,
+      "explanation": "defer a decision指推迟决定，until more evidence解释了等待原因。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e223",
+      "version": 1,
+      "subject": "英语",
+      "topic": "限定语",
+      "prompt": "The policy helped small firms with limited access to credit. It did not examine larger firms. What is the safest inference?",
+      "options": [
+        "The policy harms all large firms.",
+        "Every small firm benefited equally.",
+        "The findings directly concern a particular group of small firms.",
+        "The policy removes every financing constraint."
+      ],
+      "answer": 2,
+      "explanation": "限定对象为信贷渠道有限的小企业，不能扩大为所有企业，也不能推断未研究的大企业受损。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e224",
+      "version": 1,
+      "subject": "英语",
+      "topic": "句间逻辑",
+      "prompt": "The model predicts average outcomes well. Nevertheless, it performs poorly for rare events. “Nevertheless” signals:",
+      "options": [
+        "an example",
+        "a definition",
+        "a sequence in time",
+        "a contrast or qualification"
+      ],
+      "answer": 3,
+      "explanation": "nevertheless表示尽管如此，引出对平均表现良好这一判断的限制。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e225",
+      "version": 1,
+      "subject": "英语",
+      "topic": "研究设计",
+      "prompt": "Participants chose whether to join the training. Those who joined later performed better. What weakens the claim that training alone caused the improvement?",
+      "options": [
+        "The groups may have differed in motivation before training.",
+        "The training had a published timetable.",
+        "Participants were told where to meet.",
+        "The report included a title."
+      ],
+      "answer": 0,
+      "explanation": "自愿选择可能导致训练前动机差异，自选择偏差削弱“只有训练造成提升”的因果主张。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e226",
+      "version": 1,
+      "subject": "英语",
+      "topic": "证据更新",
+      "prompt": "The report says the estimate is subject to revision as new data arrive. This means the estimate:",
+      "options": [
+        "can never be checked",
+        "may change when additional evidence is available",
+        "is certainly false",
+        "will change by the same amount each month"
+      ],
+      "answer": 1,
+      "explanation": "subject to revision表示可以依据新证据修订；可修订不等于已确定错误。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e227",
+      "version": 1,
+      "subject": "英语",
+      "topic": "双重目标",
+      "prompt": "The manager wants to reduce waste without lowering product quality. Which result best meets both aims?",
+      "options": [
+        "Less waste and more defective products.",
+        "Higher quality with much more waste.",
+        "Less waste with quality maintained.",
+        "No change in either measure."
+      ],
+      "answer": 2,
+      "explanation": "without lowering quality要求质量至少保持；同时reduce waste要求浪费减少。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e228",
+      "version": 1,
+      "subject": "英语",
+      "topic": "作者立场",
+      "prompt": "Competition can encourage innovation, yet cooperation is sometimes needed to set common standards. The writer suggests that:",
+      "options": [
+        "competition is always undesirable",
+        "cooperation eliminates innovation",
+        "common standards are never useful",
+        "competition and cooperation can serve different useful purposes"
+      ],
+      "answer": 3,
+      "explanation": "作者分别认可竞争促进创新与合作制定标准的作用，没有要求二者互相替代。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e229",
+      "version": 1,
+      "subject": "英语",
+      "topic": "信息缺失",
+      "prompt": "A subscription costs $12 per month. The article gives no information about discounts or usage. What can be calculated with certainty for 12 months at the stated monthly rate?",
+      "options": [
+        "$144 before any unspecified discounts.",
+        "The user’s total savings.",
+        "The cost per actual use.",
+        "The provider’s profit."
+      ],
+      "answer": 0,
+      "explanation": "12×12=144，题目明确按标示月价；没有使用次数、成本和折扣信息，其他项无法算出。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "e230",
+      "version": 1,
+      "subject": "英语",
+      "topic": "论证结构",
+      "prompt": "The author first presents a popular claim, then cites contrary evidence, and finally proposes a narrower version of the claim. The approach is to:",
+      "options": [
+        "accept the original claim without qualification",
+        "refine a claim in response to evidence",
+        "replace evidence with popularity",
+        "show that every claim is equally valid"
+      ],
+      "answer": 1,
+      "explanation": "呈现主张—提供反证—缩小适用范围，是依据证据修正论断。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l201",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "充分条件",
+      "prompt": "所有通过审计的项目都已归档。甲项目通过了审计。必然能推出什么？",
+      "options": [
+        "甲项目已归档",
+        "甲项目未归档",
+        "所有归档项目都通过审计",
+        "未通过审计的项目都未归档"
+      ],
+      "answer": 0,
+      "explanation": "通过审计→归档；肯定前件可肯定后件。不能逆推或否定前件推否定后件。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l202",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "逆否推理",
+      "prompt": "若设备运行，则电源接通。现已知电源未接通。必然能推出什么？",
+      "options": [
+        "设备可能正在运行",
+        "设备未运行",
+        "设备一定损坏",
+        "所有电源接通的设备都运行"
+      ],
+      "answer": 1,
+      "explanation": "运行→接通的逆否命题为未接通→未运行。设备是否损坏没有依据。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l203",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "否定前件",
+      "prompt": "若订单加急，则当天发货。乙订单未加急。能确定什么？",
+      "options": [
+        "乙当天不发货",
+        "乙一定当天发货",
+        "无法仅凭上述条件确定乙是否当天发货",
+        "所有当天发货订单都加急"
+      ],
+      "answer": 2,
+      "explanation": "未加急是否发货未被条件限制。否定前件不能推断后件真假。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l204",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "命题否定",
+      "prompt": "“所有受访者都购买了保险”的准确否定是：",
+      "options": [
+        "所有受访者都没有购买保险",
+        "有些受访者购买了保险",
+        "大部分受访者没买保险",
+        "至少一位受访者没有购买保险"
+      ],
+      "answer": 3,
+      "explanation": "全称肯定命题的否定是存在反例，不必所有人都不买。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l205",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "析取推理",
+      "prompt": "甲、乙两个方案中至少一个获批。已知甲未获批。必然能推出：",
+      "options": [
+        "乙获批",
+        "乙未获批",
+        "两者都获批",
+        "无法确定乙"
+      ],
+      "answer": 0,
+      "explanation": "至少一个获批且甲未获批，剩余乙必须获批；这里不要求排他性析取。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l206",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "条件链",
+      "prompt": "若扩建工厂，则必须获得许可；若获得许可，则须完成环评。现已扩建工厂。必然推出：",
+      "options": [
+        "没有完成环评",
+        "已完成环评",
+        "完成环评就必定扩建",
+        "未扩建就必定没许可"
+      ],
+      "answer": 1,
+      "explanation": "扩建→许可→环评，串联推出已完成环评；反向不成立。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l207",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "量词范围",
+      "prompt": "所有研究员都会统计学，有些会统计学的人会编程。必然能推出：",
+      "options": [
+        "所有研究员都会编程",
+        "有些研究员会编程",
+        "以上不能确定研究员是否会编程",
+        "没有研究员会编程"
+      ],
+      "answer": 2,
+      "explanation": "会编程的统计学人群未必包含研究员，交集未被确定。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l208",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "充分必要",
+      "prompt": "某档案只有同时获甲乙批准才可公开，但两人批准后仍需等到公告日。两人批准对公开而言是：",
+      "options": [
+        "充分且必要",
+        "充分但非必要",
+        "既非充分也非必要",
+        "必要但非充分"
+      ],
+      "answer": 3,
+      "explanation": "公开必须双批准，双批准仍需时间条件，因此必要而不充分。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l209",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "因果削弱",
+      "prompt": "新店启用自助点餐后营业额增长，店主据此称自助点餐导致增长。哪项最能削弱？",
+      "options": [
+        "同期附近大型展会带来大量客流",
+        "自助屏幕使用蓝色背景",
+        "店主喜欢新设备",
+        "新菜单字体较大"
+      ],
+      "answer": 0,
+      "explanation": "同期客流外因可独立解释收入增长，构成有力替代原因。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l210",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "因果加强",
+      "prompt": "两组条件相近的门店随机分配是否采用新排班，采用组缺勤率明显下降。哪项最加强排班改善缺勤的解释？",
+      "options": [
+        "采用组员工更喜欢咖啡",
+        "试验期间两组考勤口径一致且无其他差异化措施",
+        "部分门店有停车位",
+        "全体员工都知道公司名称"
+      ],
+      "answer": 1,
+      "explanation": "测量口径一致并排除同时干预，减少替代解释；不能因此声称永久普遍有效。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l211",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "选择偏差",
+      "prompt": "网站通过自愿填写问卷得出“用户普遍不满”。最应核查的偏差是：",
+      "options": [
+        "问卷标题长度",
+        "网页背景颜色",
+        "不满者是否更有动力填写问卷",
+        "公司是否更换过logo"
+      ],
+      "answer": 2,
+      "explanation": "自愿回应者可能与沉默用户系统不同，不能直接推及全体用户。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l212",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "幸存者偏差",
+      "prompt": "只研究仍经营的企业后发现，它们都曾大规模扩张，因而建议所有企业扩张。最关键的遗漏是：",
+      "options": [
+        "存续企业的办公室地址",
+        "存续企业是否使用邮箱",
+        "样本企业的名称",
+        "曾扩张却倒闭的企业"
+      ],
+      "answer": 3,
+      "explanation": "只观察存活者遗漏扩张失败样本，会高估策略效果。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l213",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "必要假设",
+      "prompt": "公司认为采用软件能降低总成本，因为软件可完成原工作。结论依赖哪个前提？",
+      "options": [
+        "软件的购置、维护及配套人力总成本低于节省的人工费用",
+        "所有员工都喜欢软件",
+        "软件外观优美",
+        "竞争者没有使用软件"
+      ],
+      "answer": 0,
+      "explanation": "能完成工作不等于总成本更低，结论需要成本净收益条件。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l214",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "解释差异",
+      "prompt": "产品单价下降，销量上升，但收入下降。哪项最能解释？",
+      "options": [
+        "公司改变了包装颜色",
+        "单价下降比例足以抵消销量增长",
+        "所有客户都住在同一地区",
+        "广告只在上午播放"
+      ],
+      "answer": 1,
+      "explanation": "收入=单价×销量；单价下降的乘数小于销量增加的倒数时收入下降。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l215",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "概念偷换",
+      "prompt": "某培训提高了学员的练习题正确率，因此必然提高正式考试总分。最直接的漏洞是：",
+      "options": [
+        "否认任何培训价值",
+        "结论没有使用百分数",
+        "把练习表现等同于正式考试总体表现",
+        "认为总分没有上限"
+      ],
+      "answer": 2,
+      "explanation": "练习范围、难度和限时条件可能不同，局部正确率不直接代表整卷成绩。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l216",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "集合关系",
+      "prompt": "有些医生是教师，所有教师都参加培训。必然为真的是：",
+      "options": [
+        "所有医生都参加培训",
+        "所有参加培训者都是医生",
+        "没有医生参加培训",
+        "有些医生参加培训"
+      ],
+      "answer": 3,
+      "explanation": "已知医生与教师有非空交集，该交集成员必然参加培训。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l217",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "排序",
+      "prompt": "三人依次发言，甲早于乙，乙早于丙。第二位是：",
+      "options": [
+        "乙",
+        "甲",
+        "丙",
+        "无法确定"
+      ],
+      "answer": 0,
+      "explanation": "两个严格先后条件组成唯一顺序甲—乙—丙。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l218",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "条件选人",
+      "prompt": "项目必须选甲乙丙三人中的两人，且若选甲就不选乙。哪些组合符合条件？",
+      "options": [
+        "只有甲乙",
+        "甲丙或乙丙",
+        "只有甲丙",
+        "甲乙或乙丙"
+      ],
+      "answer": 1,
+      "explanation": "枚举两人组合，甲乙违反约束，甲丙和乙丙均满足。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l219",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "互斥与穷尽",
+      "prompt": "一个文件的状态只能是草稿、审核中、已发布之一。已知不是草稿，也未发布。状态是：",
+      "options": [
+        "草稿",
+        "已发布",
+        "审核中",
+        "无法确定"
+      ],
+      "answer": 2,
+      "explanation": "题干给出穷尽且互斥三状态，排除两种后剩审核中。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l220",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "假言否定",
+      "prompt": "“若甲签字，则乙签字”这一命题为假的充要情况是：",
+      "options": [
+        "甲乙都签字",
+        "甲乙都不签字",
+        "甲不签字、乙签字",
+        "甲签字、乙不签字"
+      ],
+      "answer": 3,
+      "explanation": "实质蕴涵只有前真后假时为假。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l221",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "因果方向",
+      "prompt": "调查显示焦虑者更频繁查看通知，研究者据此断言查看通知导致焦虑。最直接的质疑是：",
+      "options": [
+        "焦虑本身也可能促使人查看通知",
+        "通知一定没有任何影响",
+        "所有人都焦虑",
+        "调查中人数为偶数"
+      ],
+      "answer": 0,
+      "explanation": "可能存在反向因果；质疑不需要证明通知完全无影响。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l222",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "相关指标",
+      "prompt": "两地区投诉数不同，管理者据此认定投诉数多的地区服务更差。最需要补充：",
+      "options": [
+        "两地区名称长度",
+        "各地区服务总次数及投诉统计口径",
+        "办公楼颜色",
+        "工作人员午餐习惯"
+      ],
+      "answer": 1,
+      "explanation": "绝对投诉数量受业务规模影响，应比较同口径投诉率及业务结构。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l223",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "双条件推理",
+      "prompt": "若甲或乙参与，则会议举行。会议没有举行。必然推出：",
+      "options": [
+        "甲参与且乙未参与",
+        "乙参与且甲未参与",
+        "甲乙均未参与",
+        "甲乙至少一人参与"
+      ],
+      "answer": 2,
+      "explanation": "(甲或乙)→会议，其逆否为不会议→非(甲或乙)，按德摩根律即两者均未参与。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l224",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "合取否定",
+      "prompt": "“系统安全且运行稳定”的准确否定是：",
+      "options": [
+        "系统不安全且不稳定",
+        "系统安全但不稳定",
+        "系统不安全但稳定",
+        "系统不安全或运行不稳定"
+      ],
+      "answer": 3,
+      "explanation": "非(A且B)=非A或非B。只需至少一项不成立。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l225",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "评价标准",
+      "prompt": "甲方案成本低，乙方案速度快。没有其他条件时，能否确定哪项更优？",
+      "options": [
+        "不能，需明确成本与速度的权重或约束",
+        "甲必然更优",
+        "乙必然更优",
+        "两者必然等价"
+      ],
+      "answer": 0,
+      "explanation": "不同维度没有统一偏好或硬约束，无法唯一排序。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l226",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "抽样代表性",
+      "prompt": "用某高级培训班学员的平均收入估计全市平均收入，主要问题是：",
+      "options": [
+        "平均数不能计算",
+        "样本可能系统偏离全市人口",
+        "收入一定无法询问",
+        "培训地点离市中心远"
+      ],
+      "answer": 1,
+      "explanation": "高级培训班的入学与收入可能相关，样本代表性不足；平均数本身不是不可用。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l227",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "反证结构",
+      "prompt": "假设某方案可行，则必须同时满足P与非P。因此该方案不可行。这采用：",
+      "options": [
+        "归纳推理",
+        "类比推理",
+        "反证法",
+        "仅凭权威断言"
+      ],
+      "answer": 2,
+      "explanation": "假设成立导出矛盾，从而否定假设，是反证推理。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l228",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "论证力度",
+      "prompt": "一项单次试验未观察到副作用，因此断言该措施绝对无风险。漏洞在于：",
+      "options": [
+        "使用了试验方法",
+        "记录了试验结果",
+        "没有给措施命名",
+        "把有限观察中未发现风险当成风险不存在"
+      ],
+      "answer": 3,
+      "explanation": "未检出受样本、时长和测量能力限制，不等于绝对不存在。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l229",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "预测与事实",
+      "prompt": "模型预测销量会增长，经理把预测值直接写成已实现收入。问题是：",
+      "options": [
+        "混淆预测与已观察事实",
+        "所有模型均无价值",
+        "收入不允许统计",
+        "增长一定不可能发生"
+      ],
+      "answer": 0,
+      "explanation": "预测依赖假设与未来条件，不能冒充已发生且核实的经营结果。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "l230",
+      "version": 1,
+      "subject": "逻辑",
+      "topic": "条件充分性",
+      "prompt": "若通过A测试且通过B测试，则上线。已知未上线。必然推出：",
+      "options": [
+        "A、B两测试都未通过",
+        "至少一个测试未通过",
+        "只有A未通过",
+        "只有B未通过"
+      ],
+      "answer": 1,
+      "explanation": "(A且B)→上线的逆否为未上线→非(A且B)，即至少一项未通过。条件只要求题干逻辑成立，不加入其他上线门槛。",
+      "source": "原创专项练习",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m300",
+      "version": 1,
+      "subject": "数学",
+      "topic": "连续百分比",
+      "prompt": "一件商品原价100元，先涨价10%，再按涨价后的价格降价10%，现价是多少？",
+      "options": [
+        "99元",
+        "100元",
+        "101元",
+        "98元",
+        "102元"
+      ],
+      "answer": 0,
+      "explanation": "100×(1+10%)×(1−10%)=99元。连续变化应相乘，不能直接抵消。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m303",
+      "version": 1,
+      "subject": "数学",
+      "topic": "加权平均",
+      "prompt": "甲组10人平均分70，乙组20人平均分85，两组总平均分是多少（分数形式）？",
+      "options": [
+        "81",
+        "82",
+        "79",
+        "83",
+        "80"
+      ],
+      "answer": 4,
+      "explanation": "总分除以总人数：(10×70+20×85)÷30=80。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m306",
+      "version": 1,
+      "subject": "数学",
+      "topic": "合作效率",
+      "prompt": "甲单独完成工程需4天，乙需6天。效率恒定，两人合作需几天？",
+      "options": [
+        "4.4天",
+        "1.4天",
+        "5.4天",
+        "12/5天",
+        "3.4天"
+      ],
+      "answer": 3,
+      "explanation": "合作效率1/4+1/6，时间=1÷该效率=12/5天。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m309",
+      "version": 1,
+      "subject": "数学",
+      "topic": "往返均速",
+      "prompt": "同一路程去程速度30千米/时，返程60千米/时，无停留。全程平均速度是多少？",
+      "options": [
+        "39千米/时",
+        "43千米/时",
+        "40千米/时",
+        "41千米/时",
+        "42千米/时"
+      ],
+      "answer": 2,
+      "explanation": "等距离往返均速为2vw/(v+w)，代入得40千米/时；不能直接算速度算术平均。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m312",
+      "version": 1,
+      "subject": "数学",
+      "topic": "集合计数",
+      "prompt": "30名学员至少选A、B课程之一，选A的18人、选B的20人。两门都选的有多少人？",
+      "options": [
+        "11人",
+        "8人",
+        "9人",
+        "10人",
+        "7人"
+      ],
+      "answer": 1,
+      "explanation": "容斥：A∩B=A+B−A∪B=18+20−30=8。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m315",
+      "version": 1,
+      "subject": "数学",
+      "topic": "组合选人",
+      "prompt": "从6名不同候选人中选2名代表，不区分职务，共有多少种选法？",
+      "options": [
+        "15种",
+        "16种",
+        "17种",
+        "14种",
+        "18种"
+      ],
+      "answer": 0,
+      "explanation": "不计顺序，C(6,2)=6×5÷2=15。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m318",
+      "version": 1,
+      "subject": "数学",
+      "topic": "排列与岗位",
+      "prompt": "从5人中分别任命组长和副组长，每人最多一个职位，共多少种安排？",
+      "options": [
+        "21种",
+        "22种",
+        "19种",
+        "23种",
+        "20种"
+      ],
+      "answer": 4,
+      "explanation": "职位不同，先选组长5种，再选副组长4种，相乘得20。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m321",
+      "version": 1,
+      "subject": "数学",
+      "topic": "不放回抽样",
+      "prompt": "袋中有3个红球、4个蓝球，随机不放回取2球，两球均红的概率是多少？",
+      "options": [
+        "1/3",
+        "9/49",
+        "1/2",
+        "1/7",
+        "3/7"
+      ],
+      "answer": 3,
+      "explanation": "首次红3/7，条件下第二次红2/6，相乘为1/7。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m324",
+      "version": 1,
+      "subject": "数学",
+      "topic": "对立事件",
+      "prompt": "随机等概率抽取编号1至4的一张卡，编号不为1的概率是多少？",
+      "options": [
+        "1/3",
+        "2/3",
+        "3/4",
+        "1/4",
+        "1/2"
+      ],
+      "answer": 2,
+      "explanation": "共有4个等可能结果，排除1后有3个，概率3/4。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m327",
+      "version": 1,
+      "subject": "数学",
+      "topic": "利润率基数",
+      "prompt": "商品成本80元，按成本计利润率25%，售价应为多少？",
+      "options": [
+        "103元",
+        "100元",
+        "101元",
+        "102元",
+        "99元"
+      ],
+      "answer": 1,
+      "explanation": "利润率以成本为分母，售价=成本×1.25=100元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m330",
+      "version": 1,
+      "subject": "数学",
+      "topic": "比例分配",
+      "prompt": "奖金共80元，甲乙按3∶5分配，甲得多少？",
+      "options": [
+        "30元",
+        "31元",
+        "32元",
+        "29元",
+        "33元"
+      ],
+      "answer": 0,
+      "explanation": "甲占总份额3/(3+5)，80×该比例=30元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m333",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等差数列",
+      "prompt": "等差数列首项2、公差3，前10项和是多少？",
+      "options": [
+        "156",
+        "157",
+        "154",
+        "158",
+        "155"
+      ],
+      "answer": 4,
+      "explanation": "Sn=n[2a1+(n−1)d]/2=10×[4+9×3]÷2=155。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m336",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等比数列",
+      "prompt": "等比数列首项2、公比2，前5项和是多少？",
+      "options": [
+        "64",
+        "61",
+        "65",
+        "62",
+        "63"
+      ],
+      "answer": 3,
+      "explanation": "S5=2×(2^5−1)/(2−1)=62。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m339",
+      "version": 1,
+      "subject": "数学",
+      "topic": "矩形周长",
+      "prompt": "矩形长4厘米、宽3厘米，周长是多少？",
+      "options": [
+        "13厘米",
+        "17厘米",
+        "14厘米",
+        "15厘米",
+        "16厘米"
+      ],
+      "answer": 2,
+      "explanation": "周长=2×(长+宽)=2×(4+3)=14厘米。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m342",
+      "version": 1,
+      "subject": "数学",
+      "topic": "立方体表面积",
+      "prompt": "棱长为3厘米的正方体表面积是多少平方厘米？",
+      "options": [
+        "57平方厘米",
+        "54平方厘米",
+        "55平方厘米",
+        "56平方厘米",
+        "53平方厘米"
+      ],
+      "answer": 1,
+      "explanation": "共有6个全等正方形面，每面面积3²，所以6×3²=54。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m345",
+      "version": 1,
+      "subject": "数学",
+      "topic": "韦达定理",
+      "prompt": "方程x²−5x+6=0的两根平方和是多少？",
+      "options": [
+        "13",
+        "14",
+        "15",
+        "12",
+        "16"
+      ],
+      "answer": 0,
+      "explanation": "设根u、v，u+v=5，uv=6；u²+v²=(u+v)²−2uv=13。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m348",
+      "version": 1,
+      "subject": "数学",
+      "topic": "稀释守恒",
+      "prompt": "20千克含溶质30%的溶液，只加水稀释成含溶质21%的溶液，稀释后总质量多少千克？",
+      "options": [
+        "29.57千克",
+        "30.57千克",
+        "27.57千克",
+        "31.57千克",
+        "200/7千克"
+      ],
+      "answer": 4,
+      "explanation": "溶质质量不变，最终质量=20×30%÷21%=200/7千克。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m351",
+      "version": 1,
+      "subject": "数学",
+      "topic": "中位数",
+      "prompt": "数据4, 6, 8, 12, 16的中位数是多少？",
+      "options": [
+        "10",
+        "7",
+        "11",
+        "8",
+        "9"
+      ],
+      "answer": 3,
+      "explanation": "五个数已升序排列，中间第3个为8；中位数不等于平均数。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m354",
+      "version": 1,
+      "subject": "数学",
+      "topic": "复利计算",
+      "prompt": "本金100元，年利率10%，每年末计息并并入本金，无费用，两年后本息合计多少？",
+      "options": [
+        "120元",
+        "124元",
+        "121元",
+        "122元",
+        "123元"
+      ],
+      "answer": 2,
+      "explanation": "连续两年复利：100×1.1²=121元；题设无额外费用。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m357",
+      "version": 1,
+      "subject": "数学",
+      "topic": "平均数反推",
+      "prompt": "三个数的平均数为12，其中两个分别为9和12，第三个数是多少？",
+      "options": [
+        "18",
+        "15",
+        "16",
+        "17",
+        "14"
+      ],
+      "answer": 1,
+      "explanation": "总和为3×12，减去9与12得15。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m301",
+      "version": 1,
+      "subject": "数学",
+      "topic": "连续百分比",
+      "prompt": "一件商品原价150元，先涨价15%，再按涨价后的价格降价15%，现价是多少？",
+      "options": [
+        "147.62元",
+        "148.62元",
+        "145.62元",
+        "149.62元",
+        "1173/8元"
+      ],
+      "answer": 4,
+      "explanation": "150×(1+15%)×(1−15%)=1173/8元。连续变化应相乘，不能直接抵消。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m304",
+      "version": 1,
+      "subject": "数学",
+      "topic": "加权平均",
+      "prompt": "甲组15人平均分75，乙组20人平均分85，两组总平均分是多少（分数形式）？",
+      "options": [
+        "82.71",
+        "79.71",
+        "83.71",
+        "565/7",
+        "81.71"
+      ],
+      "answer": 3,
+      "explanation": "总分除以总人数：(15×75+20×85)÷35=565/7。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m307",
+      "version": 1,
+      "subject": "数学",
+      "topic": "合作效率",
+      "prompt": "甲单独完成工程需5天，乙需7天。效率恒定，两人合作需几天？",
+      "options": [
+        "1.92天",
+        "5.92天",
+        "35/12天",
+        "3.92天",
+        "4.92天"
+      ],
+      "answer": 2,
+      "explanation": "合作效率1/5+1/7，时间=1÷该效率=35/12天。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m310",
+      "version": 1,
+      "subject": "数学",
+      "topic": "往返均速",
+      "prompt": "同一路程去程速度40千米/时，返程70千米/时，无停留。全程平均速度是多少？",
+      "options": [
+        "53.91千米/时",
+        "560/11千米/时",
+        "51.91千米/时",
+        "52.91千米/时",
+        "49.91千米/时"
+      ],
+      "answer": 1,
+      "explanation": "等距离往返均速为2vw/(v+w)，代入得560/11千米/时；不能直接算速度算术平均。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m313",
+      "version": 1,
+      "subject": "数学",
+      "topic": "集合计数",
+      "prompt": "40名学员至少选A、B课程之一，选A的26人、选B的27人。两门都选的有多少人？",
+      "options": [
+        "13人",
+        "14人",
+        "15人",
+        "12人",
+        "16人"
+      ],
+      "answer": 0,
+      "explanation": "容斥：A∩B=A+B−A∪B=26+27−40=13。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m316",
+      "version": 1,
+      "subject": "数学",
+      "topic": "组合选人",
+      "prompt": "从7名不同候选人中选2名代表，不区分职务，共有多少种选法？",
+      "options": [
+        "22种",
+        "23种",
+        "20种",
+        "24种",
+        "21种"
+      ],
+      "answer": 4,
+      "explanation": "不计顺序，C(7,2)=7×6÷2=21。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m319",
+      "version": 1,
+      "subject": "数学",
+      "topic": "排列与岗位",
+      "prompt": "从6人中分别任命组长和副组长，每人最多一个职位，共多少种安排？",
+      "options": [
+        "32种",
+        "29种",
+        "33种",
+        "30种",
+        "31种"
+      ],
+      "answer": 3,
+      "explanation": "职位不同，先选组长6种，再选副组长5种，相乘得30。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m322",
+      "version": 1,
+      "subject": "数学",
+      "topic": "不放回抽样",
+      "prompt": "袋中有4个红球、4个蓝球，随机不放回取2球，两球均红的概率是多少？",
+      "options": [
+        "1/4",
+        "1/3",
+        "3/14",
+        "1/2",
+        "3/7"
+      ],
+      "answer": 2,
+      "explanation": "首次红4/8，条件下第二次红3/7，相乘为3/14。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m325",
+      "version": 1,
+      "subject": "数学",
+      "topic": "对立事件",
+      "prompt": "随机等概率抽取编号1至5的一张卡，编号不为1的概率是多少？",
+      "options": [
+        "2/3",
+        "4/5",
+        "1/5",
+        "1/2",
+        "1/3"
+      ],
+      "answer": 1,
+      "explanation": "共有5个等可能结果，排除1后有4个，概率4/5。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m328",
+      "version": 1,
+      "subject": "数学",
+      "topic": "利润率基数",
+      "prompt": "商品成本100元，按成本计利润率25%，售价应为多少？",
+      "options": [
+        "125元",
+        "126元",
+        "127元",
+        "124元",
+        "128元"
+      ],
+      "answer": 0,
+      "explanation": "利润率以成本为分母，售价=成本×1.25=125元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m331",
+      "version": 1,
+      "subject": "数学",
+      "topic": "比例分配",
+      "prompt": "奖金共100元，甲乙按4∶6分配，甲得多少？",
+      "options": [
+        "41元",
+        "42元",
+        "39元",
+        "43元",
+        "40元"
+      ],
+      "answer": 4,
+      "explanation": "甲占总份额4/(4+6)，100×该比例=40元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m334",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等差数列",
+      "prompt": "等差数列首项3、公差3，前11项和是多少？",
+      "options": [
+        "200",
+        "197",
+        "201",
+        "198",
+        "199"
+      ],
+      "answer": 3,
+      "explanation": "Sn=n[2a1+(n−1)d]/2=11×[6+10×3]÷2=198。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m337",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等比数列",
+      "prompt": "等比数列首项3、公比2，前5项和是多少？",
+      "options": [
+        "92",
+        "96",
+        "93",
+        "94",
+        "95"
+      ],
+      "answer": 2,
+      "explanation": "S5=3×(2^5−1)/(2−1)=93。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m340",
+      "version": 1,
+      "subject": "数学",
+      "topic": "矩形周长",
+      "prompt": "矩形长5厘米、宽4厘米，周长是多少？",
+      "options": [
+        "21厘米",
+        "18厘米",
+        "19厘米",
+        "20厘米",
+        "17厘米"
+      ],
+      "answer": 1,
+      "explanation": "周长=2×(长+宽)=2×(5+4)=18厘米。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m343",
+      "version": 1,
+      "subject": "数学",
+      "topic": "立方体表面积",
+      "prompt": "棱长为4厘米的正方体表面积是多少平方厘米？",
+      "options": [
+        "96平方厘米",
+        "97平方厘米",
+        "98平方厘米",
+        "95平方厘米",
+        "99平方厘米"
+      ],
+      "answer": 0,
+      "explanation": "共有6个全等正方形面，每面面积4²，所以6×4²=96。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m346",
+      "version": 1,
+      "subject": "数学",
+      "topic": "韦达定理",
+      "prompt": "方程x²−7x+12=0的两根平方和是多少？",
+      "options": [
+        "26",
+        "27",
+        "24",
+        "28",
+        "25"
+      ],
+      "answer": 4,
+      "explanation": "设根u、v，u+v=7，uv=12；u²+v²=(u+v)²−2uv=25。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m349",
+      "version": 1,
+      "subject": "数学",
+      "topic": "稀释守恒",
+      "prompt": "30千克含溶质30%的溶液，只加水稀释成含溶质21%的溶液，稀释后总质量多少千克？",
+      "options": [
+        "44.86千克",
+        "41.86千克",
+        "45.86千克",
+        "300/7千克",
+        "43.86千克"
+      ],
+      "answer": 3,
+      "explanation": "溶质质量不变，最终质量=30×30%÷21%=300/7千克。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m352",
+      "version": 1,
+      "subject": "数学",
+      "topic": "中位数",
+      "prompt": "数据5, 7, 9, 13, 17的中位数是多少？",
+      "options": [
+        "8",
+        "12",
+        "9",
+        "10",
+        "11"
+      ],
+      "answer": 2,
+      "explanation": "五个数已升序排列，中间第3个为9；中位数不等于平均数。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m355",
+      "version": 1,
+      "subject": "数学",
+      "topic": "复利计算",
+      "prompt": "本金150元，年利率10%，每年末计息并并入本金，无费用，两年后本息合计多少？",
+      "options": [
+        "184.5元",
+        "363/2元",
+        "182.5元",
+        "183.5元",
+        "180.5元"
+      ],
+      "answer": 1,
+      "explanation": "连续两年复利：150×1.1²=363/2元；题设无额外费用。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m358",
+      "version": 1,
+      "subject": "数学",
+      "topic": "平均数反推",
+      "prompt": "三个数的平均数为16，其中两个分别为12和15，第三个数是多少？",
+      "options": [
+        "21",
+        "22",
+        "23",
+        "20",
+        "24"
+      ],
+      "answer": 0,
+      "explanation": "总和为3×16，减去12与15得21。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m302",
+      "version": 1,
+      "subject": "数学",
+      "topic": "连续百分比",
+      "prompt": "一件商品原价200元，先涨价20%，再按涨价后的价格降价20%，现价是多少？",
+      "options": [
+        "194元",
+        "191元",
+        "195元",
+        "192元",
+        "193元"
+      ],
+      "answer": 3,
+      "explanation": "200×(1+20%)×(1−20%)=192元。连续变化应相乘，不能直接抵消。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m305",
+      "version": 1,
+      "subject": "数学",
+      "topic": "加权平均",
+      "prompt": "甲组20人平均分80，乙组20人平均分85，两组总平均分是多少（分数形式）？",
+      "options": [
+        "81.5",
+        "85.5",
+        "165/2",
+        "83.5",
+        "84.5"
+      ],
+      "answer": 2,
+      "explanation": "总分除以总人数：(20×80+20×85)÷40=165/2。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m308",
+      "version": 1,
+      "subject": "数学",
+      "topic": "合作效率",
+      "prompt": "甲单独完成工程需6天，乙需8天。效率恒定，两人合作需几天？",
+      "options": [
+        "6.43天",
+        "24/7天",
+        "4.43天",
+        "5.43天",
+        "2.43天"
+      ],
+      "answer": 1,
+      "explanation": "合作效率1/6+1/8，时间=1÷该效率=24/7天。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m311",
+      "version": 1,
+      "subject": "数学",
+      "topic": "往返均速",
+      "prompt": "同一路程去程速度50千米/时，返程80千米/时，无停留。全程平均速度是多少？",
+      "options": [
+        "800/13千米/时",
+        "62.54千米/时",
+        "63.54千米/时",
+        "60.54千米/时",
+        "64.54千米/时"
+      ],
+      "answer": 0,
+      "explanation": "等距离往返均速为2vw/(v+w)，代入得800/13千米/时；不能直接算速度算术平均。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m314",
+      "version": 1,
+      "subject": "数学",
+      "topic": "集合计数",
+      "prompt": "50名学员至少选A、B课程之一，选A的34人、选B的34人。两门都选的有多少人？",
+      "options": [
+        "19人",
+        "20人",
+        "17人",
+        "21人",
+        "18人"
+      ],
+      "answer": 4,
+      "explanation": "容斥：A∩B=A+B−A∪B=34+34−50=18。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m317",
+      "version": 1,
+      "subject": "数学",
+      "topic": "组合选人",
+      "prompt": "从8名不同候选人中选2名代表，不区分职务，共有多少种选法？",
+      "options": [
+        "30种",
+        "27种",
+        "31种",
+        "28种",
+        "29种"
+      ],
+      "answer": 3,
+      "explanation": "不计顺序，C(8,2)=8×7÷2=28。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m320",
+      "version": 1,
+      "subject": "数学",
+      "topic": "排列与岗位",
+      "prompt": "从7人中分别任命组长和副组长，每人最多一个职位，共多少种安排？",
+      "options": [
+        "41种",
+        "45种",
+        "42种",
+        "43种",
+        "44种"
+      ],
+      "answer": 2,
+      "explanation": "职位不同，先选组长7种，再选副组长6种，相乘得42。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m323",
+      "version": 1,
+      "subject": "数学",
+      "topic": "不放回抽样",
+      "prompt": "袋中有5个红球、4个蓝球，随机不放回取2球，两球均红的概率是多少？",
+      "options": [
+        "1/3",
+        "5/18",
+        "5/9",
+        "1/2",
+        "25/81"
+      ],
+      "answer": 1,
+      "explanation": "首次红5/9，条件下第二次红4/8，相乘为5/18。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m326",
+      "version": 1,
+      "subject": "数学",
+      "topic": "对立事件",
+      "prompt": "随机等概率抽取编号1至6的一张卡，编号不为1的概率是多少？",
+      "options": [
+        "5/6",
+        "1/6",
+        "1/2",
+        "1/3",
+        "2/3"
+      ],
+      "answer": 0,
+      "explanation": "共有6个等可能结果，排除1后有5个，概率5/6。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m329",
+      "version": 1,
+      "subject": "数学",
+      "topic": "利润率基数",
+      "prompt": "商品成本120元，按成本计利润率25%，售价应为多少？",
+      "options": [
+        "151元",
+        "152元",
+        "149元",
+        "153元",
+        "150元"
+      ],
+      "answer": 4,
+      "explanation": "利润率以成本为分母，售价=成本×1.25=150元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m332",
+      "version": 1,
+      "subject": "数学",
+      "topic": "比例分配",
+      "prompt": "奖金共120元，甲乙按5∶7分配，甲得多少？",
+      "options": [
+        "52元",
+        "49元",
+        "53元",
+        "50元",
+        "51元"
+      ],
+      "answer": 3,
+      "explanation": "甲占总份额5/(5+7)，120×该比例=50元。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m335",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等差数列",
+      "prompt": "等差数列首项4、公差3，前12项和是多少？",
+      "options": [
+        "245",
+        "249",
+        "246",
+        "247",
+        "248"
+      ],
+      "answer": 2,
+      "explanation": "Sn=n[2a1+(n−1)d]/2=12×[8+11×3]÷2=246。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m338",
+      "version": 1,
+      "subject": "数学",
+      "topic": "等比数列",
+      "prompt": "等比数列首项4、公比2，前5项和是多少？",
+      "options": [
+        "127",
+        "124",
+        "125",
+        "126",
+        "123"
+      ],
+      "answer": 1,
+      "explanation": "S5=4×(2^5−1)/(2−1)=124。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m341",
+      "version": 1,
+      "subject": "数学",
+      "topic": "矩形周长",
+      "prompt": "矩形长6厘米、宽5厘米，周长是多少？",
+      "options": [
+        "22厘米",
+        "23厘米",
+        "24厘米",
+        "21厘米",
+        "25厘米"
+      ],
+      "answer": 0,
+      "explanation": "周长=2×(长+宽)=2×(6+5)=22厘米。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m344",
+      "version": 1,
+      "subject": "数学",
+      "topic": "立方体表面积",
+      "prompt": "棱长为5厘米的正方体表面积是多少平方厘米？",
+      "options": [
+        "151平方厘米",
+        "152平方厘米",
+        "149平方厘米",
+        "153平方厘米",
+        "150平方厘米"
+      ],
+      "answer": 4,
+      "explanation": "共有6个全等正方形面，每面面积5²，所以6×5²=150。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m347",
+      "version": 1,
+      "subject": "数学",
+      "topic": "韦达定理",
+      "prompt": "方程x²−9x+20=0的两根平方和是多少？",
+      "options": [
+        "43",
+        "40",
+        "44",
+        "41",
+        "42"
+      ],
+      "answer": 3,
+      "explanation": "设根u、v，u+v=9，uv=20；u²+v²=(u+v)²−2uv=41。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m350",
+      "version": 1,
+      "subject": "数学",
+      "topic": "稀释守恒",
+      "prompt": "40千克含溶质30%的溶液，只加水稀释成含溶质21%的溶液，稀释后总质量多少千克？",
+      "options": [
+        "56.14千克",
+        "60.14千克",
+        "400/7千克",
+        "58.14千克",
+        "59.14千克"
+      ],
+      "answer": 2,
+      "explanation": "溶质质量不变，最终质量=40×30%÷21%=400/7千克。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m353",
+      "version": 1,
+      "subject": "数学",
+      "topic": "中位数",
+      "prompt": "数据6, 8, 10, 14, 18的中位数是多少？",
+      "options": [
+        "13",
+        "10",
+        "11",
+        "12",
+        "9"
+      ],
+      "answer": 1,
+      "explanation": "五个数已升序排列，中间第3个为10；中位数不等于平均数。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m356",
+      "version": 1,
+      "subject": "数学",
+      "topic": "复利计算",
+      "prompt": "本金200元，年利率10%，每年末计息并并入本金，无费用，两年后本息合计多少？",
+      "options": [
+        "242元",
+        "243元",
+        "244元",
+        "241元",
+        "245元"
+      ],
+      "answer": 0,
+      "explanation": "连续两年复利：200×1.1²=242元；题设无额外费用。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    },
+    {
+      "id": "m359",
+      "version": 1,
+      "subject": "数学",
+      "topic": "平均数反推",
+      "prompt": "三个数的平均数为20，其中两个分别为15和18，第三个数是多少？",
+      "options": [
+        "28",
+        "29",
+        "26",
+        "30",
+        "27"
+      ],
+      "answer": 4,
+      "explanation": "总和为3×20，减去15与18得27。",
+      "source": "原创参数变式（同题型不同参数）",
+      "difficulty": "进阶"
+    }
+  ]
+}

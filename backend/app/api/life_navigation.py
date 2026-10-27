@@ -1,4 +1,7 @@
 """本人私人规划：读取无写入，显式保存、恢复和备份。"""
+from datetime import date
+from app.schemas.exam_practice import ExamAttempt, ExamAttemptWrite, ExamHistory, ExamPractice, QuestionId
+from app.services import exam_practice
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from uuid import UUID
@@ -68,3 +71,25 @@ def backup(response: Response, user=Depends(owner), db: Session=Depends(get_db))
 def import_workspace(payload: LifeImport, response: Response, user=Depends(owner), db: Session=Depends(get_db)):
     _private(response)
     return service.import_backup(db, user.id, payload.expected_revision, payload.backup)
+
+
+@router.get('/exam/practice', response_model=ExamPractice)
+def exam_practice_view(response: Response, day: date | None = None,
+                       user=Depends(owner), db: Session=Depends(get_db)):
+    _private(response)
+    return exam_practice.practice(db, user.id, day)
+
+
+@router.post('/exam/attempts', response_model=ExamAttempt)
+def exam_submit(payload: ExamAttemptWrite, response: Response,
+                user=Depends(owner), db: Session=Depends(get_db)):
+    _private(response)
+    return exam_practice.submit(db, user.id, payload)
+
+
+@router.get('/exam/attempts', response_model=ExamHistory)
+def exam_attempts(response: Response, question_id: QuestionId | None = None,
+                  offset: int = Query(0, ge=0, le=100_000), limit: int = Query(50, ge=1, le=100),
+                  user=Depends(owner), db: Session=Depends(get_db)):
+    _private(response)
+    return exam_practice.history(db, user.id, question_id, offset, limit)

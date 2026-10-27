@@ -372,6 +372,8 @@ jobs:
           scripts/test_deploy_script.py
           scripts/test_deploy_no_backup.py
           scripts/test_daily_journey_release.py
+          scripts/test_exam_attempts_release.py
+          scripts/test_exam_release_wiring.py
           scripts/test_release_timing.py
           scripts/test_release_performance_report.py
           scripts/test_trusted_ota_startup.py
@@ -620,6 +622,20 @@ jobs:
         env:
           DAILY_JOURNEY_RELEASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
         run: python -m pytest -q --noconftest --no-cov scripts/test_daily_journey_release_postgres.py
+
+      - name: Verify bounded exam attempt migration on PostgreSQL
+        env:
+          EXAM_ATTEMPTS_RELEASE_TEST_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --noconftest --no-cov scripts/test_exam_attempts_release_postgres.py
+
+      - name: Verify exam practice PostgreSQL transactions
+        working-directory: backend
+        env:
+          APP_ENV: test
+          CI: "true"
+          SECRET_KEY: test-secret-key-32-chars-minimum!!
+          EXAM_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/health_runtime_test
+        run: python -m pytest -q --no-cov tests/test_exam_practice_postgres.py
 
       - name: Verify journey preflight closure catalog on isolated PostgreSQL
         env:

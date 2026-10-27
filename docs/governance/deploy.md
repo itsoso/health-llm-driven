@@ -31,6 +31,8 @@
 
 中断后同一 intent 只可回读：ledger 与 schema/binding 完全匹配才能确认已提交并补齐完成回执；ledger 仍 pending、表不完整、intent 缺失或身份漂移均 NEEDS_OPERATOR，绝不自动重放 DDL、清除意图、领取新操作或改用通用 migration runner。该入口不创建或检查任何备份。合入与本地 PostgreSQL 测试仅证明实现；生产角色/固定凭据就绪及精确候选发布回执必须另行验证。
 
+备考作答新增表使用第二个封闭 profile `scripts/exam_attempts_release.py`。它只允许固定摘要的 `20261028_120000_life_exam_attempts` 成对迁移、新 `exam_practice.py` 模型和唯一模型 import；不能与每日行程 profile 混合扩大 schema 差异。沿用 canonical 源、原租约、固定迁移凭据、停写前预检和候选完整 schema 检查。新表 `life_exam_attempts` 对 runtime role 只授予 SELECT/INSERT，序列只授予 USAGE；账号删除通过外键 CASCADE 清理。运行角色不能更新或删除作答流水。新 intent 和完成回执位于 `/var/lib/reva-release/exam-attempts-migrations/<candidate-sha>/`，同时证明序列身份、表约束、owner 索引、权限与绑定；未知提交状态只回读，不重放 DDL。其 PostgreSQL 迁移及应用并发语义必须分别通过 CI，不能用 SQLite 代替。
+
 新的 Web 发布使用显式 `deploy.sh --publish-frontend-no-backup`，旧 `--publish-frontend`、重建和 stopped-recovery 切换入口仍冻结。新入口只能消费由 `--prepare-frontend-artifact` 完成的同 operation-id 制品，不能在停服后编译。候选须为精确完整 CI 绿色的 current main，先通过独立安全审查并以既有 canonical bootstrap 安装该候选的历史消费者；入口核验当前授权 SHA、有效期与实际 installed server 摘要。后端可保持原已部署且有 SUCCEEDED 回执的 revision，不制造后端发布回执，也不重复发布没有 Mobile 变化的 OTA。
 
 在 `/var/lib/reva-release/bootstrap/<publisher-sha>/source` 使用系统 Python 的固定 deploy 入口，传入 `--publisher-sha`、`--production-sha`、`--frontend-tree`、`--operation-id`；先只读预检，确认返回的证据后再加 `--evidence-sha256` 执行。原 launcher/build 锁和 business lease 继续互斥。停服前完成候选校验，核验固定 live 目录、父/根 inode、同设备且无嵌套挂载；确认 systemd control-group 已停空后删除旧 `.next` / `node_modules`，移入已验证的新制品并同步两个父目录，不保留旧制品副本。全部制品摘要一致才启动，公共/本地页面与后端保持证据均通过后才写终态并释放租约。删除、移动、fsync、启动或回读异常均保留原租约与 NEEDS_OPERATOR，不自动回滚、重试或换 operation-id。

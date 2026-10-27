@@ -171,7 +171,8 @@ test "$_REMOTE_RELEASE_LOCK_ABANDONED" = 1
 def test_remote_loader_verifies_code_and_does_not_forward_credentials():
     source = (ROOT / 'deploy.sh').read_text()
     loader = source.split('daily_journey_release_command() {', 1)[1].split('daily_journey_release_preflight() {', 1)[0]
-    assert "git('rev-parse',sha+':scripts/daily_journey_release.py')" in loader
+    assert "git('rev-parse',sha+':scripts/'+profile)" in loader
+    assert "if profile not in ('daily_journey_release.py', 'exam_attempts_release.py')" in loader
     assert "os.execve(executable" in loader
     assert 'MIGRATION_DATABASE_URL' not in loader
     assert 'migration.env' not in loader
