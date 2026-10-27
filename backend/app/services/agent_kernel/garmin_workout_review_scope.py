@@ -1,4 +1,4 @@
-"""One closed current-user Garmin sync and today's latest running review.
+"""Closed current-user Garmin sync with running or last-night sleep review.
 
 Background distance never creates a workout. Queue acceptance never attests to
 completion, and selection of an existing row never proves this sync succeeded.
@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 @dataclass(frozen=True)
 class GarminWorkoutReviewScope:
     reported_distance_km: float | None = None
+    dimension: str = 'workout'
 
     def query_args(self, reference_now: datetime, timezone: str) -> dict:
         if reference_now.utcoffset() is None:
@@ -49,11 +50,42 @@ def resolve_garmin_workout_review_scope(text: str) -> GarminWorkoutReviewScope |
     return GarminWorkoutReviewScope(distance)
 
 
+@dataclass(frozen=True)
+class GarminSleepReviewScope:
+    dimension: str = 'sleep'
+
+    def query_args(self, reference_now: datetime, timezone: str) -> dict:
+        if reference_now.utcoffset() is None:
+            raise ValueError('garmin_review_reference_time_required')
+        # Overnight sleep belongs to the wake date in the authenticated timezone.
+        day = reference_now.astimezone(ZoneInfo(timezone)).date().isoformat()
+        return {'dimension': 'sleep', 'start_date': day, 'end_date': day, 'timezone': timezone}
+
+
+_SLEEP_SYNC = r'(?:请帮我|请你|请|帮我)?(?:同步|更新|刷新)(?:一下)?(?:我的?)?(?:佳明|garmin)的?数据'
+_LAST_NIGHT = r'(?:我(?:的)?)?(?:昨晚|昨天晚上)(?:我(?:的)?)?'
+_SLEEP_READ = (r'(?:请帮我|请你|请|帮我)?(?:查看|看看|查询|分析)(?:一下)?' + _LAST_NIGHT
+               + r'的?睡眠(?:情况|数据|记录)?|'
+               + _LAST_NIGHT + r'(?:睡得(?:怎么样|怎样|如何)|的?睡眠(?:情况)?(?:怎么样|怎样|如何))')
+_CLAUSE_JOIN = r'(?:[\s，,。；;！？!?]+|然后)'
+_SLEEP_THEN_SYNC = re.compile(r'(?:' + _SLEEP_READ + r')' + _CLAUSE_JOIN + _SLEEP_SYNC + r'[。.!！\s]*', re.I)
+_SYNC_THEN_SLEEP = re.compile(_SLEEP_SYNC + _CLAUSE_JOIN + r'(?:' + _SLEEP_READ + r')[。.!！?？\s]*', re.I)
+
+
+def resolve_garmin_review_scope(text: str) -> GarminWorkoutReviewScope | GarminSleepReviewScope | None:
+    text = str(text or '').strip()
+    # Full-match both clauses. Quotes, other owners, cancellation, status
+    # questions, future scheduling and additional actions cannot grant a job.
+    if _SLEEP_THEN_SYNC.fullmatch(text) or _SYNC_THEN_SLEEP.fullmatch(text):
+        return GarminSleepReviewScope()
+    return resolve_garmin_workout_review_scope(text)
+
+
 def garmin_workout_review_scope_contract_payload() -> dict:
     from app.services.agent_kernel.health_semantics import (
         authorization_behavior_digest, authorization_grammar_digest,
         authorization_module_behavior_names,
     )
-    return {"version": "garmin-workout-review-v1",
+    return {"version": "garmin-review-v2",
             "grammar": authorization_grammar_digest(globals()),
             "behavior": authorization_behavior_digest(globals(), authorization_module_behavior_names(globals(), __name__))}

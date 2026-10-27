@@ -214,8 +214,8 @@ def _independent_sync_read_clause(clause: str) -> bool:
 
 def has_owned_sync_instruction(text: str) -> bool:
     """Consume the whole owned sync act; unknown clauses never grant a job."""
-    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
-    if resolve_garmin_workout_review_scope(text) is not None:
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_review_scope
+    if resolve_garmin_review_scope(text) is not None:
         return True
     sync_authority = active_health_sync_authority_text(text)
     active = _active(sync_authority) if sync_authority else None
@@ -367,11 +367,12 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
             ),
             workout_selection=selection,
         )
-    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
-    garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_review_scope
+    garmin_review = resolve_garmin_review_scope(snapshot.envelope.text)
     if garmin_review is not None:
         return OwnedReadScope((garmin_review.query_args(snapshot.context.current_time, snapshot.context.timezone),),
-                              ('latest_recorded_running_today_not_sync_completion',))
+                              (('sleep_wake_date_not_sync_completion',) if garmin_review.dimension == 'sleep'
+                               else ('latest_recorded_running_today_not_sync_completion',)))
     continuation = resolve_read_task_continuation(snapshot)
     if continuation is not None:
         if not continuation["queries"]:

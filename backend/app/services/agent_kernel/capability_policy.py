@@ -2733,8 +2733,8 @@ def decide_tool_capability(
             return _decision("block", "imaging_narrative_scope_conflict", tool_name, args)
         if tool_name != "knowledge_search":
             return _decision("block", "imaging_narrative_tool_not_allowed", tool_name, args)
-    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
-    garmin_review = resolve_garmin_workout_review_scope(snapshot.envelope.text)
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_review_scope
+    garmin_review = resolve_garmin_review_scope(snapshot.envelope.text)
     if garmin_review is not None:
         if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
                 or type(snapshot.envelope.user_id) is not int
@@ -2742,9 +2742,9 @@ def decide_tool_capability(
             return _decision("block", "health_query_subject_not_current_user", tool_name, args)
         expected = garmin_review.query_args(snapshot.context.current_time, snapshot.context.timezone)
         if tool_name == "health_query":
-            if (args.get("dimension") == "workout" and set(args) <= set(expected)
+            if (args.get("dimension") == expected["dimension"] and set(args) <= set(expected)
                     and all(expected[key] == value for key, value in args.items())):
-                return _decision("allow", "garmin_running_review_today", tool_name, expected)
+                return _decision("allow", "garmin_owned_review_today", tool_name, expected)
             return _decision("block", "garmin_running_review_scope_conflict", tool_name, args)
         if tool_name == "health_record" and args == {"record_type": "garmin_sync", "data": {}}:
             return _decision("allow", "explicit_owned_garmin_sync", tool_name, args, receipt_required=False)

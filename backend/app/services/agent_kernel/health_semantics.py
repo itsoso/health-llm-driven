@@ -2700,8 +2700,8 @@ def health_read_has_nonself_subject(text: str) -> bool:
     from app.services.agent_kernel.medical_narrative_read_scope import resolve_medical_narrative_read_scope
     if resolve_medical_narrative_read_scope(text) is not None:
         return False  # Tool dimensions/selectors remain bound independently.
-    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_workout_review_scope
-    if resolve_garmin_workout_review_scope(text) is not None:
+    from app.services.agent_kernel.garmin_workout_review_scope import resolve_garmin_review_scope
+    if resolve_garmin_review_scope(text) is not None:
         return False  # Only subject proof; exact tool scope remains gateway-owned.
     subject_scope = clinical_interpretation_query_scope(
         active_health_read_authority_text(text)

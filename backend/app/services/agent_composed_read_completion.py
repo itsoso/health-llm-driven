@@ -1113,6 +1113,9 @@ def read_scope_synthesis_instructions(scope, *, include_layout: bool = True) -> 
 def read_scope_notices(scope) -> tuple[str, ...]:
     """One disclosure source for the prompt, final answer, and trusted facts."""
     lines = []
+    if 'sleep_wake_date_not_sync_completion' in scope.limitations:
+        lines.append('昨晚按账号时区的醒来日期查询。以下是已保存的睡眠日汇总，可能包含多个设备来源；'
+                     '不能据此确认本次佳明同步已完成，也不能单凭读数判断恢复程度。')
     if 'symptom_record_review' in scope.limitations:
         lines.append('按账号本地日期查询，过去若干天包含今天；症状和服药持续时间来自本条自述，'
                      '不是历史日志，也不改变所请求的查询日期。')
