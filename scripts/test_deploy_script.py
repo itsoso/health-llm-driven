@@ -540,9 +540,10 @@ def test_remote_sync_normalizes_only_git_metadata_and_tracked_paths():
     assert "chown -R root:root .\n" not in body
 
 
-@pytest.mark.parametrize("fault", [None, "parent_symlink", "file_symlink", "hardlink", "command_failure"])
+@pytest.mark.parametrize("and_chain", [False, True])
+@pytest.mark.parametrize("fault", [None, "parent_symlink", "file_symlink", "hardlink", "command_failure", "metadata_failure"])
 def test_repository_trust_normalization_never_targets_ignored_runtime_data(
-    tmp_path: Path, fault,
+    tmp_path: Path, fault, and_chain,
 ):
     repo = tmp_path / "release"
     repo.mkdir()
@@ -628,8 +629,10 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     )
     if fault == "command_failure":
         _write_executable(fake_bin / "chown", "#!/bin/sh\n[ \"$1\" != -h ] || exit 23\nexit 0\n")
+    if fault == "metadata_failure":
+        _write_executable(fake_bin / "chown", "#!/bin/sh\nexit 23\n")
     result = subprocess.run(
-        ["bash", "-c", generated.stdout],
+        ["bash", "-c", generated.stdout.rstrip() + (" && printf permission-proof-accepted" if and_chain else "")],
         cwd=repo,
         text=True,
         capture_output=True,
@@ -644,7 +647,9 @@ def test_repository_trust_normalization_never_targets_ignored_runtime_data(
     assert external.stat().st_mode & 0o777 == 0o600
     if fault is not None:
         assert result.returncode != 0
-        assert "tracked permission normalization failed" in result.stderr
+        assert "permission-proof-accepted" not in result.stdout
+        if fault != "metadata_failure":
+            assert "tracked permission normalization failed" in result.stderr
         return
     assert result.returncode == 0, (result.stdout, result.stderr)
     targets = event_log.read_text(encoding="utf-8")

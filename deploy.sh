@@ -981,15 +981,17 @@ remote_repository_trust_normalization_command() {
 (
     set -euo pipefail
     echo '规范化受信发布工作树 ownership...'
-    test -d .git && test ! -L .git
-    chown root:root .
-    chmod 0755 .
-    chown -R root:root .git
-    chmod -R go-w .git
+    # This subshell is a caller's AND-list operand, where errexit is disabled.
+    # Every proof/mutation must therefore propagate failure explicitly.
+    test -d .git && test ! -L .git || exit 1
+    chown root:root . || exit "$?"
+    chmod 0755 . || exit "$?"
+    chown -R root:root .git || exit "$?"
+    chmod -R go-w .git || exit "$?"
     # Batch only index-selected paths; never recurse into ignored runtime data.
     # Validate all paths first, secure each parent once, then process bounded
     # argv batches. Isolated stdlib Python is independent of app dependencies.
-    /usr/bin/python3 -I -S -B - <<'REVA_TRACKED_PERMISSIONS'
+    /usr/bin/python3 -I -S -B - <<'REVA_TRACKED_PERMISSIONS' || exit "$?"
 import os
 import stat
 import subprocess
@@ -1043,7 +1045,7 @@ try:
 except (OSError, ValueError, subprocess.SubprocessError):
     raise SystemExit('tracked permission normalization failed')
 REVA_TRACKED_PERMISSIONS
-    test "$(stat -c '%U:%G' .)" = "root:root"
+    test "$(stat -c '%U:%G' .)" = "root:root" || exit 1
 )
 REMOTE_REPOSITORY_TRUST
 }
