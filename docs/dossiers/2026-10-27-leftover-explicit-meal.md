@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 本地验证通过，G4 独立审查与最终批次真实模型闸待完成 |
+| 当前阶段 | G4 独立安全审查 GO；已交唯一发布者，等待最终批次模型闸、CI 与上线 |
 
 ## G1 准入
 
@@ -37,3 +37,9 @@
 最终本地 G3：同接口 panel 哨兵 RED 为 1 failed / 3 passed；限定修复后，CI-mode 431 passed、零 skip，含剩菜、照片修正、照片营养追问、写意图范围。真实 PostgreSQL 增量复跑普通/panel 两类文字续接 4 passed、零 skip，原 75 项结果保留，两个集合有重叠不相加。第一个临时库退出命令超过60秒，日志证明 shutdown checkpoint 耗时77.48秒；随后独立 `pg_ctl status` 确认无运行服务才清理本任务目录，原 stop_exit=1 保留。第二个临时库正常关闭并清理。中央地图校验通过。
 
 实际最终改动包含 `agent_executor.py`，路径级 LLM change gate 因此明确要求真实模型回归；前述“无需 live”仅对应尚未补 panel 条件的中间范围，不能用于最终发布。未调用真实模型、未声明豁免、未设置仓库确认变量。已告知唯一发布者在最终合并候选运行适用 live gate、绑定精确 SHA 与完整 CI，再统一发布；本任务 G3 局部通过不等于 G5/G6 或线上真实照片验收。
+
+## G4 与统一发布交接
+
+独立 reviewer `leftover_explicit_meal_safety` 对固定代码提交 `ea779bbe42a1c30bc20aa6ca8ee5330c01b813c1` 给出 GO，无阻断项。审查方独立完整回归 77 passed / 0 skipped，另外 4 个正例与 92 个否定/引用/他人/日期/取消反例全部通过，中央地图 PASS；证据 `/tmp/reva-leftover-independent-review.xml`、`.log`。确认 panel 排除仍进入原 owner/current-message/date/image/readonly checks，未新增自动写权限。
+
+本任务仅本地 commit，没有 push、模型调用、授权轮换、后端或 OTA 发布。唯一发布者为品牌任务，已交接固定源提交与所有验证边界；图标、审核准备与后端修复汇合后必须重新绑定模型与完整 CI，不能用本地 GO 或旧线上版本冒充此次截图路径已上线。
