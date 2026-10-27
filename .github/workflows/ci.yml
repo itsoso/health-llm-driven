@@ -631,6 +631,7 @@ jobs:
       - name: Verify exam practice PostgreSQL transactions
         working-directory: backend
         env:
+          DATABASE_URL: "sqlite:///:memory:"
           APP_ENV: test
           CI: "true"
           SECRET_KEY: test-secret-key-32-chars-minimum!!

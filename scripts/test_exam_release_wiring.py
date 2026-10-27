@@ -27,3 +27,13 @@ def test_exam_migration_tests_are_part_of_release_ci():
     assert 'scripts/test_exam_release_wiring.py' in workflow
     assert 'tests/test_exam_practice_postgres.py' in workflow
     assert 'EXAM_TEST_DATABASE_URL: postgresql://' in workflow
+
+
+def test_exam_postgres_ci_keeps_app_import_out_of_default_database():
+    import yaml
+    workflow = yaml.safe_load((ROOT / '.github/workflows/ci.yml').read_text())
+    step = next(step for step in workflow['jobs']['agent-runtime-postgres']['steps']
+                if step.get('name') == 'Verify exam practice PostgreSQL transactions')
+    assert step['env']['DATABASE_URL'] == 'sqlite:///:memory:'
+    assert step['env']['EXAM_TEST_DATABASE_URL'].endswith('/health_runtime_test')
+    assert 'tests/test_exam_practice_postgres.py' in step['run']
