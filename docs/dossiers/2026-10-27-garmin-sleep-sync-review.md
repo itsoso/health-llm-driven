@@ -21,3 +21,7 @@ PASS。修复明确要求查看昨晚睡眠并更新佳明数据的组合请求�
 
 - 原实现失败证据：`/tmp/reva-sleep-sync-red.log`；初步定向测试 35 passed，含真实 Pi/派发和模拟队列状态。
 - 后续相关回归、PostgreSQL、独立审查、真实模型闸、精确 SHA CI 和生产回执待完成。
+
+## G4 首轮审查整改
+
+首轮 NO-GO：日期绑定类方法未纳入授权行为摘要，改变日期范围不会改变 policy digest。补充两个 scope 的 `query_args` 方法摘要与 mutation 测试；先复现两例失败后修复。复审与最终发布闸仍待完成。

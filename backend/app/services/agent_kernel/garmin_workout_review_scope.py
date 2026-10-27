@@ -86,6 +86,11 @@ def garmin_workout_review_scope_contract_payload() -> dict:
         authorization_behavior_digest, authorization_grammar_digest,
         authorization_module_behavior_names,
     )
+    methods = {
+        'sleep_query_args': GarminSleepReviewScope.query_args,
+        'workout_query_args': GarminWorkoutReviewScope.query_args,
+    }
     return {"version": "garmin-review-v2",
             "grammar": authorization_grammar_digest(globals()),
+            "date_binding": authorization_behavior_digest(methods, tuple(methods)),
             "behavior": authorization_behavior_digest(globals(), authorization_module_behavior_names(globals(), __name__))}

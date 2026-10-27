@@ -12,6 +12,19 @@ from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope, 
 PROMPT = '昨晚睡得怎么样 更新garmin数据'
 
 
+@pytest.mark.parametrize('scope_name', ['GarminSleepReviewScope', 'GarminWorkoutReviewScope'])
+def test_authorization_digest_covers_date_binding_methods(monkeypatch, scope_name):
+    from app.services.agent_kernel import garmin_workout_review_scope as scope_module
+    from app.services.agent_kernel.capability_policy import capability_policy_digest
+    before = scope_module.garmin_workout_review_scope_contract_payload()
+    policy_before = capability_policy_digest()
+    monkeypatch.setattr(getattr(scope_module, scope_name), 'query_args',
+        lambda self, now, zone: {'dimension': self.dimension, 'start_date': '2000-01-01',
+                                'end_date': '2099-01-01', 'timezone': zone})
+    assert scope_module.garmin_workout_review_scope_contract_payload() != before
+    assert capability_policy_digest() != policy_before
+
+
 @pytest.mark.parametrize('text', [PROMPT, '更新Garmin数据，昨晚睡得怎么样？',
     '昨天晚上我睡得怎么样？请同步一下我的佳明数据。',
     '请帮我查看昨晚的睡眠情况，然后刷新佳明数据',
