@@ -345,6 +345,7 @@ class Adapter:
     def __init__(self, source, bootstrap, server, core, token, check):
         self.source, self.bootstrap, self.server, self.core = source, bootstrap, server, core
         self.recovery_sha, self.token, self.check = source.parent.name, token, check
+        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
         self.audit = STATE / ATTEMPT
         self.helper = load(source / 'scripts/exam_attempts_release.py', 'exam_forward_ddl', bootstrap)
         module = load(source / 'scripts/no_backup_preflight_proof.py', 'exam_original_no_backup', bootstrap)
@@ -406,7 +407,9 @@ class Adapter:
 
     def _authority(self):
         self.check()
+        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
         self.proof._assert_original_lease()
+        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
 
     def _review(self):
         path = self.source.parent / 'exam-forward-g4.json'
@@ -482,6 +485,7 @@ class Adapter:
 
     def snapshot(self):
         self.check()
+        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
         self.reset._revision_proof(FAILED, self.failed_source, self.bootstrap)
         result = {'lease_stage': self.proof._stage(self.failed_source),
                   'workspace': self.proof._workspace(self.failed_source),
@@ -500,6 +504,7 @@ class Adapter:
             need(self.proof._file(self.transaction._terminal_marker_path(), 0o600)[1] == self.previous_terminal_identity)
             need(self.proof._file(self.transaction.layout.transaction_root / 'journal.json', 0o600)[1] == self.journal_identity)
         self.check()
+        self.server.assert_no_competing_exam_recovery(self.bootstrap.STATE)
         return result
 
     def stopped(self):

@@ -158,6 +158,41 @@ def test_stop_with_lost_original_lease_does_not_touch_services():
     assert not calls
 
 
+@pytest.mark.parametrize('entry', ['constructor', 'snapshot', 'authority'])
+def test_real_adapter_checks_competing_attempt_before_other_proof(monkeypatch, tmp_path, entry):
+    from types import SimpleNamespace
+    m = module(); calls = []
+    def reject(state):
+        calls.append(state)
+        raise RuntimeError('competing exam recovery')
+    server = SimpleNamespace(assert_no_competing_exam_recovery=reject)
+    bootstrap = SimpleNamespace(STATE=tmp_path)
+    def forbidden(*args, **kwargs): raise AssertionError('other proof reached first')
+    monkeypatch.setattr(m, 'load', forbidden)
+    if entry == 'constructor':
+        action = lambda: m.Adapter(tmp_path/'candidate/source', bootstrap, server, None, 'token', lambda: None)
+    else:
+        a = object.__new__(m.Adapter)
+        a.bootstrap, a.server, a.check = bootstrap, server, lambda: None
+        a.reset = SimpleNamespace(_revision_proof=forbidden)
+        a.proof = SimpleNamespace(_assert_original_lease=forbidden)
+        action = a.snapshot if entry == 'snapshot' else a._authority
+    with pytest.raises(RuntimeError, match='competing exam recovery'): action()
+    assert calls == [tmp_path]
+
+
+def test_competing_attempt_appearing_during_authority_proof_blocks_mutation(tmp_path):
+    from types import SimpleNamespace
+    m = module(); a = object.__new__(m.Adapter); competing = [False]
+    def check(state):
+        if competing[0]: raise RuntimeError('competing exam recovery')
+    a.bootstrap = SimpleNamespace(STATE=tmp_path)
+    a.server = SimpleNamespace(assert_no_competing_exam_recovery=check)
+    a.check = lambda: None
+    a.proof = SimpleNamespace(_assert_original_lease=lambda: competing.__setitem__(0, True))
+    with pytest.raises(RuntimeError, match='competing exam recovery'): a._authority()
+
+
 def test_existing_missing_build_lock_proof_creates_nothing(tmp_path):
     spec = importlib.util.spec_from_file_location('exam_original_bootstrap_test', Path(__file__).with_name('bootstrap_trusted_release.py'))
     b = importlib.util.module_from_spec(spec); spec.loader.exec_module(b)

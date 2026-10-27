@@ -129,3 +129,25 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 active服务的Vision校验，且动态PID进入不变快照。该阻断退回实现，不以测试绿色放行。
 修复将静态overlay证据与启动后cgroup模型/flag/稳定窗口分开，并补完整健康硬闸及
 canonical skills manifest校验；新固定提交需复审后才能推送、执行只读取证或恢复。
+
+### 交接后的新远端写入与强制暂停（2026-10-28 00:43 CST）
+
+本地固定8c76a922e63c8946acde9626f914792c4203133f：恢复G4 GO，独立187项
+（含真实PostgreSQL）通过；根流程干净导出恢复549、CI-mode807及真实模型12/50/5
+全部通过。此SHA尚未推送，不代表远端精确CI或生产恢复。
+
+新鲜canonical Git查询发现远端新增83b032ee4、3127c8678和17452dc7d；最后CI
+40540915612成功。独立审查阻断3127替代恢复：旧a8 schema UPDATE探针与append-only
+表不兼容、network-guard启用状态投影错误、租约先删除后在/var/lock别名处失败。
+合并采用单一8c恢复入口，替代实现仍保留在Git历史，不混用回执；保留依赖与OTA证据。
+
+00:43只读对账：生产仍a8且backend inactive/dead；我方两个固定attempt目录均不存在，
+替代DDL/服务恢复/租约退休/retained closure目录也不存在。但外部provider已实际更新：
+`/var/lib/reva-github-api/refresh/exam-3127c8678bec90e57cc05f359e629f072e0d133f`
+包含intent和completed；completed于00:21:26 CST落盘，摘要
+`c349dba585209cfb31a296b994c9a3540665b02026bad4ee700986eae024541d`。
+旧credential摘要e3b759a2…e02a8变为699aa316…826，当前过期时间1793121501。
+原准备的我方credential pin不再匹配，禁止执行；不将外部CREDENTIAL_REFRESHED
+视为我方恢复授权或CI证明。已请用户落实外部任务停止写入并交接最后结果/对话位置。
+本会话无生产变更、无push、无OTA、无新增App Review操作。下一步先只读对账并
+重新绑定新候选，不能以先前暂停确认忽略其后的实际外部写入。

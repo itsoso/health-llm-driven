@@ -52,3 +52,15 @@ checkout、停服及 runtime install 后失败：新表继承默认 UPDATE/DELET
 统一记入[通知详情 Dossier](2026-10-18-notification-detail.md#2026-10-28--统一发布接管与生产事故)，
 不另起发布尝试，不把绿色 CI 当作生产完成。Store282仍绑定838原生候选；备考 Mobile
 变更未随282上传，亦未发布OTA。
+
+### 交接后的远端恢复实现整合
+
+保留17452dc7d的依赖安全修复与OTA兼容证据，OTA仍受本次282送审冻结约束。
+3127c8678的替代恢复实现保留于Git历史，最终树统一使用exam_release_recovery、
+exam_recovery_credential和持久历史阻断；不保留第二套可执行恢复入口。独立审查发现
+替代实现会调用a8旧UPDATE schema探针、错误拒绝network-guard启用状态，且租约删除
+后在/var/lock别名处失败，未完成身份撤销。不得混用两套回执或重放未知操作。
+保留原a8 retained helper字节；未来收尾使用独立受审消费者，不通过修改通用helper
+绕过当前证明。新候选还须核对替代实现全部审计目录不存在，否则停止并核清现场。
+前端制品22d2d1d259414eabb04b3cff3d56a335的失败记录为外部档案所报，未在本会话
+重新执行；前端和OTA均不因合并代码被视为已发布。

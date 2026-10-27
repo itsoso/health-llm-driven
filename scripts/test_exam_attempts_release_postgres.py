@@ -55,6 +55,19 @@ def apply(pg):
     with migration.begin() as c:m.apply_exact(c,ROOT,plan,role)
 
 
+def test_runtime_default_acl_is_narrowed_only_on_new_objects(pg):
+    m,migration,runtime,role,plan,expected,record=pg
+    with migration.begin() as c:
+        c.execute(text(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,INSERT,UPDATE,DELETE ON TABLES TO {role}'))
+        c.execute(text(f'ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT SELECT,USAGE ON SEQUENCES TO {role}'))
+        before=c.execute(text('SELECT defaclobjtype,defaclacl::text FROM pg_default_acl ORDER BY defaclobjtype')).all()
+    apply(pg)
+    with migration.connect() as c:
+        m.schema_evidence(c,role)
+        assert c.execute(text('SELECT defaclobjtype,defaclacl::text FROM pg_default_acl ORDER BY defaclobjtype')).all()==before
+        assert c.execute(text("SELECT has_table_privilege(:role,'users','DELETE')"),{'role':role}).scalar_one()
+
+
 def test_atomic_append_runtime_serial_usage_account_cascade_and_readback(pg):
     m,migration,runtime,role,plan,expected,record=pg
     with migration.connect() as c:

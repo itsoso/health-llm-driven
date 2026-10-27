@@ -27,11 +27,27 @@ def load_bootstrap():
     return module
 
 
+def isolate_exam_history(monkeypatch, bootstrap, tmp_path):
+    # These lifecycle fixtures do not run a canonical root-installed loader.
+    # Keep the real shared inventory checker with temporary paths; its root,
+    # cache and unsafe-parent boundaries have dedicated adversarial tests.
+    path = SCRIPT.with_name('trusted_release_server.py')
+    spec = importlib.util.spec_from_file_location('bootstrap_exam_fixture', path)
+    server = importlib.util.module_from_spec(spec); spec.loader.exec_module(server)
+    monkeypatch.setattr(server, 'secure_path', lambda *args, **kwargs: None)
+    monkeypatch.setattr(server, 'EXAM_PROVIDER_REFRESH_ROOT', tmp_path/'exam-provider/refresh')
+    monkeypatch.setattr(server, 'EXAM_CREDENTIAL_ROOT', tmp_path/'exam-credentials')
+    monkeypatch.setattr(server, 'EXAM_RETIRED_INSTALLATIONS', (
+        tmp_path/'old-exam-config', tmp_path/'old-exam-library'))
+    monkeypatch.setattr(bootstrap, '_exam_history_server', lambda: server)
+
+
 def test_bridge_only_history_is_checked_before_rotation_after_reboot(monkeypatch, tmp_path):
     bootstrap = load_bootstrap()
     (tmp_path / "neo-wechat").mkdir()
     monkeypatch.setattr(bootstrap, "STATE", tmp_path)
     monkeypatch.setattr(bootstrap, "secure", lambda *_a, **_k: None)
+    isolate_exam_history(monkeypatch, bootstrap, tmp_path)
     calls = []
     def check(state, **kwargs):
         calls.append(state)
@@ -129,6 +145,7 @@ def test_workspace_evidence_uses_distinct_lost_receipt_acknowledgment(monkeypatc
         (source / name).write_text("# fixture\n")
     bootstrap.__file__ = str(source / "bootstrap_trusted_release.py")
     monkeypatch.setattr(bootstrap, "secure", lambda *args, **kwargs: None)
+    isolate_exam_history(monkeypatch, bootstrap, tmp_path)
     imported = SimpleNamespace(
         acknowledged_evidence=lambda b, sha, receipt, **kwargs: {
             "state": "ACKNOWLEDGED_LOST_CLOSURE_RECEIPT",
@@ -200,6 +217,7 @@ def fixture(monkeypatch, tmp_path):
     monkeypatch.setattr(bootstrap, "AUTHORIZED", keys)
     monkeypatch.setattr(bootstrap, "HOST_PUBLIC", host)
     monkeypatch.setattr(bootstrap, "secure", lambda *args, **kwargs: None)
+    isolate_exam_history(monkeypatch, bootstrap, tmp_path)
     monkeypatch.setattr(bootstrap.time, "time", lambda: 100)
     source = tmp_path / "source"
     (source / "scripts").mkdir(parents=True)

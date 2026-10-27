@@ -1164,6 +1164,85 @@ def assert_vision_model_history(state=None, *, pending_operation=None):
             raise LaunchError('configuration cannot manufacture model acceptance')
 
 
+EXAM_FAILED_SHA = 'a8cd1e7635eb697c0f0bc528382c98b3602893c3'
+EXAM_COMPETING_RECORDS = (
+    'exam-service-recovery-' + EXAM_FAILED_SHA,
+    'exam-attempts-migrations/recovery-' + EXAM_FAILED_SHA,
+    'exam-recovery-lease-retirement-' + EXAM_FAILED_SHA,
+    'retained-candidate-closures/' + EXAM_FAILED_SHA,
+    'retired/' + EXAM_FAILED_SHA,
+)
+EXAM_PROVIDER_REFRESH_ROOT = Path('/var/lib/reva-github-api/refresh')
+EXAM_CREDENTIAL_ROOT = Path('/etc/reva-github-api')
+EXAM_RETIRED_INSTALLATIONS = (
+    Path('/etc/reva-release.retired-' + EXAM_FAILED_SHA),
+    Path('/usr/local/lib/reva-release.retired-' + EXAM_FAILED_SHA),
+)
+
+
+def _exam_directory_names(path):
+    """Bounded names only; absent directories are valid, unsafe parents are not."""
+    path = Path(path)
+    if not path.is_absolute():
+        raise LaunchError('absolute exam inventory required')
+    fields = ('st_dev', 'st_ino', 'st_uid', 'st_gid', 'st_mode')
+    identity = lambda info: tuple(getattr(info, key) for key in fields)
+    chain = []
+    missing = None
+    for item in (*reversed(path.parents), path):
+        try:
+            before = item.lstat()
+        except FileNotFoundError:
+            missing = item
+            break
+        secure_path(item, directory=True)
+        if identity(item.lstat()) != identity(before):
+            raise LaunchError('exam inventory directory changed')
+        chain.append((item, identity(before)))
+    names = set()
+    if missing is None:
+        fd = os.open(path, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC)
+        try:
+            opened = os.fstat(fd)
+            if identity(opened) != chain[-1][1]:
+                raise LaunchError('exam inventory directory changed')
+            generation = (opened.st_mtime_ns, opened.st_ctime_ns)
+            with os.scandir(fd) as entries:
+                for entry in entries:
+                    names.add(entry.name)
+                    if len(names) > 10000:
+                        raise LaunchError('exam inventory exceeds bound')
+            after = os.fstat(fd)
+            if (identity(after) != chain[-1][1] or
+                    (after.st_mtime_ns, after.st_ctime_ns) != generation):
+                raise LaunchError('exam inventory directory changed')
+        finally:
+            os.close(fd)
+    for item, expected in chain:
+        secure_path(item, directory=True)
+        if identity(item.lstat()) != expected:
+            raise LaunchError('exam inventory ancestry changed')
+    if missing is not None and os.path.lexists(missing):
+        raise LaunchError('exam inventory appeared during inspection')
+    return names
+
+
+def assert_no_competing_exam_recovery(state=None):
+    """Neither success text nor a missing volatile lease authorizes mixing attempts."""
+    root = Path(STATE if state is None else state)
+    try:
+        paths = [*(root / name for name in EXAM_COMPETING_RECORDS), *EXAM_RETIRED_INSTALLATIONS]
+        for path in paths:
+            if path.name in _exam_directory_names(path.parent):
+                raise LaunchError('competing exam recovery evidence exists')
+        if any(name.startswith('exam-') for name in _exam_directory_names(EXAM_PROVIDER_REFRESH_ROOT)):
+            raise LaunchError('competing exam recovery provider evidence exists')
+        if any(name.startswith('credential.exam-') for name in _exam_directory_names(EXAM_CREDENTIAL_ROOT)):
+            raise LaunchError('competing exam recovery credential artifact exists')
+    except (OSError, ValueError):
+        raise LaunchError('competing exam recovery inventory unavailable') from None
+
+
 def assert_exam_recovery_history(state=None):
     # A separate reviewed closure must account for every incident side effect.
     # Presence alone blocks here; partial, malformed and completed attempts all
@@ -1172,6 +1251,7 @@ def assert_exam_recovery_history(state=None):
     if any(os.path.lexists(root / name) for name in
            ('exam-a8-forward-acl-v1', 'exam-a8-read-credential-v1')):
         raise LaunchError('exam recovery requires independent closure')
+    assert_no_competing_exam_recovery(root)
 
 
 def assert_xiaoqihou_briefing_history(state=None):

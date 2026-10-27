@@ -142,6 +142,11 @@ def test_sensitive_file_requires_root_private_single_link(uid, mode, nlink):
 
 def setup_state(monkeypatch, tmp_path):
     server = load_server()
+    monkeypatch.setattr(server, 'STATE', tmp_path/'state')
+    monkeypatch.setattr(server, 'EXAM_PROVIDER_REFRESH_ROOT', tmp_path/'exam-provider/refresh')
+    monkeypatch.setattr(server, 'EXAM_CREDENTIAL_ROOT', tmp_path/'exam-credentials')
+    monkeypatch.setattr(server, 'EXAM_RETIRED_INSTALLATIONS', (
+        tmp_path/'old-exam-config', tmp_path/'old-exam-library'))
     # Test mutable filesystem/state with this process's UID. Production entry
     # separately enforces root ownership all the way to / and fixed roots.
     monkeypatch.setattr(server, "secure_path", lambda *args, **kwargs: None)

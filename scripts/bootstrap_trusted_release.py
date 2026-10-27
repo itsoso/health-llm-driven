@@ -857,6 +857,17 @@ def _assert_known_activity(history, old_sha=None):
             raise BootstrapError("existing release activity requires operator review")
 
 
+def _exam_history_server():
+    path = Path(__file__).with_name('trusted_release_server.py')
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached exam history code forbidden')
+    spec = importlib.util.spec_from_file_location('exam_history_server', path)
+    server = importlib.util.module_from_spec(spec)
+    exec(compile(path.read_bytes(), str(path), 'exec', dont_inherit=True), server.__dict__)
+    return server
+
+
 def assert_exam_recovery_history():
     # Neither service recovery nor read-credential renewal retires the failed
     # release. No completion string grants ordinary rotation/replay authority.
@@ -864,6 +875,11 @@ def assert_exam_recovery_history():
     if any(os.path.lexists(STATE / name) for name in
            ('exam-a8-forward-acl-v1', 'exam-a8-read-credential-v1')):
         raise BootstrapError('exam recovery requires independent closure')
+    server = _exam_history_server()
+    try:
+        server.assert_no_competing_exam_recovery(STATE)
+    except server.LaunchError:
+        raise BootstrapError('competing exam recovery evidence or unsafe inventory') from None
 
 
 def assert_xiaoqihou_briefing_history():

@@ -1418,6 +1418,13 @@ App Store 送审完成。原失败回执、原迁移 intent、lease、stage 与�
 再 CAS 原子替换已绑定的凭据；不授予部署权限、不改业务 lease、身份、数据库或服务。
 inspect 不 mint token、不写文件，亦不声称线上 CI 已核验；凭据结果未知时禁止重试。
 
+统一恢复入口还须先拒绝替代恢复的任何持久痕迹：固定 a8 的 exam-service-recovery、
+exam-attempts-migrations/recovery、exam-recovery-lease-retirement、retained-candidate-closures、
+retired 与旧安装归档路径，以及 provider refresh 下任意 exam-* 和 credential.exam-*
+临时文件。文件、目录、断链、异常父目录和检查中新增记录一律阻断；不读取令牌内容，
+不把外部 completed 解释为授权。该只读检查在 inspect、双锁及每个既有变更边界重复；
+出现痕迹后须独立对账及重新受审，不能删除记录、忽略记录或沿用失效的旧凭据摘要。
+
 ### 自动回滚至旧 revision 的独立收口
 
 `scripts/rolled_back_release_operator.py` 仅处理已完成自动回滚、原回执为

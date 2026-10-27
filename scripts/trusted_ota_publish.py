@@ -144,12 +144,16 @@ def identifier(value):
 
 
 # Closed set, not a fingerprint allowlist. Exact build/source identities must
-# accompany both fingerprints; any future production build requires new review.
+# accompany reviewed fingerprints; any future production build requires new review.
 REVIEWED_NATIVE_COHORT = {
     "399eb452-402e-47cd-a0e3-18dff2d1ca51": (
         "1ba724dcb62ac389a72e41eecf40fea7aaca27e3", "cfb1606da3744f6df32d89364535e307d3f2ed70"),
     "1faa3a05-2385-44fd-bf84-296cc68e84c2": (
         "c28050786c1e9aa70cca33d7e3d5c093652aeb26", "2c29cc641498ac6653d89d54f986dc12fe22e9e0"),
+    "a40a61f3-02db-4a88-a308-56884c53500b": (
+        "8f7d94696424f92ff57243edb906cd6d2dd14a3a", "43972dceac5ad3916bf8c91d1dd5adc6188ef427"),
+    "267aad01-a185-4343-b0fb-13ee7e8fabc7": (
+        "83876750fcbb404255b7439482688fee82a490d4", "43972dceac5ad3916bf8c91d1dd5adc6188ef427"),
 }
 
 
