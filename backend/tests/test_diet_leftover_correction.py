@@ -14,6 +14,18 @@ def test_leftover_instruction_is_not_a_food_description():
     assert _parse_explicit_diet_correction(REQUEST, reference_now=NOW) is None
 
 
+@pytest.mark.asyncio
+async def test_dinner_caption_clarification_does_not_suggest_lunch():
+    from app.services.diet_leftover_correction import build_leftover_proposal
+    class NoReads:
+        def query(self, *_):
+            pytest.fail('clarification cannot read records')
+    result = await build_leftover_proposal(NoReads(), 1, 1, 1,
+        '记录这餐 剩余这么多 计算下今晚真正摄入量', [{}], NOW, 'Asia/Shanghai')
+    assert '根据剩菜照片修正今天晚餐记录' in result['reply']
+    assert '午餐' not in result['reply']
+
+
 @pytest.fixture
 def context(db, auth_user_and_headers):
     from app.models.agent_conversation import AgentConversation, AgentMessage

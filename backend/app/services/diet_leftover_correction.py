@@ -224,7 +224,17 @@ async def build_leftover_proposal(db,user_id,conversation_id,current_message_id,
     images = images or []
     meal=_requested_meal(text)
     if meal is None:
-        return _clarify('剩余照片不会记为新吃的一餐。请明确要修正的餐次，例如“根据剩菜照片修正今天午餐记录”。')
+        compact = re.sub(r'[\s，,。.!！]', '', str(text or ''))
+        labels = {_MEALS[label] for label in _MEALS if label in compact}
+        for label, value in (('今晚','dinner'), ('今早','breakfast'), ('今中午','lunch')):
+            if label in compact:
+                labels.add(value)
+        if _SOURCE_CAPTION.fullmatch(compact) and len(labels) == 1:
+            label = {'breakfast':'早餐','lunch':'午餐','dinner':'晚餐','snack':'加餐'}[labels.pop()]
+            detail = f'请明确要修正的餐次，例如“根据剩菜照片修正今天{label}记录”。'
+        else:
+            detail = '请在“根据剩菜照片修正今天…记录”中补上实际餐次（早餐、午餐、晚餐或加餐）。'
+        return _clarify('剩余照片不会记为新吃的一餐。' + detail)
     if type(user_id) is not int or user_id<=0 or not isinstance(now,datetime) or now.tzinfo is None:
         return _clarify('无法核实本次请求，请从原餐记录点击修正本餐。')
     current=(db.query(AgentMessage).join(AgentConversation)
