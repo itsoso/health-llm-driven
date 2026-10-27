@@ -53,6 +53,25 @@ REVIEWED_NATIVE_SOURCE = {
     "mobile/scripts/security-dependency-compat.node.cjs": "4f1be9b511770eea3af2cc7e08ec6b39252531c84727cd9d350fb6fcb6d97689"
 }
 
+# Exact 281 branding inputs; 282 has the same native fingerprint. No native API,
+# permission capability, dependency, or environment exception is added.
+# Keep desktop icon/splash inputs pinned even though general JS assets are allowed.
+REVIEWED_BRANDING_SOURCE = {
+    "mobile/app.json": "3541b8c2c6c0e1812da8e54e7b2907f802dde01b2e3e0e502156d11442998506",
+    "mobile/app.config.ts": "8c20bce465bb7af015e9f9fb3960dbfa7d812765453fba1e20003b4471c5e787",
+    "mobile/assets/images/icon.png": "5277b77a0271f0c0dea3de5eae662e7ba95c669072fb666ebc6420dc726ecddf",
+    "mobile/assets/images/splash-icon.png": "e63daad1a321f01a85e2e218382eeebd7046810410fc9deb52b15bd2ae8b32a3",
+    "mobile/assets/images/adaptive-icon.png": "5277b77a0271f0c0dea3de5eae662e7ba95c669072fb666ebc6420dc726ecddf",
+    "mobile/assets/images/favicon.png": "82d0e7466c6c841f58295f24d79b6c82c03a9d3d53abdeb88620ad940b92eb32",
+    "mobile/plugins/withWatchApp.js": "a11578c1f5c1a79faa4d48168f83ba7c1cf9e066d3dc28bfb38b1380e78a27ff",
+    "mobile/plugins/withIntentsExtension.js": "077af163629ae5994428b0969be1a6b52e3e4fd03ca5e9781577154c09e965c2",
+    "mobile/plugins/__tests__/withWatchApp.test.js": "cb5df3b4071d7f766dcc6ff629d4cd58af09f24cd88c65ad39bae3c4324d25f2",
+    "mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts": "1c3e48bf17d810ca53fc07a96aa8e8c314a6d9728cc68f6aaed5b82691f3d586",
+    "mobile/scripts/__tests__/parser-security.test.js": "44506c591e87653cf7682cbd135ae32fa29ec747c980d3d7740c63f0f1d183dd",
+    "mobile/strings/zh.ts": "d56a37332d467540ad0c97bdafeb142e681c1167e6e70d126ab1203c84ed3689",
+    "mobile/PRODUCT_MAP.md": "c237dcc6039ca4a0235b42f65f5ed8c4b5b4f440e536ec9a30c091f16d9fe435"
+}
+
 def validate_production_environment():
     if os.environ.get('APP_VARIANT', 'production') != 'production' or any(
             os.environ.get(key, '') not in ('', '0') for key in (
@@ -68,12 +87,15 @@ def validate_runtime_changes(paths, *, root=None):
     prefixes = ('mobile/app/', 'mobile/components/', 'mobile/hooks/', 'mobile/services/',
                 'mobile/types/', 'mobile/constants/', 'mobile/stores/', 'mobile/utils/',
                 'mobile/contexts/', 'mobile/lib/', 'mobile/applib/', 'mobile/__tests__/', 'packages/shared/src/')
+    reviewed = {**REVIEWED_NATIVE_SOURCE, **REVIEWED_BRANDING_SOURCE}
     for path in paths:
-        if root is not None and path in REVIEWED_NATIVE_SOURCE:
+        if path in reviewed:
+            if root is None:
+                raise ValueError('native or unknown mobile input changed')
             native = Path(root) / path
             if (any(parent.is_symlink() for parent in (native, *native.parents))
                     or not native.is_file()
-                    or hashlib.sha256(native.read_bytes()).hexdigest() != REVIEWED_NATIVE_SOURCE[path]):
+                    or hashlib.sha256(native.read_bytes()).hexdigest() != reviewed[path]):
                 raise ValueError('native or unknown mobile input changed')
             continue
         if path.startswith(prefixes) and Path(path).suffix in ('.ts', '.tsx', '.js', '.jsx', '.json'):

@@ -198,3 +198,30 @@ def test_unknown_patch_still_requires_native_review(tmp_path):
     target.parent.mkdir(parents=True)
     target.write_text('unreviewed')
     with pytest.raises(ValueError): module().validate_runtime_changes([relative], root=tmp_path)
+
+
+BRANDING_SHA = '8f7d94696424f92ff57243edb906cd6d2dd14a3a'
+BRANDING_PATHS = ('mobile/app.json', 'mobile/app.config.ts', 'mobile/assets/images/icon.png',
+    'mobile/assets/images/splash-icon.png', 'mobile/assets/images/adaptive-icon.png',
+    'mobile/assets/images/favicon.png', 'mobile/plugins/withWatchApp.js',
+    'mobile/plugins/withIntentsExtension.js', 'mobile/plugins/__tests__/withWatchApp.test.js',
+    'mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts',
+    'mobile/scripts/__tests__/parser-security.test.js', 'mobile/strings/zh.ts', 'mobile/PRODUCT_MAP.md')
+
+@pytest.mark.parametrize('relative', BRANDING_PATHS)
+def test_branding_exception_accepts_only_exact_reviewed_281_bytes(tmp_path, relative):
+    m = module()
+    materialize_sources(tmp_path, BRANDING_SHA, [relative])
+    m.validate_runtime_changes([relative], root=tmp_path)
+    target = tmp_path / relative
+    target.write_bytes(target.read_bytes() + b' ')
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
+    with pytest.raises(ValueError): m.validate_runtime_changes([relative])
+
+
+def test_branding_source_evidence_is_closed_and_does_not_replace_baseline():
+    m = module()
+    evidence = json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-28-ota-runtime136-branding-equivalence.json').read_text())
+    assert set(m.REVIEWED_BRANDING_SOURCE) == set(BRANDING_PATHS)
+    assert evidence['branding_source_exceptions'] == m.REVIEWED_BRANDING_SOURCE
+    assert m.NATIVE_SHA == '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'

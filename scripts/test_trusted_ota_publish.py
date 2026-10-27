@@ -72,9 +72,12 @@ def update(m):
 
 
 def reviewed_cohort(m):
-    newer = build(m, identifier='1faa3a05-2385-44fd-bf84-296cc68e84c2', sha='c28050786c1e9aa70cca33d7e3d5c093652aeb26')
-    newer['fingerprint'] = {'hash': '2c29cc641498ac6653d89d54f986dc12fe22e9e0'}
-    return [build(m), newer]
+    result=[]
+    for identity,(sha,fingerprint) in m.REVIEWED_NATIVE_COHORT.items():
+        item=build(m,identifier=identity,sha=sha)
+        item['fingerprint']={'hash':fingerprint}
+        result.append(item)
+    return result
 
 def test_native_fingerprint_cohort_must_be_exact_reviewed_builds():
     m = load()
@@ -1227,7 +1230,7 @@ def test_old_runtime_build_is_not_in_new_279_cohort():
 
 def test_fixed_cohort_evidence_matches_implementation():
     m=load()
-    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-26-ota-runtime136-tooling-equivalence.json').read_text())
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-28-ota-runtime136-branding-equivalence.json').read_text())
     assert {b['id']:(b['git_sha'],b['fingerprint']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
 
 
@@ -1425,8 +1428,26 @@ def test_actual_280_build_is_required_with_279_and_exact_fingerprint():
     base = build(m)
     newer = build(m, identifier='1faa3a05-2385-44fd-bf84-296cc68e84c2', sha='c28050786c1e9aa70cca33d7e3d5c093652aeb26')
     newer['fingerprint'] = {'hash': '2c29cc641498ac6653d89d54f986dc12fe22e9e0'}
-    assert m.validate_builds(base, [base, newer]) == base['fingerprint']['hash']
-    for incomplete in ([base], [newer]):
+    assert m.validate_builds(base, reviewed_cohort(m)) == base['fingerprint']['hash']
+    for incomplete in ([base], [newer], [base,newer]):
         with pytest.raises(m.PublishError): m.validate_builds(base, incomplete)
     newer['fingerprint'] = base['fingerprint']
     with pytest.raises(m.PublishError): m.validate_builds(base, [base, newer])
+
+
+def test_281_and_282_require_exact_identity_and_all_older_hosts():
+    m=load();base=build(m)
+    expected=[('399eb452-402e-47cd-a0e3-18dff2d1ca51','1ba724dcb62ac389a72e41eecf40fea7aaca27e3','cfb1606da3744f6df32d89364535e307d3f2ed70'),
+      ('1faa3a05-2385-44fd-bf84-296cc68e84c2','c28050786c1e9aa70cca33d7e3d5c093652aeb26','2c29cc641498ac6653d89d54f986dc12fe22e9e0'),
+      ('a40a61f3-02db-4a88-a308-56884c53500b','8f7d94696424f92ff57243edb906cd6d2dd14a3a','43972dceac5ad3916bf8c91d1dd5adc6188ef427'),
+      ('267aad01-a185-4343-b0fb-13ee7e8fabc7','83876750fcbb404255b7439482688fee82a490d4','43972dceac5ad3916bf8c91d1dd5adc6188ef427')]
+    cohort=[]
+    for identity,sha,fingerprint in expected:
+        item=build(m,identifier=identity,sha=sha);item['fingerprint']={'hash':fingerprint};cohort.append(item)
+    assert m.validate_builds(base,cohort)==base['fingerprint']['hash']
+    for index in range(4):
+        with pytest.raises(m.PublishError):m.validate_builds(base,cohort[:index]+cohort[index+1:])
+    import copy
+    for field,value in [('gitCommitHash','b'*40),('id','55555555-5555-4555-8555-555555555555'),('fingerprint',{'hash':'a'*40})]:
+        changed=copy.deepcopy(cohort);changed[-1][field]=value
+        with pytest.raises(m.PublishError):m.validate_builds(base,changed)

@@ -1,0 +1,258 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+  "branding_source": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+  "builds": [
+    {
+      "id": "267aad01-a185-4343-b0fb-13ee7e8fabc7",
+      "git_sha": "83876750fcbb404255b7439482688fee82a490d4",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "282"
+    },
+    {
+      "id": "a40a61f3-02db-4a88-a308-56884c53500b",
+      "git_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "281"
+    },
+    {
+      "id": "1faa3a05-2385-44fd-bf84-296cc68e84c2",
+      "git_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+      "fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0",
+      "build": "280"
+    },
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70",
+      "build": "279"
+    }
+  ],
+  "branding_source_exceptions": {
+    "mobile/app.json": "3541b8c2c6c0e1812da8e54e7b2907f802dde01b2e3e0e502156d11442998506",
+    "mobile/app.config.ts": "8c20bce465bb7af015e9f9fb3960dbfa7d812765453fba1e20003b4471c5e787",
+    "mobile/assets/images/icon.png": "5277b77a0271f0c0dea3de5eae662e7ba95c669072fb666ebc6420dc726ecddf",
+    "mobile/assets/images/splash-icon.png": "e63daad1a321f01a85e2e218382eeebd7046810410fc9deb52b15bd2ae8b32a3",
+    "mobile/assets/images/adaptive-icon.png": "5277b77a0271f0c0dea3de5eae662e7ba95c669072fb666ebc6420dc726ecddf",
+    "mobile/assets/images/favicon.png": "82d0e7466c6c841f58295f24d79b6c82c03a9d3d53abdeb88620ad940b92eb32",
+    "mobile/plugins/withWatchApp.js": "a11578c1f5c1a79faa4d48168f83ba7c1cf9e066d3dc28bfb38b1380e78a27ff",
+    "mobile/plugins/withIntentsExtension.js": "077af163629ae5994428b0969be1a6b52e3e4fd03ca5e9781577154c09e965c2",
+    "mobile/plugins/__tests__/withWatchApp.test.js": "cb5df3b4071d7f766dcc6ff629d4cd58af09f24cd88c65ad39bae3c4324d25f2",
+    "mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts": "1c3e48bf17d810ca53fc07a96aa8e8c314a6d9728cc68f6aaed5b82691f3d586",
+    "mobile/scripts/__tests__/parser-security.test.js": "44506c591e87653cf7682cbd135ae32fa29ec747c980d3d7740c63f0f1d183dd",
+    "mobile/strings/zh.ts": "d56a37332d467540ad0c97bdafeb142e681c1167e6e70d126ab1203c84ed3689",
+    "mobile/PRODUCT_MAP.md": "c237dcc6039ca4a0235b42f65f5ed8c4b5b4f440e536ec9a30c091f16d9fe435"
+  },
+  "eas_cli": "23.2.0",
+  "checked_at": "2026-10-27T14:54:27.864247+00:00",
+  "comparisons": {
+    "279-280": {
+      "source_counts": [
+        287,
+        287
+      ],
+      "changed": [
+        [
+          "dir",
+          "patches"
+        ]
+      ]
+    },
+    "280-281": {
+      "source_counts": [
+        287,
+        287
+      ],
+      "changed": [
+        [
+          "contents",
+          "expoConfig"
+        ],
+        [
+          "file",
+          "assets/images/icon.png"
+        ],
+        [
+          "file",
+          "assets/images/splash-icon.png"
+        ]
+      ]
+    },
+    "281-282": {
+      "source_counts": [
+        287,
+        287
+      ],
+      "changed": []
+    }
+  },
+  "raw_evidence_sha256": {
+    "build-281.json": "8429ad6160845abc3918e9c11d60f6fc4ede0c8e82b3eae4ade3bfad84be8ada",
+    "build-279.json": "94d32f58559d42b4524a099ca42733fdf5be71aab6235f3c3d0efb2d62591d55",
+    "build-280.json": "78fcca482f5b26e3c0544c1710aaaf97ce91e19ba38cb060107e344e2721354d",
+    "compare-279-280.json": "21c3fe7ff25a97b72b31b333fb781d2b5505a02de762c2e987d539d6b3e99291",
+    "compare-280-281.json": "79d5b9d439cd53caf2703b078c988a5bd0330214fa822f502f12ad72de3eae03",
+    "cohort.json": "facd5a818d0a5bab5fee9c8f42be0299b333e6e8d31a80a66003e34c06a571f8",
+    "expo-config-280-281-diff.json": "44f278d2e40997d2e429e7e2e9f25d566e38c76332ea86ff708b230e1ca5cc26",
+    "compare-280-281-diff.json": "d75869547f8b761669fcb585c124670284bdacee402ea463c9f52823909c0554",
+    "compare-281-282.json": "86b5a4d4043f2541825face27e59275e0c4d9e2c3c7a83d943a9f6d4b5e4d50c",
+    "compare-279-280-diff.json": "e3f70ef2b47ee0258170c6c87c1cb1ea9a991b3bd543c504178883e2bd9edca7",
+    "build-282.json": "7495606d6744c3a25744a042bab6b1c42053b87254b2200c1d7f5cb034bc66ca"
+  },
+  "native_config_changes": [
+    {
+      "path": "/android/adaptiveIcon/backgroundColor",
+      "before": "#ffffff",
+      "after": "#077882"
+    },
+    {
+      "path": "/ios/infoPlist/CFBundleDisplayName",
+      "before": "小巴健康",
+      "after": "小气候"
+    },
+    {
+      "path": "/ios/infoPlist/NSMicrophoneUsageDescription",
+      "before": "用于语音输入、健康记录听写和小巴对话",
+      "after": "用于语音输入、健康记录听写和小气候对话"
+    },
+    {
+      "path": "/ios/infoPlist/NSSpeechRecognitionUsageDescription",
+      "before": "识别你的语音,和小巴连续对话",
+      "after": "识别你的语音,和小气候连续对话"
+    },
+    {
+      "path": "/name",
+      "before": "小巴健康",
+      "after": "小气候"
+    },
+    {
+      "path": "/plugins/10/1/microphonePermission",
+      "before": "用于语音输入、健康记录听写和小巴对话",
+      "after": "用于语音输入、健康记录听写和小气候对话"
+    },
+    {
+      "path": "/plugins/10/1/speechRecognitionPermission",
+      "before": "识别你的语音,和小巴连续对话",
+      "after": "识别你的语音,和小气候连续对话"
+    },
+    {
+      "path": "/plugins/14/1/savePhotosPermission",
+      "before": "用于你主动保存小巴对话中的图片、健康报告或分享截图到照片图库",
+      "after": "用于你主动保存小气候对话中的图片、健康报告或分享截图到照片图库"
+    },
+    {
+      "path": "/splash/backgroundColor",
+      "before": "#D57953",
+      "after": "#077882"
+    }
+  ],
+  "native_source_review": "No native module/dependency/API or permission capability changes. Watch plugin changes only display names; Siri plugin comment only. Extra pinned test, strings and PRODUCT_MAP bytes are branding-only non-native changes.",
+  "old_host_smoke": {
+    "schema_version": 2,
+    "native_source_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+    "javascript_source_sha": "a8cd1e7635eb697c0f0bc528382c98b3602893c3",
+    "status": "native_startup_and_synthetic_practice_render_passed",
+    "build_kind": "local iOS simulator Release built from 280 source; not STORE 280 binary",
+    "host_configuration": "production; Watch/Siri/Rokid switches unset",
+    "xcode": "26.5 17F42",
+    "cocoapods": "1.16.2",
+    "package_lock_sha256": "67d904e88b8281dd80b4d5557ae3abb8d2ad84da0db939b1ca6c701b938128ff",
+    "podfile_lock_sha256": "57685d652185dccdd1108b64588728c1a3dc17bed06cac529fb4730b763f420f",
+    "app_info": {
+      "CFBundleIdentifier": "life.executor.health",
+      "CFBundleShortVersionString": "1.3.6",
+      "CFBundleVersion": "1",
+      "CFBundleDisplayName": "小巴健康"
+    },
+    "main_jsbundle_sha256": "2cb28a8b44b307e9770fb754caa483b6e5f324e40a619bbcd663cf2d407f57eb",
+    "fixture_main_jsbundle_sha256": "2ca1966c6a557d3344ec92b1cb3b8ad5514a41514e81e660d2a7b58932aada2c",
+    "overlay_file_count": 959,
+    "overlay_manifest_sha256": "61b87f133ae959317f1cd5148917f493ef944d5f19b5d49d2358fe5b4feff043",
+    "equivalence_status": "Independent reviewer verified differing voice directory hash is solely repository Android build.gradle postinstall patch; after reverting only that file in a separate comparison copy, hash equals EAS280. Other 286 EAS sources matched per reviewer. This is source evidence, not STORE binary or production OTA artifact equivalence.",
+    "equivalence_proof_sha256": "ceb8d6d0556882ba09ad9aa227587e66fb970babbf97653e93f9abde6290c58e",
+    "signing": "Xcode CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=-; manual adhoc failed experiment not used",
+    "runtime_assets": "280 icon/splash assets retained; not a byte-identical production OTA export",
+    "limits": [
+      "Local simulator binary from native280 source, not STORE binary",
+      "Production OTA artifact not tested; runtime icon/splash assets retain280",
+      "Synthetic Axios read-only fixture not network/account synchronization",
+      "No real account login or attempts written",
+      "No OTA policy change or publication"
+    ],
+    "initial_checkouts_clean": true,
+    "final_host_source": "intentional JS overlay plus separate synthetic fixture; native tracked inputs unchanged",
+    "candidate_js_checkout_clean": true,
+    "build_history": [
+      {
+        "stage": "shared_dependencies_cross_root",
+        "status": "failed",
+        "reason": "Metro entry SHA1 resolution failure"
+      },
+      {
+        "stage": "independent_dependencies_cross_root",
+        "status": "failed",
+        "reason": "Metro entry outside native project graph"
+      },
+      {
+        "stage": "candidate_js_overlay_unsigned",
+        "status": "passed",
+        "scope": "native Release build and fresh simulator login-page startup"
+      },
+      {
+        "stage": "synthetic_fixture_unsigned",
+        "status": "partial",
+        "reason": "component mounted but SecureStore hydration failed in unsigned simulator"
+      },
+      {
+        "stage": "manual_adhoc_signature_experiment",
+        "status": "failed",
+        "reason": "Simulator denied launch; this signature is not used for final pass"
+      },
+      {
+        "stage": "xcode_simulator_signed_fixture",
+        "status": "passed",
+        "scope": "SecureStore hydration; synthetic ServerExamPractice rendered; next and previous interactions"
+      }
+    ],
+    "binding_sha256": "e3d1f78ff6b630efe3feef8347a2541ccd0b07732aa7c32a5d7fb8fbec78ca51"
+  },
+  "release_status": "Code and bounded simulator compatibility reviewed; exact candidate CI and production OTA publication pending",
+  "limitations": [
+    "Static fingerprint comparison does not prove runtime compatibility.",
+    "Old hosts retain native display name, icon, splash and permission wording.",
+    "Any unknown production cohort entry or changed pinned native bytes remains blocked."
+  ],
+  "old_host_dependency_investigation": {
+    "local_fingerprint": "2be2f37c402eb1d71ab81dd9e4f2a86dd30694e6",
+    "eas280_fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0",
+    "identical_sources": 286,
+    "source_counts": [
+      287,
+      288
+    ],
+    "extra_source": {
+      "type": "dir",
+      "filePath": "ios",
+      "reasons": [
+        "bareNativeDir"
+      ],
+      "hash": null
+    },
+    "voice_difference": {
+      "path": "node_modules/@react-native-voice/voice",
+      "local_hash": "2a515bbf6f808744c112d9735788858a6f20814b",
+      "eas_hash": "de7925c4abf1802d4d80965047f50aee47992596",
+      "npm_tarball_integrity_verified": true,
+      "only_changed_package_file": "android/build.gradle",
+      "proof": "In an isolated copy, reverting only android/build.gradle to the verified npm tarball reproduces the EAS280 voice directory fingerprint exactly. No running build files modified.",
+      "postinstall_script_sha256": "a451fc8d386b71323ba6289f0ee81dd71e6bd5397f35673266752829f0beb782"
+    },
+    "boundary": "Null generated ios fingerprint is not proof of native build equivalence; generated project, Pods, compiler and simulator host provenance still require separate evidence.",
+    "raw_evidence_sha256": {
+      "native280-local-vs-eas.json": "dc02b03bbaa2f61632f568839ca1dcda60a85aaa8ef00dc75a3052bd768dbdea",
+      "voice-package-comparison.json": "78e9fb33771ef7090baefd1da6ff5c242a22ed7e91eb5ec3ee7de1558242151c",
+      "voice-original-fingerprint.json": "a52cb03b83d5776aea50cf6874c86ca789b783ebdeabcbce53bdd12dfd018499",
+      "voice-android-only-proof.json": "ceb8d6d0556882ba09ad9aa227587e66fb970babbf97653e93f9abde6290c58e"
+    }
+  }
+}
