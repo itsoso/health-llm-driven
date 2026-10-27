@@ -1,0 +1,5290 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "candidate_sha": "a3492a05af00f50a96ab552ac2403eb7d2e0658b",
+  "measurement": "Actual GitHub Actions first-attempt full CI; no application deployment.",
+  "runs": [
+    {
+      "run_id": 40438974052,
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40438974052",
+      "sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+      "attempt": 1,
+      "created_at": "2026-10-27T02:32:01Z",
+      "completed_at": "2026-10-27T02:43:43+00:00",
+      "wall_seconds": 702.0,
+      "all_active_jobs_succeeded": true,
+      "job_count": 32,
+      "skipped_jobs": [],
+      "jobs_export_sha256": "a3512bdcff48e44acff1cb2359d3de3116d7aacff9dfda8d78be6be3a894c0ab",
+      "latest_backend_start_seconds": 140.0,
+      "critical_backend": {
+        "name": "backend-test-balanced-03",
+        "start_delay_seconds": 140.0,
+        "execution_seconds": 551.0,
+        "steps": [
+          {
+            "name": "Set up job",
+            "seconds": 1.0
+          },
+          {
+            "name": "Run actions/checkout@v5",
+            "seconds": 1.0
+          },
+          {
+            "name": "Run actions/setup-node@v5",
+            "seconds": 5.0
+          },
+          {
+            "name": "Install and verify official Pi kernel",
+            "seconds": 10.0
+          },
+          {
+            "name": "Run actions/setup-python@v6",
+            "seconds": 2.0
+          },
+          {
+            "name": "Install dependencies",
+            "seconds": 43.0
+          },
+          {
+            "name": "Run isolated shards (balanced-03)",
+            "seconds": 484.0
+          },
+          {
+            "name": "Upload pytest timing (balanced-03)",
+            "seconds": 1.0
+          },
+          {
+            "name": "Post Run actions/setup-python@v6",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/setup-node@v5",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/checkout@v5",
+            "seconds": 1.0
+          },
+          {
+            "name": "Complete job",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 2.0,
+          "execution_seconds": 8.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Classify changed paths",
+              "seconds": 0.0
+            },
+            {
+              "name": "Build timing-balanced pytest matrix",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 122.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install isolated artifact test dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Reject real Linux bind mounts before frontend deletion",
+              "seconds": 1.0
+            },
+            {
+              "name": "Build and consume a real frontend artifact without recompiling",
+              "seconds": 107.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 69.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install backend deps",
+              "seconds": 34.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Regenerate client types + assert no drift",
+              "seconds": 20.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 110.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install credential-free OTA test adapter dependencies",
+              "seconds": 6.0
+            },
+            {
+              "name": "Materialize actual OTA startup without release admission",
+              "seconds": 6.0
+            },
+            {
+              "name": "Fixed OTA publisher Node toolchain",
+              "seconds": 5.0
+            },
+            {
+              "name": "Exercise actual OTA dependencies and patches",
+              "seconds": 27.0
+            },
+            {
+              "name": "Exercise actual isolated OTA preflight",
+              "seconds": 0.0
+            },
+            {
+              "name": "Export and verify real iOS artifact without publishing",
+              "seconds": 57.0
+            },
+            {
+              "name": "Post Fixed OTA publisher Node toolchain",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 19.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install lightweight documentation dependencies",
+              "seconds": 6.0
+            },
+            {
+              "name": "Scan tracked files for high-confidence secrets",
+              "seconds": 3.0
+            },
+            {
+              "name": "Check System Map and doc drift",
+              "seconds": 0.0
+            },
+            {
+              "name": "Test System Map harness",
+              "seconds": 2.0
+            },
+            {
+              "name": "Check dossier consistency",
+              "seconds": 0.0
+            },
+            {
+              "name": "Check Agent Skill governance",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 140.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 15.0
+            },
+            {
+              "name": "Verify installed signature backport",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test security dependency compatibility and collection limits",
+              "seconds": 0.0
+            },
+            {
+              "name": "Test patched image parser denial-of-service guards",
+              "seconds": 0.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 3.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 1.0
+            },
+            {
+              "name": "TypeScript check",
+              "seconds": 18.0
+            },
+            {
+              "name": "Design token gate (复元 Reva ratchet)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Test (jest main suite)",
+              "seconds": 53.0
+            },
+            {
+              "name": "Test stateful chat input (isolated)",
+              "seconds": 9.0
+            },
+            {
+              "name": "Test stateful chat screen (isolated)",
+              "seconds": 8.0
+            },
+            {
+              "name": "Test stateful auth hook (isolated)",
+              "seconds": 12.0
+            },
+            {
+              "name": "Test stateful GPS prompt hook (isolated)",
+              "seconds": 9.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 482.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Initialize containers",
+              "seconds": 13.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install official Pi for PostgreSQL integration",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Verify live-run task publishing on isolated Redis",
+              "seconds": 10.0
+            },
+            {
+              "name": "Verify isolated review closure PostgreSQL boundary",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify old-target rollback closure PostgreSQL boundary",
+              "seconds": 16.0
+            },
+            {
+              "name": "Verify bounded no-backup daily journey migration on PostgreSQL",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify journey preflight closure catalog on isolated PostgreSQL",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify Runtime migration upgrade and idempotency",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify PostgreSQL shard database isolation",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run Runtime and medication PostgreSQL semantics",
+              "seconds": 387.0
+            },
+            {
+              "name": "Preserve PostgreSQL shard evidence",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Stop containers",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 125.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run maxim-lobanov/setup-xcode@v1",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Exercise release shell contracts with macOS Bash 3",
+              "seconds": 12.0
+            },
+            {
+              "name": "Build (swift build)",
+              "seconds": 68.0
+            },
+            {
+              "name": "Test (logic suite only)",
+              "seconds": 33.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 1.0
+            }
+          ]
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 33.0,
+          "execution_seconds": 42.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install only the credential-free test adapter dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Materialize exact retained startup pipeline without release admission",
+              "seconds": 4.0
+            },
+            {
+              "name": "First publisher Node setup on this fresh runner",
+              "seconds": 5.0
+            },
+            {
+              "name": "Exercise actual retained dependency installation and patches",
+              "seconds": 22.0
+            },
+            {
+              "name": "Exercise actual isolated retained startup CLI without credentials",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post First publisher Node setup on this fresh runner",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 77.0,
+          "execution_seconds": 12.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify actual target systemd 249 containment with synthetic fixtures",
+              "seconds": 3.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 12.0,
+          "execution_seconds": 202.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Audit production Python dependencies",
+              "seconds": 20.0
+            },
+            {
+              "name": "Health MCP tool contracts",
+              "seconds": 1.0
+            },
+            {
+              "name": "Independent WeChat bridge audit and isolated tests",
+              "seconds": 16.0
+            },
+            {
+              "name": "Lint (ruff, non-blocking warnings)",
+              "seconds": 4.0
+            },
+            {
+              "name": "Lint (ruff, blocking — undefined names / syntax)",
+              "seconds": 0.0
+            },
+            {
+              "name": "LLM live-change regression gate",
+              "seconds": 0.0
+            },
+            {
+              "name": "LLM synthesis regression gate",
+              "seconds": 2.0
+            },
+            {
+              "name": "Eval Golden Set (safety + insight + retrieval, no LLM cost)",
+              "seconds": 3.0
+            },
+            {
+              "name": "System KB retrieval eval (observation mode)",
+              "seconds": 108.0
+            },
+            {
+              "name": "Upload System KB eval metrics",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 138.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Check frontend page freeze (Phase 0-4)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 12.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test (vitest)",
+              "seconds": 53.0
+            },
+            {
+              "name": "Build",
+              "seconds": 32.0
+            },
+            {
+              "name": "Lint",
+              "seconds": 27.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 12.0,
+          "execution_seconds": 547.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 43.0
+            },
+            {
+              "name": "Run isolated shards (balanced-04)",
+              "seconds": 478.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-04)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 532.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 31.0
+            },
+            {
+              "name": "Run isolated shards (balanced-07)",
+              "seconds": 474.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-07)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 311.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 29.0
+            },
+            {
+              "name": "Run isolated shards (balanced-01)",
+              "seconds": 259.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-01)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 521.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-05)",
+              "seconds": 454.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-05)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 497.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 38.0
+            },
+            {
+              "name": "Run isolated shards (balanced-09)",
+              "seconds": 435.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-09)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 402.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 30.0
+            },
+            {
+              "name": "Run isolated shards (balanced-14)",
+              "seconds": 346.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-14)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 444.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 31.0
+            },
+            {
+              "name": "Run isolated shards (balanced-08)",
+              "seconds": 388.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-08)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 379.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 29.0
+            },
+            {
+              "name": "Run isolated shards (balanced-02)",
+              "seconds": 325.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-02)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 140.0,
+          "execution_seconds": 551.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 43.0
+            },
+            {
+              "name": "Run isolated shards (balanced-03)",
+              "seconds": 484.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-03)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 137.0,
+          "execution_seconds": 385.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 29.0
+            },
+            {
+              "name": "Run isolated shards (balanced-10)",
+              "seconds": 331.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-10)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 519.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-16)",
+              "seconds": 454.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-16)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 491.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Run isolated shards (balanced-15)",
+              "seconds": 429.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-15)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 125.0,
+          "execution_seconds": 486.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-13)",
+              "seconds": 424.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-13)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 84.0,
+          "execution_seconds": 502.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Run isolated shards (balanced-06)",
+              "seconds": 436.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-06)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 91.0,
+          "execution_seconds": 510.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-12)",
+              "seconds": 446.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-12)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 13.0,
+          "execution_seconds": 361.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 28.0
+            },
+            {
+              "name": "Run isolated shards (balanced-11)",
+              "seconds": 307.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-11)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 153.0,
+          "execution_seconds": 263.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 8.0
+            },
+            {
+              "name": "Verify installed release-tool consumers before publishing",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install release-test dependencies",
+              "seconds": 26.0
+            },
+            {
+              "name": "Verify real application network boundary in isolated namespace",
+              "seconds": 27.0
+            },
+            {
+              "name": "Verify synthetic WeChat systemd containment on disposable runner",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify real retained runner filesystem and canonical startup",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run deployment and rollback invariants",
+              "seconds": 181.0
+            },
+            {
+              "name": "Verify isolated OpenSSH single-key pause and restore",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify frontend builder uses a private mount namespace and dynamic UID",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 419.0,
+          "execution_seconds": 3.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Enforce release-only gates",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 693.0,
+          "execution_seconds": 2.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Enforce backend test and quality gates",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 698.0,
+          "execution_seconds": 4.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Require every backend release dependency to have actually passed",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": 40442091206,
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40442091206",
+      "sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+      "attempt": 1,
+      "created_at": "2026-10-27T03:04:21Z",
+      "completed_at": "2026-10-27T03:16:08+00:00",
+      "wall_seconds": 707.0,
+      "all_active_jobs_succeeded": true,
+      "job_count": 32,
+      "skipped_jobs": [],
+      "jobs_export_sha256": "b72fb05ce1326f244b892f32ef1a54d17e77de5ceb1d9b03498c289accd5b575",
+      "latest_backend_start_seconds": 168.0,
+      "critical_backend": {
+        "name": "backend-test-balanced-14",
+        "start_delay_seconds": 139.0,
+        "execution_seconds": 556.0,
+        "steps": [
+          {
+            "name": "Set up job",
+            "seconds": 1.0
+          },
+          {
+            "name": "Run actions/checkout@v5",
+            "seconds": 2.0
+          },
+          {
+            "name": "Run actions/setup-node@v5",
+            "seconds": 6.0
+          },
+          {
+            "name": "Install and verify official Pi kernel",
+            "seconds": 10.0
+          },
+          {
+            "name": "Run actions/setup-python@v6",
+            "seconds": 3.0
+          },
+          {
+            "name": "Install dependencies",
+            "seconds": 38.0
+          },
+          {
+            "name": "Run isolated shards (balanced-14)",
+            "seconds": 491.0
+          },
+          {
+            "name": "Upload pytest timing (balanced-14)",
+            "seconds": 1.0
+          },
+          {
+            "name": "Post Run actions/setup-python@v6",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/setup-node@v5",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/checkout@v5",
+            "seconds": 1.0
+          },
+          {
+            "name": "Complete job",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 3.0,
+          "execution_seconds": 11.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Classify changed paths",
+              "seconds": 0.0
+            },
+            {
+              "name": "Build timing-balanced pytest matrix",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 101.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install credential-free OTA test adapter dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Materialize actual OTA startup without release admission",
+              "seconds": 6.0
+            },
+            {
+              "name": "Fixed OTA publisher Node toolchain",
+              "seconds": 5.0
+            },
+            {
+              "name": "Exercise actual OTA dependencies and patches",
+              "seconds": 26.0
+            },
+            {
+              "name": "Exercise actual isolated OTA preflight",
+              "seconds": 1.0
+            },
+            {
+              "name": "Export and verify real iOS artifact without publishing",
+              "seconds": 53.0
+            },
+            {
+              "name": "Post Fixed OTA publisher Node toolchain",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 8.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Verify actual target systemd 249 containment with synthetic fixtures",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 152.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Check frontend page freeze (Phase 0-4)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 14.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test (vitest)",
+              "seconds": 56.0
+            },
+            {
+              "name": "Build",
+              "seconds": 34.0
+            },
+            {
+              "name": "Lint",
+              "seconds": 29.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 16.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install lightweight documentation dependencies",
+              "seconds": 4.0
+            },
+            {
+              "name": "Scan tracked files for high-confidence secrets",
+              "seconds": 3.0
+            },
+            {
+              "name": "Check System Map and doc drift",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test System Map harness",
+              "seconds": 1.0
+            },
+            {
+              "name": "Check dossier consistency",
+              "seconds": 0.0
+            },
+            {
+              "name": "Check Agent Skill governance",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 151.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install isolated artifact test dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Reject real Linux bind mounts before frontend deletion",
+              "seconds": 0.0
+            },
+            {
+              "name": "Build and consume a real frontend artifact without recompiling",
+              "seconds": 135.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 18.0,
+          "execution_seconds": 207.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run maxim-lobanov/setup-xcode@v1",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Exercise release shell contracts with macOS Bash 3",
+              "seconds": 21.0
+            },
+            {
+              "name": "Build (swift build)",
+              "seconds": 123.0
+            },
+            {
+              "name": "Test (logic suite only)",
+              "seconds": 48.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 1.0
+            }
+          ]
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 74.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install backend deps",
+              "seconds": 41.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Regenerate client types + assert no drift",
+              "seconds": 22.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 518.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Initialize containers",
+              "seconds": 13.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install official Pi for PostgreSQL integration",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 43.0
+            },
+            {
+              "name": "Verify live-run task publishing on isolated Redis",
+              "seconds": 11.0
+            },
+            {
+              "name": "Verify isolated review closure PostgreSQL boundary",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify old-target rollback closure PostgreSQL boundary",
+              "seconds": 17.0
+            },
+            {
+              "name": "Verify bounded no-backup daily journey migration on PostgreSQL",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify journey preflight closure catalog on isolated PostgreSQL",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify Runtime migration upgrade and idempotency",
+              "seconds": 0.0
+            },
+            {
+              "name": "Verify PostgreSQL shard database isolation",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run Runtime and medication PostgreSQL semantics",
+              "seconds": 411.0
+            },
+            {
+              "name": "Preserve PostgreSQL shard evidence",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Stop containers",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 121.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 10.0
+            },
+            {
+              "name": "Verify installed signature backport",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test security dependency compatibility and collection limits",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test patched image parser denial-of-service guards",
+              "seconds": 0.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 1.0
+            },
+            {
+              "name": "TypeScript check",
+              "seconds": 15.0
+            },
+            {
+              "name": "Design token gate (复元 Reva ratchet)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Test (jest main suite)",
+              "seconds": 45.0
+            },
+            {
+              "name": "Test stateful chat input (isolated)",
+              "seconds": 7.0
+            },
+            {
+              "name": "Test stateful chat screen (isolated)",
+              "seconds": 8.0
+            },
+            {
+              "name": "Test stateful auth hook (isolated)",
+              "seconds": 11.0
+            },
+            {
+              "name": "Test stateful GPS prompt hook (isolated)",
+              "seconds": 10.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 26.0,
+          "execution_seconds": 38.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install only the credential-free test adapter dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Materialize exact retained startup pipeline without release admission",
+              "seconds": 4.0
+            },
+            {
+              "name": "First publisher Node setup on this fresh runner",
+              "seconds": 5.0
+            },
+            {
+              "name": "Exercise actual retained dependency installation and patches",
+              "seconds": 19.0
+            },
+            {
+              "name": "Exercise actual isolated retained startup CLI without credentials",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post First publisher Node setup on this fresh runner",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 1.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 390.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-02)",
+              "seconds": 321.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-02)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 317.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 26.0
+            },
+            {
+              "name": "Run isolated shards (balanced-05)",
+              "seconds": 269.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-05)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 259.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 40.0
+            },
+            {
+              "name": "Audit production Python dependencies",
+              "seconds": 21.0
+            },
+            {
+              "name": "Health MCP tool contracts",
+              "seconds": 1.0
+            },
+            {
+              "name": "Independent WeChat bridge audit and isolated tests",
+              "seconds": 18.0
+            },
+            {
+              "name": "Lint (ruff, non-blocking warnings)",
+              "seconds": 5.0
+            },
+            {
+              "name": "Lint (ruff, blocking — undefined names / syntax)",
+              "seconds": 1.0
+            },
+            {
+              "name": "LLM live-change regression gate",
+              "seconds": 0.0
+            },
+            {
+              "name": "LLM synthesis regression gate",
+              "seconds": 2.0
+            },
+            {
+              "name": "Eval Golden Set (safety + insight + retrieval, no LLM cost)",
+              "seconds": 4.0
+            },
+            {
+              "name": "System KB retrieval eval (observation mode)",
+              "seconds": 150.0
+            },
+            {
+              "name": "Upload System KB eval metrics",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 505.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-01)",
+              "seconds": 438.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-01)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 286.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 26.0
+            },
+            {
+              "name": "Run isolated shards (balanced-15)",
+              "seconds": 239.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-15)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 651.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 39.0
+            },
+            {
+              "name": "Run isolated shards (balanced-07)",
+              "seconds": 580.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-07)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 120.0,
+          "execution_seconds": 454.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 34.0
+            },
+            {
+              "name": "Run isolated shards (balanced-06)",
+              "seconds": 396.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-06)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 525.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Run isolated shards (balanced-03)",
+              "seconds": 459.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-03)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 418.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Run isolated shards (balanced-11)",
+              "seconds": 354.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-11)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 139.0,
+          "execution_seconds": 556.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 38.0
+            },
+            {
+              "name": "Run isolated shards (balanced-14)",
+              "seconds": 491.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-14)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 423.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 36.0
+            },
+            {
+              "name": "Run isolated shards (balanced-16)",
+              "seconds": 364.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-16)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 65.0,
+          "execution_seconds": 318.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 26.0
+            },
+            {
+              "name": "Run isolated shards (balanced-10)",
+              "seconds": 271.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-10)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 543.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 44.0
+            },
+            {
+              "name": "Run isolated shards (balanced-09)",
+              "seconds": 473.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-09)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 91.0,
+          "execution_seconds": 541.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 40.0
+            },
+            {
+              "name": "Run isolated shards (balanced-08)",
+              "seconds": 478.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-08)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 17.0,
+          "execution_seconds": 313.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 27.0
+            },
+            {
+              "name": "Run isolated shards (balanced-12)",
+              "seconds": 263.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-12)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 35.0,
+          "execution_seconds": 399.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-04)",
+              "seconds": 338.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-04)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 168.0,
+          "execution_seconds": 495.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 40.0
+            },
+            {
+              "name": "Run isolated shards (balanced-13)",
+              "seconds": 432.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-13)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 169.0,
+          "execution_seconds": 242.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Verify installed release-tool consumers before publishing",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install release-test dependencies",
+              "seconds": 24.0
+            },
+            {
+              "name": "Verify real application network boundary in isolated namespace",
+              "seconds": 27.0
+            },
+            {
+              "name": "Verify synthetic WeChat systemd containment on disposable runner",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify real retained runner filesystem and canonical startup",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run deployment and rollback invariants",
+              "seconds": 167.0
+            },
+            {
+              "name": "Verify isolated OpenSSH single-key pause and restore",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify frontend builder uses a private mount namespace and dynamic UID",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 413.0,
+          "execution_seconds": 4.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Enforce release-only gates",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 698.0,
+          "execution_seconds": 3.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Enforce backend test and quality gates",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 704.0,
+          "execution_seconds": 3.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Require every backend release dependency to have actually passed",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "run_id": 40447632037,
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/40447632037",
+      "sha": "a3492a05af00f50a96ab552ac2403eb7d2e0658b",
+      "attempt": 1,
+      "created_at": "2026-10-27T04:03:46Z",
+      "completed_at": "2026-10-27T04:14:17+00:00",
+      "wall_seconds": 631.0,
+      "all_active_jobs_succeeded": true,
+      "job_count": 32,
+      "skipped_jobs": [],
+      "jobs_export_sha256": "56ed14d85dabb2ff6421d45aa59751449396a6803c8b86eb943a43c6c0415418",
+      "latest_backend_start_seconds": 27.0,
+      "critical_backend": {
+        "name": "backend-test-balanced-07",
+        "start_delay_seconds": 15.0,
+        "execution_seconds": 605.0,
+        "steps": [
+          {
+            "name": "Set up job",
+            "seconds": 1.0
+          },
+          {
+            "name": "Run actions/checkout@v5",
+            "seconds": 4.0
+          },
+          {
+            "name": "Run actions/setup-node@v5",
+            "seconds": 4.0
+          },
+          {
+            "name": "Install and verify official Pi kernel",
+            "seconds": 10.0
+          },
+          {
+            "name": "Run actions/setup-python@v6",
+            "seconds": 2.0
+          },
+          {
+            "name": "Install dependencies",
+            "seconds": 35.0
+          },
+          {
+            "name": "Run isolated shards (balanced-07)",
+            "seconds": 547.0
+          },
+          {
+            "name": "Upload pytest timing (balanced-07)",
+            "seconds": 1.0
+          },
+          {
+            "name": "Post Run actions/setup-python@v6",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/setup-node@v5",
+            "seconds": 0.0
+          },
+          {
+            "name": "Post Run actions/checkout@v5",
+            "seconds": 0.0
+          },
+          {
+            "name": "Complete job",
+            "seconds": 0.0
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "start_delay_seconds": 3.0,
+          "execution_seconds": 9.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Classify changed paths",
+              "seconds": 0.0
+            },
+            {
+              "name": "Build timing-balanced pytest matrix",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-quality",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 207.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Audit production Python dependencies",
+              "seconds": 13.0
+            },
+            {
+              "name": "Health MCP tool contracts",
+              "seconds": 1.0
+            },
+            {
+              "name": "Independent WeChat bridge audit and isolated tests",
+              "seconds": 16.0
+            },
+            {
+              "name": "Lint (ruff, non-blocking warnings)",
+              "seconds": 3.0
+            },
+            {
+              "name": "Lint (ruff, blocking — undefined names / syntax)",
+              "seconds": 1.0
+            },
+            {
+              "name": "LLM live-change regression gate",
+              "seconds": 0.0
+            },
+            {
+              "name": "LLM synthesis regression gate",
+              "seconds": 2.0
+            },
+            {
+              "name": "Eval Golden Set (safety + insight + retrieval, no LLM cost)",
+              "seconds": 3.0
+            },
+            {
+              "name": "System KB retrieval eval (observation mode)",
+              "seconds": 110.0
+            },
+            {
+              "name": "Upload System KB eval metrics",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "docs-quality",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 17.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install lightweight documentation dependencies",
+              "seconds": 4.0
+            },
+            {
+              "name": "Scan tracked files for high-confidence secrets",
+              "seconds": 3.0
+            },
+            {
+              "name": "Check System Map and doc drift",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test System Map harness",
+              "seconds": 1.0
+            },
+            {
+              "name": "Check dossier consistency",
+              "seconds": 0.0
+            },
+            {
+              "name": "Check Agent Skill governance",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 431.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Initialize containers",
+              "seconds": 15.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install official Pi for PostgreSQL integration",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 32.0
+            },
+            {
+              "name": "Verify live-run task publishing on isolated Redis",
+              "seconds": 8.0
+            },
+            {
+              "name": "Verify isolated review closure PostgreSQL boundary",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify old-target rollback closure PostgreSQL boundary",
+              "seconds": 16.0
+            },
+            {
+              "name": "Verify bounded no-backup daily journey migration on PostgreSQL",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify journey preflight closure catalog on isolated PostgreSQL",
+              "seconds": 0.0
+            },
+            {
+              "name": "Verify Runtime migration upgrade and idempotency",
+              "seconds": 1.0
+            },
+            {
+              "name": "Verify PostgreSQL shard database isolation",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run Runtime and medication PostgreSQL semantics",
+              "seconds": 336.0
+            },
+            {
+              "name": "Preserve PostgreSQL shard evidence",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Stop containers",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mac-build",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 235.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run maxim-lobanov/setup-xcode@v1",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Exercise release shell contracts with macOS Bash 3",
+              "seconds": 17.0
+            },
+            {
+              "name": "Build (swift build)",
+              "seconds": 133.0
+            },
+            {
+              "name": "Test (logic suite only)",
+              "seconds": 68.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 2.0
+            }
+          ]
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 10.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Verify actual target systemd 249 containment with synthetic fixtures",
+              "seconds": 3.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "start_delay_seconds": 14.0,
+          "execution_seconds": 418.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 30.0
+            },
+            {
+              "name": "Run isolated shards (balanced-02)",
+              "seconds": 363.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-02)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 521.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-04)",
+              "seconds": 459.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-04)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 306.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 27.0
+            },
+            {
+              "name": "Run isolated shards (balanced-03)",
+              "seconds": 256.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-03)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 1.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 544.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-08)",
+              "seconds": 480.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-08)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 605.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 35.0
+            },
+            {
+              "name": "Run isolated shards (balanced-07)",
+              "seconds": 547.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-07)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 323.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 26.0
+            },
+            {
+              "name": "Run isolated shards (balanced-12)",
+              "seconds": 275.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-12)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 501.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 36.0
+            },
+            {
+              "name": "Run isolated shards (balanced-10)",
+              "seconds": 440.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-10)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 521.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-09)",
+              "seconds": 460.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-09)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 424.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 31.0
+            },
+            {
+              "name": "Run isolated shards (balanced-14)",
+              "seconds": 368.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-14)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "start_delay_seconds": 16.0,
+          "execution_seconds": 476.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 36.0
+            },
+            {
+              "name": "Run isolated shards (balanced-15)",
+              "seconds": 411.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-15)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 446.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 32.0
+            },
+            {
+              "name": "Run isolated shards (balanced-05)",
+              "seconds": 387.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-05)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 492.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run isolated shards (balanced-13)",
+              "seconds": 427.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-13)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 396.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 30.0
+            },
+            {
+              "name": "Run isolated shards (balanced-11)",
+              "seconds": 339.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-11)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 425.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 8.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 32.0
+            },
+            {
+              "name": "Run isolated shards (balanced-16)",
+              "seconds": 366.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-16)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "start_delay_seconds": 15.0,
+          "execution_seconds": 518.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 5.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 3.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 40.0
+            },
+            {
+              "name": "Run isolated shards (balanced-01)",
+              "seconds": 453.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-01)",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "start_delay_seconds": 27.0,
+          "execution_seconds": 498.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Install and verify official Pi kernel",
+              "seconds": 10.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 36.0
+            },
+            {
+              "name": "Run isolated shards (balanced-06)",
+              "seconds": 433.0
+            },
+            {
+              "name": "Upload pytest timing (balanced-06)",
+              "seconds": 2.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-invariants",
+          "start_delay_seconds": 33.0,
+          "execution_seconds": 340.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 7.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 4.0
+            },
+            {
+              "name": "Verify installed release-tool consumers before publishing",
+              "seconds": 9.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 4.0
+            },
+            {
+              "name": "Install release-test dependencies",
+              "seconds": 34.0
+            },
+            {
+              "name": "Verify real application network boundary in isolated namespace",
+              "seconds": 27.0
+            },
+            {
+              "name": "Verify synthetic WeChat systemd containment on disposable runner",
+              "seconds": 3.0
+            },
+            {
+              "name": "Verify real retained runner filesystem and canonical startup",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run deployment and rollback invariants",
+              "seconds": 243.0
+            },
+            {
+              "name": "Verify isolated OpenSSH single-key pause and restore",
+              "seconds": 2.0
+            },
+            {
+              "name": "Verify frontend builder uses a private mount namespace and dynamic UID",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "mobile-typecheck",
+          "start_delay_seconds": 223.0,
+          "execution_seconds": 169.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 19.0
+            },
+            {
+              "name": "Verify installed signature backport",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test security dependency compatibility and collection limits",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test patched image parser denial-of-service guards",
+              "seconds": 0.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 3.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 0.0
+            },
+            {
+              "name": "TypeScript check",
+              "seconds": 24.0
+            },
+            {
+              "name": "Design token gate (复元 Reva ratchet)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Test (jest main suite)",
+              "seconds": 69.0
+            },
+            {
+              "name": "Test stateful chat input (isolated)",
+              "seconds": 12.0
+            },
+            {
+              "name": "Test stateful chat screen (isolated)",
+              "seconds": 10.0
+            },
+            {
+              "name": "Test stateful auth hook (isolated)",
+              "seconds": 12.0
+            },
+            {
+              "name": "Test stateful GPS prompt hook (isolated)",
+              "seconds": 10.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "ota-runner-startup",
+          "start_delay_seconds": 251.0,
+          "execution_seconds": 101.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install credential-free OTA test adapter dependencies",
+              "seconds": 3.0
+            },
+            {
+              "name": "Materialize actual OTA startup without release admission",
+              "seconds": 6.0
+            },
+            {
+              "name": "Fixed OTA publisher Node toolchain",
+              "seconds": 4.0
+            },
+            {
+              "name": "Exercise actual OTA dependencies and patches",
+              "seconds": 27.0
+            },
+            {
+              "name": "Exercise actual isolated OTA preflight",
+              "seconds": 0.0
+            },
+            {
+              "name": "Export and verify real iOS artifact without publishing",
+              "seconds": 55.0
+            },
+            {
+              "name": "Post Fixed OTA publisher Node toolchain",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "start_delay_seconds": 340.0,
+          "execution_seconds": 133.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install isolated artifact test dependencies",
+              "seconds": 3.0
+            },
+            {
+              "name": "Reject real Linux bind mounts before frontend deletion",
+              "seconds": 1.0
+            },
+            {
+              "name": "Build and consume a real frontend artifact without recompiling",
+              "seconds": 111.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "frontend-build",
+          "start_delay_seconds": 323.0,
+          "execution_seconds": 115.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 6.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Check frontend page freeze (Phase 0-4)",
+              "seconds": 0.0
+            },
+            {
+              "name": "Install dependencies",
+              "seconds": 10.0
+            },
+            {
+              "name": "Audit production dependencies",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test OSV dependency audit gate",
+              "seconds": 1.0
+            },
+            {
+              "name": "Test (vitest)",
+              "seconds": 42.0
+            },
+            {
+              "name": "Build",
+              "seconds": 26.0
+            },
+            {
+              "name": "Lint",
+              "seconds": 22.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "type-drift",
+          "start_delay_seconds": 374.0,
+          "execution_seconds": 68.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 2.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 2.0
+            },
+            {
+              "name": "Install backend deps",
+              "seconds": 37.0
+            },
+            {
+              "name": "Run actions/setup-node@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Regenerate client types + assert no drift",
+              "seconds": 22.0
+            },
+            {
+              "name": "Post Run actions/setup-node@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "retained-runner-startup",
+          "start_delay_seconds": 355.0,
+          "execution_seconds": 40.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 1.0
+            },
+            {
+              "name": "Run actions/checkout@v5",
+              "seconds": 3.0
+            },
+            {
+              "name": "Run actions/setup-python@v6",
+              "seconds": 1.0
+            },
+            {
+              "name": "Install only the credential-free test adapter dependencies",
+              "seconds": 2.0
+            },
+            {
+              "name": "Materialize exact retained startup pipeline without release admission",
+              "seconds": 4.0
+            },
+            {
+              "name": "First publisher Node setup on this fresh runner",
+              "seconds": 5.0
+            },
+            {
+              "name": "Exercise actual retained dependency installation and patches",
+              "seconds": 20.0
+            },
+            {
+              "name": "Exercise actual isolated retained startup CLI without credentials",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post First publisher Node setup on this fresh runner",
+              "seconds": 1.0
+            },
+            {
+              "name": "Post Run actions/setup-python@v6",
+              "seconds": 0.0
+            },
+            {
+              "name": "Post Run actions/checkout@v5",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "release-tests",
+          "start_delay_seconds": 397.0,
+          "execution_seconds": 4.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Enforce release-only gates",
+              "seconds": 1.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-tests",
+          "start_delay_seconds": 623.0,
+          "execution_seconds": 4.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Enforce backend test and quality gates",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "start_delay_seconds": 629.0,
+          "execution_seconds": 2.0,
+          "steps": [
+            {
+              "name": "Set up job",
+              "seconds": 0.0
+            },
+            {
+              "name": "Require every backend release dependency to have actually passed",
+              "seconds": 0.0
+            },
+            {
+              "name": "Complete job",
+              "seconds": 0.0
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "limitations": [
+    "One candidate run and two nearby baseline runs do not establish a percentile or repeatable causal speedup.",
+    "Job start delay mixes workflow admission, dispatch and runner availability; account quota is not inferred.",
+    "The candidate delays auxiliary results; every existing successful-candidate check is retained."
+  ]
+}
