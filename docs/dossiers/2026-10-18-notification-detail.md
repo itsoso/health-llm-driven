@@ -121,3 +121,11 @@ GPS 候选已遇 GitHub OAuth workflow scope 不足；native runtime 变化不�
 2026-10-27 23:06 CST，push被远端非快进拒绝：origin/main新增 `c4875a6b749cd0601615ab22592aa56157111cee`，包含备考服务、新数据库表及发布迁移helper。本地为ahead2/behind1，未强推、未合并、未部署。按AGENTS第7节停止外部写入，已请用户确认并发任务暂停发布与本会话统一交接；交接不能豁免新增范围的独立审查、PostgreSQL、精确完整CI及迁移准入。
 
 最后只读生产核验仍为838，业务发布租约不存在。例行同权限GitHub只读凭据已在发现分叉前完成续期并留审计，不构成973发布授权。通知线上行为尚未修复验收，App Review保持未提交；已知失败不能归入模拟器未验证项予以豁免。
+
+
+固定1f077d83d整合候选的干净导出验证：相关CI-mode807、恢复/迁移/权限及相邻674通过；
+真实模型回归 invariants12、health_agent_core50、orchestrator5全部通过（缺历史baseline，
+不宣称已完成基线差异证明）。独立通知/282兼容 G4 GO；恢复工具 G4 NO-GO：误用要求
+active服务的Vision校验，且动态PID进入不变快照。该阻断退回实现，不以测试绿色放行。
+修复将静态overlay证据与启动后cgroup模型/flag/稳定窗口分开，并补完整健康硬闸及
+canonical skills manifest校验；新固定提交需复审后才能推送、执行只读取证或恢复。

@@ -13,12 +13,14 @@ import fcntl
 import hashlib
 import importlib.util
 import json
+import math
 import os
 from pathlib import Path
 import re
 import stat
 import subprocess
 import sys
+import urllib.request
 
 FAILED = 'a8cd1e7635eb697c0f0bc528382c98b3602893c3'
 PREVIOUS = '83876750fcbb404255b7439482688fee82a490d4'
@@ -28,6 +30,9 @@ INTENT_PIN = '0c0e14c8537aac6f3eccb74fa18b7a13a338d2cbe685ba71062b576043f2c589'
 STATE = Path('/var/lib/reva-release')
 LIVE = Path('/opt/health-app')
 UNITS = ('health-backend.socket', 'health-backend.service', 'celery-worker.service', 'celery-beat.service')
+VISION_STATIC_PROPERTIES = ('EnvironmentFiles', 'DropInPaths', 'UnsetEnvironment', 'User',
+    'Group', 'WorkingDirectory', 'NoNewPrivileges', 'ProtectSystem', 'ProtectHome',
+    'PrivateTmp', 'CapabilityBoundingSet')
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'LC_ALL': 'C',
        'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null',
        'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1',
@@ -106,6 +111,45 @@ def validate_pi_lock(canonical, installed):
     return sorted(actual)
 
 
+def health_summary(report):
+    need(isinstance(report, dict), 'health score JSON contract rejected')
+    score = report.get('total_score')
+    need(type(score) in (int,float) and math.isfinite(score) and 35 <= score <= 60 and
+         report.get('max_possible') == 60 and report.get('threshold') == 35 and
+         report.get('pass') is True and report.get('critical_failures') == [],
+         'canonical health score hard gate failed')
+    dimensions = report.get('dimensions')
+    need(isinstance(dimensions, dict) and isinstance(dimensions.get('agent_runtime_circuit'),dict))
+    circuit = dimensions['agent_runtime_circuit']
+    detail, deferred = circuit.get('detail'), report.get('deferred_failures')
+    need(isinstance(detail,str) and circuit.get('release_safe') is True)
+    if circuit.get('healthy') is False:
+        match = re.fullmatch(r'paused:reconciliation_detected:generation=([0-9]+):ack=([0-9]+)', detail)
+        need(deferred == ['agent_runtime_circuit'] and match is not None)
+        generation, acknowledged = map(int,match.groups())
+        need(0 <= acknowledged < generation, 'runtime pause proof failed')
+        paused = True
+    else:
+        need(circuit.get('healthy') is True and deferred == [])
+        if detail not in ('disabled','not_initialized'):
+            match = re.fullmatch(r'active:(?:none|manual_resume):generation=([0-9]+):ack=([0-9]+)',detail)
+            need(match is not None and int(match[1]) == int(match[2]))
+        paused = False
+    return {'score':score, 'maximum':60, 'critical_failures':[],
+            'runtime_pause_preserved':paused, 'runtime':detail}
+
+
+def manifest_summary(payload, expected):
+    need(isinstance(payload,dict) and isinstance(payload.get('skills'),list) and expected,
+         'skills manifest unavailable')
+    values = payload['skills']
+    need(all(isinstance(item,dict) and isinstance(item.get('slug'),str) for item in values))
+    slugs = [item['slug'] for item in values]
+    need(len(slugs) == len(expected) and len(slugs) == len(set(slugs)) and set(slugs) == set(expected),
+         'skills manifest differs from canonical a8')
+    return {'count':len(slugs), 'slugs_sha256':digest(sorted(slugs))}
+
+
 def recover(adapter, evidence_sha256=None, *, accept=False):
     """No resume path: once mkdir succeeds any unknown result is operator-only."""
     need((evidence_sha256 is not None) == accept, 'digest and fixed authorization required together')
@@ -159,7 +203,7 @@ def recover(adapter, evidence_sha256=None, *, accept=False):
         terminal = adapter.finalize_runtime()
         need(terminal.get('terminal_sha') == FAILED, 'runtime finalized a different candidate')
         phase = 'final_health'
-        adapter.http()
+        health = adapter.http()
         stable = adapter.stable()
         need(adapter.snapshot() == before, 'immutable evidence changed after runtime finalization')
         result = {'state': 'FORWARD_RECOVERED', 'attempt': ATTEMPT,
@@ -167,7 +211,8 @@ def recover(adapter, evidence_sha256=None, *, accept=False):
                   'previous_sha': PREVIOUS, 'original_release_state': 'NEEDS_OPERATOR',
                   'original_lease_and_authorization_preserved': True,
                   'notification_fix_deployed': False, 'evidence_sha256': inspection,
-                  'database': committed, 'runtime_terminal': terminal, 'stable_services': stable}
+                  'database': committed, 'runtime_terminal': terminal, 'stable_services': stable,
+                  'health_guards': health}
         phase = 'completed'
         write_once(adapter.audit / 'completed.json', result)
         return result
@@ -221,8 +266,9 @@ def context(sha, *, verify_ci=True):
     return source, bootstrap, server
 
 
-def _guard_child(sha, *, schema=False):
-    """Rollback-only canonical a8 application guards; called after new intent."""
+def _guard_child(sha, *, schema=False, health_score=False):
+    """Canonical a8 guards after intent; score mode is read-only and sanitized."""
+    need(type(schema) is bool and type(health_score) is bool and not (schema and health_score))
     source, bootstrap, server = context(sha, verify_ci=False)
     reset = load(source / 'scripts/trusted_review_reset.py', 'exam_guard_reset', bootstrap)
     reset._assert_isolated_search_path()
@@ -243,9 +289,16 @@ def _guard_child(sha, *, schema=False):
         if schema:
             probe = load(source / 'backend/scripts/verify_runtime_schema_compatibility.py', 'exam_schema_guard', bootstrap)
             probe.main()
-        kb = load(candidate / 'backend/scripts/verify_runtime_only_kb_contract.py', 'exam_kb_guard', bootstrap)
-        sys.argv = ['verify_runtime_only_kb_contract.py', '--phase', 'guard']
-        need(kb.main() == 0, 'KB serving guard failed')
+        if health_score:
+            probe = load(candidate / 'backend/scripts/system_health_score.py', 'exam_score_guard', bootstrap)
+            report = probe.calculate_health_score('http://localhost:8000', skip_tests=True, allow_paused_runtime=True)
+            summary = health_summary(report)
+        else:
+            kb = load(candidate / 'backend/scripts/verify_runtime_only_kb_contract.py', 'exam_kb_guard', bootstrap)
+            sys.argv = ['verify_runtime_only_kb_contract.py', '--phase', 'guard']
+            need(kb.main() == 0, 'KB serving guard failed')
+    if health_score:
+        print(json.dumps(summary,sort_keys=True))
 
 
 class GateView:
@@ -267,6 +320,27 @@ class GateView:
         return original
 
 
+def verify_running_vision(vision, services, model_services):
+    need(set(model_services) == set(vision.SERVICES), 'vision service inventory differs')
+    result = {}
+    for unit in vision.SERVICES:
+        model = model_services[unit]
+        running = services[unit + '.service']
+        need(model['MainPID'] == running['MainPID'] and
+             model['process_start'] == running['processes'].get(model['MainPID']),
+             'vision main process does not match service cgroup')
+        result[unit] = {}
+        for pid, started in running['processes'].items():
+            number = int(pid)
+            need(vision.process_start(number) == started, 'vision cgroup process changed')
+            applied = vision.target_process_model(number)
+            flags = {key:vision.target_process_value(number,key) for key in vision.FLAGS}
+            need(flags == model['authorization_flags'], 'vision cgroup authorization flags differ')
+            need(vision.process_start(number) == started, 'vision process changed during environment proof')
+            result[unit][pid] = {'start':started, 'model':applied, 'authorization_flags':flags}
+    return result
+
+
 class Adapter:
     def __init__(self, source, bootstrap, server, core, token, check):
         self.source, self.bootstrap, self.server, self.core = source, bootstrap, server, core
@@ -275,6 +349,7 @@ class Adapter:
         self.helper = load(source / 'scripts/exam_attempts_release.py', 'exam_forward_ddl', bootstrap)
         module = load(source / 'scripts/no_backup_preflight_proof.py', 'exam_original_no_backup', bootstrap)
         self.object_json = module._contained.object_json
+        self.base_units = module._contained.RecoveryProof._units
         self.proof = module.NoBackupPreflightProof(source, bootstrap, server, FAILED, PREVIOUS, token)
         self.failed_source = bootstrap.canonical_source(FAILED)
         # These components read/advance the original runtime transaction and must
@@ -314,6 +389,7 @@ class Adapter:
         need(self.helper.source_admission(self.failed_source, PREVIOUS, FAILED))
         self.expected = self.helper.expected_migrations(self.failed_source)
         self.retained = load(source / 'scripts/retained_candidate_retirement.py', 'exam_configuration_guard', bootstrap)
+        self.vision = load(source / 'scripts/trusted_vision_model.py', 'exam_vision_guard', bootstrap)
         self.reset = self.proof.reset
         self.finalized = False
         self.runtime = self.migration = None
@@ -342,23 +418,66 @@ class Adapter:
              re.fullmatch('[a-f0-9]{64}', value['review_sha256']), 'independent candidate-bound G4 proof required')
         return hashlib.sha256(raw).hexdigest()
 
+    def _vision_static(self):
+        """Fixed qwen3.8 overlay admission valid while business units are stopped.
+
+        This reuses the original model transaction/history/file validators. No
+        PID, activation timestamp or process environment enters immutable proof.
+        """
+        b, vision, retained = self.bootstrap, self.vision, self.retained
+        self.server.assert_vision_model_history(b.STATE)
+        root = b.STATE / 'vision-models'
+        retained.private_directory(b, root)
+        operations = sorted(path.name for path in root.iterdir())
+        need(len(operations) == 1 and re.fullmatch('[a-f0-9]{32}', operations[0]),
+             'only the proven initial vision operation is supported')
+        history = retained.vision_history(b, self.source, operations[0])
+        vision.finalization_model_files(rolled_back=False)
+        files = {str(path): vision.optional_model_file(path) for path in
+                 [vision.MODEL, *(vision.SYSTEMD / (unit + '.service.d') / vision.DROPIN_NAME
+                                  for unit in vision.SERVICES)]}
+        need(all(item is not None and item['metadata']['uid'] == 0 and
+                 item['metadata']['gid'] == 0 and stat.S_IMODE(item['metadata']['mode']) == 0o600
+                 for item in files.values()), 'vision model file metadata differs')
+        services, raw_dropins = {}, {}
+        for unit in vision.SERVICES:
+            raw = vision.run(['/usr/bin/systemctl', 'show', unit,
+                '--property=' + ','.join(VISION_STATIC_PROPERTIES)])
+            values = vision.parse_service_properties(raw)
+            need(set(values) == set(VISION_STATIC_PROPERTIES), 'vision static properties differ')
+            vision.validate_env_sources(values['EnvironmentFiles'], installed=True)
+            vision.validate_unset_environment(values['UnsetEnvironment'])
+            name = unit + '.service'
+            need(values['DropInPaths'] == ' '.join(retained.vision_paths(name)),
+                 'vision model drop-in inventory differs')
+            need(self.proof.systemd.show(name, 'DropInPaths') == values['DropInPaths'],
+                 'vision static unit snapshots differ')
+            raw_dropins[name] = values['DropInPaths']
+            services[unit] = values
+        retained.VisionBaseView(self.proof.systemd, raw_dropins)
+        return {'model':'qwen3.8-flash', 'history':history, 'files':files,
+                'services':services, 'raw_dropins':raw_dropins}
+
     def _configuration(self):
-        # Existing _units proves exact base/drop-in/environment/security/network
-        # composition. Its enabled expectation is projected ONLY after proving
-        # the original gate's real enabled/disabled state separately.
+        # The no-backup wrapper requires active vision PIDs. At this fixed
+        # post-checkout incident we prove its exact static overlay separately,
+        # then call the unchanged base unit/security/network contract directly.
         transaction, proof = self.transaction, self.proof
         raw = proof.systemd
         if self.finalized:
             transaction._verify_original_enablement(self.journal)
         else:
             transaction._verify_boot_gate_armed(self.journal)
-        original = self.journal['original_enablement']
-        view = GateView(raw, original, released=self.finalized)
+        overlay = self._vision_static()
+        gated = GateView(raw, self.journal['original_enablement'], released=self.finalized)
+        view = self.retained.VisionBaseView(gated, overlay['raw_dropins'])
         proof.systemd = transaction.systemd = view
         try:
-            value = proof._units(self.failed_source, transaction, started_at=proof._started_text)
+            value = self.base_units(proof, self.failed_source, transaction, started_at=proof._started_text)
         finally:
             proof.systemd = transaction.systemd = raw
+        need(self._vision_static() == overlay, 'vision static proof changed')
+        value['vision_overlay'] = overlay
         return value
 
     def snapshot(self):
@@ -540,14 +659,47 @@ class Adapter:
             self._authority(); self.core._systemctl('start', unit)
         self.check()
 
+    def running_snapshot(self):
+        self._authority()
+        services = self.proof.running_snapshot()
+        overlay = self.retained.inspect_vision_overlay(self.bootstrap, self.source, self.proof.systemd)
+        projected = {**overlay, 'services':{
+            unit:{key:values[key] for key in VISION_STATIC_PROPERTIES}
+            for unit,values in overlay['services'].items()}}
+        need(projected == self._vision_static(), 'running vision configuration differs')
+        models = verify_running_vision(self.vision, services, overlay['services'])
+        need(self.proof.running_snapshot() == services, 'service identity changed during vision proof')
+        self._authority()
+        return {'services':services, 'vision':overlay, 'cgroup_model_identity':models}
+
     def stable(self):
         self.check()
-        value = self.core._wait_ready(self.proof)
+        # Both service/cgroup and model/flags identities participate in every
+        # sample and in the same existing seven-second RestartSec stability gate.
+        value = self.core._wait_ready(self)
         self.check()
         return value
 
     def http(self):
-        self.check(); self.core._http_probes(); self.check()
+        self._authority()
+        self.core._http_probes()
+        code = ('import runpy;m=runpy.run_path(' + repr(str(self.source / 'scripts/exam_release_recovery.py')) +
+                ');m["_guard_child"](' + repr(self.recovery_sha) + ',health_score=True)')
+        completed = subprocess.run(['/usr/bin/python3.12','-I','-S','-B','-c',code], env=ENV,
+            stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+            check=True, timeout=180)
+        need(len(completed.stdout) <= 4096, 'health summary exceeds bound')
+        score = self.object_json(completed.stdout)
+        need(set(score) == {'score','maximum','critical_failures','runtime_pause_preserved','runtime'})
+        expected = {path.parent.name for path in (self.failed_source / 'backend/skills').glob('*/SKILL.md')}
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), self.core._NoRedirect())
+        with opener.open('https://health.executor.life/api/skills/manifest.json', timeout=15) as response:
+            raw = response.read(8 * 1024 * 1024 + 1)
+            need(response.status == 200 and len(raw) <= 8 * 1024 * 1024, 'skills manifest response rejected')
+        manifest = manifest_summary(self.object_json(raw), expected)
+        self.health_evidence = {'health_score':score, 'skills_manifest':manifest}
+        self._authority()
+        return self.health_evidence
 
     def commit_runtime(self):
         self._authority()
