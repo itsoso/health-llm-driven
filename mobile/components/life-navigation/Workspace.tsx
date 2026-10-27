@@ -172,7 +172,7 @@ export default function Workspace({ owner, onViewHealth }: {
      status={dirty ? '有未保存草稿' : title || criterion ? '任务待加入' : '已同步'}
      trailing={button('保存个人安排', save, !dirty, '保存')}
      onDate={value=>{setDate(value);setGenerated(null);}}/>
- {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} data={draft} day={date} disabled={busy} edit={editStudy} saveAnswer={saveStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
+ {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} data={draft} persistedData={workspace.data} day={date} disabled={busy} edit={editStudy} saveAnswer={saveStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
  {tab === '今日' && <>
  <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>

@@ -7,7 +7,8 @@ import type { LifeData } from '../../../services/lifeNavigation';
 
 function Harness({initial=blankData()}: {initial?:LifeData}) {
  const [data,setData]=useState(initial);
- return <ExamStudyPanel data={data} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async fn=>{setData(prev=>{const next=copy(prev);fn(next);return next;});}} edit={fn=>setData(prev=>{const next=copy(prev);fn(next);return next;})}/>;
+ const [persisted,setPersisted]=useState(initial);
+ return <ExamStudyPanel data={data} persistedData={persisted} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async fn=>{const next=copy(data);fn(next);setData(next);setPersisted(next);}} edit={fn=>setData(prev=>{const next=copy(prev);fn(next);return next;})}/>;
 }
 it('resumes progress and retains answer feedback before advancing',async()=>{
  const data=blankData();recordAnswer(data,'2026-10-25',questions[0],questions[0].answer);
@@ -23,7 +24,7 @@ it('resumes progress and retains answer feedback before advancing',async()=>{
  expect(view.getByText(questions[2].prompt)).toBeTruthy();
 });
 it('opens the scheduled subject without creating study records',()=>{
- const edit=jest.fn();const view=render(<ExamStudyPanel data={blankData()} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async()=>{}} edit={edit}/>);
+ const edit=jest.fn();const view=render(<ExamStudyPanel data={blankData()} persistedData={blankData()} day="2026-10-26" disabled={false} focus={jest.fn()} saveAnswer={async()=>{}} edit={edit}/>);
  fireEvent.press(view.getByLabelText('练习逻辑'));
  expect(view.getByText(questions.find(q=>q.id==='l01')!.prompt)).toBeTruthy();
  expect(edit).not.toHaveBeenCalled();
