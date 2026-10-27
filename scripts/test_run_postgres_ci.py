@@ -40,6 +40,22 @@ def test_catalog_preserves_exact_original_selectors_once():
     assert set(selectors) == {"tests/" + s for s in LEGACY_SELECTORS} | {"tests/test_life_navigation.py", "tests/test_health_week_navigation.py", "tests/test_health_navigation_concurrency.py", "tests/test_lifenav_grants.py", "tests/test_supplement_groups.py", "tests/test_daily_journey.py", "tests/test_daily_journey_postgres.py", "tests/test_medication_reminder_single_delivery.py"}
 
 
+def test_postgres_placement_limits_observed_tail_without_omitting_selectors():
+    """Placement must improve every retained sample, not just the fastest run."""
+    import json
+    evidence = json.loads((ROOT / "docs/reviews/2026-10-27-postgres-placement-replay.json").read_text())
+    selectors = [selector for group in runner.SHARDS for selector in group]
+    assert len(selectors) == len(set(selectors))
+    for sample in evidence["samples"]:
+        durations = sample["selector_seconds"]
+        assert set(selectors) == set(durations)
+        loads = [sum(durations[selector] for selector in group) for group in runner.SHARDS]
+        baseline = [sum(durations[selector] for selector in group)
+                    for group in evidence["baseline_groups"]]
+        assert max(loads) <= max(baseline) - 30
+        assert abs(loads[0] - loads[1]) <= 30
+
+
 def config():
     return {"APP_ENV": "test", "CI": "true", "REDIS_URL": "redis://127.0.0.1:6379/0", "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/health_runtime_test", "TEST_DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/health_runtime_test"}
 

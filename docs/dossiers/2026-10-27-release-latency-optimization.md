@@ -2,12 +2,12 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | completed |
-| 当前阶段 | 第四阶段 G1–G6 通过，完整 CI 实测 9 分 20 秒 |
+| 状态 | building |
+| 当前阶段 | 第五阶段 G4 通过：PostgreSQL 分组负载调整，待精确 SHA CI 验收 |
 
 ## G1 范围
 
-PASS。用户要求尽可能缩短发布耗时。工程优化，不新增用户行为、健康对象或权限。Router implementation / health-harness-orchestrator + safety-gate；superpowers 禁用。沿用既有干净 main 发布目录，原工作区其他改动不动。
+裁决：PASS。用户要求尽可能缩短发布耗时。工程优化，不新增用户行为、健康对象或权限。Router implementation / health-harness-orchestrator + safety-gate；superpowers 禁用。沿用既有干净 main 发布目录，原工作区其他改动不动。
 
 run_path：`docs/_generated/harness-runs/9e372629e4f4.jsonl`（本地）。
 
@@ -166,3 +166,18 @@ G6 PASS：安装配置已在 main 生效。完整 CI 587→560 秒（9 分 20 �
 验证：先登记必需引用时治理检查 RED（adapter_semantic_marker_missing），补齐两端引用与摘要后 PASS。分别在内存删除引用、同时更新内容摘要仍被拒绝。治理及插件合同测试最终 115 passed；System Map、Dossier 一致性、两个 skill quick_validate、LLM change gate（无需 live eval）与 diff whitespace 检查通过。初轮发现 AGENTS 超过既有 10 KiB 约束及固定合同版本未同步，已保留原 AGENTS 入口、修正版本，未放宽测试；独立评审还修正了报告命令的解释器前缀。独立复核 GO，失败项及 package 12/12 通过，两端内容与边界一致。
 
 交接基线为 `f466569f11aeef3616571a5d9adce1c0229f0ec9`，已 fast-forward 接入其他任务无重叠的 main 更新。此处记录本地验证；推送与新精确 SHA 的 CI 结果须以实际 GitHub 记录为准，不提前声明完成。
+
+
+## 第五阶段：剩余瓶颈与 PostgreSQL 负载（2026-10-27）
+
+用户认为 CI 仍太长，继续授权优化。Router implementation / health-harness-orchestrator + safety；沿用同一 Dossier 和 trace。上一轮 Harness 提交 `d83bfdf2866a583cb217e4c03cc9c697518ff874` 的 CI 40457581729 已首轮全绿。已 fast-forward 接入其他任务主干 `9fd15d602dc34be3f0a30146f76909c65233bbe6`；对应 CI 40460622845 首轮全绿，实际 586 秒。此轮仅调整测试分组，不改应用行为、不部署应用或 OTA。
+
+G1/G2 PASS。当前安装约 15～18 秒，长尾已在测试执行。两轮完整 CI 40456684952 / 40457581729 的 PostgreSQL JUnit 两组累计分别为 291.798 / 396.142 秒、279.886 / 379.689 秒；最新 main 为 243.192 / 335.449 秒。每轮完整 499 条结果、无 skip。保持原两进程、独立 DB / Redis、所有选择器和执行参数，只把 `test_remote_health_oauth.py` 整个模块从第二组移至第一组。三轮同样本离线回放的最慢组减少约 37.53～45.96 秒；这是 JUnit 累计耗时回放，不含启动/资源争用，不保证总 CI 同幅下降。最新 main 的关键路径在普通 backend worker，故本轮首先消除 PostgreSQL 的剩余长尾，不能提前宣称整轮 CI 提速。
+
+拒绝两种未经证实的加速：普通分片再次按最新权重校准，三轮留一回放均退化；16→18 worker 在假设 20 个共享 runner 槽位的 DAG 回放中均推迟总完成时间，原因是辅助任务排队。该模型不是账户配额证明，未改变实际 worker 数或权重。后续大幅缩短完整 CI 需要继续剖析测试执行热点；当前 cProfile 仅是调查线索，不修改健康语义或缓存授权判断。
+
+目标：真实 PostgreSQL 阶段缩短，完整测试和隔离不退化；若病例集合、skip 或失败传播变化立即 NO-GO。若整轮耗时比本轮基线增加超过 10%，停止推广并调查，不以重跑挑选最好结果。共享回放证据为 `docs/reviews/2026-10-27-postgres-placement-replay.json`，包括三轮精确 SHA、job / attempt、逐选择器耗时、JUnit 摘要及前后分组。既有全选择器合约不改；新平衡测试在旧分组 RED。
+
+G3 PASS：本地 CI 合约及编排回归 59 passed、3 项需要真实 PG/Redis 的检查 skipped（仍由真实 CI 执行）；本机旧 backend venv 缺少 MCP 依赖导致移动模块收集失败，创建隔离环境按项目 hash lock 安装后，移动模块真实 PostgreSQL 26 passed、无 skip。自建本地 PostgreSQL 实例已停止。不能把环境失败或 SQLite 结果当 PG 验收。
+
+G4 PASS：独立 reviewer 对固定 `1259485b3` 给出 GO，独立 59 项回归通过、3 项真实 PG/Redis 条件 skip；三轮原始 XML 的 499 项集合、摘要、SHA、首轮成功、全部选择器耗时与回放逐项一致。移动模块 fixture 均按测试隔离，前置 navigation 模块连接与 patch 生命周期清理，无顺序/状态阻断。随后接入其他任务无交叠前端更新 `38be6d970f7973c878057bb708a3a13d6939f2f1`，本轮运行脚本及测试字节保持评审版本不变。G5/G6 新候选完整 CI 与实际性能对照仍待完成。

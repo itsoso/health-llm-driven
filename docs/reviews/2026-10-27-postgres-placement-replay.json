@@ -1,0 +1,196 @@
+{
+  "schema_version": 1,
+  "release_authority": false,
+  "measurement": "Offline placement replay of complete first-attempt successful PostgreSQL JUnit case durations. Includes testcase setup/call/teardown, excludes process startup and resource contention; not new CI evidence.",
+  "baseline_groups": [
+    [
+      "tests/test_agent_runtime_tool_operations.py",
+      "tests/test_remote_health_transport.py",
+      "tests/test_agent_runtime_reconciliation.py",
+      "tests/test_agent_supplement_persistence_postgres.py",
+      "tests/test_pi_kernel_executor.py",
+      "tests/test_latest_meal_correction.py",
+      "tests/test_daily_journey.py",
+      "tests/test_daily_journey_postgres.py",
+      "tests/test_life_navigation.py",
+      "tests/test_health_navigation_concurrency.py"
+    ],
+    [
+      "tests/test_agent_runtime_concurrency.py",
+      "tests/test_supplement_taken_count_drop_migration.py",
+      "tests/test_supplement_groups.py",
+      "tests/test_diet_spoken_fraction_correction.py",
+      "tests/test_pi_kernel_write_reconciliation.py",
+      "tests/test_medication_intake_batch.py",
+      "tests/test_write_intent_medication_batch_schema.py",
+      "tests/test_medication_intake_batch_postgres.py",
+      "tests/test_medication_reminder_single_delivery.py",
+      "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss",
+      "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract",
+      "tests/test_invited_phone_registration_postgres.py",
+      "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner",
+      "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
+      "tests/test_remote_health_oauth.py",
+      "tests/test_remote_health_queries.py",
+      "tests/test_health_week_navigation.py",
+      "tests/test_lifenav_grants.py"
+    ]
+  ],
+  "samples": [
+    {
+      "run_id": 40457581729,
+      "head_sha": "d83bfdf2866a583cb217e4c03cc9c697518ff874",
+      "attempt": 1,
+      "job_id": 122034466429,
+      "testcase_results": 499,
+      "skipped": 0,
+      "junit_sha256": {
+        "shard-1.xml": "d58024526b061903cb9c9aa570f218a0608aebd452bcb563482ce40e3cbf1ded",
+        "shard-2.xml": "c205c7ad7ad2c0ec0b1873e620742f4b6217873130eb3810b19ae34572b13d90"
+      },
+      "selector_seconds": {
+        "tests/test_agent_runtime_tool_operations.py": 95.437,
+        "tests/test_remote_health_transport.py": 42.107,
+        "tests/test_agent_runtime_reconciliation.py": 34.777,
+        "tests/test_agent_supplement_persistence_postgres.py": 21.709,
+        "tests/test_pi_kernel_executor.py": 12.121,
+        "tests/test_latest_meal_correction.py": 4.434,
+        "tests/test_daily_journey.py": 44.548,
+        "tests/test_daily_journey_postgres.py": 0.517,
+        "tests/test_life_navigation.py": 18.538,
+        "tests/test_health_navigation_concurrency.py": 5.698,
+        "tests/test_agent_runtime_concurrency.py": 17.645,
+        "tests/test_supplement_taken_count_drop_migration.py": 30.494,
+        "tests/test_supplement_groups.py": 32.494,
+        "tests/test_diet_spoken_fraction_correction.py": 36.986,
+        "tests/test_pi_kernel_write_reconciliation.py": 25.128,
+        "tests/test_medication_intake_batch.py": 88.496,
+        "tests/test_write_intent_medication_batch_schema.py": 1.787,
+        "tests/test_medication_intake_batch_postgres.py": 5.808,
+        "tests/test_medication_reminder_single_delivery.py": 10.967,
+        "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss": 2.238,
+        "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract": 0.088,
+        "tests/test_invited_phone_registration_postgres.py": 0.285,
+        "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner": 0.052,
+        "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records": 4.967,
+        "tests/test_remote_health_oauth.py": 43.31,
+        "tests/test_remote_health_queries.py": 23.349,
+        "tests/test_health_week_navigation.py": 24.897,
+        "tests/test_lifenav_grants.py": 30.698
+      },
+      "before_seconds": [
+        279.886,
+        379.689
+      ],
+      "replay_seconds": [
+        323.196,
+        336.379
+      ]
+    },
+    {
+      "run_id": 40456684952,
+      "head_sha": "f466569f11aeef3616571a5d9adce1c0229f0ec9",
+      "attempt": 1,
+      "job_id": 122031614599,
+      "testcase_results": 499,
+      "skipped": 0,
+      "junit_sha256": {
+        "shard-1.xml": "ca44b297b138d2899ac104443a9ce0451d2b2da36168ad0b7e5a9eb0f6de6442",
+        "shard-2.xml": "a98442c4a6e93f92df2bfc36473c62ed06363d17cc4fe093163cf2de3d393120"
+      },
+      "selector_seconds": {
+        "tests/test_agent_runtime_tool_operations.py": 102.415,
+        "tests/test_remote_health_transport.py": 43.035,
+        "tests/test_agent_runtime_reconciliation.py": 35.389,
+        "tests/test_agent_supplement_persistence_postgres.py": 22.639,
+        "tests/test_pi_kernel_executor.py": 12.303,
+        "tests/test_latest_meal_correction.py": 4.772,
+        "tests/test_daily_journey.py": 46.183,
+        "tests/test_daily_journey_postgres.py": 0.508,
+        "tests/test_life_navigation.py": 18.7,
+        "tests/test_health_navigation_concurrency.py": 5.854,
+        "tests/test_agent_runtime_concurrency.py": 18.836,
+        "tests/test_supplement_taken_count_drop_migration.py": 30.551,
+        "tests/test_supplement_groups.py": 34.54,
+        "tests/test_diet_spoken_fraction_correction.py": 37.881,
+        "tests/test_pi_kernel_write_reconciliation.py": 25.546,
+        "tests/test_medication_intake_batch.py": 90.709,
+        "tests/test_write_intent_medication_batch_schema.py": 1.875,
+        "tests/test_medication_intake_batch_postgres.py": 6.082,
+        "tests/test_medication_reminder_single_delivery.py": 11.567,
+        "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss": 2.421,
+        "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract": 0.085,
+        "tests/test_invited_phone_registration_postgres.py": 0.302,
+        "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner": 0.053,
+        "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records": 4.924,
+        "tests/test_remote_health_oauth.py": 45.961,
+        "tests/test_remote_health_queries.py": 24.959,
+        "tests/test_health_week_navigation.py": 26.487,
+        "tests/test_lifenav_grants.py": 33.363
+      },
+      "before_seconds": [
+        291.798,
+        396.142
+      ],
+      "replay_seconds": [
+        337.759,
+        350.181
+      ]
+    },
+    {
+      "run_id": 40460622845,
+      "head_sha": "9fd15d602dc34be3f0a30146f76909c65233bbe6",
+      "attempt": 1,
+      "job_id": 122044175915,
+      "testcase_results": 499,
+      "skipped": 0,
+      "junit_sha256": {
+        "shard-1.xml": "6902f4b221638f6dd9d611cba0fe1be779da8b6536d6ef0d02e99baf57418f96",
+        "shard-2.xml": "2a38db1b493a37ae067f64d94cb19ba607567a8125383584ab77579e4bf53e72"
+      },
+      "selector_seconds": {
+        "tests/test_agent_runtime_tool_operations.py": 83.527,
+        "tests/test_remote_health_transport.py": 36.236,
+        "tests/test_agent_runtime_reconciliation.py": 30.38,
+        "tests/test_agent_supplement_persistence_postgres.py": 18.844,
+        "tests/test_pi_kernel_executor.py": 10.542,
+        "tests/test_latest_meal_correction.py": 3.814,
+        "tests/test_daily_journey.py": 38.73,
+        "tests/test_daily_journey_postgres.py": 0.406,
+        "tests/test_life_navigation.py": 15.842,
+        "tests/test_health_navigation_concurrency.py": 4.871,
+        "tests/test_agent_runtime_concurrency.py": 14.953,
+        "tests/test_supplement_taken_count_drop_migration.py": 30.438,
+        "tests/test_supplement_groups.py": 28.348,
+        "tests/test_diet_spoken_fraction_correction.py": 31.938,
+        "tests/test_pi_kernel_write_reconciliation.py": 21.252,
+        "tests/test_medication_intake_batch.py": 77.776,
+        "tests/test_write_intent_medication_batch_schema.py": 1.572,
+        "tests/test_medication_intake_batch_postgres.py": 5.067,
+        "tests/test_medication_reminder_single_delivery.py": 9.445,
+        "tests/test_user_merge_security.py::test_postgres_concurrent_same_source_merge_has_one_winner_and_no_data_loss": 1.998,
+        "tests/test_registration_invitation_migration_postgres.py::test_postgres_managed_migration_is_replay_safe_and_enforces_contract": 0.066,
+        "tests/test_invited_phone_registration_postgres.py": 0.237,
+        "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner": 0.05,
+        "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records": 4.221,
+        "tests/test_remote_health_oauth.py": 37.527,
+        "tests/test_remote_health_queries.py": 21.091,
+        "tests/test_health_week_navigation.py": 22.033,
+        "tests/test_lifenav_grants.py": 27.437
+      },
+      "before_seconds": [
+        243.192,
+        335.449
+      ],
+      "replay_seconds": [
+        280.719,
+        297.922
+      ]
+    }
+  ],
+  "limitations": [
+    "Groups still execute concurrently on one runner; JUnit sums do not predict resource contention or guarantee wall-clock savings.",
+    "No change to selected tests, database/Redis isolation, process count, deadlines, retries or gates.",
+    "Ordinary backend worker weight refresh was rejected: leave-one-out replay regressed on all three recent samples."
+  ]
+}

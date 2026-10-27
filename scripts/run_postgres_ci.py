@@ -2,8 +2,9 @@
 """Two bounded pytest processes, each owning a freshly created local test database.
 
 Selectors preserve the original PostgreSQL CI suite and include personal/Health
-navigation transaction and concurrency coverage. Original file grouping uses
-run 37877803968 completion timings (approximately 168s/167s, excluding startup).
+navigation transaction and concurrency coverage. Placement uses complete
+successful JUnit samples; see
+docs/reviews/2026-10-27-postgres-placement-replay.json. No selectors are removed.
 Migration/idempotency and real Redis checks remain preceding workflow steps.
 """
 from __future__ import annotations
@@ -34,6 +35,7 @@ SHARDS = (
         "tests/test_daily_journey_postgres.py",
         "tests/test_life_navigation.py",
         "tests/test_health_navigation_concurrency.py",
+        "tests/test_remote_health_oauth.py",
     ),
     (
         "tests/test_agent_runtime_concurrency.py",
@@ -50,7 +52,6 @@ SHARDS = (
         "tests/test_invited_phone_registration_postgres.py",
         "tests/test_registration_invitation_service.py::test_postgres_concurrent_grant_consumption_has_exactly_one_winner",
         "tests/test_app_store_demo_account.py::test_demo_seed_removes_dependent_rows_before_parent_records",
-        "tests/test_remote_health_oauth.py",
         "tests/test_remote_health_queries.py",
         "tests/test_health_week_navigation.py",
         "tests/test_lifenav_grants.py",
