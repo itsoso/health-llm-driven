@@ -55,7 +55,7 @@
       "coverage": "declaration",
       "id": "api.mcp",
       "kind": "api",
-      "name": "Reva MCP Tools",
+      "name": "小气候 MCP 工具",
       "source": {
         "path": "mcp-server/server.py",
         "type": "declaration"
