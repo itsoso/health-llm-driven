@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | photo-supplement-clarification |
-| 当前阶段 | S5 对话界面优化，准备合并 TestFlight 更新 |
-| 状态 | building |
+| 当前阶段 | S6 TestFlight 可用，安装验收待验证 |
+| 状态 | shipping |
 
 ## G1 准入
 
@@ -120,3 +120,16 @@ The first local release-invariants invocation stopped on its Python 3.12 prerequ
 The user chose to wait for the other OTA publication before this TestFlight. Fresh independent readback confirms b257203591c49e17222995dd1597a2b35e28d6a6 backend SUCCEEDED, production exact SHA and healthy services; trusted OTA validate 40635239299 and publish 40635498812 both succeeded. The durable OTA completed receipt SHA256 is fa712a9ee4939dcda0f7ba6ae751ca9e145d9e95ae2b1219eb465a1edc2c7f4f, with update group 30a312b8-c154-488c-a0fa-d354e10ba9b0 and update 01a180e8-1b3b-7e7c-a593-35d63b9623f7. The actual business lease /run/lock/health-app-release is absent. This proves publication completion, not device uptake.
 
 The clean integrated main candidate retains the other publisher's runtime guardian-avatar asset and exam changes, and reinstates only the approved native icon/adaptive/splash/favicon and matching background configuration from the already reviewed 5ec source for the explicitly requested new TestFlight build. This is a native build change and is not an OTA candidate. App Store candidate 282 remains selected; no App Review action is authorized. UI final integrated independent review returned GO with 133 reviewer tests. Full Mobile suite passed 4015 tests with one existing skip; TypeScript, scoped lint, System Map, dossier and tracked-secret checks passed. Native-launcher background regression first failed (1 failed,3 passed) against the OTA-preserved assets. New exact-source checks, independent review and current-main full CI remain required before any publication authorization rotation or build/upload. The server read credential is expired and any old refresh drafts are stale.
+
+
+### TestFlight publication completed
+
+Exact candidate `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff` passed both full CI runs `40640519405` and `40640544354`, 32/32 jobs each. The actual local CI-mode release integration exited 0 with 5243 passed, 65 skipped and 127 subtests passed. The earlier missing-runtime/dependency preparation failures remain recorded and are not counted as a pass. Independent final native/UI review returned GO. The first local credential transport stopped while importing cryptography, before private-key access or mint; dependency-enabled isolated execution was independently reviewed and completed once. Original failure evidence was retained. Normal b257 successful-authorization retirement and canonical ae7 installation completed without backups.
+
+Trusted validate `40643806816` and release `40643892330` both succeeded. Exact EAS Store/production iOS build `ea1dda2a-86b3-4e46-adf8-b2b024465154` was built and revalidated by the trusted workflow, then uploaded via submission `436332f3-45f5-4f1a-bd97-5438e9acd90e`. ASC `1.3.6 (283)`, build `1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0`, is VALID and IN_BETA_TESTING; both Team (Expo) and 内部测试 groups include the exact build. Chinese TestFlight notes were written and read back. Existing App Store selection remains build 282; no App Review submission or tester invitation was sent.
+
+Production independently reports exact ae7, durable backend SUCCEEDED receipt SHA256 `822df66f4f266f2f78f955475241b8d974e2db806a05c57a032f5b4128e815a7`, healthy API/DB/Redis/Celery, anonymous agent POST 401 and no business lease. The completed b257 OTA was not repeated.
+
+TestFlight distribution is complete. Signed-in phone installation, real-health-data behavior and local static inspection of this Store IPA remain unverified. Earlier simulator component and guardian-icon evidence is source/UI evidence, not same-IPA device acceptance. No real health records were read or written. EAS metadata checks are enforced in the successful trusted workflow; additional local read-only EAS metadata lookup was unavailable because no local Expo credential was available. No signing identity, upload or release was retried.
+
+Durable redacted release index: `docs/reviews/2026-10-28-xiaoqihou-testflight-release.json`.

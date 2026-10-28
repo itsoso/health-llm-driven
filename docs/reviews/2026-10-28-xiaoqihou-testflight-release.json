@@ -1,0 +1,97 @@
+{
+  "schema": "xiaoqihou-testflight-release.v1",
+  "observed_at": "2026-10-28T06:47:30.055950+00:00",
+  "candidate_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+  "status": "TESTFLIGHT_AVAILABLE",
+  "scope": [
+    "approved_guardian_native_icon",
+    "chat_header_and_progress_ui"
+  ],
+  "ci": {
+    "runs": [
+      40640519405,
+      40640544354
+    ],
+    "both": "success_32_of_32",
+    "local_release_invariants": {
+      "exit_code": 0,
+      "passed": 5243,
+      "skipped": 65,
+      "subtests_passed": 127
+    },
+    "mobile": {
+      "passed": 4015,
+      "skipped": 1
+    },
+    "independent_safety_review": "GO"
+  },
+  "publication": {
+    "validate_run": 40643806816,
+    "release_run": 40643892330,
+    "workflow_status": "success",
+    "eas_build_id": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+    "eas_submission_id": "436332f3-45f5-4f1a-bd97-5438e9acd90e",
+    "version": "1.3.6",
+    "build": "283"
+  },
+  "backend": {
+    "production_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+    "receipt_state": "SUCCEEDED",
+    "receipt_sha256": "822df66f4f266f2f78f955475241b8d974e2db806a05c57a032f5b4128e815a7",
+    "health": "healthy",
+    "api": "running",
+    "database": "connected",
+    "redis": "connected",
+    "celery": "connected",
+    "anonymous_agent_post_status": 401,
+    "business_lease_present": false
+  },
+  "apple": {
+    "asc_build_id": "1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0",
+    "build": "283",
+    "betaBuildDetails": {
+      "autoNotifyEnabled": true,
+      "internalBuildState": "IN_BETA_TESTING",
+      "externalBuildState": "READY_FOR_BETA_SUBMISSION"
+    },
+    "groups": [
+      {
+        "id": "74ce8d9e-c80e-49b8-b98c-309af279c121",
+        "name": "Team (Expo)",
+        "isInternalGroup": true,
+        "contains_build_283": true
+      },
+      {
+        "id": "46321ba9-a750-400a-bb79-19934e7936cd",
+        "name": "内部测试",
+        "isInternalGroup": true,
+        "contains_build_283": true
+      }
+    ],
+    "selected_store_build": {
+      "type": "builds",
+      "id": "f224685f-e589-41ea-a9d3-fa337b85269a"
+    }
+  },
+  "release_notes": {
+    "build_id": "1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0",
+    "localization_id": "1a1f6951-6e9c-4bfb-926e-5c6d2dd661c7",
+    "locale": "zh-Hans",
+    "verified": true
+  },
+  "acceptance": {
+    "source_and_workflow_binding": "verified",
+    "native_artifact_static_inspection": "not_yet_performed",
+    "signed_in_device_installation": "not_verified",
+    "real_health_data_read_or_written": false,
+    "existing_282_store_selection_preserved": true,
+    "app_review_submitted": false
+  },
+  "backups_created": false,
+  "credentials": {
+    "initial_provider_import_failure": "preserved_before_mint",
+    "corrected_refresh": "succeeded_after_independent_G4",
+    "successful_authorization_rotation": "succeeded",
+    "secret_values_in_receipt": false
+  }
+}
