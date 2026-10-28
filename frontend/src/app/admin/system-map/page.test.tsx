@@ -98,6 +98,8 @@ describe('SystemMapPage', () => {
     renderPage();
 
     expect(await screen.findByRole('heading', { name: 'System Map' })).toBeInTheDocument();
+    expect(screen.getByText('小气候 / GENERATED STRUCTURE / V2.0')).toBeInTheDocument();
+    expect(screen.queryByText(/REVA \/ GENERATED STRUCTURE/)).not.toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/admin/system-map');
     expect(screen.getByRole('tab', { name: '系统总览' })).toBeInTheDocument();
     expect(screen.getByRole('tab', { name: '依赖关系' })).toBeInTheDocument();

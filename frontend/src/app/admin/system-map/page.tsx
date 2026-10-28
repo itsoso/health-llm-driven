@@ -202,7 +202,7 @@ export default function SystemMapPage() {
           </button>
           <div className="mt-8 flex flex-wrap items-end justify-between gap-6">
             <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400">REVA / GENERATED STRUCTURE / V{query.data.schema_version}</p>
+              <p className="font-mono text-[10px] uppercase tracking-[0.28em] text-cyan-400">小气候 / GENERATED STRUCTURE / V{query.data.schema_version}</p>
               <h1 className="mt-2 text-4xl font-semibold tracking-[-0.04em] text-white">System Map</h1>
               <p className="mt-2 max-w-2xl text-sm text-slate-400">代码派生的实体、关系与覆盖度。结构事实只读，叙事理由仍回到权威文档。</p>
             </div>
