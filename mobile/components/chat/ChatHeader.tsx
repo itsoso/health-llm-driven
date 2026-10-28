@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, Pressable, StyleSheet } from 'react-native';
+import { View, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
@@ -7,7 +7,7 @@ import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
   revaSpacing,
-  revaFonts,
+  revaRadii,
 } from '../../constants/revaTheme';
 
 // header 里只露品牌名/压缩模型名 — 去掉尾部速度档 + 「· 供应商」后缀。
@@ -93,8 +93,7 @@ export default function ChatHeader({
               accessibilityHint="开始新对话，当前对话保留在历史中"
               accessibilityRole="button"
             >
-              <Ionicons name="create-outline" size={18} color={C.green700} />
-              <Text maxFontSizeMultiplier={1.2} numberOfLines={1} style={styles.newChatLabel}>新对话</Text>
+              <Ionicons name="create-outline" size={21} color={C.green700} />
             </Pressable>
             <Pressable
               onPress={onOpenHistory}
@@ -104,7 +103,7 @@ export default function ChatHeader({
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="chatbubbles-outline" size={18} color={C.ink2} />
+              <Ionicons name="time-outline" size={21} color={C.ink2} />
             </Pressable>
             <Pressable
               onPress={onOpenToolMenu}
@@ -114,7 +113,7 @@ export default function ChatHeader({
               accessibilityHint="打开更多会诊操作"
               accessibilityRole="button"
             >
-              <Ionicons name="ellipsis-horizontal" size={18} color={C.ink2} />
+              <Ionicons name="ellipsis-horizontal" size={21} color={C.ink2} />
             </Pressable>
           </View>
         </View>
@@ -128,7 +127,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: revaSpacing.s4,
     // 与状态栏时钟留清晰呼吸(页面根用动态 top inset 托底 notch)。
     paddingTop: 8,
-    paddingBottom: 2,
+    paddingBottom: 6,
   },
   // 平铺 header(2026-07-06 重设计):去掉带边框的「卡片」外壳 —— 它紧贴状态栏
   // 时钟显得挤、且和奶油底色打架。标题与操作直接落在 paper 背景上,更干净。
@@ -145,17 +144,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 'auto',
   },
-  // 三个一级动作收拢为同一组,让右上角像一个完整的控制器而不是三个散落的按钮。
+  // 新建是轻量主动作，历史与更多保持独立触控区，不再套双层胶囊。
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
     minHeight: 40,
-    gap: 0,
-    padding: 2,
-    backgroundColor: C.paper2,
-    borderRadius: revaSpacing.s6,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
+    gap: 2,
   },
   headerAction: {
     width: 44,
@@ -177,18 +171,10 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
   },
   primaryHeaderAction: {
-    width: 'auto',
-    minWidth: 88,
-    paddingHorizontal: 10,
-    flexDirection: 'row',
-    gap: 5,
+    borderRadius: revaRadii.md,
     backgroundColor: C.green50,
-  },
-  newChatLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 14,
-    fontWeight: '600',
-    color: C.green700,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
   },
   primaryHeaderActionPressed: {
     backgroundColor: C.green100,

@@ -3,7 +3,6 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import ChatHeader from '../ChatHeader';
-import { revaColors as C } from '../../../constants/revaTheme';
 
 describe('ChatHeader', () => {
   it('shows a source return action for contextual health discussions', () => {
@@ -69,9 +68,11 @@ describe('ChatHeader', () => {
     expect(queryByLabelText('回复中')).toBeNull();
   });
 
-  it('shows new chat alongside history and more without a voice shortcut', () => {
+  it('offers compact accessible actions for new chat, history and more', () => {
+    const onNewChat = jest.fn();
+    const onOpenHistory = jest.fn();
     const onOpenToolMenu = jest.fn();
-    const { getByTestId, getByLabelText, getByText, queryByText, queryByTestId, queryByLabelText } = render(
+    const { getByTestId, getByLabelText, queryByText, queryByTestId, queryByLabelText } = render(
       <ChatHeader
         activeLlmLabel="Qwen3.7 Plus"
         llmModelId="qwen3.7-plus"
@@ -80,40 +81,34 @@ describe('ChatHeader', () => {
         llmError={null}
         isStreaming={false}
         onSelectModel={jest.fn()}
-        onNewChat={jest.fn()}
-        onOpenHistory={jest.fn()}
+        onNewChat={onNewChat}
+        onOpenHistory={onOpenHistory}
         onOpenToolMenu={onOpenToolMenu}
       />,
     );
 
-    const wrapStyle = StyleSheet.flatten(getByTestId('chat-header-wrap').props.style);
-    const groupStyle = StyleSheet.flatten(getByTestId('chat-header-action-group').props.style);
-    expect(wrapStyle).toEqual(expect.objectContaining({ paddingTop: 8, paddingBottom: 2 }));
-    expect(groupStyle.flexDirection).toBe('row');
-    expect(groupStyle.borderRadius).toBeGreaterThanOrEqual(16);
-    expect(groupStyle.minHeight).toBe(40);
-    expect(groupStyle.padding).toBe(2);
     expect(queryByTestId('icon-pulse')).toBeNull();
     expect(queryByTestId('chat-header-voice')).toBeNull();
     expect(queryByText('语音')).toBeNull();
     expect(queryByLabelText('实时语音')).toBeNull();
     expect(getByLabelText('新建对话')).toBeTruthy();
-    expect(getByText('新对话')).toBeTruthy();
+    expect(queryByText('新对话')).toBeNull();
     expect(getByTestId('icon-create-outline')).toBeTruthy();
     expect(queryByTestId('icon-add')).toBeNull();
-    expect(getByTestId('icon-chatbubbles-outline')).toBeTruthy();
+    expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
-    expect(groupStyle.backgroundColor).toBe(C.paper2);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
-    expect(getByTestId('icon-chatbubbles-outline').props.size).toBe(18);
-    expect(getByTestId('icon-ellipsis-horizontal').props.size).toBe(18);
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
 
+    fireEvent.press(getByLabelText('新建对话'));
+    expect(onNewChat).toHaveBeenCalledTimes(1);
+    fireEvent.press(getByLabelText('对话历史'));
+    expect(onOpenHistory).toHaveBeenCalledTimes(1);
     fireEvent.press(getByLabelText('更多会诊操作'));
     expect(onOpenToolMenu).toHaveBeenCalledTimes(1);
   });

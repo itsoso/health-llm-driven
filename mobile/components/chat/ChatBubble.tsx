@@ -1210,6 +1210,7 @@ function ChatBubbleInner({
     && (!incompleteAssistantReply || transparency.visible)
   );
   const assistantSurfaceAccessible = !hasInlineEditableCard
+    && !((item.streaming || item.recoveryPending) && showProcessingPanel)
     && !showsAnswerEvidencePanel
     && !(item.medicalCitations?.length);
 
@@ -2549,7 +2550,16 @@ const styles = StyleSheet.create({
     backgroundColor: C.green50,
   },
   thinkingAnalysisCopy: { flex: 1, minWidth: 0, gap: 2 },
-  thinkingStopButton: { minHeight: 32, justifyContent: 'center', paddingHorizontal: 4 },
+  thinkingStopButton: { minHeight: 44, minWidth: 44, alignItems: 'center', justifyContent: 'center' },
+  thinkingDetailsToggle: {
+    minHeight: 44,
+    paddingHorizontal: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    borderTopWidth: StyleSheet.hairlineWidth,
+    borderTopColor: C.line,
+  },
   thinkingAnalysisSteps: {
     gap: 8,
     paddingHorizontal: 12,
@@ -2568,7 +2578,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.green500,
+    backgroundColor: 'transparent',
   },
   thinkingAnalysisStepIconActive: {
     backgroundColor: C.paper,
@@ -2731,7 +2741,6 @@ const txt = {
   bubbleUser: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 22, color: '#fff' } as TextStyle,
   // 与 markdownStyles body (fontSize 15 / lineHeight 23) 对齐, 流式→终态切 markdown 时无跳动
   streaming: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink1 } as TextStyle,
-  thinkingAnalysisEyebrow: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 15, fontWeight: '900', color: C.green600 } as TextStyle,
   thinkingAnalysisTitle: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, fontWeight: '800', color: C.ink1 } as TextStyle,
   thinkingStop: { fontFamily: revaFonts.sans, fontSize: 11.5, lineHeight: 16, fontWeight: '800', color: C.ink3 } as TextStyle,
   thinkingAnalysisStep: { flex: 1, fontFamily: revaFonts.sans, fontSize: 12.5, lineHeight: 18, fontWeight: '700', color: C.ink3 } as TextStyle,
@@ -2754,6 +2763,11 @@ const txt = {
   cardShareUnavailableHint: { width: '100%', fontFamily: revaFonts.sans, fontSize: 10.5, lineHeight: 15, color: C.ink3 } as TextStyle,
   fallback: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 20, color: C.ink2, fontStyle: 'italic' } as TextStyle,
 };
+
+function thinkingStepKey(label: string): string {
+  const clean = label.trim().replace(/[\s.…。]+$/u, '');
+  return /^(?:正在)?理解(?:你的问题)?$/u.test(clean) ? 'understanding' : clean;
+}
 
 function ThinkingStepsPanel({
   steps,
@@ -2793,6 +2807,13 @@ function ThinkingStepsPanel({
 
   if (streaming) {
     const visibleStep = cleanStatusLabel || latestStep || '正在理解你的问题…';
+    const stepKeys = new Set<string>([thinkingStepKey(visibleStep)]);
+    const previousSteps = steps.filter(step => {
+      const key = thinkingStepKey(step);
+      if (stepKeys.has(key)) return false;
+      stepKeys.add(key);
+      return true;
+    }).slice(-3);
     return (
       <View
         testID="assistant-thinking-panel"
@@ -2804,7 +2825,6 @@ function ThinkingStepsPanel({
             <ActivityIndicator testID="assistant-thinking-indicator" size="small" color={C.green500} />
           </View>
           <View style={styles.thinkingAnalysisCopy}>
-            <Text style={txt.thinkingAnalysisEyebrow}>正在分析</Text>
             <Text style={txt.thinkingAnalysisTitle} numberOfLines={2}>{visibleStep}</Text>
           </View>
           {onStop ? (
@@ -2819,13 +2839,25 @@ function ThinkingStepsPanel({
             </Pressable>
           ) : null}
         </View>
-        {steps.filter(step => step !== visibleStep).length > 0 ? (
+        {previousSteps.length > 0 ? (
+          <Pressable
+            onPress={() => setExpanded(prev => !prev)}
+            accessibilityRole="button"
+            accessibilityLabel={expanded ? '收起处理步骤' : '查看处理步骤'}
+            accessibilityState={{ expanded }}
+            style={({ pressed }) => [styles.thinkingDetailsToggle, pressed && styles.actionBtnPressed]}
+          >
+            <Text style={txt.thinkingAnalysisStep}>处理步骤</Text>
+            <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={14} color={C.ink3} />
+          </Pressable>
+        ) : null}
+        {expanded && previousSteps.length > 0 ? (
           <View style={styles.thinkingAnalysisSteps}>
-          {steps.filter(step => step !== visibleStep).slice(-3).map((step, index) => {
+          {previousSteps.map((step, index) => {
             return (
               <View key={`${step}-${index}`} style={styles.thinkingAnalysisStepRow}>
                 <View style={styles.thinkingAnalysisStepIcon}>
-                  <Ionicons name="checkmark" size={12} color="#fff" />
+                  <Ionicons name="ellipse" size={5} color={C.ink3} />
                 </View>
                 <Text style={txt.thinkingAnalysisStep} numberOfLines={2}>
                   {step}

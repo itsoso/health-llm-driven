@@ -1057,6 +1057,16 @@ export default function ChatScreen() {
     ? llmOptions.find(option => option.id === llmModelId)?.label || llmModelId
     : '系统默认';
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
+  // Progress belongs to the active reply. Keep terminal outcomes in the top
+  // strip so partial results, missing facts and recoverable errors stay visible.
+  const progressInAssistantTurn = (
+    isStreaming && (activeTurn.phase === 'idle' || activeTurn.phase === 'completed')
+  ) || (
+    activeTurn.phase === 'submitted'
+    || activeTurn.phase === 'running'
+    || activeTurn.phase === 'writing'
+    || activeTurn.phase === 'verifying'
+  );
   // Older app versions persisted transport loss as an interrupted turn. It
   // remains pending recovery, without a retry action or a server failure.
   const legacyTransportRecovery = activeTurn.phase === 'interrupted'
@@ -1115,7 +1125,7 @@ export default function ChatScreen() {
   const shouldSuppressTodayContext = (
     todayFocusModel.contextStrip?.key === dismissedTodayFocusKey
     || (
-      keyboardVisible
+      (keyboardVisible || progressInAssistantTurn)
       && todayFocusModel.contextStrip?.tone !== 'risk'
     )
   );
@@ -1156,7 +1166,7 @@ export default function ChatScreen() {
 
       <ChatTodayFocusCard
         model={visibleTodayFocusModel}
-        turnStatus={turnStatus}
+        turnStatus={progressInAssistantTurn ? undefined : turnStatus}
         onRetry={turnStatus?.retryable ? retryLastTextTurn : undefined}
         onOpenToday={handleOpenTodayFocus}
         onDismiss={visibleTodayFocusModel.contextStrip

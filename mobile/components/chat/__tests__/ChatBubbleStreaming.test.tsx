@@ -99,7 +99,7 @@ const { createRecordFromAssistantReply } = require('../../../services/chatResult
 
 function renderBubble(
   message: UIMessage,
-  props: { onContentPaint?: jest.Mock; onViewImage?: jest.Mock } = {},
+  props: { onContentPaint?: jest.Mock; onViewImage?: jest.Mock; onStopStreaming?: jest.Mock } = {},
 ) {
   const qc = new QueryClient();
   return render(
@@ -484,7 +484,7 @@ describe('ChatBubble streaming degraded render', () => {
   });
 
   it('renders one unified streaming status before the first token', () => {
-    const { getAllByTestId, getByTestId, getByText, queryByTestId } = renderBubble({
+    const { getAllByTestId, getByTestId, getByText, queryByText, queryByTestId } = renderBubble({
       id: 'assistant-status-line',
       role: 'assistant',
       content: '⏳ AI 正在思考中...',
@@ -495,7 +495,7 @@ describe('ChatBubble streaming degraded render', () => {
     // 统一处理状态出现, 文案即 currentStatus; 不再叠一个独立 status line。
     expect(getByTestId('assistant-thinking-panel')).toBeTruthy();
     expect(getAllByTestId('assistant-thinking-indicator')).toHaveLength(1);
-    expect(getByText('正在分析')).toBeTruthy();
+    expect(queryByText('正在分析')).toBeNull();
     expect(getByText('查看步数数据…')).toBeTruthy();
     expect(getByTestId('assistant-thinking-skeleton')).toBeTruthy();
     expect(queryByTestId('assistant-status-line')).toBeNull();
@@ -589,10 +589,12 @@ describe('ChatBubble streaming degraded render', () => {
 
     expect(getByTestId('rich-markdown')).toBeTruthy();
     expect(mockMarkdownMount).toHaveBeenCalled();
-    expect(getByText('正在分析')).toBeTruthy();
+    expect(queryByText('正在分析')).toBeNull();
     expect(getByText('读取健康数据')).toBeTruthy();
     expect(queryByText('小气候正在思考')).toBeNull();
     expect(queryByText('2/2')).toBeNull();
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    fireEvent.press(getByLabelText('查看处理步骤'));
     expect(getByText('正在理解你的问题')).toBeTruthy();
     expect(getByLabelText(/当前步骤:读取健康数据/)).toBeTruthy();
     const panelStyle = StyleSheet.flatten(getByTestId('assistant-thinking-panel').props.style);
@@ -602,6 +604,8 @@ describe('ChatBubble streaming degraded render', () => {
     expect(panelStyle.borderLeftWidth).toBeGreaterThanOrEqual(2);
     expect(queryByTestId('assistant-thinking-skeleton')).toBeNull();
     expect(getByText('今晚优先固定睡眠时间。')).toBeTruthy();
+    fireEvent.press(getByLabelText('收起处理步骤'));
+    expect(queryByText('正在理解你的问题')).toBeNull();
   });
 
   it('uses one unified streaming status when currentStatus and thinking steps arrive together', () => {
@@ -618,6 +622,21 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('正在记录体重和腰围…')).toBeTruthy();
     expect(queryByTestId('assistant-status-line')).toBeNull();
     expect(queryByText('⏳ AI 正在思考中...')).toBeNull();
+  });
+
+  it('does not repeat equivalent understanding labels as completed steps', () => {
+    const onStopStreaming = jest.fn();
+    const { getByText, getByTestId, getByLabelText, queryByText, queryByLabelText } = renderBubble({
+      id: 'assistant-repeated-understanding', role: 'assistant', content: '', streaming: true,
+      currentStatus: '正在理解…', thinkingSteps: ['正在理解你的问题'],
+    }, { onStopStreaming });
+    expect(getByText('正在理解…')).toBeTruthy();
+    expect(getByTestId('assistant-message-surface').props.accessible).toBe(false);
+    expect(queryByText('正在理解你的问题')).toBeNull();
+    expect(queryByLabelText('查看处理步骤')).toBeNull();
+    expect(queryByText('正在分析')).toBeNull();
+    fireEvent.press(getByLabelText('停止本轮分析'));
+    expect(onStopStreaming).toHaveBeenCalledTimes(1);
   });
 
   it('presents completed thinking steps as a concise process summary', () => {

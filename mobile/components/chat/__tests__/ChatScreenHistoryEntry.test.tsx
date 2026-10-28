@@ -2,6 +2,8 @@
 import React from 'react';
 import { Text as MockText } from 'react-native';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import type { AgentTurnState } from '../../../utils/agentTurnState';
+import type { UIMessage } from '../../../hooks/useChatEngine';
 
 const mockLoadConversation = jest.fn();
 const mockNewChat = jest.fn();
@@ -9,6 +11,11 @@ const mockSendMessage = jest.fn();
 const mockGetConversations = jest.fn();
 const mockGetConversationsPage = jest.fn();
 const mockDeleteConversation = jest.fn();
+const mockChatState = {
+  messages: [] as UIMessage[],
+  isStreaming: false,
+  activeTurn: { phase: 'idle', recoverable: false } as AgentTurnState,
+};
 
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), navigate: jest.fn(), setParams: jest.fn() },
@@ -31,9 +38,7 @@ jest.mock('@react-navigation/bottom-tabs', () => ({
 
 jest.mock('../../../hooks/useChatEngine', () => ({
   useChatEngine: () => ({
-    messages: [],
-    isStreaming: false,
-    activeTurn: { phase: 'idle', recoverable: false },
+    ...mockChatState,
     conversationId: undefined,
     sendMessage: mockSendMessage,
     newChat: mockNewChat,
@@ -97,6 +102,9 @@ import ChatScreen from '../../../app/(tabs)/chat';
 describe('ChatScreen history entry', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockChatState.messages = [];
+    mockChatState.isStreaming = false;
+    mockChatState.activeTurn = { version: 1, phase: 'idle', turnId: null, recoverable: false, hadWrite: false };
     // 历史列表现在走分页接口 getConversationsPage (返回 { items, total })
     mockGetConversationsPage.mockResolvedValue({
       items: [
@@ -131,5 +139,27 @@ describe('ChatScreen history entry', () => {
     });
 
     expect(mockNewChat).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps processing progress in the assistant turn without a duplicate top strip', async () => {
+    mockChatState.isStreaming = true;
+    mockChatState.activeTurn = { ...mockChatState.activeTurn, phase: 'running', label: '正在理解你的问题' };
+    mockChatState.messages = [{ id: 'active-ui-preview', role: 'assistant', content: '', streaming: true }];
+    const { queryByTestId, getByText } = render(<ChatScreen />);
+    await act(async () => {});
+    expect(getByText('ChatBubble')).toBeTruthy();
+    expect(queryByTestId('chat-today-focus-card')).toBeNull();
+  });
+
+  it.each([
+    ['partial', '部分完成，请查看未完成的事项'],
+    ['waiting_for_user', '等待你确认或补充信息'],
+    ['failed', '上一轮未完成，内容已保留'],
+  ] as const)('retains the %s outcome strip after processing', async (phase, label) => {
+    mockChatState.isStreaming = true; // A late stream cleanup must not hide a terminal warning.
+    mockChatState.activeTurn = { ...mockChatState.activeTurn, phase };
+    const { getByText } = render(<ChatScreen />);
+    await act(async () => {});
+    expect(getByText(label)).toBeTruthy();
   });
 });

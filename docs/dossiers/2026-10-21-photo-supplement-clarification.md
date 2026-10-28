@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | photo-supplement-clarification |
-| 当前阶段 | S7 上线验证 |
-| 状态 | shipping |
+| 当前阶段 | S5 对话界面优化，准备合并 TestFlight 更新 |
+| 状态 | building |
 
 ## G1 准入
 
@@ -91,3 +91,17 @@ The new native icon package was built and signed from a clean exact-source check
 Deployment and public artifact verification are complete. The approved icon was visually verified in the iOS simulator; phone installation, signed-in interaction and the original health-record request have not been exercised. No real health records were inspected, replayed or written. The clarification asks inventory versus actual intake and missing facts; it does not claim the old photo has been recognized or saved. This remains `shipping` for those unverified acceptance items. No OTA crossed the native icon boundary, no TestFlight/App Store submission was made, and the existing 282 review candidate was not replaced. No backups or rollback copies were created or inspected.
 
 Redacted durable evidence index: `docs/reviews/2026-10-28-xiaoqihou-guardian-release.json`.
+
+## 2026-10-28 chat UI continuation and explicit TestFlight request
+
+User requests: “更新 testflight”; then “优化 ui 和交互 顶部状态有重复 顶部新建也不够美观”. This UI iteration joins that pending TestFlight update; no TestFlight build or upload has started. The current main is `584489075decd5c6dd63b7dcf68189c466ba54b6`; observed production remains the successful `5ec09bc3ec893a7590878cf45c7add03b7faea22` release above. The Ad Hoc IPA cannot be submitted as a Store-signed build.
+
+The bounded presentation repair keeps running/submitted/writing/verifying progress in the current assistant reply. The top rail preserves terminal partial, waiting-for-user, blocked/refused, uncertain-write and failure outcomes, including late stream cleanup. Risk context retains priority and is not hidden with ordinary Today context. The active panel shows one current label, deduplicates equivalent understanding labels without changing stored steps, and collapses distinct preceding steps behind an explicit disclosure. Previous-step bullets are neutral rather than suggesting verified successful writes. Stop remains a separate accessible 44-point action instead of being swallowed by the assistant message's text accessibility group.
+
+The header replaces the nested capsule and visible new-chat text with a compact mint compose button plus history and more actions. Existing callbacks and accessible labels are preserved; each action retains its 44-point touch target. No API, persistence, owner scope, retry authority, health interpretation or model prompt changes are introduced.
+
+- Initial behavioral RED: 5 failed, 48 passed (`/tmp/xiaoqihou-chat-chrome-red-fixed.log`). A separate accessibility RED reproduces the outer group swallowing action access (`/tmp/xiaoqihou-chat-chrome-a11y-red.log`). The first initial run also caught a transient test-edit reference error; it is not counted as behavioral RED.
+- Focused GREEN: 60 passed. Final chat-component/engine regression: 557 passed, including collapse/expand, Stop callback and terminal outcomes during late stream cleanup (`/tmp/xiaoqihou-chat-chrome-commit-tests.log`). Fresh TypeScript and scoped ESLint passed.
+- System Map does not index the component path; source and adjacent tests were inspected directly. Full map/navigation/doc-drift checks passed before and after the change.
+- Real native components rendered on iPhone 17 / iOS 26.5 in a separately identified preview app with explicitly synthetic dialogue and network-free callbacks. Native accessibility readback exposes new/history/more, current status and Stop individually. New and Stop actions were exercised and the example restored. Preview: `tmp/xiaoqihou-chat-chrome/preview.png`. The temporary entrypoint was removed after bundling; it is not a shipped route. This is component UI evidence, not signed-in chat or real-health-data acceptance.
+- The original App Store review candidate remains unchanged. Final fixed-source independent review, exact main CI, canonical publication authorization, Store build/upload and Apple processing are still required for the requested TestFlight delivery.
