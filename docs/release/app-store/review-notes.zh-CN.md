@@ -2,7 +2,7 @@
 
 > Demo account credentials stay outside git. At final submit, provide them through `APP_STORE_REVIEW_DEMO_ACCOUNT` and `APP_STORE_REVIEW_DEMO_PASSWORD`.
 >
-> App Store Connect contains the demo account, password, reviewer contact and these review notes. Placeholders remain intentionally so secrets are not committed. Candidate 1.3.6 (282), source `83876750fcbb404255b7439482688fee82a490d4`, uses the owner-authorized simulator-risk policy in `docs/governance/simulator-review-acceptance.md`; unverified physical checks remain explicitly recorded outside Git, not represented as passes. Final submission remains pending notification-fix deployment and online acceptance.
+> App Store Connect contains the demo account, password, reviewer contact and these review notes. Placeholders remain intentionally so secrets are not committed. Candidate 1.3.6 (283), source `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`, uses the owner-authorized simulator-risk policy in `docs/governance/simulator-review-acceptance.md`; unverified physical checks remain explicitly recorded outside Git, not represented as passes. Backend compatibility and the exact oxygen-query repair are accepted online; final submission still requires the candidate-bound UI and App Store Connect gates.
 >
 > Paste only `## What To Test` through the end into ASC Notes (maximum 4,000 UTF-8 bytes). Enter credentials and contact details in their separate fields; do not paste this preface.
 
