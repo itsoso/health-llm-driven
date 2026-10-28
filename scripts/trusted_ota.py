@@ -15,8 +15,8 @@ from pathlib import Path
 PROJECT = '911ea84f-bc7e-4a12-90cf-33966b6f7398'
 RUNTIME = '1.3.6'
 CHANNEL = 'production'
-NATIVE_SHA = '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
-NATIVE_BUILD = '399eb452-402e-47cd-a0e3-18dff2d1ca51'
+NATIVE_SHA = 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff'
+NATIVE_BUILD = 'ea1dda2a-86b3-4e46-adf8-b2b024465154'
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
 
@@ -41,9 +41,9 @@ def read_json(stream, bound=2000000):
     return json.loads(raw, object_pairs_hook=unique)
 
 
-# Build279 remains the oldest compatible native host. The exact 280 tooling
-# patch delta changes only Expo CLI MCP/Zod JS; 286 other EAS fingerprint
-# sources are identical. Keep this closed byte set, never a directory exception.
+# Historical 279/280 source exceptions remain byte-pinned for direct contract
+# tests. Source admission is now anchored at delivered Store build 283, so any
+# future change to these paths still requires the exact reviewed bytes.
 REVIEWED_NATIVE_SOURCE = {
     "mobile/package-lock.json": "67d904e88b8281dd80b4d5557ae3abb8d2ad84da0db939b1ca6c701b938128ff",
     "mobile/package.json": "bb79d63ae1df54f0fd72a66084e2ddb76e16debbcfdb2b6f78ff4d34721c2e47",
@@ -53,9 +53,8 @@ REVIEWED_NATIVE_SOURCE = {
     "mobile/scripts/security-dependency-compat.node.cjs": "4f1be9b511770eea3af2cc7e08ec6b39252531c84727cd9d350fb6fcb6d97689"
 }
 
-# Exact 281 branding inputs; 282 has the same native fingerprint. No native API,
-# permission capability, dependency, or environment exception is added.
-# Keep desktop icon/splash inputs pinned even though general JS assets are allowed.
+# Historical 281/282 branding inputs remain byte-pinned. Build 283 is the
+# current native source baseline and contains the reviewed guardian icon.
 REVIEWED_BRANDING_SOURCE = {
     "mobile/app.json": "3541b8c2c6c0e1812da8e54e7b2907f802dde01b2e3e0e502156d11442998506",
     "mobile/app.config.ts": "8c20bce465bb7af015e9f9fb3960dbfa7d812765453fba1e20003b4471c5e787",

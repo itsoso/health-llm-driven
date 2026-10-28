@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | ready_for_ci |
-| 当前阶段 | 第三轮回答投影精确主干 CI 与发布 |
+| 状态 | ota_baseline_migration_ready_for_g4 |
+| 当前阶段 | 第三轮回答投影的 283 原生基线迁移与重新发布 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -168,3 +168,34 @@
 - 修复实现与证据修正后的精确提交 `b6933ca8b1abf13719c69dc275dc0d631588b7b9`
   已获独立 G4 GO；新鲜聚焦结果为 2 suites / 66 tests，未发现新的安全、隐私、无障碍、
   复制或证据完整性阻断。后续仅记录该裁决的文档提交不得改变已复核的实现与测试 blob。
+
+### 精确主干、后端与 OTA 断点
+
+- 回答投影最终候选 `1c25e80c7b5b294c25325cc9f669c6522709e0f6` 的 GitHub CI
+  `40721325610` 为 32/32 成功；trusted release validate `40723576435` 成功。
+- 首次后端发布 `40723747892` 在领取发布权和部署前因只读 SSH 公钥校验失败而终止，未部署；
+  保留该失败且没有重放。既有受审授权轮换完成后，新后端操作 `40724626399` 成功。
+- 生产只读回执为 `SUCCEEDED`，receipt SHA256
+  `0cd7a8a975098fa2d7b1bbc6147dced095b43bd4b71c7163b2804383aaf16801`；服务器源码精确匹配
+  候选且 clean，backend/worker/beat active，loopback 与公网健康为 200，匿名会话接口为 401，
+  business lease 已释放。
+- trusted OTA validate `40725884212` 在无凭据源码预检阶段以
+  `native_source_incompatible` 阻断；制品准备、claim、服务器 RPC 与 vendor publish 均未执行。
+  该失败不可重发，后续基线修复必须形成新 SHA 并重新走全部 Gate。
+
+### 283 原生基线迁移
+
+- TestFlight 283 的 EAS build `ea1dda2a-86b3-4e46-adf8-b2b024465154` 精确绑定源码
+  `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`、runtime 1.3.6、production channel、STORE
+  profile 与 bundle `life.executor.health`；fingerprint 为
+  `0f13707a06be8ea69d9a8f083e4c38edfa08cbe4`，Apple 处理状态 `VALID`，内部 TestFlight
+  状态 `IN_BETA_TESTING`。
+- IPA SHA256 为 `14545db4331b53e6f9d1f39a55d93e19db21f5a0df147a83f71bdd74dd935fcd`；签名 team、
+  既有生产 entitlement 范围、源码与 workflow 绑定均已有脱敏回执。没有操作真机或真实健康数据。
+- 新源码准入基线固定为 283，同时 vendor 实时闭集必须精确包含 279–283 五个已审 build；
+  任何缺失、额外 build、source SHA、fingerprint、runtime、profile、channel 或 bundle 漂移都阻断。
+- 当前回答投影候选相对 283 源码的移动端差异只有 `AnswerEvidencePanel.tsx`、
+  `ChatBubble.tsx` 与对应测试，均属于已有 OTA 允许的 TS/TSX 路径，没有原生或未知输入。
+- TDD RED 在旧实现上得到 46 failed / 173 passed，覆盖旧基线、缺少 283 与基线指纹错配；
+  实现后聚焦发布器回归为 219 passed。完整 release invariants、精确提交 G4、主干 CI、后端与
+  新 trusted OTA validate/publish 仍待后续 Gate，不以本地单测冒充发布完成。

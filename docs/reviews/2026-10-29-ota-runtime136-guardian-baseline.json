@@ -1,0 +1,78 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+  "native_build": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+  "build_number": "283",
+  "builds": [
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70",
+      "build": "279"
+    },
+    {
+      "id": "1faa3a05-2385-44fd-bf84-296cc68e84c2",
+      "git_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+      "fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0",
+      "build": "280"
+    },
+    {
+      "id": "a40a61f3-02db-4a88-a308-56884c53500b",
+      "git_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "281"
+    },
+    {
+      "id": "267aad01-a185-4343-b0fb-13ee7e8fabc7",
+      "git_sha": "83876750fcbb404255b7439482688fee82a490d4",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "282"
+    },
+    {
+      "id": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+      "git_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+      "fingerprint": "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4",
+      "build": "283"
+    }
+  ],
+  "build_283": {
+    "status": "FINISHED",
+    "platform": "IOS",
+    "distribution": "STORE",
+    "build_profile": "production",
+    "channel": "production",
+    "bundle_identifier": "life.executor.health",
+    "app_version": "1.3.6",
+    "runtime_version": "1.3.6",
+    "simulator": false,
+    "ipa_sha256": "14545db4331b53e6f9d1f39a55d93e19db21f5a0df147a83f71bdd74dd935fcd",
+    "signing_team_id": "QA2U724DAN",
+    "apple_processing_state": "VALID",
+    "testflight_internal_state": "IN_BETA_TESTING",
+    "source_and_workflow_binding": "verified",
+    "signed_entitlements": "verified_against_existing_production_scope"
+  },
+  "source_admission": {
+    "baseline_behavior": "The exact Store 283 source is the native boundary. Only reviewed runtime paths after this commit may enter OTA source admission.",
+    "candidate_checked": "1c25e80c7b5b294c25325cc9f669c6522709e0f6",
+    "candidate_mobile_delta": [
+      "mobile/components/chat/AnswerEvidencePanel.tsx",
+      "mobile/components/chat/ChatBubble.tsx",
+      "mobile/components/chat/__tests__/ChatBubbleStreaming.test.tsx"
+    ],
+    "native_or_unknown_delta_after_283": false
+  },
+  "raw_evidence_sha256": {
+    "eas-build-283.json": "db7a4704cc892d1d7304dfeb323e84df8a83940d185e20b0664b71eed8391bfc",
+    "testflight-release.json": "d6f7daf0505b1cbf130c16b0b0193bfaf5fbf46e872e8185ad8c74a83b24dbe8",
+    "native-artifact-receipt.json": "39791a9919187f4d65873e8599627bd4925f4eba47de43bcd993ec95d9d93e59",
+    "ipa-digest.json": "94994af80a269b0a8d243c0a61d4f19f477297fe289f82e5ac377b05d1f4b5b4",
+    "app-review-submission-receipt.json": "43d815dfbd4d369b407293c9f7bee643423be62efc81db07023a861e34333827"
+  },
+  "checked_at": "2026-10-29T00:32:01+08:00",
+  "limitations": [
+    "Closed cohort metadata and exact fingerprints are re-read from EAS during every trusted validate and publish run.",
+    "TestFlight availability and App Store review submission do not prove installation on a signed-in device.",
+    "The baseline migration does not itself publish an OTA update."
+  ]
+}

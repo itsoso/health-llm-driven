@@ -31,7 +31,7 @@ def build(m, *, identifier=None, sha=None):
         "app": {"id": m.PROJECT},
         "updateChannel": {"name": "production"},
         "runtime": {"version": m.RUNTIME},
-        "fingerprint": {"hash": "cfb1606da3744f6df32d89364535e307d3f2ed70"},
+        "fingerprint": {"hash": "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4"},
         "isForIosSimulator": False,
     }
 
@@ -641,7 +641,7 @@ def test_preflight_uses_real_native_contract_and_still_blocks_changed_package(mo
     assert m.cli() == 1
     assert json.loads(capsys.readouterr().err)['reason'] == 'native_source_incompatible'
     assert ('merge-base', '--is-ancestor', m.NATIVE_SHA, 'c'*40) in calls
-    assert contract.NATIVE_SHA == m.NATIVE_SHA == '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
+    assert contract.NATIVE_SHA == m.NATIVE_SHA == 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff'
 
 
 def test_preflight_failure_blocks_publish_before_credential_lookup(monkeypatch):
@@ -1230,7 +1230,7 @@ def test_old_runtime_build_is_not_in_new_279_cohort():
 
 def test_fixed_cohort_evidence_matches_implementation():
     m=load()
-    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-28-ota-runtime136-branding-equivalence.json').read_text())
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-29-ota-runtime136-guardian-baseline.json').read_text())
     assert {b['id']:(b['git_sha'],b['fingerprint']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
 
 
@@ -1435,17 +1435,18 @@ def test_actual_280_build_is_required_with_279_and_exact_fingerprint():
     with pytest.raises(m.PublishError): m.validate_builds(base, [base, newer])
 
 
-def test_281_and_282_require_exact_identity_and_all_older_hosts():
+def test_279_through_283_require_exact_identity_and_all_older_hosts():
     m=load();base=build(m)
     expected=[('399eb452-402e-47cd-a0e3-18dff2d1ca51','1ba724dcb62ac389a72e41eecf40fea7aaca27e3','cfb1606da3744f6df32d89364535e307d3f2ed70'),
       ('1faa3a05-2385-44fd-bf84-296cc68e84c2','c28050786c1e9aa70cca33d7e3d5c093652aeb26','2c29cc641498ac6653d89d54f986dc12fe22e9e0'),
       ('a40a61f3-02db-4a88-a308-56884c53500b','8f7d94696424f92ff57243edb906cd6d2dd14a3a','43972dceac5ad3916bf8c91d1dd5adc6188ef427'),
-      ('267aad01-a185-4343-b0fb-13ee7e8fabc7','83876750fcbb404255b7439482688fee82a490d4','43972dceac5ad3916bf8c91d1dd5adc6188ef427')]
+      ('267aad01-a185-4343-b0fb-13ee7e8fabc7','83876750fcbb404255b7439482688fee82a490d4','43972dceac5ad3916bf8c91d1dd5adc6188ef427'),
+      ('ea1dda2a-86b3-4e46-adf8-b2b024465154','ae7a5972921ee9d51eec2c90c7893e6941d2d7ff','0f13707a06be8ea69d9a8f083e4c38edfa08cbe4')]
     cohort=[]
     for identity,sha,fingerprint in expected:
         item=build(m,identifier=identity,sha=sha);item['fingerprint']={'hash':fingerprint};cohort.append(item)
     assert m.validate_builds(base,cohort)==base['fingerprint']['hash']
-    for index in range(4):
+    for index in range(5):
         with pytest.raises(m.PublishError):m.validate_builds(base,cohort[:index]+cohort[index+1:])
     import copy
     for field,value in [('gitCommitHash','b'*40),('id','55555555-5555-4555-8555-555555555555'),('fingerprint',{'hash':'a'*40})]:

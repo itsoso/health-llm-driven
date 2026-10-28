@@ -520,6 +520,15 @@ README 与兼容测试脚本的精确字节，覆盖此前单 lockfile 例外；
 用户已明确解除送审前冻结；这不豁免精确 CI、后端回执、实时 cohort 与制品校验，
 也不把模拟器启动当作两个 Store 包的真机验证。
 
+2026-10-29 守护图标基线迁移：源码准入基线更新为已完成、已签名且 Apple 处理状态
+`VALID` 的 production iOS STORE 283（`ea1dda2a-86b3-4e46-adf8-b2b024465154`，源码
+`ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`，fingerprint
+`0f13707a06be8ea69d9a8f083e4c38edfa08cbe4`）。runtime 1.3.6 的实时闭集仍须同时精确包含
+279–283 五个已审 build；缺少旧宿主、出现额外 build、来源或指纹漂移均阻断。283 已在
+TestFlight 内部组可用，含已确认的下开口守护图标与聊天 UI 原生资产；这不证明真机安装，
+也不替代每次 trusted validate/publish 的实时 cohort、制品、环境、精确 CI 与后端回执复验。
+证据见 [283 守护图标基线](../reviews/2026-10-29-ota-runtime136-guardian-baseline.json)。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，

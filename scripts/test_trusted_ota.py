@@ -79,13 +79,13 @@ def test_local_publishers_do_not_execute_repo_helpers_or_vendor():
         assert 'trusted-ota.yml' in result.stderr
 
 
-def test_native_baseline_matches_delivered_testflight_279():
+def test_native_baseline_matches_delivered_testflight_283():
     m = module()
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location('ota_publisher', root / 'scripts/trusted_ota_publish.py')
     publisher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(publisher)
-    expected = ('1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3', '399eb452-402e-47cd-a0e3-18dff2d1ca51')
+    expected = ('1.3.6', 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff', 'ea1dda2a-86b3-4e46-adf8-b2b024465154')
     for contract in (m, publisher):
         assert (contract.RUNTIME, contract.NATIVE_SHA, contract.NATIVE_BUILD) == expected
     assert json.loads(source_bytes(m.NATIVE_SHA, 'mobile/app.json'))['expo']['version'] == m.RUNTIME
@@ -157,12 +157,12 @@ def test_old_runtime_manifest_is_rejected_by_279_contract():
         m.validate_manifest(payload, ident, proof)
 
 
-@pytest.mark.parametrize('sha,allowed', [(REVIEWED_LOCK_SHA, True), (SECURITY_DEPENDENCY_SHA, True), ('59c64cca666d85f3c7b738a508dd197d4ad6c84e', False)])
-def test_279_migration_contract_admits_only_reviewed_source(tmp_path, sha, allowed):
+@pytest.mark.parametrize('sha,allowed', [('ae7a5972921ee9d51eec2c90c7893e6941d2d7ff', True), (REVIEWED_LOCK_SHA, False), (SECURITY_DEPENDENCY_SHA, False)])
+def test_283_migration_contract_admits_only_descendant_runtime_source(tmp_path, sha, allowed):
     m = module()
     assert (m.RUNTIME, m.NATIVE_SHA, m.NATIVE_BUILD) == (
-        '1.3.6', '1ba724dcb62ac389a72e41eecf40fea7aaca27e3',
-        '399eb452-402e-47cd-a0e3-18dff2d1ca51')
+        '1.3.6', 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff',
+        'ea1dda2a-86b3-4e46-adf8-b2b024465154')
     source = tmp_path / 'source'
     # Source admission compares committed paths/bytes, not Android APK payloads.
     # A shared Git clone has no LFS object store; never download unrelated assets.
@@ -173,7 +173,7 @@ def test_279_migration_contract_admits_only_reviewed_source(tmp_path, sha, allow
     if allowed:
         m.validate_source(source, sha)
     else:
-        with pytest.raises(ValueError, match='native or unknown mobile input changed'):
+        with pytest.raises((ValueError, subprocess.CalledProcessError)):
             m.validate_source(source, sha)
 
 
@@ -219,9 +219,9 @@ def test_branding_exception_accepts_only_exact_reviewed_281_bytes(tmp_path, rela
     with pytest.raises(ValueError): m.validate_runtime_changes([relative])
 
 
-def test_branding_source_evidence_is_closed_and_does_not_replace_baseline():
+def test_branding_source_evidence_is_closed_history_after_283_baseline():
     m = module()
     evidence = json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-28-ota-runtime136-branding-equivalence.json').read_text())
     assert set(m.REVIEWED_BRANDING_SOURCE) == set(BRANDING_PATHS)
     assert evidence['branding_source_exceptions'] == m.REVIEWED_BRANDING_SOURCE
-    assert m.NATIVE_SHA == '1ba724dcb62ac389a72e41eecf40fea7aaca27e3'
+    assert m.NATIVE_SHA == 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff'
