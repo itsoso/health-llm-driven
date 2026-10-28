@@ -214,7 +214,9 @@ async def test_sibling_parameter_errors_do_not_preempt_correct_four_domain_read(
 
     scope = resolve_owned_read_scope(trace.executor._agent_kernel_snapshot)
     first_system = trace.calls[0][0][0]["content"]
-    assert json.dumps(list(scope.queries), ensure_ascii=False) in first_system
+    assert json.dumps(
+        list(scope.queries), ensure_ascii=False, separators=(",", ":")
+    ) in first_system
     assert all(notice in first_system for notice in read_scope_notices(scope))
 
 
