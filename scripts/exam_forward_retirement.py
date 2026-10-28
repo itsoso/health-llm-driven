@@ -194,7 +194,7 @@ def validate_stable(value):
             need(models[name][child]=={'start':started,'model':'qwen3.8-flash','authorization_flags':flags})
 
 
-def validate_records(intent,plan,database,done,credential_intent,credential_done,provider):
+def validate_records(intent,plan,database,done,credential_intent,credential_done,provider,*,credential_binding=None):
     need(isinstance(intent,dict) and set(intent)=={'attempt','recovery_sha','failed_sha','previous_sha','original','database','evidence_sha256'})
     sha=intent['recovery_sha']; original=intent['original']; preflight=intent['database']
     need(hash_string(sha,40) and sha not in (FAILED,PREVIOUS) and intent['attempt']==RECOVERY_ATTEMPT
@@ -230,8 +230,13 @@ def validate_records(intent,plan,database,done,credential_intent,credential_done
     ci,cd=credential_intent,credential_done
     need(isinstance(ci,dict) and set(ci)=={'attempt','recovery_sha','failed_sha','original','original_credential',
         'evidence_sha256','incoming_sha256','incoming_expires_at','ci_verified'})
-    need(ci['attempt']==CREDENTIAL_ATTEMPT and ci['recovery_sha']==sha and ci['failed_sha']==FAILED
-         and ci['original']==original and ci['ci_verified'] is True and hash_string(ci['incoming_sha256'])
+    if credential_binding is None:
+        need(ci['recovery_sha']==sha and credential_digest(ci['original'])==credential_digest(original))
+        credential_sha=sha
+    else:
+        credential_sha=credential_binding(sha,original,ci,cd)
+    need(ci['attempt']==CREDENTIAL_ATTEMPT and ci['recovery_sha']==credential_sha and ci['failed_sha']==FAILED
+         and ci['ci_verified'] is True and hash_string(ci['incoming_sha256'])
          and type(ci['incoming_expires_at']) is int and ci['incoming_expires_at']>0)
     old=ci['original_credential']
     need(isinstance(old,dict) and set(old)=={'sha256','identity'} and old['sha256']==EXTERNAL_CREDENTIAL_PIN)
@@ -241,7 +246,7 @@ def validate_records(intent,plan,database,done,credential_intent,credential_done
          and stat.S_IMODE(identity['st_mode'])==0o600 and identity['st_nlink']==1)
     credential_evidence={k:v for k,v in ci.items() if k not in {'evidence_sha256','incoming_sha256','incoming_expires_at','ci_verified'}}
     need(ci['evidence_sha256']==credential_digest(credential_evidence))
-    expected_credential={'state':'CREDENTIAL_REPLACED','attempt':CREDENTIAL_ATTEMPT,'recovery_sha':sha,'failed_sha':FAILED,
+    expected_credential={'state':'CREDENTIAL_REPLACED','attempt':CREDENTIAL_ATTEMPT,'recovery_sha':credential_sha,'failed_sha':FAILED,
         'evidence_sha256':ci['evidence_sha256'],'credential_sha256':ci['incoming_sha256'],
         'credential_expires_at':ci['incoming_expires_at'],'ci_verified':True,
         'original_incident_preserved':True,'services_changed':False,'database_changed':False}
@@ -286,12 +291,15 @@ def load(b,path,name):
 
 
 def recovery_evidence(b,source):
-    provider=load(b,source/'scripts/exam_provider_reconciliation.py','exam_close_provider').historical_evidence(b)
+    reconciliation=load(b,source/'scripts/exam_provider_reconciliation.py','exam_close_provider')
+    provider=reconciliation.historical_evidence(b)
     values,identity=audit(b,b.STATE/RECOVERY_ATTEMPT,{'intent.json','database-started.json','database-completed.json','completed.json'})
     credentials,credential_identity=audit(b,b.STATE/CREDENTIAL_ATTEMPT,{'intent.json','completed.json'})
     intent,done=values['intent.json'],values['completed.json']
     validate_records(intent,values['database-started.json'],values['database-completed.json'],done,
-        credentials['intent.json'],credentials['completed.json'],provider)
+        credentials['intent.json'],credentials['completed.json'],provider,
+        credential_binding=lambda sha,original,ci,cd: reconciliation.credential_binding_sha(sha,original,ci,cd,
+            {name:identity['sha256'] for name,identity in credential_identity['files'].items()}))
     canonical=b.canonical_source(intent['recovery_sha'])
     retained=load(b,source/'scripts/retained_candidate_retirement.py','exam_close_saved_vision')
     retained.validate_archived_vision(b,source,done['stable_services']['vision'])

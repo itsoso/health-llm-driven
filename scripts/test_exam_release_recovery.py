@@ -55,6 +55,37 @@ def test_inspect_is_default_and_read_only(tmp_path):
     assert a.events == ['snapshot', 'stopped', 'preflight', 'snapshot', 'stopped']
 
 
+@pytest.mark.parametrize('settings_fail', [False, True])
+def test_database_settings_load_preserves_revision_proof_cwd(tmp_path, monkeypatch, settings_fail):
+    import os
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    import sqlalchemy
+    m = module()
+    live = tmp_path / 'live'; (live / 'backend').mkdir(parents=True)
+    origin = tmp_path / 'operator'; origin.mkdir()
+    monkeypatch.chdir(origin)
+    monkeypatch.setattr(m, 'LIVE', live)
+    a = m.Adapter.__new__(m.Adapter)
+    a.runtime = a.migration = None
+    a.failed_source = tmp_path / 'canonical'
+    a._dependencies = lambda: None
+    a.bootstrap = SimpleNamespace(secure=lambda *args, **kwargs: None)
+    def settings_loader(raw, path):
+        assert Path.cwd() == live / 'backend'
+        if settings_fail: raise RuntimeError('settings rejected')
+        return SimpleNamespace(app_env='production', effective_database_url='postgresql://synthetic')
+    a.helper = SimpleNamespace(CREDENTIAL=tmp_path/'credential', protected_read=lambda *args, **kwargs:b'',
+        load_runtime_settings=settings_loader, parse_migration_env=lambda raw:'postgresql://synthetic')
+    monkeypatch.setattr(sqlalchemy, 'create_engine', lambda *args, **kwargs:SimpleNamespace(dialect=SimpleNamespace(name='postgresql')))
+    with patch.dict(os.environ), patch('sys.path', list(__import__('sys').path)):
+        if settings_fail:
+            with pytest.raises(RuntimeError, match='settings rejected'): a._connect()
+        else:
+            a._connect()
+        assert Path.cwd() == origin
+
+
 @pytest.mark.parametrize('digest,accept', [(None, True), ('0'*64, False)])
 def test_execution_requires_digest_and_fixed_authorization_together(tmp_path, digest, accept):
     m = module(); a = Adapter(tmp_path / 'fixed')

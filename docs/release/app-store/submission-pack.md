@@ -75,10 +75,10 @@ credentials and reviewer contact use their separate ASC fields. Notes has a
 description's character limit. Keywords are also measured in UTF-8, with a
 100-byte limit; avoid repeating the app/company name. See Apple's [platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
 
-App Store Connect has a saved 1.3.6 draft with build 281 selected. Build 282 has
-completed Apple processing; selecting it and formal submission remain pending.
-Manual release is retained. Five new source-bound simulator screenshots have
-completed processing; replacement of the old screenshot set remains pending.
+App Store Connect has a saved 1.3.6 draft with build 282 selected and read back.
+Formal submission remains pending. Manual release is retained. Five new
+source-bound simulator screenshots have replaced the old set, are ordered,
+and have each been read back with processing state COMPLETE.
 
 ## Production Build Preflight
 

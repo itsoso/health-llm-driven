@@ -129,3 +129,10 @@ G5：后端/Web 与 TestFlight 内部发布分别有实际证据；整体 workfl
 2026-10-28 07:30 +08:00：统一候选61cd完整CI [40600694655](https://github.com/itsoso/health-llm-driven/actions/runs/40600694655)通过，canonical服务器源码已检出。首次凭据默认只读inspect在网络依赖关系检查拒绝；未mint新token、未消费凭据/恢复attempt，数据库与服务均未变。现场证明三个业务service因原runtime boot gate禁用而仅保留Before=shutdown.target，原验证器期望的multi-user.target隐式关系已消失。修正限于既有GateView的精确状态转换，原runtime/network证明代码保持不变，未知关系继续拒绝；重新固定候选、独立G4和CI后才推进。
 
 同日App Store API已选中原生282，替换并排序五张新截图，逐张COMPLETE回读；没有重复构建或上传。年龄分级、审核联系资料、免费价格及中美可用状态已读回；隐私/医疗声明/合同沿用用户明确确认。282与61cd源码/API兼容独立GO，旧客户端204项、隔离PostgreSQL兼容97项通过。新主干的备考UI不在冻结282内。模拟器CUA再次timeoutReached；旧截图不升级为新鲜验收，通知线上已知失败和最终送审仍待闭合。
+
+2026-10-28 07:55 +08:00：52d2完整CI [40603132111](https://github.com/itsoso/health-llm-driven/actions/runs/40603132111)通过，807项CI-mode集成、769项恢复相关验证通过。canonical默认凭据inspect通过后，固定`exam-a8-read-credential-v1`完成`CREDENTIAL_REPLACED`，实际完整CI已核验；不可重复续期。后续数据库恢复默认inspect返回70，尚未消费恢复attempt或启动业务服务，正在只读定位拒绝原因。
+
+同轮真实模型隔离API测试暴露通知协议纠错冲突：不合法的模型选择文档触发通用自然语言重合成，破坏通知JSON契约并以protocol_leak结束。新增正反测试先失败；修复将所选通知留在既有一次有界来源纠正路径，严格渲染失败的草稿先丢弃，最终来源、医疗、输出质量和持久化检查保留。本地通知及普通输出质量84项通过；真实provider首轮正常路径完整引用正文、401/404归属、流式与保存一致、零健康写入通过。真实provider这次没有触发纠正分支，不能冒称其通过；分支由定向正反测试覆盖。失败及路径误写的测试日志均保留。此补丁尚未进入冻结52d2，须独立审查、最终候选CI、部署及新鲜线上验收后才可送审。
+
+- 2026-10-28 08:18 CST — 52d2 恢复 default inspect 的第二次源码证明失败已定位为 `_connect` 改变 cwd；原固定迁移仍 PENDING，恢复 attempt 未消费。新增两条 RED 后修复为 Settings 加载内 scoped chdir，成功/异常均恢复。52d2 已完成的只读凭据续期不可重放；新增共享历史绑定只允许两份精确原始回执、52d2 原 G4/文件摘要/到期时间一致，事故快照仅新 G4 可变，closure 复用同一验证器。当前相关验证 228 passed、7 skipped（PG lane 另补），未宣称生产恢复。
+- 通知补测发现一般协议纠正与通知选择 JSON 契约冲突；通知改为仅使用已有有界一次 source-only 修复，移除非法草稿后再检查最终输出。84 条本地测试通过；独立 PostgreSQL 85 条通过，报告 `/tmp/xiaoqihou-notification-protocol-g4.md`。隔离 API +真实 provider 正常路径通过；首轮注入协议错误、第二轮真实 provider 纠正也 COMPLETE，完整来源、401/跨用户404、原通知不变、stream=持久化、零健康写均通过。这不是生产或模拟器验收。282/source838、已替换商店截图、OTA 冻结保持，最终送审仍待生产及使用路径验证。

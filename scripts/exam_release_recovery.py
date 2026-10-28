@@ -597,9 +597,11 @@ class Adapter:
         site = LIVE / 'backend/venv/lib/python3.12/site-packages'
         sys.path.append(str(site))
         os.environ.clear(); os.environ.update(ENV)
-        os.chdir(LIVE / 'backend')
         path = self.failed_source / 'backend/app/config.py'
-        settings = self.helper.load_runtime_settings(self.helper.protected_read(path), path)
+        # Settings require the production .env directory; subsequent canonical
+        # revision proofs require their original cwd for root-relative ls-files.
+        with contextlib.chdir(LIVE / 'backend'):
+            settings = self.helper.load_runtime_settings(self.helper.protected_read(path), path)
         need(settings.app_env.lower() == 'production')
         self.bootstrap.secure(self.helper.CREDENTIAL, private=True)
         migration_url = self.helper.parse_migration_env(self.helper.protected_read(self.helper.CREDENTIAL, private=True))

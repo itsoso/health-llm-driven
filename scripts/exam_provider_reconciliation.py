@@ -19,6 +19,13 @@ FAILED='a8cd1e7635eb697c0f0bc528382c98b3602893c3'
 REFRESH_ROOT=Path('/var/lib/reva-github-api/refresh')
 PROVIDER_LOCK=Path('/var/lib/reva-github-api/provider-refresh.lock')
 CREDENTIAL=Path('/etc/reva-github-api/credential.json')
+FIXED_CREDENTIAL_ORIGIN='52d2dbc619e58ce75dadf79877192ee424771afa'
+FIXED_CREDENTIAL_RECEIPTS={
+    'intent.json':'4bf207194f769fb1850203bd818b978d2e8986ca4770480081de211bc420f246',
+    'completed.json':'2d544b2064d9f19289758c7b74de33e5cf2f5da300ea2699b05dc3c6d56dc3af'}
+FIXED_CREDENTIAL_G4='812191b9970781b2148e99324e411f34d103f399381d2d664f4c2c35b77ae66b'
+FIXED_CREDENTIAL_FILE='f786e3482e4350c9b31f17a27d7d6f746f802c2544de63ad1099961b73fd4d1c'
+FIXED_CREDENTIAL_EXPIRY=1793148380
 SOURCE_PIN='088e1b7b9e00f5c365a83a17d2b3b9cd6d251c3a26d2ae007a43d95b94b01f87'
 PINS={'intent.json':'6ef77cc7ee895c9ab5a4cb96dda606397293e306a3c29d968ff7591f171dff35',
       'completed.json':'c349dba585209cfb31a296b994c9a3540665b02026bad4ee700986eae024541d'}
@@ -199,6 +206,35 @@ def acquire_provider_lock(bootstrap):
         raise ReconciliationError('original provider lock unavailable or changed') from None
 
 
+def credential_binding_sha(recovery_sha,original,intent,complete,raw_hashes):
+    """Bind one completed renewal to a newly reviewed incident recovery.
+
+    Historical proof only: never read, mint, extend or replay a credential.
+    The original records retain their original source SHA. Only the new G4
+    digest may differ; the incident itself must remain byte-equivalent JSON.
+    """
+    encode=lambda value:(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+    need(isinstance(recovery_sha,str) and re.fullmatch('[a-f0-9]{40}',recovery_sha))
+    need(type(intent) is dict and type(complete) is dict and type(original) is dict)
+    origin=intent.get('recovery_sha')
+    if origin==recovery_sha:
+        need(encode(intent.get('original'))==encode(original),'credential incident differs')
+        return origin
+    need(origin==FIXED_CREDENTIAL_ORIGIN and complete.get('recovery_sha')==origin)
+    need(raw_hashes==FIXED_CREDENTIAL_RECEIPTS,'completed credential receipt bytes differ')
+    for name,value in (('intent.json',intent),('completed.json',complete)):
+        need(hashlib.sha256(encode(value)).hexdigest()==FIXED_CREDENTIAL_RECEIPTS[name])
+    need(intent.get('incoming_sha256')==complete.get('credential_sha256')==FIXED_CREDENTIAL_FILE)
+    need(type(intent.get('incoming_expires_at')) is int and type(complete.get('credential_expires_at')) is int and
+         intent['incoming_expires_at']==complete['credential_expires_at']==FIXED_CREDENTIAL_EXPIRY)
+    prior=intent.get('original')
+    need(type(prior) is dict and prior.get('g4_sha256')==FIXED_CREDENTIAL_G4 and
+         isinstance(original.get('g4_sha256'),str) and re.fullmatch('[a-f0-9]{64}',original['g4_sha256']))
+    need(encode({k:v for k,v in prior.items() if k!='g4_sha256'})==
+         encode({k:v for k,v in original.items() if k!='g4_sha256'}),'credential incident changed beyond G4')
+    return origin
+
+
 def validate_recovery_credential(bootstrap,recovery_sha,original):
     """A replaced token without our complete bound receipt is not recovery authority."""
     try:
@@ -212,13 +248,15 @@ def validate_recovery_credential(bootstrap,recovery_sha,original):
                 raw[name],ids[name]=audit.read(name,max_bytes=1000000)
                 need(root_ids(os.stat(name,dir_fd=audit.fd,follow_symlinks=False)))
             intent=parsed(raw['intent.json']); complete=parsed(raw['completed.json'])
+            credential_sha=credential_binding_sha(recovery_sha,original,intent,complete,
+                {name:hashlib.sha256(value).hexdigest() for name,value in raw.items()})
             evidence_keys={'attempt','recovery_sha','failed_sha','original','original_credential'}
             need(isinstance(intent,dict) and set(intent)==evidence_keys|{'evidence_sha256','incoming_sha256','incoming_expires_at','ci_verified'})
             evidence={key:intent[key] for key in evidence_keys}
             encoded=(json.dumps(evidence,sort_keys=True,separators=(',',':'))+'\n').encode()
             evidence_hash=hashlib.sha256(encoded).hexdigest()
-            need(intent['attempt']=='exam-a8-read-credential-v1' and intent['recovery_sha']==recovery_sha and
-                 intent['failed_sha']==FAILED and intent['original']==original and intent['ci_verified'] is True and
+            need(intent['attempt']=='exam-a8-read-credential-v1' and intent['recovery_sha']==credential_sha and
+                 intent['failed_sha']==FAILED and intent['ci_verified'] is True and
                  intent['evidence_sha256']==evidence_hash and type(intent['incoming_expires_at']) is int and
                  isinstance(intent['incoming_sha256'],str) and re.fullmatch('[a-f0-9]{64}',intent['incoming_sha256']))
             need(isinstance(original,dict) and original.get('provider_reconciliation')==historical_evidence(bootstrap))
@@ -226,7 +264,7 @@ def validate_recovery_credential(bootstrap,recovery_sha,original):
             need(isinstance(old,dict) and set(old)=={'sha256','identity'} and old['sha256']==SAFE_FIELDS['after_sha256'])
             old_id=old['identity'];need(isinstance(old_id,dict) and set(old_id)==fields and all(type(v) is int and v>=0 for v in old_id.values()))
             need(old_id['st_uid']==old_id['st_gid']==0 and stat.S_ISREG(old_id['st_mode']) and stat.S_IMODE(old_id['st_mode'])==0o600 and old_id['st_nlink']==1)
-            expected={'state':'CREDENTIAL_REPLACED','attempt':intent['attempt'],'recovery_sha':recovery_sha,'failed_sha':FAILED,
+            expected={'state':'CREDENTIAL_REPLACED','attempt':intent['attempt'],'recovery_sha':credential_sha,'failed_sha':FAILED,
               'evidence_sha256':evidence_hash,'credential_sha256':intent['incoming_sha256'],
               'credential_expires_at':intent['incoming_expires_at'],'ci_verified':True,
               'original_incident_preserved':True,'services_changed':False,'database_changed':False}

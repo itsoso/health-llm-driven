@@ -172,6 +172,42 @@ def test_complete_recovery_credential_chain_accepts_same_candidate_and_expired_h
     m.validate_records(*records(m))
 
 
+@pytest.mark.parametrize('change',[None,'incident','type','receipt','mixed','current_rotation'])
+def test_successor_closure_uses_shared_byte_pinned_history(tmp_path,monkeypatch,change):
+    m=load(); values=list(copy.deepcopy(records(m)))
+    path=Path(__file__).with_name('exam_provider_reconciliation.py')
+    spec=importlib.util.spec_from_file_location('closure_credential_binding_test',path)
+    reconciliation=importlib.util.module_from_spec(spec);spec.loader.exec_module(reconciliation)
+    ci,cd=values[4:6]; ci['original']=copy.deepcopy(ci['original'])
+    old_sha='c'*40
+    ci['recovery_sha']=cd['recovery_sha']=old_sha
+    ci['original']['g4_sha256']='a'*64
+    evidence={k:ci[k] for k in ('attempt','recovery_sha','failed_sha','original','original_credential')}
+    ci['evidence_sha256']=cd['evidence_sha256']=m.credential_digest(evidence)
+    pins={'intent.json':m.credential_digest(ci),'completed.json':m.credential_digest(cd)}
+    monkeypatch.setattr(reconciliation,'FIXED_CREDENTIAL_ORIGIN',old_sha)
+    monkeypatch.setattr(reconciliation,'FIXED_CREDENTIAL_G4','a'*64)
+    monkeypatch.setattr(reconciliation,'FIXED_CREDENTIAL_RECEIPTS',pins.copy())
+    monkeypatch.setattr(reconciliation,'FIXED_CREDENTIAL_FILE',ci['incoming_sha256'])
+    monkeypatch.setattr(reconciliation,'FIXED_CREDENTIAL_EXPIRY',ci['incoming_expires_at'])
+    # History remains valid after expiration or replacement of the live token.
+    credential=tmp_path/'credential.json';credential.write_text('expired or rotated')
+    monkeypatch.setattr(reconciliation,'CREDENTIAL',credential)
+    if change=='incident':ci['original']['configuration']={'drift':True}
+    if change=='type':ci['original']['original_runtime_journal']['version']=True
+    if change=='receipt':pins['completed.json']='0'*64
+    if change=='mixed':cd['recovery_sha']='d'*40
+    if change=='current_rotation':credential.unlink()
+    binder=lambda sha,original,ci,cd:reconciliation.credential_binding_sha(sha,original,ci,cd,pins)
+    if change in (None,'current_rotation'):
+        m.validate_records(*values,credential_binding=binder)
+        # Cross-candidate input cannot enter the legacy same-candidate route.
+        with pytest.raises(m.ClosureError):m.validate_records(*values)
+    else:
+        with pytest.raises((m.ClosureError,reconciliation.ReconciliationError)):
+            m.validate_records(*values,credential_binding=binder)
+
+
 @pytest.mark.parametrize('index,path,value', [
     (0,('original','provider_reconciliation'),{}), (0,('extra',),True),
     (1,('original_intent_sha256',),'0'*64),(2,('schema_sha256',),'bad'),

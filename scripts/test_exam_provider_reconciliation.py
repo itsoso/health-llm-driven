@@ -139,6 +139,53 @@ def test_recovery_requires_completed_own_refresh_and_exact_current_readback(fixt
     assert 'new-private-value' not in json.dumps(result)
 
 
+def successor_fixture(fixture, monkeypatch):
+    m,b,own,sha,original,path=own_refresh_fixture(fixture,monkeypatch)
+    original['g4_sha256']='1'*64
+    original['strict_count']=1
+    intent=json.loads((own/'intent.json').read_bytes())
+    complete=json.loads((own/'completed.json').read_bytes())
+    intent['original']=original
+    encoded=lambda value:(json.dumps(value,sort_keys=True,separators=(',',':'))+'\n').encode()
+    evidence={k:intent[k] for k in ('attempt','recovery_sha','failed_sha','original','original_credential')}
+    intent['evidence_sha256']=hashlib.sha256(encoded(evidence)).hexdigest()
+    complete['evidence_sha256']=intent['evidence_sha256']
+    for name,value in [('intent.json',intent),('completed.json',complete)]: (own/name).write_bytes(encoded(value))
+    raw_hashes={name:hashlib.sha256((own/name).read_bytes()).hexdigest() for name in ('intent.json','completed.json')}
+    monkeypatch.setattr(m,'FIXED_CREDENTIAL_ORIGIN',sha,raising=False)
+    monkeypatch.setattr(m,'FIXED_CREDENTIAL_RECEIPTS',raw_hashes.copy(),raising=False)
+    monkeypatch.setattr(m,'FIXED_CREDENTIAL_G4','1'*64,raising=False)
+    monkeypatch.setattr(m,'FIXED_CREDENTIAL_FILE',complete['credential_sha256'],raising=False)
+    monkeypatch.setattr(m,'FIXED_CREDENTIAL_EXPIRY',complete['credential_expires_at'],raising=False)
+    return m,b,own,'d'*40,{**original,'g4_sha256':'2'*64},path,intent,complete,raw_hashes
+
+
+def test_exact_completed_credential_can_bind_new_review_without_replay(fixture,monkeypatch):
+    m,b,own,sha,original,path,ci,cd,raw=successor_fixture(fixture,monkeypatch)
+    before={p.name:p.read_bytes() for p in own.iterdir()}
+    assert m.credential_binding_sha(sha,original,ci,cd,raw)==ci['recovery_sha']
+    result=m.validate_recovery_credential(b,sha,original)
+    assert result['credential_sha256']==hashlib.sha256(path.read_bytes()).hexdigest()
+    assert {p.name:p.read_bytes() for p in own.iterdir()}==before
+
+
+@pytest.mark.parametrize('change',['intent_raw','complete_raw','parsed_intent','parsed_complete','incident','type','new_g4','old_g4','origin','file','expiry'])
+def test_credential_successor_rejects_any_unbound_delta(fixture,monkeypatch,change):
+    m,b,own,sha,original,path,ci,cd,raw=successor_fixture(fixture,monkeypatch)
+    if change=='intent_raw':raw['intent.json']='0'*64
+    if change=='complete_raw':raw['completed.json']='0'*64
+    if change=='parsed_intent':ci['ci_verified']=False
+    if change=='parsed_complete':cd['services_changed']=True
+    if change=='incident':original['extra']='unknown'
+    if change=='type':original['strict_count']=True
+    if change=='new_g4':original['g4_sha256']='invalid'
+    if change=='old_g4':ci['original']['g4_sha256']='3'*64
+    if change=='origin':ci['recovery_sha']='e'*40
+    if change=='file':monkeypatch.setattr(m,'FIXED_CREDENTIAL_FILE','0'*64)
+    if change=='expiry':monkeypatch.setattr(m,'FIXED_CREDENTIAL_EXPIRY',0)
+    with pytest.raises(m.ReconciliationError):m.credential_binding_sha(sha,original,ci,cd,raw)
+
+
 @pytest.mark.parametrize('change',['pending','extra','wrong_original','wrong_sha','wrong_file','wrong_complete','duplicate'])
 def test_recovery_blocks_unknown_or_mismatched_own_refresh(fixture,monkeypatch,change):
     m,b,own,sha,original,path=own_refresh_fixture(fixture,monkeypatch)

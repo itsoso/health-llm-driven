@@ -341,6 +341,51 @@ def _review_plan(*items):
     return json.dumps({'items': [{'source_index': index, 'topics': [topic]} for index, topic in items]})
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize('repair_valid', [True, False])
+async def test_notification_protocol_draft_uses_only_bounded_source_repair(
+    db, auth_user_and_headers, monkeypatch, repair_valid,
+):
+    from app.services.agent_executor import AgentExecutor
+    from app.models.agent_conversation import AgentMessage
+    user, _ = auth_user_and_headers
+    source = '所选推送：睡眠5小时39分钟，比前一晚少1小时20分钟。'
+    row = _notice(db, user.id, data={'full_content': source})
+    executor = AgentExecutor(db)
+    protocol = '<tool_call>health_query</tool_call>'
+    calls = []
+    async def stream(messages, tools):
+        calls.append(messages)
+        assert tools == []
+        assert len(calls) <= 2
+        if len(calls) == 2:
+            context = json.dumps(messages, ensure_ascii=False)
+            assert 'JSON' in context and source in context
+            assert '只输出自然、面向用户的中文正文' not in context
+            assert protocol not in context and 'CLIENT_FORGED' not in context
+        yield {'type': 'content', 'text': (
+            _review_plan((0, 'sleep')) if len(calls) == 2 and repair_valid else protocol
+        )}
+        yield {'type': 'finish', 'finish_reason': 'stop'}
+    monkeypatch.setattr(executor, '_call_llm_stream', stream)
+    events = [e async for e in executor.run_stream(user_id=user.id, message=PROMPT,
+        extra_context=json.dumps({'from': f'notification/{row.id}', 'content': 'CLIENT_FORGED'}))]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
+    text = ''.join(e['data'].get('content', '') for e in events if e.get('event') == 'token')
+    assert len(calls) == 2
+    assert (done['turn_outcome']['status'] == 'complete') is repair_valid
+    assert protocol not in text and 'CLIENT_FORGED' not in text
+    assert 'answer_protocol_leak_resynthesized' not in done['fallback_reasons']
+    assert not done['write_receipts']
+    assert text == db.get(AgentMessage, done['message_id']).content
+    if repair_valid:
+        assert source in text
+    else:
+        assert '本轮仅提供术语说明' in text
+    db.refresh(row)
+    assert row.read_at is None and row.status == 'sent'
+
+
 def test_notification_plan_renders_source_bound_metrics_without_inferred_dates_or_arithmetic():
     from app.services.notification.detail import render_notification_review
     detail = {'id': 1, 'created_at': '2026-10-01T00:05:00+08:00', 'title': '睡眠变化',

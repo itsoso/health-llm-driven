@@ -1423,6 +1423,15 @@ App Store 送审完成。原失败回执、原迁移 intent、lease、stage 与�
 再 CAS 原子替换已绑定的凭据；不授予部署权限、不改业务 lease、身份、数据库或服务。
 inspect 不 mint token、不写文件，亦不声称线上 CI 已核验；凭据结果未知时禁止重试。
 
+已完成的 `52d2dbc619e58ce75dadf79877192ee424771afa` 固定续期不可重跑。后续恢复候选
+仅可通过 `exam_provider_reconciliation.credential_binding_sha` 消费其两份精确原始
+回执摘要、原 G4、凭据文件摘要及到期时间；旧回执保持原 SHA，不改写为新候选。
+原事故快照仅允许 G4 摘要更新，其他字段及 JSON 类型必须完全相同。新候选独立通过
+当前 main 完整 CI 与 G4；执行恢复时仍检查当前凭据文件。closure/history 复用同一
+纯历史验证函数和安全读取所得原始摘要，不依赖以后会轮换或过期的当前凭据。
+配置加载只在读取 Settings 时临时进入 backend，成功或异常均恢复工作目录，避免
+第二次原始源码证明将 backend 相对路径误当仓库根路径；原证明代码不得绕过。
+
 统一恢复入口还须先拒绝替代恢复的任何持久痕迹：固定 a8 的 exam-service-recovery、
 exam-attempts-migrations/recovery、exam-recovery-lease-retirement、retained-candidate-closures、
 retired 与旧安装归档路径，以及 provider refresh 下任意 exam-* 和 credential.exam-*

@@ -20304,6 +20304,7 @@ class AgentExecutor:
                                     candidate, finish_reason = '', 'error'
                             if (
                                 not proposed_calls
+                                and self._turn_notification_detail is None
                                 and candidate.strip()
                                 and not answer_protocol_recovery_attempted
                                 and not post_confirm_advice_correction_attempted
@@ -20788,6 +20789,10 @@ class AgentExecutor:
             except ValueError:
                 notification_source_invalid = True
                 self._record_model_fallback_reason("notification_review_source_invalid")
+                # This is an untrusted selection document, not answer prose.
+                # Discard it before general transforms; the bounded source-only
+                # correction below may replace it, with all final gates intact.
+                full_reply = ""
         # 6. 保存回复
         if is_internal_process_response(full_reply):
             full_reply = "这次没有完成数据查询，因此没有生成可靠回答。请点“重试”重新查询。"
