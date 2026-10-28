@@ -179,3 +179,74 @@ async def test_incomplete_probiotic_photo_waits_for_details_without_model_or_wri
     assert not photo_setup.calls and not photo_setup.dispatches
     assert db.query(WriteIntent).count() == 0
     assert db.query(SupplementRecord).count() == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('with_image', [False, True])
+async def test_photo_reference_waits_for_user_instead_of_generic_record_failure(
+    db, monkeypatch, owned_data, photo_setup, with_image,
+):
+    from app.services import photo_supplement_recognition as recognition
+    async def forbidden(*args, **kwargs):
+        raise AssertionError('incomplete photo reference must not call vision')
+    monkeypatch.setattr(recognition, 'recognize_photo_supplements', forbidden)
+    monkeypatch.setattr(photo_setup.executor, '_analyze_image_with_vision', forbidden)
+    events = [event async for event in photo_setup.executor.run_stream(
+        owned_data.id, '记录以上图片补剂',
+        images=[{'base64': 'YWJj', 'type': 'jpeg'}] if with_image else None,
+        channel='typed', client_turn_id=str(uuid4()),
+    )]
+    done = next(event['data'] for event in reversed(events) if event['event'] == 'done')
+    saved = db.get(AgentMessage, done['message_id'])
+    assert done['turn_outcome']['status'] == 'waiting_for_user'
+    assert done['turn_outcome']['retryable'] is False
+    assert done['input_clarification_reason'] == 'supplement_photo_details_required'
+    assert saved.meta['turn_outcome'] == done['turn_outcome']
+    assert '补剂清单' in saved.content and '已经服用' in saved.content
+    assert '实际数量' in saved.content and '尚未写入' in saved.content
+    assert not done['cards'] and not done['write_receipts']
+    assert not photo_setup.calls and not photo_setup.dispatches
+    assert db.query(WriteIntent).count() == 0
+    assert db.query(SupplementRecord).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_meal_photo_then_supplement_reference_is_durable_and_replay_safe(
+    db, monkeypatch, owned_data, photo_setup,
+):
+    from app.models.agent_conversation import AgentConversation
+    conversation = AgentConversation(user_id=owned_data.id, title='Synthetic photo follow-up')
+    db.add(conversation)
+    db.flush()
+    previous = AgentMessage(
+        conversation_id=conversation.id, role='user', content='记录这餐',
+        image_url='/uploads/chat/synthetic.jpg',
+    )
+    previous_reply = AgentMessage(
+        conversation_id=conversation.id, role='assistant',
+        content='照片未能确认食物，本轮未保存。历史中的产品规格和数量不能作为新服用事实。',
+        meta={'client_turn_finalized': True, 'write_receipts': []},
+    )
+    db.add_all([previous, previous_reply])
+    db.commit()
+    previous_content = previous.content
+    turn_id = str(uuid4())
+    results = []
+    for _ in range(2):
+        events = [event async for event in photo_setup.executor.run_stream(
+            owned_data.id, '记录以上图片补剂', conversation_id=conversation.id,
+            channel='typed', client_turn_id=turn_id,
+        )]
+        results.append(next(event['data'] for event in reversed(events) if event['event'] == 'done'))
+    assert all(result['turn_outcome']['status'] == 'waiting_for_user' for result in results)
+    assert all(not result['write_receipts'] for result in results)
+    assert results[0]['message_id'] == results[1]['message_id']
+    stored_turn_id = f'{owned_data.id}:{turn_id}'
+    assert db.query(AgentMessage).filter_by(client_turn_id=stored_turn_id, role='user').count() == 1
+    assert db.query(AgentMessage).filter_by(client_turn_id=stored_turn_id, role='assistant').count() == 1
+    db.refresh(previous)
+    assert previous.content == previous_content
+    assert previous.image_url == '/uploads/chat/synthetic.jpg'
+    assert db.query(WriteIntent).count() == 0
+    assert db.query(SupplementRecord).count() == 0
+    assert not photo_setup.calls and not photo_setup.dispatches

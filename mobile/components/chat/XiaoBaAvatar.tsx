@@ -1,6 +1,5 @@
 import React from 'react';
 import { Image, StyleSheet, View, ViewStyle } from 'react-native';
-import Svg, { Circle, Path } from 'react-native-svg';
 
 import {
   revaColors as C,
@@ -16,7 +15,7 @@ const STATE_COLOR: Record<XiaoBaAvatarState, string> = {
   listening: C.greenBright,
 };
 
-// Chat and launcher share the selected cloud-agent artwork.
+// Every avatar size shares the selected guardian artwork with the launcher.
 const BRAND_ICON = require('../../assets/images/icon.png');
 
 export default function XiaoBaAvatar({
@@ -44,20 +43,7 @@ export default function XiaoBaAvatar({
         style,
       ]}
     >
-      {compact ? (
-        <Svg width={size} height={size} viewBox="0 0 28 28" accessible={false}>
-          <Circle cx="19.5" cy="8.5" r="4.5" fill="#E7B879" />
-          <Path
-            d="M8.2 21.1a5.2 5.2 0 0 1-.7-10.35 6.8 6.8 0 0 1 12.9 1.35h.3a4.5 4.5 0 0 1 0 9H8.2Z"
-            fill="#E0F0E8"
-            stroke={C.green700}
-            strokeWidth={1.65}
-            strokeLinejoin="round"
-          />
-        </Svg>
-      ) : (
-        <Image source={BRAND_ICON} style={{ width: size, height: size }} resizeMode="cover" accessible={false} />
-      )}
+      <Image source={BRAND_ICON} style={{ width: size, height: size }} resizeMode="cover" accessible={false} />
       {!compact && <View
         style={[
           styles.statusDot,
@@ -79,6 +65,7 @@ const styles = StyleSheet.create({
   compactAvatar: {
     alignItems: 'center',
     justifyContent: 'center',
+    overflow: 'hidden',
   },
   avatar: {
     alignItems: 'center',

@@ -19,6 +19,27 @@ _REQUEST = re.compile(
 _COUNTS = dict(zip("二两三四五六七八", (2, 2, 3, 4, 5, 6, 7, 8)))
 _NAC_NAME = re.compile(r"^NAC(?:$|[\s（(])", re.IGNORECASE)
 _NAME = re.compile(r"[\w\s+()（）.,·%μ/-]{1,80}")
+_PHOTO_REFERENCE = re.compile(
+    r"(?:请|帮我|请帮我)?记录(?:一下)?"
+    r"(?:以上|上面|上一张|这张|刚才那张)(?:的)?(?:图片|照片)"
+    r"(?:里|中)?(?:的)?补剂[。.]?"
+)
+
+
+def is_incomplete_photo_supplement_reference(message: Any) -> bool:
+    """A photo reference can request clarification, never recover write authority.
+
+    No historical image, product identity, recipient or intake fact is resolved
+    here. Explicit amounts, dates and other subjects stay on their own paths.
+    """
+    if not isinstance(message, str):
+        return False
+    from app.services.agent_kernel.health_semantics import active_health_read_authority_text
+
+    return (
+        active_health_read_authority_text(message) == message.strip()
+        and _PHOTO_REFERENCE.fullmatch(message.strip()) is not None
+    )
 
 
 def match_photo_supplement_request(message: Any) -> re.Match[str] | None:
@@ -83,4 +104,7 @@ def needs_photo_supplement_details(message: Any) -> bool:
 
     if active_health_read_authority_text(message) != message.strip():
         return False
-    return bool(re.fullmatch(r"记录(?:这个|这瓶|益生菌)?补剂[。.]?", message.strip()))
+    return bool(
+        re.fullmatch(r"记录(?:这个|这瓶|益生菌)?补剂[。.]?", message.strip())
+        or is_incomplete_photo_supplement_reference(message)
+    )

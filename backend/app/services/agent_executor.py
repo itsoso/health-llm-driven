@@ -18395,20 +18395,27 @@ class AgentExecutor:
         # 默认“分析图片”不证明食物类别，也不授予饮食写入权限。
         _t_stage = time.time()
         vision_description = None
+        from app.services.photo_supplement_recognition import is_photo_supplement_request
+        from app.services.photo_supplement_preview import (
+            is_incomplete_photo_supplement_reference,
+            needs_photo_supplement_details,
+        )
+        should_preprocess_images = bool(images) and self._should_preprocess_attached_images(user_id, message)
+        # A text-only reference such as "记录以上图片补剂" lacks intake facts.
+        # Clarify without fetching old media or promoting history into a write.
+        if (is_incomplete_photo_supplement_reference(message)
+                or (images and (is_photo_supplement_request(message)
+                                or needs_photo_supplement_details(message)))):
+            async for event in self._run_photo_supplement_preview(
+                user_id=user_id, message=message, images=images,
+                conversation_id=conv.id, source_message_id=user_msg.id,
+                client_turn_id=client_turn_id, start_time=start_time,
+                allowed=bool(should_preprocess_images and not read_only_tools
+                             and not self._has_isolated_report_scope() and not file_base64),
+            ):
+                yield event
+            return
         if images:
-            should_preprocess_images = self._should_preprocess_attached_images(user_id, message)
-            from app.services.photo_supplement_recognition import is_photo_supplement_request
-            from app.services.photo_supplement_preview import needs_photo_supplement_details
-            if is_photo_supplement_request(message) or needs_photo_supplement_details(message):
-                async for event in self._run_photo_supplement_preview(
-                    user_id=user_id, message=message, images=images,
-                    conversation_id=conv.id, source_message_id=user_msg.id,
-                    client_turn_id=client_turn_id, start_time=start_time,
-                    allowed=bool(should_preprocess_images and not read_only_tools
-                                 and not self._has_isolated_report_scope() and not file_base64),
-                ):
-                    yield event
-                return
             if should_preprocess_images:
                 # 真实思考过程: 图片/视觉预处理 (4–20s 的 vision_ms 块) 即将开始。
                 # 仅在会真的跑独立 vision 预处理时发 (原图直传多模态模型时无此阶段)。
@@ -22174,8 +22181,8 @@ class AgentExecutor:
         if needs_photo_supplement_details(message):
             clarification_reason = "supplement_photo_details_required"
             reply = (
-                "你想把这瓶补剂加入自己的补剂清单，还是记录自己已经服用了一次？"
-                "请补充产品完整名称；如果已经服用，再告诉我实际数量、单位和服用时间。"
+                "你想把这些补剂加入自己的补剂清单，还是记录自己已经服用了一次？"
+                "请确认每种产品的完整名称；如果已经服用，再告诉我每种的实际数量、单位和服用时间。"
                 "照片中的包装不能代表实际服用量。本轮尚未写入补剂或服用记录。"
             )
         else:

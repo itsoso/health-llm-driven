@@ -24,53 +24,16 @@ func drawAppIcon(size: CGFloat) -> NSImage {
     let rect = NSRect(x: 0, y: 0, width: size, height: size)
     NSGraphicsContext.current?.imageInterpolation = .high
 
-    // Warm "Claude Design" clay tile (#C96442) — replaces the old teal-blue that
-    // clashed with the new warm palette. White pulse + warm-cream sparkles.
-    let background = NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22)
-    NSColor(calibratedRed: 0.788, green: 0.392, blue: 0.259, alpha: 1).setFill()
-    background.fill()
-
-    let glow = NSBezierPath(ovalIn: NSRect(x: size * 0.46, y: size * 0.47, width: size * 0.42, height: size * 0.42))
-    NSColor(calibratedRed: 1.0, green: 0.89, blue: 0.82, alpha: 0.22).setFill()
-    glow.fill()
-
-    let cardRect = NSRect(x: size * 0.16, y: size * 0.18, width: size * 0.68, height: size * 0.64)
-    let card = NSBezierPath(roundedRect: cardRect, xRadius: size * 0.12, yRadius: size * 0.12)
-    NSColor.white.withAlphaComponent(0.16).setFill()
-    card.fill()
-
-    let pulse = NSBezierPath()
-    pulse.lineCapStyle = .round
-    pulse.lineJoinStyle = .round
-    pulse.lineWidth = size * 0.055
-    pulse.move(to: NSPoint(x: size * 0.24, y: size * 0.48))
-    pulse.line(to: NSPoint(x: size * 0.36, y: size * 0.48))
-    pulse.line(to: NSPoint(x: size * 0.43, y: size * 0.62))
-    pulse.line(to: NSPoint(x: size * 0.50, y: size * 0.36))
-    pulse.line(to: NSPoint(x: size * 0.58, y: size * 0.57))
-    pulse.line(to: NSPoint(x: size * 0.66, y: size * 0.48))
-    pulse.line(to: NSPoint(x: size * 0.76, y: size * 0.48))
-    NSColor.white.setStroke()
-    pulse.stroke()
-
-    func sparkle(center: CGPoint, radius: CGFloat, alpha: CGFloat) {
-        let path = NSBezierPath()
-        path.move(to: NSPoint(x: center.x, y: center.y + radius))
-        path.line(to: NSPoint(x: center.x + radius * 0.25, y: center.y + radius * 0.25))
-        path.line(to: NSPoint(x: center.x + radius, y: center.y))
-        path.line(to: NSPoint(x: center.x + radius * 0.25, y: center.y - radius * 0.25))
-        path.line(to: NSPoint(x: center.x, y: center.y - radius))
-        path.line(to: NSPoint(x: center.x - radius * 0.25, y: center.y - radius * 0.25))
-        path.line(to: NSPoint(x: center.x - radius, y: center.y))
-        path.line(to: NSPoint(x: center.x - radius * 0.25, y: center.y + radius * 0.25))
-        path.close()
-        NSColor(calibratedRed: 1.0, green: 0.925, blue: 0.855, alpha: alpha).setFill()
-        path.fill()
+    let sourceURL = projectRoot
+        .deletingLastPathComponent()
+        .deletingLastPathComponent()
+        .appendingPathComponent("mobile/assets/images/icon.png")
+    guard let artwork = NSImage(contentsOf: sourceURL) else {
+        fatalError("Missing canonical app icon: \(sourceURL.path)")
     }
-
-    sparkle(center: CGPoint(x: size * 0.67, y: size * 0.68), radius: size * 0.11, alpha: 1)
-    sparkle(center: CGPoint(x: size * 0.38, y: size * 0.68), radius: size * 0.055, alpha: 0.72)
-    sparkle(center: CGPoint(x: size * 0.78, y: size * 0.58), radius: size * 0.045, alpha: 0.48)
+    let background = NSBezierPath(roundedRect: rect, xRadius: size * 0.22, yRadius: size * 0.22)
+    background.addClip()
+    artwork.draw(in: rect)
 
     image.unlockFocus()
     return image
