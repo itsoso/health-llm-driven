@@ -357,6 +357,7 @@ def lease_snapshot(server, path, lease):
         if raw != (value + '\n').encode():
             raise ClosureError('original lease content differs')
         files[name] = {'device': metadata.st_dev, 'inode': metadata.st_ino,
+                       'ctime_ns': metadata.st_ctime_ns,
                        'sha256': hashlib.sha256(raw).hexdigest()}
     if [info.st_dev, info.st_ino, files['token']['device'], files['token']['inode']] != lease['identity']:
         raise ClosureError('original lease inode changed')
@@ -583,15 +584,28 @@ def validate_closed_history(server, operation):
     snapshot = intent['lease']
     expected_content = {'token': lease.get('token'), 'label': 'testflight-check',
                         'stage': str(server.STATE / FAILED_SHA), 'started_at': lease.get('started_at')}
+    base_file_keys = {'device', 'inode', 'sha256'}
+    current_file_keys = base_file_keys | {'ctime_ns'}
+    snapshot_file_keys = ({frozenset(current_file_keys)} if FAILED_SHA == A4D_FAILED_SHA else
+                          {frozenset(base_file_keys), frozenset(current_file_keys)})
     if (not isinstance(snapshot, dict) or set(snapshot) != {'directory', 'files'}
             or not isinstance(snapshot['files'], dict) or set(snapshot['files']) != set(expected_content)
             or snapshot['directory'] != lease.get('identity', [])[:2]
+            or any(frozenset(snapshot['files'][name]) not in snapshot_file_keys
+                   for name in expected_content)
+            or any('ctime_ns' in snapshot['files'][name]
+                   and (type(snapshot['files'][name]['ctime_ns']) is not int
+                        or snapshot['files'][name]['ctime_ns'] < 0)
+                   for name in expected_content)
             or any(snapshot['files'][name].get('sha256') != hashlib.sha256((str(value) + '\n').encode()).hexdigest()
                    for name, value in expected_content.items())
             or [snapshot['files']['token'].get('device'), snapshot['files']['token'].get('inode')] != lease.get('identity', [])[2:]):
         raise ClosureError('historical original lease binding differs')
-    if os.path.lexists(retired_path(server)) and lease_snapshot(server, retired_path(server), lease) != snapshot:
-        raise ClosureError('retired original lease changed')
+    if os.path.lexists(retired_path(server)):
+        retired = lease_snapshot(server, retired_path(server), lease)
+        if any(any(retired['files'][name].get(key) != value for key, value in recorded.items())
+               for name, recorded in snapshot['files'].items()):
+            raise ClosureError('retired original lease changed')
     if os.path.lexists(server.BUSINESS_LEASE):
         info = server.BUSINESS_LEASE.lstat()
         if [info.st_dev, info.st_ino] == snapshot['directory']:

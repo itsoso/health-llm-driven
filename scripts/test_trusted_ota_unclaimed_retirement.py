@@ -215,7 +215,8 @@ def test_any_publication_or_unknown_partial_evidence_blocks_before_writes(transa
     assert not a.record.exists() and a.server.BUSINESS_LEASE.exists()
 
 
-@pytest.mark.parametrize('fault',['replace_lease','replace_token','claim','locks','official','source','process'])
+@pytest.mark.parametrize('fault',['replace_lease','replace_token','touch_token_metadata',
+                                  'claim','locks','official','source','process'])
 def test_inspection_drift_and_unavailable_proofs_never_retire(transaction,monkeypatch,fault):
     m,a,op,_lease,_calls=transaction
     old=m.close_transaction(a)
@@ -225,6 +226,8 @@ def test_inspection_drift_and_unavailable_proofs_never_retire(transaction,monkey
         shutil.copytree(original.with_name('other'),original)
     elif fault=='replace_token':
         token=a.server.BUSINESS_LEASE/'token';raw=token.read_bytes();token.unlink();token.write_bytes(raw);token.chmod(0o600)
+    elif fault=='touch_token_metadata':
+        token=a.server.BUSINESS_LEASE/'token';token.chmod(0o400);token.chmod(0o600)
     elif fault=='claim':(op/'intent.json').write_text('{}')
     elif fault=='locks':(a.server.STATE/'launcher.lock').write_text('changed')
     elif fault=='official':monkeypatch.setattr(m,'official_evidence',lambda token:(_ for _ in ()).throw(m.ClosureError('unavailable')))
@@ -355,6 +358,26 @@ def test_history_allows_different_current_lease_but_not_original_inode(transacti
     a.server.BUSINESS_LEASE.rmdir()
     m.retired_path(a.server).rename(a.server.BUSINESS_LEASE)
     with pytest.raises(m.ClosureError):m.validate_closed_history(a.server,op)
+
+
+def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(transaction):
+    m,a,op,_lease,_calls=transaction
+    inspected=m.close_transaction(a)
+    m.close_transaction(a,inspected['evidence_sha256'])
+    intent=json.loads((a.record/'intent.json').read_text())
+    for value in intent['lease']['files'].values():
+        value.pop('ctime_ns')
+    intent['evidence_sha256']=m.digest({k:v for k,v in intent.items()
+                                       if k not in {'state','evidence_sha256'}})
+    completed={'state':m.TERMINAL,'failed_sha':m.FAILED_SHA,
+               'intent_sha256':m.digest(intent)}
+    (a.record/'intent.json').write_text(json.dumps(intent))
+    (a.record/'completed.json').write_text(json.dumps(completed))
+    if m.FAILED_SHA == A4D_FAILED_SHA:
+        with pytest.raises(m.ClosureError):
+            m.validate_closed_history(a.server,op)
+    else:
+        assert m.validate_closed_history(a.server,op)['state']==m.TERMINAL
 
 
 NEW_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
