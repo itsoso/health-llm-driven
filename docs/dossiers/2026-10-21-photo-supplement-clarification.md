@@ -217,3 +217,25 @@ requirement. Fresh non-macOS recovery verification is 226 passed, 1 existing ski
 known macOS-only cases deselected; the CI contract suite is 21 passed. The reviewer returned
 NO-GO for the superseded commit, so a new commit, independent G4 review and Linux exact-SHA
 CI are required. No server, credential or vendor operation was performed.
+
+## 2026-10-29 App Review 2.5.4 rejection
+
+App Review submission `b1fa1609-5ef1-40fb-a3f8-c67b20840a48` and its sole
+1.3.6 item now read back `UNRESOLVED_ISSUES` / `REJECTED`. Apple's review on
+an iPad Air 11-inch (M3) rejected build 283 under Guideline 2.5.4 because the
+IPA declares `UIBackgroundModes=location`, while the reviewer could not find a
+feature requiring persistent location. Apple requested either a physical-device
+recording of that feature or removal of the background mode.
+
+The daily GPS journey remains in its own Dossier at S6 validation, has no
+physical-device background-duration acceptance, and was never admitted as a
+shipped Store feature. Build 283 therefore exposed an unready native capability.
+The corrective candidate restricts daily journey to explicit non-Store
+development or preview builds carrying `REVA_DAILY_JOURNEY_ENABLED=1`; production Store configuration now
+removes `UIBackgroundModes=location`, the Always-and-When-in-Use description,
+the Expo background-location flag and the runtime capability. Foreground
+location for weather, air quality and user-initiated place lookup remains.
+
+The rejected submission has not been deleted, replied to or resubmitted. A new
+Store build, exact artifact inspection, App Review gate and one fresh submission
+are required. No OTA can repair this Info.plist change.

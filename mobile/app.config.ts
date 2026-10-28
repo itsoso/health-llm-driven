@@ -29,6 +29,7 @@ const IPAD_ORIENTATIONS = [
 const IOS_BUILD_NUMBER = process.env.REVA_IOS_BUILD_NUMBER?.trim();
 const LOCAL_UPDATES_CHANNEL = process.env.REVA_LOCAL_UPDATES_CHANNEL;
 const DAILY_JOURNEY_RUNTIME = '1.3.6';
+const DAILY_JOURNEY_ENABLED = process.env.REVA_DAILY_JOURNEY_ENABLED === '1';
 const JOURNEY_LOCATION_USAGE = '用于查询天气、空气质量；你主动同意时单次查找餐厅或记录足迹；主动开启“记录今天行程”后记录路线与停留，可随时暂停、结束或删除';
 const JOURNEY_BACKGROUND_USAGE = '仅在你主动开启“记录今天行程”后，在锁屏或切换应用时继续记录当天路线与停留；你可随时暂停、结束或删除，当天结束后不再保存新的位置';
 
@@ -149,7 +150,8 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   )) {
     throw new Error('Local updates channel does not match the native app variant/capabilities');
   }
-  const dailyJourney = config.version === DAILY_JOURNEY_RUNTIME
+  const dailyJourney = DAILY_JOURNEY_ENABLED && (IS_DEV || IS_PREVIEW)
+    && config.version === DAILY_JOURNEY_RUNTIME
     && !IS_ANDROID_INTERNAL && process.env.EAS_BUILD_PLATFORM !== 'android';
   const basePlugins = withoutOptionalNativePlugins(config.plugins).map((plugin) => {
     if (pluginName(plugin) !== 'expo-location') return plugin;

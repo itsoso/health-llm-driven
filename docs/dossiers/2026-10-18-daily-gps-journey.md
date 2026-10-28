@@ -76,3 +76,15 @@
 - 发布 adapter `6a345e6ec29057c43dbf22a0683c1bcbd9591e43` 独立复核 GO：新鲜 helper/真实 PostgreSQL/runner 63 passed、3 skipped（跳过为 runner 额外 Redis 环境项，GPS PG 6 项均运行）；既有部署回归 215 passed。不是生产迁移成功证明。
 - 最终功能候选两端 TypeScript、秘密扫描通过；新增隐私测试带来的生成地图变化已重新生成并通过完整 System Map 校验。最终 Mobile 全量测试与精确主干 CI 待完成；G5/G6 仍未通过。
 - 原生扫码构建计划为 1.3.6 (289)：本地回执与公开 manifest 可证前一个 QR build 为 288。已安装 ad-hoc profile 有效，公开 latest 是旧实体目录，因此只发布唯一版本目录并使用 `--no-latest`；不替换旧目录。未预留或上传 Apple 构建。
+
+## 2026-10-29 Store capability containment
+
+App Review rejected unrelated Store build 283 under Guideline 2.5.4 because it
+declared persistent background location while this feature was still validating
+and had no physical-device background acceptance. The standard production
+binary now fails closed with daily journey disabled, even if an internal flag is
+present. Only a separately requested non-Store development or preview iOS build
+carrying `REVA_DAILY_JOURNEY_ENABLED=1` may restore the native mode;
+that build still requires this Dossier's remaining G4-G6, privacy and real-device
+evidence before Store submission. This containment does not delete the feature
+implementation or promote it to shipped.

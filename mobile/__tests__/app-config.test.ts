@@ -9,6 +9,7 @@ function configForVariant(variant?: string, env: Record<string, string | undefin
     'REVA_IPAD_ENABLED',
     'REVA_LOCAL_UPDATES_CHANNEL',
     'REVA_ANDROID_INTERNAL',
+    'REVA_DAILY_JOURNEY_ENABLED',
     'EAS_BUILD_PLATFORM',
     'ROKID_IOS_SDK_ENABLED',
     'ROKID_IOS_CALLBACK_SCHEME',
@@ -142,7 +143,7 @@ describe('app.config app links', () => {
         advancedSettings: false,
         androidGoogleMapsConfigured: false,
         backgroundLocation: false,
-        dailyJourney: true,
+        dailyJourney: false,
         rokid: false,
         siri: false,
         watch: false,
@@ -286,8 +287,8 @@ describe('app.config app links', () => {
     expect(plugins).not.toContain('./plugins/withRokidPushupApk');
     expect(plugins).not.toContain('./plugins/withIntentsExtension');
     expect(config.extra?.eas?.build?.experimental?.ios?.appExtensions).toBeUndefined();
-    expect(infoPlist.UIBackgroundModes).toEqual(['location']);
-    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toContain('记录今天行程');
+    expect(infoPlist.UIBackgroundModes).toBeUndefined();
+    expect(infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toBeUndefined();
     expect(infoPlist.NSBluetoothAlwaysUsageDescription).toBeUndefined();
     expect(infoPlist.NSSiriUsageDescription).toBeUndefined();
     expect(infoPlist.RokidCXRAuthCallbackScheme).toBeUndefined();
@@ -296,7 +297,7 @@ describe('app.config app links', () => {
     ]));
   });
 
-  it('declares only opted-in daily journey background location in the new iOS binary', () => {
+  it('keeps persistent background location out of the App Store production binary', () => {
     const config = configForVariant('production');
     const locationPlugin = (config.plugins ?? []).find((plugin: any) => (
       Array.isArray(plugin) && plugin[0] === 'expo-location'
@@ -305,8 +306,8 @@ describe('app.config app links', () => {
     expect(locationPlugin?.[1]).toEqual(expect.objectContaining({
       locationWhenInUsePermission: expect.stringContaining('天气'),
       locationAlwaysPermission: false,
-      locationAlwaysAndWhenInUsePermission: expect.stringContaining('记录今天行程'),
-      isIosBackgroundLocationEnabled: true,
+      locationAlwaysAndWhenInUsePermission: false,
+      isIosBackgroundLocationEnabled: false,
       isAndroidBackgroundLocationEnabled: false,
       isAndroidForegroundServiceEnabled: false,
     }));
@@ -477,7 +478,13 @@ describe('app.config app links', () => {
 describe('daily journey native scope', () => {
   it('removes unrelated background modes even when inherited config declares them', () => {
     const config = configForVariant('production', {}, { ios: { infoPlist: { UIBackgroundModes: ['fetch', 'audio', 'processing', 'location'] } } });
+    expect(config.ios.infoPlist.UIBackgroundModes).toBeUndefined();
+  });
+  it('admits background location only for an explicitly enabled non-Store iOS journey build', () => {
+    const config = configForVariant('preview', { REVA_DAILY_JOURNEY_ENABLED: '1', EAS_BUILD_PLATFORM: 'ios' });
+    expect(config.extra.release.capabilities.dailyJourney).toBe(true);
     expect(config.ios.infoPlist.UIBackgroundModes).toEqual(['location']);
+    expect(config.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toContain('记录今天行程');
   });
   it('does not enable daily journey for Android builds', () => {
     const config = configForVariant('production', { EAS_BUILD_PLATFORM: 'android' });
@@ -487,8 +494,9 @@ describe('daily journey native scope', () => {
 });
 
 
-it('does not activate legacy automatic city refresh when opting into the daily journey binary', () => {
-  const config = configForVariant('production');
-  expect(config.extra.release.capabilities.dailyJourney).toBe(true);
+it('does not admit daily journey into a production Store build even if the internal flag leaks', () => {
+  const config = configForVariant('production', { REVA_DAILY_JOURNEY_ENABLED: '1', EAS_BUILD_PLATFORM: 'ios' });
+  expect(config.extra.release.capabilities.dailyJourney).toBe(false);
   expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+  expect(config.ios.infoPlist.UIBackgroundModes).toBeUndefined();
 });
