@@ -2,7 +2,7 @@
 
 > 2026-10-28 candidate refresh: 小气候 and the downward-opening guardian icon are embedded in Store build 283. The exact IPA, source and signed capabilities have been checked against the new candidate. See `docs/dossiers/2026-10-27-xiaoqihou-brand.md`.
 
-Status: preparing App Store submission; simulator UI and App Store Connect final gates pending.
+Status: submitted for App Store review.
 
 Current candidate: 1.3.6 (283), source `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`.
 EAS build `ea1dda2a-86b3-4e46-adf8-b2b024465154` has finished and Apple build
@@ -12,8 +12,9 @@ submission. The compatible backend repair `2f94c6f1a8dbee3bea2ce3e63c2020ed9b947
 is deployed with a SUCCEEDED receipt; production health and the exact oxygen-query
 path passed before final submission preparation resumed.
 Readiness uses the release owner's explicitly accepted simulator-risk path, not
-a claim of completed physical acceptance. External candidate-bound results and
-the final-submit check remain required before the actual submission action.
+a claim of completed physical acceptance. Candidate-bound Release-simulator,
+live review-account, Store-IPA and App Store Connect checks passed before the
+submission action; the enumerated physical-only checks remain unverified.
 
 ## App Record
 
@@ -74,9 +75,9 @@ credentials and reviewer contact use their separate ASC fields. Notes has a
 description's character limit. Keywords are also measured in UTF-8, with a
 100-byte limit; avoid repeating the app/company name. See Apple's [platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
 
-App Store Connect has a saved 1.3.6 draft. Build 282 remains selected until every
-candidate-bound final gate for build 283 passes. Formal submission remains pending
-and manual release is retained.
+App Store Connect has accepted build 283 for review. Review submission
+`e85560dc-7f3a-4b27-a8f2-02c1166a78b9` is `WAITING_FOR_REVIEW`. Manual release
+is retained.
 
 ## Production Build Preflight
 
