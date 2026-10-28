@@ -16020,7 +16020,10 @@ class AgentExecutor:
         elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None
               or (panel_read_scope is not None and panel_read_scope.workout_selection is not None)) and panel_completion is not None:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
-        from app.services.agent_composed_read_completion import render_owned_cycling_html_report
+        from app.services.agent_composed_read_completion import (
+            read_scope_notices,
+            render_owned_cycling_html_report,
+        )
         if panel_completion is not None and not protocol_failure_text:
             full_reply = render_owned_cycling_html_report(panel_read_scope, panel_completion) or full_reply
         panel_sync_summary = self._trusted_sync_summary()
