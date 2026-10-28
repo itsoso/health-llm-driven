@@ -577,6 +577,13 @@ root 源码；同一凭据经 `trusted_release_gate.py --token-stdin --target fu
 读取失败立即阻断，不回退到过期的服务器凭据或环境变量；root、源码、原双锁和
 领取前失败证明不豁免。inspect 返回的证据摘要仍是执行收尾的必需绑定。
 
+`a4d922886c859f4a2a43d4322fd43d128bf934f3` 的固定 profile 仅接受 run
+`40735832856`、attempt `1`、job `122983994390` 和官方 artifact `12835953802`
+（2565 bytes）。审计包只有 `claim-ota` 的 `command_failed` 诊断、原 intent 与
+preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前不会调用供应商。
+收尾仍须由新的精确绿色 reviewed SHA 执行，并重新验证原 intent/lease、双锁、生产
+后端终态和健康状态。它只关闭未发布失败，不把 a4d 标为 OTA 成功，也不允许重发 a4d。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的

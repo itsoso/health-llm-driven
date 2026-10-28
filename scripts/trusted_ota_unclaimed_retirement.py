@@ -67,7 +67,11 @@ LEGACY_FAILED_SHA = FAILED_SHA
 CURRENT_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
 F202_FAILED_SHA = 'f2022e10027bcf35c4225bf1cc898a9001161ecc'
 C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
-SUPPORTED_FAILED_SHAS = (LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA, C29D_FAILED_SHA)
+A4D_FAILED_SHA = 'a4d922886c859f4a2a43d4322fd43d128bf934f3'
+SUPPORTED_FAILED_SHAS = (
+    LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA, C29D_FAILED_SHA,
+    A4D_FAILED_SHA,
+)
 _SELECTED_PROFILE = None
 
 
@@ -137,6 +141,24 @@ def select_profile(failed_sha):
             'scripts/trusted_ota_publish.py': 'd8a509e114fae2509fd93d157d713ed61b61c97b97aa358ea61f3a3ce566f63d',
             'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
             'scripts/trusted_ota.py': '2e0c9c20f779e9fb09afb8a2c8625710d1d05265a4886b8a2a43602ac1dd2d56',
+        }
+    elif failed_sha == A4D_FAILED_SHA:
+        FAILED_SHA = A4D_FAILED_SHA
+        RUN_ID = 40735832856
+        JOB_ID = 122983994390
+        ARTIFACT_ID = 12835953802
+        ARTIFACT_SIZE = 2565
+        ARTIFACT_ZIP_SHA256 = '9c871358a46e2598eecb042d2c895bbfed4ff6b8190a2ce5ef9335f5258c07c9'
+        ENTRY_DIGESTS = {
+            'ota-diagnostic.json': '63cff0263d191c2c6c120dd1f66c44f0256a445aad0fb202824c67a1836ec73c',
+            'ota-claim.json': 'c508ba2abaf836ad05880391bccc2d042029d0302012e209d9fd721131545dda',
+            'ota-preflight.json': '69042e0da28fbbf675cb3364e424da3c39b8524d3619bb2475d532f686ae4939',
+        }
+        SOURCE_HASHES = {
+            '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+            'scripts/trusted_ota_publish.py': 'fee188f98bd4b32c671589d2eb8b7624bc6b10ecb60c90170f52ec706cd880c7',
+            'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+            'scripts/trusted_ota.py': '7aa82ae1c64cb04ab5a8455731b32bb7b4b427e0313adfb1d62990f392cb5937',
         }
     _SELECTED_PROFILE = failed_sha
 
