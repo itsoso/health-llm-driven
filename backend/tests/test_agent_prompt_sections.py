@@ -59,6 +59,64 @@ def test_persona_is_xiaoqihou_and_does_not_encourage_scope_expansion():
     assert '唯一的对话入口' not in prompt
 
 
+def test_read_synthesis_projection_removes_planning_only_rules_and_keeps_safety():
+    from app.services.agent_prompt_sections import (
+        build_base_prompt_parts,
+        build_read_synthesis_parts,
+    )
+
+    kwargs = dict(
+        synthesis_only=True,
+        health_evidence_runtime=False,
+        exercise_plan_parts=[],
+        health_status_intent_prompt=ae._HEALTH_STATUS_INTENT_PROMPT,
+        clinician_provenance_parts=ae._CLINICIAN_PROVENANCE_PROMPT_BLOCK,
+        gene_rules_parts=(),
+        menu_share_parts=(),
+    )
+    before = build_base_prompt_parts(**kwargs)
+    after = build_read_synthesis_parts(**kwargs)
+    rendered = '\n'.join(after)
+
+    assert len(rendered) < len('\n'.join(before)) * 0.8
+    assert '## 本轮任务边界' not in rendered
+    assert '## 健康近况与用药意图' not in rendered
+    for marker in (
+        '## 本轮只依据返回结果回答',
+        '## 临床来源与写入边界（服务端护栏优先）',
+        '## 安全与边界 (R4 — 必须严格遵守)',
+        '不做诊断', '相关性,非因果', '数据合理性提示',
+        '读取失败、缺失或未核验字段不能当作已核验事实',
+    ):
+        assert marker in rendered
+
+
+@pytest.mark.parametrize('key,value', [
+    ('synthesis_only', False),
+    ('health_evidence_runtime', True),
+    ('exercise_plan_parts', ['exercise-boundary']),
+    ('gene_rules_parts', ae._GENE_RULES_PROMPT_BLOCK),
+    ('menu_share_parts', ae._MENU_SHARE_PROMPT_BLOCK),
+])
+def test_read_synthesis_projection_fails_closed_outside_sealed_read_answer(key, value):
+    from app.services.agent_prompt_sections import (
+        build_base_prompt_parts,
+        build_read_synthesis_parts,
+    )
+
+    kwargs = dict(
+        synthesis_only=True,
+        health_evidence_runtime=False,
+        exercise_plan_parts=[],
+        health_status_intent_prompt=ae._HEALTH_STATUS_INTENT_PROMPT,
+        clinician_provenance_parts=ae._CLINICIAN_PROVENANCE_PROMPT_BLOCK,
+        gene_rules_parts=(),
+        menu_share_parts=(),
+    )
+    kwargs[key] = value
+    assert build_read_synthesis_parts(**kwargs) == build_base_prompt_parts(**kwargs)
+
+
 def _execution_prompt():
     from app.services.agent_prompt_sections import build_base_prompt_parts
     return '\n'.join(build_base_prompt_parts(

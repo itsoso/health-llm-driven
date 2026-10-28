@@ -23508,9 +23508,9 @@ class AgentExecutor:
         elif synthesis_only:
             self._prompt_context_profile = "read_synthesis"
 
-        from app.services.agent_prompt_sections import build_base_prompt_parts
+        from app.services.agent_prompt_sections import build_read_synthesis_parts
 
-        parts = build_base_prompt_parts(
+        parts = build_read_synthesis_parts(
             synthesis_only=synthesis_only,
             health_evidence_runtime=health_evidence_runtime,
             exercise_plan_parts=self._exercise_plan_prompt_parts(prompt_snapshot),

@@ -61,10 +61,12 @@ def test_only_bound_dimension_entries_are_included(text, kept, dropped):
     from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
 
     result = project_owned_read_tool_descriptions(read_tools(), read_scope(text))
-    for tool in result[:2]:
-        description = tool["function"]["description"]
-        assert kept in description
-        assert dropped not in description
+    query = result[0]["function"]["description"]
+    batch = result[1]["function"]["description"]
+    assert kept in query
+    assert dropped not in query
+    assert dropped not in batch
+    assert "维度选择和医疗限制见同轮 health_query 描述" in batch
 
 
 @pytest.mark.parametrize("dimension,kept,dropped", [
@@ -90,10 +92,38 @@ def test_batch_keeps_calendar_aggregation_units_unknown_value_and_spo2_constrain
         "1-6 条子查询", "日历查询不支持 agg/compare", "不得用 days 代替昨天或昨晚",
         "trend = 首尾差", "数值聚合仅对可穿戴日指标有效", "其他维度 agg 会被忽略",
         "diff=a-b, ratio=a/b", "value, unit, n", "未知 dimension / 未知 agg / 超过 6 条",
-        "来源和覆盖情况", "不推算 ODI", "不把无数据当正常", "不确诊",
     ):
         assert fragment in description
     assert "完整示例" not in description
+
+    combined = "\n".join(t["function"]["description"] for t in project_owned_read_tool_descriptions(
+        read_tools(), read_scope(),
+    )[:2])
+    for fragment in ("来源和覆盖情况", "不推算 ODI", "不把无数据当正常", "不确诊"):
+        assert fragment in combined
+
+
+def test_query_guide_is_not_duplicated_when_single_and_batch_tools_are_both_present():
+    from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
+
+    result = project_owned_read_tool_descriptions(read_tools(), read_scope())
+    query, batch = (tool["function"]["description"] for tool in result[:2])
+    assert query.count("夜间血氧逐分钟时间序列") == 1
+    assert "夜间血氧逐分钟时间序列" not in batch
+    assert "维度选择和医疗限制见同轮 health_query 描述" in batch
+    combined = query + "\n" + batch
+    assert combined.count("不推算 ODI") == 1
+    assert combined.count("不把无数据当正常") == 1
+
+
+def test_batch_only_projection_keeps_dimension_guide_and_medical_limits():
+    from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
+
+    result = project_owned_read_tool_descriptions(read_tools()[1:], read_scope())
+    batch = result[0]["function"]["description"]
+    assert "夜间血氧逐分钟时间序列" in batch
+    assert "不推算 ODI" in batch
+    assert "不把无数据当正常" in batch
 
 
 @pytest.mark.parametrize("scope", [

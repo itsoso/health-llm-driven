@@ -12,6 +12,7 @@ import pytest
 from app.models.agent_conversation import AgentMessage
 from app.models.daily_health import DietRecord, GarminData
 from app.services import agent_executor as ae
+from app.services.agent_prompt_sections import build_base_prompt_parts
 from tests.test_agent_coherence_pi_trajectories import (
     clock as clock, owned_data as owned_data, _isolate_twin_cache as _isolate_twin_cache,
 )
@@ -24,7 +25,6 @@ ANSWER = '根据本轮查询到的记录回答；未提供的指标仍然未知�
 @pytest.mark.parametrize('data_state', ['available', 'empty', 'read_failure'])
 async def test_combined_candidates_preserve_provider_evidence_and_saved_answer(db, owned_data, monkeypatch, caplog, data_state):
     from eval.experimental_owned_read_preplan import install_owned_read_preplan
-    from eval.experimental_read_synthesis import build_read_synthesis_parts
 
     runs = {}
     if data_state == 'empty':
@@ -83,8 +83,11 @@ async def test_combined_candidates_preserve_provider_evidence_and_saved_answer(d
             patch.setattr('app.services.llm.factory.create_provider_for_model_id', lambda model_id, **k: Provider(model_id))
             for factory in ('create_provider_for_user', 'get_llm_provider'):
                 patch.setattr('app.services.llm.factory.'+factory, lambda *a, **k: Provider())
-            if p1:
-                patch.setattr('app.services.agent_prompt_sections.build_base_prompt_parts', build_read_synthesis_parts)
+            if not p1:
+                patch.setattr(
+                    'app.services.agent_prompt_sections.build_read_synthesis_parts',
+                    build_base_prompt_parts,
+                )
             if p2:
                 install_owned_read_preplan(executor)
             events = [event async for event in executor.run_stream(

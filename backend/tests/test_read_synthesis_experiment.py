@@ -92,15 +92,18 @@ def test_benchmark_preserves_evidence_and_write_controls(monkeypatch):
 
 async def test_actual_pi_provider_projection_preserves_facts_tools_and_saved_answer(db, auth_user_and_headers, monkeypatch, clock):
     from tests.test_agent_diet_synthesis_projection import _run
-    from eval.experimental_read_synthesis import build_read_synthesis_parts
+    from app.services.agent_prompt_sections import build_base_prompt_parts
 
     user, _ = auth_user_and_headers
     pairs = []
     for enabled in (False, True):
         with monkeypatch.context() as patch:
             patch.setattr(ae.settings, 'domain_prompt_optimization', True)
-            if enabled:
-                patch.setattr('app.services.agent_prompt_sections.build_base_prompt_parts', build_read_synthesis_parts)
+            if not enabled:
+                patch.setattr(
+                    'app.services.agent_prompt_sections.build_read_synthesis_parts',
+                    build_base_prompt_parts,
+                )
             _, calls, dispatches, done, saved = await _run(db, user, patch, query='今天我吃的怎么样?', client_turn_id=f'read-stage-{enabled}')
             assert done['completion_status'] == 'complete'
             pairs.append({'enabled': enabled, 'calls': calls,

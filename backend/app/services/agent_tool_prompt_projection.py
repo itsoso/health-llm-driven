@@ -23,7 +23,9 @@ _BATCH_RESULT = "\n→ 每条回 "
 # these immutable text projections; each helper retains at most 64 LRU entries.
 # Never cache scopes, user data, authorized tool lists or mutable schemas.
 @lru_cache(maxsize=64)
-def _batch_description(description: str, query_guidance: str) -> str | None:
+def _batch_description(
+    description: str, query_guidance: str, *, include_query_guidance: bool,
+) -> str | None:
     if any(description.count(marker) != 1 for marker in (
         _BATCH_PLAN, _BATCH_EXAMPLE, _BATCH_RESULT,
     )):
@@ -35,11 +37,13 @@ def _batch_description(description: str, query_guidance: str) -> str | None:
         return None
     # Remove only selection examples. Preserve plan semantics, units, unknown
     # value errors and source-derived per-dimension/date/screening limitations.
-    return (
+    projected = (
         description.split("\n\n", 1)[0]
         + description[plan:example] + description[result:]
-        + "\n\n" + query_guidance
     )
+    if include_query_guidance:
+        return projected + "\n\n" + query_guidance
+    return projected + "\n\n维度选择和医疗限制见同轮 health_query 描述；服务端绑定的维度、日期和范围同样适用。"
 
 
 def project_owned_read_tool_descriptions(
@@ -63,6 +67,13 @@ def project_owned_read_tool_descriptions(
     if query_guidance is None:
         return tools
     note = "本轮服务端已绑定查询维度：" + "、".join(sorted(dimensions)) + "。日期和范围以服务端绑定为准，不得自行扩大。\n\n"
+    canonical_query_present = any(
+        tool.get("type") == "function"
+        and (function := tool.get("function") or {}).get("name") == "health_query"
+        and function.get("description") == canonical["health_query"]["function"]["description"]
+        and function.get("parameters") == canonical["health_query"]["function"]["parameters"]
+        for tool in tools
+    )
     result = []
     for tool in tools:
         function = tool.get("function") or {}
@@ -80,7 +91,10 @@ def project_owned_read_tool_descriptions(
             continue
         description = (
             query_guidance if name == "health_query"
-            else _batch_description(original["description"], query_guidance)
+            else _batch_description(
+                original["description"], query_guidance,
+                include_query_guidance=not canonical_query_present,
+            )
         )
         if description is None:
             result.append(tool)

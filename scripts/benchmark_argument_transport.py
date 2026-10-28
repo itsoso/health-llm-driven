@@ -34,7 +34,8 @@ def variants(case):
 
 
 async def run(args, *, variant_builder=variants, source_paths=None,
-              caller='eval.argument_transport'):
+              caller='eval.argument_transport',
+              candidate_disposition='experimental_not_runtime'):
     repetitions = getattr(args, 'repetitions', 1)
     streaming = getattr(args, 'stream', False)
     timeout_seconds = getattr(args, 'timeout_seconds', 90)
@@ -46,7 +47,7 @@ async def run(args, *, variant_builder=variants, source_paths=None,
     if args.include_live_llm and planned_calls > max_api_calls:
         raise ValueError('planned_calls_exceed_budget')
     report = {'status': 'running' if args.include_live_llm else 'dry_run',
-              'candidate_disposition': 'experimental_not_runtime',
+              'candidate_disposition': candidate_disposition,
               'batch_id': uuid4().hex, 'phase': 'answer', 'stream': streaming,
               'repetitions': repetitions, 'planned_calls': planned_calls,
               'max_api_calls': max_api_calls, 'timeout_seconds_per_call': timeout_seconds,

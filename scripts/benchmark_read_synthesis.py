@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Paired answer-stage experiment with full application static rules.
+"""Paired answer-stage benchmark with full application static rules.
 
 Synthetic evidence only, opt-in API calls, no tool execution. Write-answer
-controls retain full prompts. Production has no experiment import or flag.
+controls retain full prompts. The baseline restores the prior complete prompt;
+the candidate exercises the production fail-closed read-answer projection.
 """
 import argparse
 import asyncio
@@ -17,14 +18,13 @@ sys.path.insert(0, str(ROOT / 'backend'))
 sys.path.insert(0, str(ROOT / 'scripts'))
 
 from benchmark_argument_transport import run, add_run_options
-from eval.experimental_read_synthesis import build_read_synthesis_parts
 from eval.prompt_projection_quality import build_case_messages
+from app.services.agent_prompt_sections import build_base_prompt_parts
 from app.services.llm.prompt_transport import compact_tool_json
 
 SOURCES = (
     'backend/app/services/agent_executor.py',
     'backend/app/services/agent_prompt_sections.py',
-    'backend/eval/experimental_read_synthesis.py',
     'backend/eval/prompt_projection_quality.py',
     'backend/eval/prompt_benchmark_metrics.py',
     'scripts/benchmark_argument_transport.py',
@@ -41,9 +41,9 @@ def variants(case):
     executor = AgentExecutor(None)
     kwargs = dict(intent_query=case.query, static_rules_only=True, synthesis_only=read_only)
     with patch.object(settings, 'domain_prompt_optimization', True):
-        original = executor._build_system_prompt(1, 1, None, **kwargs)
-        with patch('app.services.agent_prompt_sections.build_base_prompt_parts', build_read_synthesis_parts):
-            projected = executor._build_system_prompt(1, 1, None, **kwargs)
+        with patch('app.services.agent_prompt_sections.build_read_synthesis_parts', build_base_prompt_parts):
+            original = executor._build_system_prompt(1, 1, None, **kwargs)
+        projected = executor._build_system_prompt(1, 1, None, **kwargs)
     baseline = compact_tool_json(build_case_messages(case, original))
     candidate = deepcopy(baseline)
     candidate[0]['content'] = projected + '\n\n' + case.frozen_context
@@ -57,7 +57,8 @@ def main():
     args.model = args.model or ['qwen3.8-flash', 'qwen3.8-max']
     try:
         return asyncio.run(run(args, variant_builder=variants, source_paths=SOURCES,
-                               caller='eval.read_synthesis'))
+                               caller='eval.read_synthesis',
+                               candidate_disposition='production_runtime_candidate'))
     except Exception as exc:
         print(json.dumps({'status': 'failed', 'error_type': type(exc).__name__}), file=sys.stderr)
         return 2

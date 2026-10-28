@@ -4,7 +4,15 @@ Clinical safety rules remain byte-equivalent. Execution instructions track
 the canonical tool schemas and verified outcomes; response organization is
 shared by execution and synthesis.
 """
+import hashlib
 from collections.abc import Sequence
+
+
+# Read-answer compaction is deliberately bound to the reviewed planning block
+# and health-status contract.  A future policy edit falls back to the complete
+# prompt until the omitted material is reviewed again.
+_READ_SYNTHESIS_TASK_SCOPE_SHA256 = "d203e56e07940f816c2b9555db310f2db0003849d27c9aaf498e206385669102"
+_READ_SYNTHESIS_STATUS_SHA256 = "25081bdc026f31b584201d2c9459a9a0ac42a39958ccd556fa2528a4fa77ccc6"
 
 
 def build_base_prompt_parts(
@@ -129,3 +137,45 @@ def build_base_prompt_parts(
         "- 已回答完当前问题就结束，不要以“如果你愿意”“要不要我再帮你”等泛化邀请收尾。仅在完成当前请求确实缺少信息时，一次问清必要项；明确告诉用户缺什么，避免让用户重复已给出的信息。",
         "- 这些规则只调整表达，不改变工具权限、确认步骤或医疗安全要求。禁止写入不等于取消用户另行明确请求的查询；读取或保存是否成功必须以实际工具结果和回执为准。",
     ]
+
+
+def project_read_synthesis_parts(
+    original: list[str], *, synthesis_only: bool, health_evidence_runtime: bool,
+    exercise_plan_parts: Sequence[str], health_status_intent_prompt: str,
+    gene_rules_parts: Sequence[str], menu_share_parts: Sequence[str], **_unused,
+) -> list[str]:
+    """Remove planning-only prose from a sealed, server-owned read answer.
+
+    This projection cannot select the answer stage.  The executor establishes
+    that the turn is static-rules-only, tool-free synthesis before it passes
+    ``synthesis_only=True``.  All evidence, provenance, R4 and response rules
+    remain in ``original``.  Any unknown layout or policy drift fails closed.
+    """
+    if (
+        synthesis_only is not True
+        or health_evidence_runtime
+        or exercise_plan_parts
+        or gene_rules_parts
+        or menu_share_parts
+    ):
+        return original
+    task_heading = "## 本轮任务边界"
+    answer_heading = "## 本轮只依据返回结果回答"
+    status = health_status_intent_prompt
+    if any(original.count(item) != 1 for item in (task_heading, answer_heading, status)):
+        return original
+    start, end = original.index(task_heading), original.index(answer_heading)
+    if start >= end:
+        return original
+    if (
+        hashlib.sha256("\n".join(original[start:end]).encode()).hexdigest()
+        != _READ_SYNTHESIS_TASK_SCOPE_SHA256
+        or hashlib.sha256(status.encode()).hexdigest() != _READ_SYNTHESIS_STATUS_SHA256
+    ):
+        return original
+    return [part for part in original[:start] + original[end:] if part != status]
+
+
+def build_read_synthesis_parts(**kwargs) -> list[str]:
+    """Build the canonical prompt, then apply the fail-closed read projection."""
+    return project_read_synthesis_parts(build_base_prompt_parts(**kwargs), **kwargs)
