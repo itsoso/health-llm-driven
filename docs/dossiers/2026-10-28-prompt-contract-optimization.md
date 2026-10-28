@@ -137,7 +137,8 @@
 
 - RED：新增终态回答投影用例首轮 1 failed / 44 passed，失败证明固定来源前缀仍与结论合并
   显示，且展开面板没有对应边界。
-- GREEN：`ChatBubbleStreaming` 与 `AnswerEvidencePanelUi` 共 55 passed。
+- 初次实现本地 GREEN：`ChatBubbleStreaming` 与 `AnswerEvidencePanelUi` 共 55 passed；首次
+  独立 G4 在加入一项边界测试后的同范围结果为 56 passed。
 - 扩大 Chat 组件回归：27 suites、423 tests 全部通过；既有模拟错误场景产生预期 console
   警告，不是测试失败。
 - Mobile TypeScript `tsc --noEmit` 通过；设计 token 闸通过，raw hex 由基线 599 降至 595，
@@ -145,8 +146,9 @@
 - 独立 G4 首轮指出失败、打断或业务未完成的回复仍可能折叠来源边界。补充 9 个 RED 后，
   6 种非完成业务终局与 `error`、`interrupted` 均复现该问题，无障碍提示也缺少医生确认
   归因；复制原始全文用例已通过。
-- 修复后仅 `terminalStatus=complete` 且生成未失败/打断的回复可折叠固定来源前缀。聚焦套件
-  56 项通过，覆盖全部非完成终局、医生确认归因、无障碍提示和复制原文。
+- 修复后仅 `terminalStatus=complete` 且生成未失败/打断的回复可折叠固定来源前缀。独立复核
+  新鲜运行两套聚焦测试共 66 项通过，覆盖全部非完成终局、医生确认归因、无障碍提示和
+  复制原文。
 
 ### 安全边界
 
