@@ -199,3 +199,8 @@
 - TDD RED 在旧实现上得到 46 failed / 173 passed，覆盖旧基线、缺少 283 与基线指纹错配；
   实现后聚焦发布器回归为 219 passed。完整 release invariants、精确提交 G4、主干 CI、后端与
   新 trusted OTA validate/publish 仍待后续 Gate，不以本地单测冒充发布完成。
+- 基线迁移提交 `c041f702783768fb1b5ae969cf7eac126d3e60f2` 的首次独立 G4 为 NO-GO：
+  前向准入仍把 281/282 的历史品牌摘要当作活动例外，283 后代可把五项图标/配置恢复为旧字节。
+  该提交不得发布。修复将历史摘要只留在历史证据中，283 后所有原生、依赖和基线品牌路径的
+  任何 diff 都要求新原生基线；新增完整 Git 后代测试逐项恢复旧 app.json、icon、splash、
+  adaptive icon 与 favicon，必须由 `validate_source` 失败关闭。修复后的精确提交须重新 G4。

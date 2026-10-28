@@ -54,6 +54,28 @@
   },
   "source_admission": {
     "baseline_behavior": "The exact Store 283 source is the native boundary. Only reviewed runtime paths after this commit may enter OTA source admission.",
+    "pinned_native_paths": [
+      "mobile/package-lock.json",
+      "mobile/package.json",
+      "mobile/patches/README.md",
+      "mobile/patches/expo++@expo+cli+55.0.33.patch",
+      "mobile/patches/zod+4.6.6.patch",
+      "mobile/scripts/security-dependency-compat.node.cjs",
+      "mobile/app.json",
+      "mobile/app.config.ts",
+      "mobile/assets/images/icon.png",
+      "mobile/assets/images/splash-icon.png",
+      "mobile/assets/images/adaptive-icon.png",
+      "mobile/assets/images/favicon.png",
+      "mobile/assets/images/guardian-icon.png",
+      "mobile/plugins/withWatchApp.js",
+      "mobile/plugins/withIntentsExtension.js",
+      "mobile/plugins/__tests__/withWatchApp.test.js",
+      "mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts",
+      "mobile/scripts/__tests__/parser-security.test.js",
+      "mobile/strings/zh.ts",
+      "mobile/PRODUCT_MAP.md"
+    ],
     "candidate_checked": "1c25e80c7b5b294c25325cc9f669c6522709e0f6",
     "candidate_mobile_delta": [
       "mobile/components/chat/AnswerEvidencePanel.tsx",

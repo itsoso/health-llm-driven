@@ -91,17 +91,16 @@ def test_native_baseline_matches_delivered_testflight_283():
     assert json.loads(source_bytes(m.NATIVE_SHA, 'mobile/app.json'))['expo']['version'] == m.RUNTIME
 
 
-def test_exact_reviewed_lock_is_allowed_but_other_bytes_and_symlinks_rejected(tmp_path, monkeypatch):
+def test_historical_reviewed_lock_is_not_a_forward_exception(tmp_path, monkeypatch):
     m = module()
     root = Path(__file__).resolve().parents[1]
     relative = 'mobile/package-lock.json'
     target = tmp_path / relative
     target.parent.mkdir()
     reviewed = source_bytes(REVIEWED_LOCK_SHA, relative)
-    import hashlib
-    assert hashlib.sha256(reviewed).hexdigest() == m.REVIEWED_NATIVE_SOURCE[relative]
     target.write_bytes(reviewed)
-    m.validate_runtime_changes([relative], root=tmp_path)
+    with pytest.raises(ValueError):
+        m.validate_runtime_changes([relative], root=tmp_path)
     for variable in ('REVA_IPAD_ENABLED', 'ROKID_IOS_SDK_ENABLED', 'INCLUDE_WATCH_APP', 'INCLUDE_SIRI_INTENTS'):
         monkeypatch.setenv(variable, '1')
         with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
@@ -125,12 +124,13 @@ def test_unreviewed_dependency_lock_does_not_inherit_ota_exception(tmp_path):
         m.validate_runtime_changes([relative], root=tmp_path)
 
 
-def test_current_baseline_evidence_has_no_old_native_exceptions():
+def test_historical_tooling_evidence_is_not_an_active_forward_exception():
     m = module()
     root = Path(__file__).resolve().parents[1]
     evidence = json.loads((root/'docs/reviews/2026-10-26-ota-runtime136-tooling-equivalence.json').read_text())
-    assert evidence['candidate_source_exceptions'] == m.REVIEWED_NATIVE_SOURCE
-    assert set(m.REVIEWED_NATIVE_SOURCE) == {'mobile/scripts/security-dependency-compat.node.cjs', 'mobile/patches/README.md', 'mobile/patches/expo++@expo+cli+55.0.33.patch', 'mobile/package-lock.json', 'mobile/package.json', 'mobile/patches/zod+4.6.6.patch'}
+    assert set(evidence['candidate_source_exceptions']) <= m.NATIVE_BASELINE_PATHS
+    assert not hasattr(m, 'REVIEWED_NATIVE_SOURCE')
+    assert not hasattr(m, 'REVIEWED_BRANDING_SOURCE')
 
 
 @pytest.mark.parametrize('relative', [
@@ -181,10 +181,11 @@ def test_283_migration_contract_admits_only_descendant_runtime_source(tmp_path, 
     'mobile/package.json', 'mobile/package-lock.json', 'mobile/patches/README.md',
     'mobile/patches/expo++@expo+cli+55.0.33.patch', 'mobile/patches/zod+4.6.6.patch', 'mobile/scripts/security-dependency-compat.node.cjs',
 ])
-def test_reviewed_280_tooling_bytes_only_are_ota_compatible(tmp_path, relative):
+def test_historical_280_tooling_bytes_are_not_forward_exceptions(tmp_path, relative):
     m = module()
     materialize_sources(tmp_path, 'c28050786c1e9aa70cca33d7e3d5c093652aeb26', [relative])
-    m.validate_runtime_changes([relative], root=tmp_path)
+    with pytest.raises(ValueError):
+        m.validate_runtime_changes([relative], root=tmp_path)
     target = tmp_path / relative
     target.write_bytes(target.read_bytes() + b' ')
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
@@ -209,19 +210,45 @@ BRANDING_PATHS = ('mobile/app.json', 'mobile/app.config.ts', 'mobile/assets/imag
     'mobile/scripts/__tests__/parser-security.test.js', 'mobile/strings/zh.ts', 'mobile/PRODUCT_MAP.md')
 
 @pytest.mark.parametrize('relative', BRANDING_PATHS)
-def test_branding_exception_accepts_only_exact_reviewed_281_bytes(tmp_path, relative):
+def test_historical_281_branding_bytes_are_not_forward_exceptions(tmp_path, relative):
     m = module()
     materialize_sources(tmp_path, BRANDING_SHA, [relative])
-    m.validate_runtime_changes([relative], root=tmp_path)
+    with pytest.raises(ValueError):
+        m.validate_runtime_changes([relative], root=tmp_path)
     target = tmp_path / relative
     target.write_bytes(target.read_bytes() + b' ')
     with pytest.raises(ValueError): m.validate_runtime_changes([relative], root=tmp_path)
     with pytest.raises(ValueError): m.validate_runtime_changes([relative])
 
 
-def test_branding_source_evidence_is_closed_history_after_283_baseline():
+def test_283_review_evidence_binds_forward_pinned_native_paths():
     m = module()
-    evidence = json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-28-ota-runtime136-branding-equivalence.json').read_text())
-    assert set(m.REVIEWED_BRANDING_SOURCE) == set(BRANDING_PATHS)
-    assert evidence['branding_source_exceptions'] == m.REVIEWED_BRANDING_SOURCE
+    evidence = json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-29-ota-runtime136-guardian-baseline.json').read_text())
+    assert set(evidence['source_admission']['pinned_native_paths']) == m.NATIVE_BASELINE_PATHS
     assert m.NATIVE_SHA == 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff'
+
+
+@pytest.mark.parametrize('relative', [
+    'mobile/app.json',
+    'mobile/assets/images/icon.png',
+    'mobile/assets/images/splash-icon.png',
+    'mobile/assets/images/adaptive-icon.png',
+    'mobile/assets/images/favicon.png',
+])
+def test_full_source_rejects_reverting_283_branding_to_281(tmp_path, relative):
+    m = module()
+    root = Path(__file__).resolve().parents[1]
+    source = tmp_path / 'source'
+    source_env = {**os.environ, 'GIT_LFS_SKIP_SMUDGE': '1'}
+    subprocess.run(['git', 'clone', '--quiet', '--shared', '--no-checkout', str(root), str(source)], check=True, env=source_env)
+    subprocess.run(['git', '-C', str(source), 'checkout', '--quiet', '--detach', m.NATIVE_SHA], check=True, env=source_env)
+    target = source / relative
+    target.write_bytes(source_bytes(BRANDING_SHA, relative))
+    subprocess.run(['git', '-C', str(source), 'add', '--', relative], check=True, env=source_env)
+    subprocess.run([
+        'git', '-C', str(source), '-c', 'user.name=OTA Test', '-c',
+        'user.email=ota-test@example.invalid', 'commit', '--quiet', '-m', 'revert branding fixture'
+    ], check=True, env=source_env)
+    candidate = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
+    with pytest.raises(ValueError, match='native or unknown mobile input changed'):
+        m.validate_source(source, candidate)
