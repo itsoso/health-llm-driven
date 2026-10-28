@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | ota_baseline_migration_ready_for_g4 |
-| 当前阶段 | 第三轮回答投影的 283 原生基线迁移与重新发布 |
+| 状态 | ota_baseline_migration_ready_for_ci |
+| 当前阶段 | 第三轮回答投影的 283 原生基线精确主干 CI 与重新发布 |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 
@@ -204,3 +204,10 @@
   该提交不得发布。修复将历史摘要只留在历史证据中，283 后所有原生、依赖和基线品牌路径的
   任何 diff 都要求新原生基线；新增完整 Git 后代测试逐项恢复旧 app.json、icon、splash、
   adaptive icon 与 favicon，必须由 `validate_source` 失败关闭。修复后的精确提交须重新 G4。
+- 修复提交 `d29cc8ce24415212cb5d765ce05c474e180411fa` 的独立 G4 重审为 GO。复核确认
+  20 项 pinned path 与 evidence 精确一致、五项完整 Git 后代回退均被拒绝，且 279–283
+  build/source/fingerprint 闭集及 channel/runtime/bundle/profile 约束没有被放宽。
+- 修复后的聚焦发布器回归为 224 passed。第一次全量 release-invariants 使用临时 uv
+  解释器，在 1,095 passed、7 skipped 后因 PyJWT `RECORD` 路径越出临时解释器前缀而失败，
+  不计为通过；改用仓库既有锁定 backend 运行时从头复跑，同一 GitHub CI 测试清单最终为
+  5,249 passed、65 skipped、127 subtests passed，真实退出码 0，耗时 605.07 秒。
