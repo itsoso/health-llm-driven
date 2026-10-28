@@ -25,6 +25,12 @@ def load_server():
     return module
 
 
+def installed_runtime(**extra):
+    return SimpleNamespace(flags=SimpleNamespace(isolated=1, optimize=0, no_site=1, dont_write_bytecode=1),
+        executable='/usr/bin/python3.12', version_info=(3, 12, 13),
+        argv=['fixed'], stderr=io.StringIO(), **extra)
+
+
 @pytest.mark.parametrize("accepted", [True, False])
 def test_readiness_drift_requires_canonical_gate_before_loopback(monkeypatch, tmp_path, accepted):
     server = setup_state(monkeypatch, tmp_path)
@@ -756,7 +762,7 @@ def test_concurrent_native_claim_is_blocked_before_marker(monkeypatch, tmp_path)
 @pytest.mark.parametrize("action", ["run", "status", "check", "claim-build", "claim-testflight"])
 def test_main_rejects_sha_mismatch_before_any_state_or_source_mutation(monkeypatch, tmp_path, action):
     server = load_server()
-    monkeypatch.setattr(server, "sys", SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=["fixed"], stderr=io.StringIO()))
+    monkeypatch.setattr(server, "sys", installed_runtime())
     monkeypatch.setattr(server.os, "geteuid", lambda: 0)
     monkeypatch.setattr(server.os, "umask", lambda _mode: None)
     monkeypatch.setattr(server.time, "time", lambda: 100)
@@ -905,7 +911,7 @@ def test_workspace_parent_fsync_failure_preserves_marker_and_blocks_all_work(mon
 ])
 def test_main_rejects_ci_before_creating_workspace_or_claim(monkeypatch, tmp_path, action, gate_name):
     server = load_server()
-    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO()))
+    monkeypatch.setattr(server, 'sys', installed_runtime())
     monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
     monkeypatch.setattr(server.os, 'umask', lambda _: None)
     monkeypatch.setattr(server.time, 'time', lambda: 100)
@@ -927,7 +933,7 @@ def test_main_rejects_ci_before_creating_workspace_or_claim(monkeypatch, tmp_pat
 @pytest.mark.parametrize('action,rpc', [('finish-ota', 'ota_rpc'), ('finish-retained-testflight', 'retained_rpc')])
 def test_bound_finish_can_close_without_new_release_admission(monkeypatch, tmp_path, action, rpc):
     server = load_server()
-    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO()))
+    monkeypatch.setattr(server, 'sys', installed_runtime())
     monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
     monkeypatch.setattr(server.os, 'umask', lambda _: None)
     monkeypatch.setattr(server.time, 'time', lambda: 100)
@@ -964,7 +970,7 @@ def test_deploy_live_environment_validation_never_rewrites_or_copies(monkeypatch
 @pytest.mark.parametrize('scenario', ['valid', 'missing', 'tampered', 'inner_gate_failure'])
 def test_main_ota_uses_only_byte_bound_inner_ci_rpc(monkeypatch, tmp_path, scenario):
     server = load_server()
-    monkeypatch.setattr(server, 'sys', SimpleNamespace(flags=SimpleNamespace(isolated=1), argv=['fixed'], stderr=io.StringIO(), stdin=SimpleNamespace(buffer=io.BytesIO(b'{}'))))
+    monkeypatch.setattr(server, 'sys', installed_runtime(stdin=SimpleNamespace(buffer=io.BytesIO(b'{}'))))
     monkeypatch.setattr(server.os, 'geteuid', lambda: 0)
     monkeypatch.setattr(server.os, 'umask', lambda _: None)
     monkeypatch.setattr(server.time, 'time', lambda: 100)

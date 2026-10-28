@@ -1245,6 +1245,9 @@ def assert_no_competing_exam_recovery(state=None):
 
 def _load_exam_forward_history():
     """Load the closure consumer from the executor's own canonical revision."""
+    # Historical consumers also use exec_module; the whole load chain must be
+    # read-only, not only these two compile/exec calls.
+    sys.dont_write_bytecode = True
     entry = Path(__file__).absolute()
     if entry == Path('/usr/local/lib/reva-release/trusted_release_server.py'):
         policy = validate_policy(_json(_read_private(POLICY)), now=0)
@@ -2324,9 +2327,32 @@ def deploy(policy, workspace, *, backend_ci=False):
     execute(["/bin/bash", str(source / "deploy.sh"), "-b"], source, env, workspace / "deployment.log")
 
 
+def normalize_installed_runtime(installed, original_command):
+    """Re-enter verified installed bytes once, before any claim or source load."""
+    if not sys.flags.isolated or sys.flags.optimize:
+        raise LaunchError('isolated non-optimized release runtime required')
+    parse_command(original_command)
+    if sys.executable == PYTHON:
+        if (sys.version_info[:2] != (3, 12) or not sys.flags.no_site
+                or not sys.flags.dont_write_bytecode):
+            raise LaunchError('fixed release runtime version or flags differ')
+        return
+    interpreter = Path(PYTHON)
+    secure_path(interpreter)
+    info = interpreter.lstat()
+    if not stat.S_ISREG(info.st_mode) or not info.st_mode & 0o111:
+        raise LaunchError('fixed release interpreter is not executable')
+    # Do not carry caller-controlled Python, dynamic-loader, proxy, CA or token
+    # environment into the privileged second entry. It rechecks all authority.
+    os.execve(PYTHON, [PYTHON, '-I', '-S', '-B', str(installed)],
+        {'PATH':'/usr/bin:/bin', 'HOME':'/nonexistent', 'LC_ALL':'C',
+         'SSH_ORIGINAL_COMMAND':original_command})
+    raise LaunchError('release runtime transfer returned unexpectedly')
+
+
 def main():
     try:
-        if not sys.flags.isolated or os.geteuid() != 0 or len(sys.argv) != 1:
+        if not sys.flags.isolated or sys.flags.optimize or os.geteuid() != 0 or len(sys.argv) != 1:
             raise LaunchError("isolated root forced-command invocation required")
         os.umask(0o077)
         use_system_timezone()
@@ -2340,6 +2366,7 @@ def main():
         secure_path(installed)
         if hashlib.sha256(installed.read_bytes()).hexdigest() != policy["executor_sha256"]:
             raise LaunchError("installed executor differs from reviewed authorization")
+        normalize_installed_runtime(installed, original_command)
         secure_path(STATE, directory=True)
         workspace = STATE / policy["sha"]
         # OTA claim's byte-bound helper performs exact full CI under its original

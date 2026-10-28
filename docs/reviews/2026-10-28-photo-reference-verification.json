@@ -1,0 +1,36 @@
+{
+  "candidate_sha": "4d26065d20d43374cff5f32b1afd0b89f588f687",
+  "safety_review": {
+    "code_commit": "ac5b874b280337a25978402cf07781e8d396dc3c",
+    "verdict": "GO"
+  },
+  "live_gate": {
+    "status": "passed",
+    "invariants": 12,
+    "health_agent_core": 50,
+    "orchestrator": 5,
+    "trajectory_contract": 12,
+    "trajectory_goldens": 9,
+    "baseline_comparison": "missing_health_agent_core_and_orchestrator_main_files",
+    "configuration": "existing_provider_allowlist",
+    "synthetic_only": true,
+    "database": "sqlite_memory",
+    "waived": false,
+    "log_sha256": "dc8e6739fc59a2e5280c831e39f05911664c04a8fa33a9a242a24c38a1bf0935"
+  },
+  "ci_run_id": 40621691223,
+  "ci_status": "success",
+  "backend_deployed": false,
+  "ota_published": false,
+  "native_uploaded": false,
+  "production_blocker": "existing_release_receipt_history_failure",
+  "schema_version": "photo_reference.verification.v1",
+  "ci_jobs": 32,
+  "ci_failed_jobs": 0,
+  "ci_url": "https://github.com/itsoso/health-llm-driven/actions/runs/40621691223",
+  "release_status": "blocked_existing_receipt_history",
+  "production_operation_id": 40618543912,
+  "native_distribution_status": "local_simulator_only",
+  "icon_sha256": "1996cbba876eebc2f4a379149552f79a8bc08df800596f7c2a3a47e97461b011",
+  "unrelated_work_preserved": true
+}

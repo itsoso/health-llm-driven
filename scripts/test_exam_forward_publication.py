@@ -150,6 +150,32 @@ def test_server_loader_checks_bytes_and_source_before_executing_closure(tmp_path
             assert calls == ['bootstrap_trusted_release.py']
 
 
+def test_installed_history_disables_bytecode_for_real_archived_vision_loader(tmp_path, monkeypatch):
+    """The archived helper uses exec_module, so compile-only outer loads are insufficient."""
+    import sys
+    m = load('trusted_release_server'); monkeypatch.setattr(m, 'STATE', tmp_path)
+    sha = 'd' * 40; scripts = tmp_path / 'bootstrap' / sha / 'source/scripts'
+    scripts.mkdir(parents=True); entry = scripts / 'trusted_release_server.py'
+    entry.write_text('# fixture executor'); monkeypatch.setattr(m, '__file__', str(entry))
+    monkeypatch.setattr(m, 'secure_path', lambda *a, **kw: None)
+    retained = Path(__file__).with_name('retained_candidate_retirement.py')
+    bootstrap = ('from pathlib import Path\nSTATE=Path(' + repr(str(tmp_path)) + ')\n'
+                 'def canonical_source(sha): return None\ndef secure(path): pass\n')
+    helper = ('import runpy\nfrom pathlib import Path\n'
+              'saved=runpy.run_path(' + repr(str(retained)) + ')\n'
+              'def probe(b): return saved["load"](b, Path(' + repr(str(scripts / 'trusted_vision_model.py')) +
+              '), "real_archived_vision_probe")\n')
+    expected = {'bootstrap_trusted_release.py': bootstrap.encode(), 'exam_forward_retirement.py': helper.encode()}
+    for name, raw in expected.items(): (scripts / name).write_bytes(raw)
+    (scripts / 'trusted_vision_model.py').write_bytes(Path(__file__).with_name('trusted_vision_model.py').read_bytes())
+    monkeypatch.setattr(m.subprocess, 'run', lambda args, **kw: SimpleNamespace(stdout=expected[args[-1].split('/')[-1]]))
+    monkeypatch.setattr(sys, 'dont_write_bytecode', False)
+    b, closure = m._load_exam_forward_history()
+    closure.probe(b)
+    assert not (scripts / '__pycache__').exists()
+    closure.probe(b)
+
+
 @pytest.mark.parametrize('tamper', [False, True])
 @pytest.mark.parametrize('reuse_cloud', [False, True])
 def test_rotation_consumes_exam_closure_after_no_copy_discard(tmp_path, monkeypatch, tamper, reuse_cloud):
