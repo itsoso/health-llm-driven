@@ -17,6 +17,7 @@ type AndroidIntentFilter = NonNullable<NonNullable<ExpoConfig['android']>['inten
 const VARIANT = process.env.APP_VARIANT ?? 'production';
 const IS_DEV = VARIANT === 'development';
 const IS_PREVIEW = VARIANT === 'preview';
+const IS_IOS_BUILD = process.env.EAS_BUILD_PLATFORM === 'ios';
 const IS_ANDROID_INTERNAL = process.env.REVA_ANDROID_INTERNAL === '1';
 const INCLUDE_ROKID = process.env.ROKID_IOS_SDK_ENABLED === '1';
 const INCLUDE_WATCH = process.env.INCLUDE_WATCH_APP === '1';
@@ -152,7 +153,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
   }
   const dailyJourney = DAILY_JOURNEY_ENABLED && (IS_DEV || IS_PREVIEW)
     && config.version === DAILY_JOURNEY_RUNTIME
-    && !IS_ANDROID_INTERNAL && process.env.EAS_BUILD_PLATFORM !== 'android';
+    && !IS_ANDROID_INTERNAL && IS_IOS_BUILD;
   const basePlugins = withoutOptionalNativePlugins(config.plugins).map((plugin) => {
     if (pluginName(plugin) !== 'expo-location') return plugin;
     const options = Array.isArray(plugin) ? plugin[1] ?? {} : {};
@@ -301,7 +302,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           && config.android.config.googleMaps.apiKey.trim().length > 0,
         // Legacy automatic city refresh stays disabled in production. The new
         // dailyJourney capability is consumed only by explicit recording sessions.
-        backgroundLocation: !IS_ANDROID_INTERNAL && process.env.EAS_BUILD_PLATFORM !== 'android' && (IS_DEV || IS_PREVIEW),
+        backgroundLocation: !IS_ANDROID_INTERNAL && IS_IOS_BUILD && (IS_DEV || IS_PREVIEW),
         dailyJourney,
         rokid: INCLUDE_ROKID,
         siri: INCLUDE_SIRI,

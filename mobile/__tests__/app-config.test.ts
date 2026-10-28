@@ -480,11 +480,21 @@ describe('daily journey native scope', () => {
     const config = configForVariant('production', {}, { ios: { infoPlist: { UIBackgroundModes: ['fetch', 'audio', 'processing', 'location'] } } });
     expect(config.ios.infoPlist.UIBackgroundModes).toBeUndefined();
   });
-  it('admits background location only for an explicitly enabled non-Store iOS journey build', () => {
-    const config = configForVariant('preview', { REVA_DAILY_JOURNEY_ENABLED: '1', EAS_BUILD_PLATFORM: 'ios' });
+  it.each(['preview', 'development'])('admits background location only for an explicitly enabled %s iOS journey build', (variant) => {
+    const config = configForVariant(variant, { REVA_DAILY_JOURNEY_ENABLED: '1', EAS_BUILD_PLATFORM: 'ios' });
     expect(config.extra.release.capabilities.dailyJourney).toBe(true);
     expect(config.ios.infoPlist.UIBackgroundModes).toEqual(['location']);
     expect(config.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toContain('记录今天行程');
+  });
+  it.each([
+    ['preview', undefined], ['preview', ''], ['preview', 'web'], ['preview', 'android'],
+    ['development', undefined], ['development', ''], ['development', 'web'], ['development', 'android'],
+  ])('fails closed for %s journey when the build platform is %s', (variant, platform) => {
+    const config = configForVariant(variant, { REVA_DAILY_JOURNEY_ENABLED: '1', EAS_BUILD_PLATFORM: platform });
+    expect(config.extra.release.capabilities.dailyJourney).toBe(false);
+    expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
+    expect(config.ios.infoPlist.UIBackgroundModes).toBeUndefined();
+    expect(config.ios.infoPlist.NSLocationAlwaysAndWhenInUseUsageDescription).toBeUndefined();
   });
   it('does not enable daily journey for Android builds', () => {
     const config = configForVariant('production', { EAS_BUILD_PLATFORM: 'android' });
