@@ -34,6 +34,7 @@ interface EvidenceSummary {
 interface Props {
   profile: AgentTransparencyProfile;
   answerEvidence?: AnswerEvidence;
+  provenanceBoundary?: string;
   sources?: readonly string[];
   thinkingSteps: readonly string[];
   completionActionsEnabled: boolean;
@@ -139,6 +140,7 @@ function bandColor(kind: AgentTransparencyBand['kind']): string {
 export default function AnswerEvidencePanel({
   profile,
   answerEvidence,
+  provenanceBoundary,
   sources,
   thinkingSteps,
   completionActionsEnabled,
@@ -272,6 +274,13 @@ export default function AnswerEvidencePanel({
             <Text style={[txt.summarySubtitle, txt.summarySubtitleWarning]}>
               回复未完整结束，以下依据仅用于核对本轮处理。
             </Text>
+          ) : null}
+
+          {provenanceBoundary ? (
+            <View style={styles.section}>
+              <SectionTitle icon="shield-checkmark-outline" label="回答边界" />
+              <Text style={txt.summarySubtitle}>{provenanceBoundary}</Text>
+            </View>
           ) : null}
           <View style={styles.summary}>
             <View style={[styles.summaryIcon, hasWarning && styles.summaryIconWarning]}>

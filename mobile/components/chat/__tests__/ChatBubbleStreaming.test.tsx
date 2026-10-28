@@ -721,6 +721,62 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText(/整理回答/)).toBeTruthy();
   });
 
+  it('moves the deterministic provenance preface into the existing evidence panel', () => {
+    const { getByLabelText, getByText, queryByText } = renderBubble({
+      id: 'assistant-provenance-preface',
+      role: 'assistant',
+      content: [
+        '信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。',
+        '昨晚的记录显示睡眠时间偏短。',
+      ].join('\n'),
+      streaming: false,
+      terminalStatus: 'complete',
+      sourcesUsed: ['睡眠记录'],
+      answerEvidence: {
+        version: 'answer-evidence.v1',
+        summary: '本轮获得 1 条可核对数据',
+        basis: [{
+          id: 'sleep.duration.latest',
+          label: '睡眠时长',
+          observation: '记录已读取',
+          source: '睡眠记录',
+          purpose: '用于回答本轮问题',
+        }],
+        limitations: [],
+      },
+    });
+
+    expect(getByText('昨晚的记录显示睡眠时间偏短。')).toBeTruthy();
+    expect(queryByText(/信息来源：上下文信息/)).toBeNull();
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('回答边界')).toBeTruthy();
+    expect(getByText('上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断')).toBeTruthy();
+  });
+
+  it('keeps the provenance preface inline when no evidence surface is available', () => {
+    const { getByText } = renderBubble({
+      id: 'assistant-provenance-without-evidence',
+      role: 'assistant',
+      content: '信息来源：模型推断。\n这是一条通用说明。',
+      streaming: false,
+      completionStatus: 'error',
+    });
+
+    expect(getByText(/信息来源：模型推断/)).toBeTruthy();
+  });
+
+  it('keeps an unrecognized provenance label inline even when evidence exists', () => {
+    const { getByText } = renderBubble({
+      id: 'assistant-unknown-provenance-label',
+      role: 'assistant',
+      content: '信息来源：未经注册的来源。\n这是一条说明。',
+      streaming: false,
+      sourcesUsed: ['健康数据查询'],
+    });
+
+    expect(getByText(/信息来源：未经注册的来源/)).toBeTruthy();
+  });
+
   it('passes a blocked business outcome despite a completely generated answer', () => {
     const { getByLabelText, getByText, queryByLabelText } = renderBubble({
       id: 'blocked-generated-answer', role: 'assistant', content: '本轮数据查询未完成。',

@@ -86,6 +86,28 @@ const MD_PALETTE = {
 } as unknown as ColorPalette;
 const MD_STYLES = createMdStylesChat(MD_PALETTE);
 const THINKING_PLACEHOLDER_TEXT = '⏳ AI 正在思考中...';
+const PROVENANCE_LABELS = new Set([
+  '上下文信息（未逐项核验）',
+  '工具读取结果',
+  '已检索证据（未逐句核验）',
+  '模型推断',
+  '医生确认指示',
+]);
+
+function projectProvenancePreface(
+  text: string,
+  enabled: boolean,
+): { text: string; boundary?: string } {
+  if (!enabled) return { text };
+  const match = /^信息来源：([^。\n]{1,160})。[ \t]*(?:\n+)?/u.exec(text);
+  if (!match) return { text };
+  const labels = match[1].split('、').map(label => label.trim()).filter(Boolean);
+  if (labels.length === 0 || labels.some(label => !PROVENANCE_LABELS.has(label))) {
+    return { text };
+  }
+  const remainder = text.slice(match[0].length).trimStart();
+  return remainder ? { text: remainder, boundary: labels.join('、') } : { text };
+}
 const INLINE_EDITABLE_CARD_TYPES = new Set(['diet_draft', 'record_quality', 'save_recipe']);
 const STREAM_RENDERABLE_CARD_TYPES = new Set([
   'metric_table',
@@ -185,17 +207,27 @@ function ChatBubbleInner({
     [revaUiContent.cards],
   );
   const assistantText = revaUiContent.text;
+  const provenanceProjection = useMemo(
+    () => projectProvenancePreface(
+      assistantText,
+      !isUser
+        && !item.streaming
+        && (!!item.answerEvidence || (Array.isArray(item.sourcesUsed) && item.sourcesUsed.length > 0)),
+    ),
+    [assistantText, isUser, item.answerEvidence, item.sourcesUsed, item.streaming],
+  );
+  const presentedAssistantText = provenanceProjection.text;
   const hasHtmlContent = useMemo(
-    () => containsHtmlTableCandidate(assistantText),
-    [assistantText],
+    () => containsHtmlTableCandidate(presentedAssistantText),
+    [presentedAssistantText],
   );
   const structuredSummary = useMemo(
-    () => (!isUser && !item.streaming && !hasHtmlContent ? parseStructuredHealthSummary(assistantText) : null),
-    [assistantText, hasHtmlContent, isUser, item.streaming],
+    () => (!isUser && !item.streaming && !hasHtmlContent ? parseStructuredHealthSummary(presentedAssistantText) : null),
+    [presentedAssistantText, hasHtmlContent, isUser, item.streaming],
   );
   const visibleMarkdown = useMemo(
-    () => (structuredSummary ? stripStructuredHealthSummary(assistantText) : assistantText),
-    [assistantText, structuredSummary],
+    () => (structuredSummary ? stripStructuredHealthSummary(presentedAssistantText) : presentedAssistantText),
+    [presentedAssistantText, structuredSummary],
   );
   const advisorPresentation = useMemo(
     () => (
@@ -1330,6 +1362,7 @@ function ChatBubbleInner({
                 <AnswerEvidencePanel
                   profile={transparency}
                   answerEvidence={item.answerEvidence}
+                  provenanceBoundary={provenanceProjection.boundary}
                   sources={item.sourcesUsed}
                   thinkingSteps={thinkingSteps}
                   completionActionsEnabled={assistantCompletionActionsEnabled}
