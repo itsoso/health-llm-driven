@@ -3,11 +3,8 @@
 
 .workspace *{box-sizing:border-box}
 .sidebar{padding:18px 14px;background:#f3efe7;border-right:1px solid var(--line);border-radius:20px 0 0 20px;position:sticky;top:80px;align-self:start;min-height:calc(85vh - 32px)}
-.brandRow{display:flex;align-items:center;justify-content:space-between;gap:12px}
-.brand{display:flex;align-items:center;gap:10px;text-decoration:none;color:var(--ink);font-size:23px;font-weight:700;letter-spacing:-.6px}
-.brandMark{width:40px;height:40px;display:grid;place-items:center;background:#a46243;color:#fff8ee;border-radius:13px}
-.brandSub{display:block;color:#85766a;font-size:10px;font-weight:500;letter-spacing:1px;margin-top:2px}
-.tabs{display:flex;flex-direction:column;gap:18px;margin-top:24px}
+.mobileNavHeader{display:none}
+.tabs{display:flex;flex-direction:column;gap:18px}
 .navGroup{display:grid;gap:5px}
 .navLabel{font-size:10px;color:#988778;font-weight:600;letter-spacing:1.5px;padding:0 12px;margin-bottom:5px}
 .workspace .tab{display:flex;align-items:center;gap:12px;text-align:left;border:1px solid transparent;background:transparent;border-radius:9px;padding:12px;font-size:13px;color:#77675b;cursor:pointer;min-height:44px}
@@ -122,9 +119,7 @@
 
 @media(max-width:760px){.workspace{margin:8px 8px 16px;display:block;border-radius:14px;min-height:85vh}
 .sidebar{position:static;min-height:0;padding:10px 12px;border-right:0;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0}
-.brand{font-size:20px}
-.brandMark{width:34px;height:34px;border-radius:10px}
-.brandSub{display:none}
+.mobileNavHeader{display:flex;align-items:center;justify-content:space-between;min-height:44px;color:#7d6c5d;font-size:12px;font-weight:650;letter-spacing:.8px}
 .workspace .menuButton{display:inline-flex}
 .tabs{display:none;margin-top:18px;gap:14px}
 .menuOpen{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}

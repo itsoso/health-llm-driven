@@ -12,10 +12,10 @@ const makeWorkspace = () => ({ schema_version: 'life_navigation.v1' as const, re
 describe('Life navigation reference workspace interaction', () => {
     beforeEach(() => { vi.clearAllMocks(); vi.mocked(getLifeWorkspace).mockResolvedValue(makeWorkspace()); });
     afterEach(() => { cleanup(); window.history.replaceState(null, '', '/'); });
-    it('offers a home logo and all eight views through a collapsible navigation', async () => {
+    it('leaves branding to the global header and offers all views through a collapsible navigation', async () => {
         render(<LifeNavigationWorkspace />);
-        const home = await screen.findByRole('link', { name: 'Reva 首页' });
-        expect(home).toHaveAttribute('href', '/');
+        await screen.findByText('添加主任务');
+        expect(screen.queryByRole('link', { name: 'Reva 首页' })).toBeNull();
         const menu = screen.getByRole('button', { name: '展开导航' });
         expect(menu).toHaveAttribute('aria-expanded', 'false');
         fireEvent.click(menu);

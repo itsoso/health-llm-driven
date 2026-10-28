@@ -1,7 +1,7 @@
 'use client';
 import Link from 'next/link';
 import React, { useEffect, useRef, useState } from 'react';
-import { Compass, Sun, CalendarDays, Timer, BookOpen, Award, Flag, Sprout, Archive, Menu, ChevronLeft, ChevronRight, Undo2, Redo2 } from 'lucide-react';
+import { Sun, CalendarDays, Timer, BookOpen, Award, Flag, Sprout, Archive, Menu, ChevronLeft, ChevronRight, Undo2, Redo2 } from 'lucide-react';
 import { useWorkspaceHistory } from './useWorkspaceHistory';
 import { useAuth } from '@/contexts/AuthContext';
 import { getLifeWorkspace, saveLifeWorkspace, getLifeHistory, restoreLifeWorkspace, getLifeBackup, importLifeBackup, type LifeData, type LifeWorkspace, type LifeVersion, type LifeBackup, type LifeTask, type LifeOpportunity, type LifeFocus, type LifeReview } from '@/services/lifeNavigation';
@@ -210,7 +210,7 @@ function SessionWorkspace({ owner }: {
     const completedCount = todayTasks.filter(t => t.status === 'done').length;
     return <main className={css.workspace}>
   <aside className={css.sidebar}>
-    <div className={css.brandRow}><Link className={css.brand} href="/" aria-label="Reva 首页"><span className={css.brandMark}><Compass size={23} aria-hidden="true"/></span><span>Reva<span className={css.brandSub}>人生与时间导航</span></span></Link><button type="button" className={css.menuButton} aria-label={menuOpen ? '收起导航' : '展开导航'} aria-expanded={menuOpen} aria-controls="life-navigation-menu" onClick={() => setMenuOpen(v => !v)}><Menu size={20} aria-hidden="true"/></button></div>
+    <div className={css.mobileNavHeader}><span>人生导航</span><button type="button" className={css.menuButton} aria-label={menuOpen ? '收起导航' : '展开导航'} aria-expanded={menuOpen} aria-controls="life-navigation-menu" onClick={() => setMenuOpen(v => !v)}><Menu size={20} aria-hidden="true"/></button></div>
     <nav id="life-navigation-menu" className={`${css.tabs} ${menuOpen ? css.menuOpen : ''}`} aria-label="人生导航视图">{navGroups.map(group => <div className={css.navGroup} key={group.label}><p className={css.navLabel}>{group.label}</p>{group.items.map(({ title, icon: Icon }) => <button type="button" className={`${css.tab} ${tab === title ? css.active : ''}`} aria-pressed={tab === title} key={title} onClick={() => { setTab(title); setMenuOpen(false); if (title === '备份') void loadHistory(); }}><Icon size={17} aria-hidden="true"/><span>{title}</span></button>)}</div>)}<Link className={css.healthLink} href="/my-progress?navigation=week">查看 Health 健康周导航 <span aria-hidden="true">↗</span></Link></nav>
   </aside>
   <div className={css.content}>
