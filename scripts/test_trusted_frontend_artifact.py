@@ -53,6 +53,23 @@ def test_entry_is_before_environment_loading():
     assert source.index('--prepare-frontend-artifact') < source.index('ENV_FILE=')
 
 
+def test_sandbox_build_retries_transient_registry_failures():
+    repository=Path(__file__).parents[1]
+    spec=importlib.util.spec_from_file_location('frontend_build_test',repository/'scripts/trusted_frontend_rebuild.py')
+    build=importlib.util.module_from_spec(spec);spec.loader.exec_module(build)
+    operation='a'*32;stage=build.BUILDS/operation
+    command=build.build_command(operation,stage)
+    for value in (
+        'npm_config_fetch_retries=5',
+        'npm_config_fetch_retry_factor=2',
+        'npm_config_fetch_retry_mintimeout=10000',
+        'npm_config_fetch_retry_maxtimeout=120000',
+        'npm_config_fetch_timeout=300000',
+        'npm_config_maxsockets=4',
+    ):
+        assert value in command
+
+
 def prepared_fixture(tmp_path, monkeypatch):
     import hashlib
     import json

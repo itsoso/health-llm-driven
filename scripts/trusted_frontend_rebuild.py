@@ -99,6 +99,9 @@ def build_command(operation, stage):
     command.extend(f"--property={value}" for value in properties)
     command.extend(["/usr/bin/env", "-i", "PATH=/usr/bin:/bin", "HOME=/tmp/reva-home",
                     "npm_config_cache=/tmp/reva-cache", "CI=1", "NEXT_TELEMETRY_DISABLED=1",
+                    "npm_config_fetch_retries=5", "npm_config_fetch_retry_factor=2",
+                    "npm_config_fetch_retry_mintimeout=10000", "npm_config_fetch_retry_maxtimeout=120000",
+                    "npm_config_fetch_timeout=300000", "npm_config_maxsockets=4",
                     # npm rejects loading one filename as both user and global
                     # config. This second path is absent in each fresh private HOME.
                     "npm_config_userconfig=/dev/null", "npm_config_globalconfig=/tmp/reva-home/empty-global.npmrc",
