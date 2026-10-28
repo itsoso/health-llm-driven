@@ -196,21 +196,22 @@ function NavigationContent() {
     <nav className="bg-[#1a1625]/90 backdrop-blur-xl border-b border-purple-900/20 shadow-sm fixed top-0 left-0 right-0 z-50 font-sans">
       <div className="max-w-[1600px] mx-auto px-4 lg:px-6">
         <div className="flex justify-between items-center h-16 gap-4">
-          {/* Logo和首页链接 */}
+          {/* 小气候品牌和首页链接 */}
           <div className="flex items-center flex-shrink-0 min-w-0">
             <Link
               href="/"
+              aria-label="小气候首页"
               className="flex items-center space-x-2 text-base font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap group"
             >
               <Image
-                src="/logo.png"
-                alt="自由是自律的泡沫"
+                src="/xiaoqihou-icon.png"
+                alt=""
                 width={32}
                 height={32}
                 className="rounded-lg flex-shrink-0 shadow-md group-hover:shadow-purple-500/20 transition-all"
                 priority
               />
-              <span className="hidden 2xl:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">自由是自律的泡沫</span>
+              <span className="hidden 2xl:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">小气候</span>
             </Link>
           </div>
 

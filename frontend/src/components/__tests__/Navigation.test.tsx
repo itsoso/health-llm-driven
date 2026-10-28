@@ -21,6 +21,19 @@ vi.mock('@/components/NotificationCenter', () => ({ default: () => null }));
 describe('Navigation', () => {
   beforeEach(() => { route.pathname = '/admin'; route.search = ''; route.admin = false; });
 
+  it('uses the official Xiaoqihou brand for the home link', () => {
+    render(<Navigation />);
+
+    const homeLink = screen.getByRole('link', { name: '小气候首页' });
+    expect(homeLink).toHaveAttribute('href', '/');
+    expect(homeLink).toHaveTextContent('小气候');
+    expect(homeLink.querySelector('img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('xiaoqihou-icon.png'),
+    );
+    expect(screen.queryByText('自由是自律的泡沫')).not.toBeInTheDocument();
+  });
+
   it('offers LifeNav directly in the top bar and closes the mobile menu on selection', () => {
     render(<Navigation />);
     expect(screen.getAllByRole('link', { name: '人生导航' })).toHaveLength(2);
