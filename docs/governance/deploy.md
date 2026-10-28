@@ -585,7 +585,9 @@ preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前�
 后端终态和健康状态。它只关闭未发布失败，不把 a4d 标为 OTA 成功，也不允许重发 a4d。
 新收尾证据同时绑定 lease 文件的 device、inode、内容摘要与 `ctime_ns`，因此 Linux
 即使在删除重建时复用 inode，也会因变更时间漂移而阻断。历史四个已关闭 profile
-继续兼容其原先没有 `ctime_ns` 的持久记录；a4d 的新记录必须包含该字段。
+继续兼容其原先没有 `ctime_ns` 的持久记录，但同一份 lease 快照的四个文件必须全部
+使用旧 schema 或全部使用含 `ctime_ns` 的新 schema，禁止部分降级或混用；a4d 的新记录
+必须在全部文件中包含该字段。
 
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，

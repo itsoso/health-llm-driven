@@ -204,3 +204,16 @@ TDD RED: the new a4d profile was rejected as unknown before implementation. The 
 The recovery test file was not previously listed in the Linux `release-invariants` command. A CI-contract RED reproduced that omission; the workflow now runs the full closure suite and the contract requires it. This makes the real Linux producer-to-history-consumer tests part of the exact-SHA gate rather than relying on the macOS exclusion.
 
 The first exact-main CI `40781356755` then failed in the newly enabled Linux suite after 2,378 release tests passed. Linux reused the token file inode after the test unlinked and recreated identical bytes, proving that device/inode/content alone could miss a replacement. No server or vendor action ran. A new behavioral RED changed only the token metadata while keeping the inode and contents; the old implementation did not block. Lease snapshots now bind each file's `ctime_ns` in addition to device, inode and digest, and the same-inode metadata-drift test passes. Historical closure validation accepts the four legacy records without `ctime_ns`, while the new a4d profile requires it. Fresh focused recovery: 222 passed with the 30 known macOS-only cross-module cases deselected; adjacent release/OTA suites: 173 passed, 1 existing skip. A new fixed-commit G4 review and exact-main CI are required before closure inspection.
+
+The second G4 review on `365319ffddf45d18619339987de7ce6b9e3d1485`
+found one further fail-closed gap: each file in a legacy lease snapshot independently
+accepted either the old or current schema, so a recomputed historical record could mix
+entries with and without `ctime_ns`. A behavioral RED removed `ctime_ns` from only the
+token entry; all four legacy profiles were incorrectly accepted. History validation now
+requires one schema across the complete four-file snapshot: the four legacy profiles accept
+either all-old or all-current entries, while a4d accepts only all-current entries. The new
+mixed-schema test passes for all legacy profiles and a4d remains covered by its all-current
+requirement. Fresh non-macOS recovery verification is 226 passed, 1 existing skip and 30
+known macOS-only cases deselected; the CI contract suite is 21 passed. The reviewer returned
+NO-GO for the superseded commit, so a new commit, independent G4 review and Linux exact-SHA
+CI are required. No server, credential or vendor operation was performed.

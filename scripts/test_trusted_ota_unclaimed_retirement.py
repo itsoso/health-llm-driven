@@ -380,6 +380,24 @@ def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(
         assert m.validate_closed_history(a.server,op)['state']==m.TERMINAL
 
 
+def test_history_rejects_mixed_ctime_schema_for_legacy_profiles(transaction):
+    m,a,op,_lease,_calls=transaction
+    if m.FAILED_SHA == A4D_FAILED_SHA:
+        pytest.skip('a4d already requires ctime on every lease file')
+    inspected=m.close_transaction(a)
+    m.close_transaction(a,inspected['evidence_sha256'])
+    intent=json.loads((a.record/'intent.json').read_text())
+    intent['lease']['files']['token'].pop('ctime_ns')
+    intent['evidence_sha256']=m.digest({k:v for k,v in intent.items()
+                                       if k not in {'state','evidence_sha256'}})
+    completed={'state':m.TERMINAL,'failed_sha':m.FAILED_SHA,
+               'intent_sha256':m.digest(intent)}
+    (a.record/'intent.json').write_text(json.dumps(intent))
+    (a.record/'completed.json').write_text(json.dumps(completed))
+    with pytest.raises(m.ClosureError):
+        m.validate_closed_history(a.server,op)
+
+
 NEW_FAILED_SHA = '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90'
 
 

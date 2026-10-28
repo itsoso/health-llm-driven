@@ -586,13 +586,15 @@ def validate_closed_history(server, operation):
                         'stage': str(server.STATE / FAILED_SHA), 'started_at': lease.get('started_at')}
     base_file_keys = {'device', 'inode', 'sha256'}
     current_file_keys = base_file_keys | {'ctime_ns'}
-    snapshot_file_keys = ({frozenset(current_file_keys)} if FAILED_SHA == A4D_FAILED_SHA else
-                          {frozenset(base_file_keys), frozenset(current_file_keys)})
     if (not isinstance(snapshot, dict) or set(snapshot) != {'directory', 'files'}
             or not isinstance(snapshot['files'], dict) or set(snapshot['files']) != set(expected_content)
-            or snapshot['directory'] != lease.get('identity', [])[:2]
-            or any(frozenset(snapshot['files'][name]) not in snapshot_file_keys
-                   for name in expected_content)
+            or snapshot['directory'] != lease.get('identity', [])[:2]):
+        raise ClosureError('historical original lease binding differs')
+    snapshot_file_keys = {frozenset(snapshot['files'][name]) for name in expected_content}
+    allowed_file_keys = ({frozenset(current_file_keys)} if FAILED_SHA == A4D_FAILED_SHA else
+                         {frozenset(base_file_keys), frozenset(current_file_keys)})
+    if (len(snapshot_file_keys) != 1
+            or not snapshot_file_keys.issubset(allowed_file_keys)
             or any('ctime_ns' in snapshot['files'][name]
                    and (type(snapshot['files'][name]['ctime_ns']) is not int
                         or snapshot['files'][name]['ctime_ns'] < 0)
