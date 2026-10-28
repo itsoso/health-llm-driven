@@ -6,6 +6,7 @@ import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationCenter from '@/components/NotificationCenter';
+import xiaoqihouIcon from '@/assets/xiaoqihou-icon.png';
 import {
   Home,
   Compass,
@@ -204,7 +205,7 @@ function NavigationContent() {
               className="flex items-center space-x-2 text-base font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap group"
             >
               <Image
-                src="/xiaoqihou-icon.png"
+                src={xiaoqihouIcon}
                 alt=""
                 width={32}
                 height={32}
