@@ -11,7 +11,6 @@
  */
 
 import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
-import Image from 'next/image';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/contexts/AuthContext';
@@ -47,6 +46,7 @@ import {
 import { executeMedicalExamImportSkillForFile } from '@/services/chatMedicalExamImportSkill';
 import { pickPastedMedicalImportFile } from '@/services/pastedMedicalImportFile';
 import { statusStagePhrase } from '@/components/assistant/statusStagePhrase';
+import { BRAND_NAME, BrandIcon } from '@/components/BrandIcon';
 import {
   type ChatCardActionDescriptor,
   type ServerCardDescriptor,
@@ -917,8 +917,8 @@ function AIAssistantInner() {
             title="返回首页"
             className="inline-flex h-11 shrink-0 items-center gap-2.5 rounded-xl text-[#16201B] transition-opacity hover:opacity-75 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F8A5B] focus-visible:ring-offset-4"
           >
-            <Image src="/logo.png" alt="" width={32} height={32} className="shrink-0 rounded-[10px]" />
-            <span className="hidden text-lg font-semibold tracking-tight sm:inline">Reva</span>
+            <BrandIcon className="shrink-0 rounded-[10px]" />
+            <span className="hidden text-lg font-semibold tracking-tight sm:inline">{BRAND_NAME}</span>
           </Link>
           <button
             onClick={() => setHistoryOpen(open => !open)}

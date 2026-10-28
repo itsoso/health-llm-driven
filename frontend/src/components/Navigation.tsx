@@ -1,12 +1,11 @@
 'use client';
 
 import Link from 'next/link';
-import Image from 'next/image';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { Suspense, useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
 import NotificationCenter from '@/components/NotificationCenter';
-import xiaoqihouIcon from '@/assets/xiaoqihou-icon.png';
+import { BRAND_NAME, BrandIcon } from '@/components/BrandIcon';
 import {
   Home,
   Compass,
@@ -204,15 +203,11 @@ function NavigationContent() {
               aria-label="小气候首页"
               className="flex items-center space-x-2 text-base font-bold text-white hover:text-purple-300 transition-all duration-300 whitespace-nowrap group"
             >
-              <Image
-                src={xiaoqihouIcon}
-                alt=""
-                width={32}
-                height={32}
+              <BrandIcon
                 className="rounded-lg flex-shrink-0 shadow-md group-hover:shadow-purple-500/20 transition-all"
                 priority
               />
-              <span className="hidden 2xl:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">小气候</span>
+              <span className="hidden 2xl:inline text-base tracking-wide font-semibold text-gray-100 group-hover:text-white transition-colors">{BRAND_NAME}</span>
             </Link>
           </div>
 

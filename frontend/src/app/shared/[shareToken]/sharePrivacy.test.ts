@@ -28,7 +28,7 @@ describe('share privacy helpers', () => {
     });
 
     expect(metadata.description).toBe('这是一条包含健康敏感信息的用户分享，打开后需确认查看。');
-    expect(metadata.imageUrl).toBe('https://health.executor.life/logo-512.png');
+    expect(metadata.imageUrl).toBe('https://health.executor.life/icon.png');
     expect(metadata.description).not.toContain('APOE');
   });
 

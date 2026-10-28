@@ -126,7 +126,11 @@ it('keeps the branded home link and draft available when toggling conversation h
   await waitFor(() => expect(getConversations).toHaveBeenCalled());
   const home = screen.getByRole('link', { name: '返回首页' });
   expect(home).toHaveAttribute('href', '/');
-  expect(home).toHaveTextContent('Reva');
+  expect(home).toHaveTextContent('小气候');
+  expect(home.querySelector('img')).toHaveAttribute(
+    'src',
+    expect.stringContaining('xiaoqihou-icon.png'),
+  );
   const draft = screen.getByPlaceholderText(/发消息/);
   fireEvent.change(draft, { target: { value: '尚未发送的草稿' } });
 

@@ -361,7 +361,7 @@ function LLMPerformanceInner() {
                     </div>
                   </div>
                   <div className="mt-3 pt-3 border-t border-current/10 text-sm opacity-90">
-                    <span className="font-medium">Reva 用户策略：</span>
+                    <span className="font-medium">小气候用户策略：</span>
                     普通用户每月 {fmtTokens(usage.plan.local_user_policy.monthly_token_limit)}、
                     每日 {usage.plan.local_user_policy.daily_call_limit} 次、
                     每月 {fmtCredits(usage.plan.local_user_policy.monthly_credit_limit)} Credits；

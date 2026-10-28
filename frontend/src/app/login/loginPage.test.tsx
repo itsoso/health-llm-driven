@@ -27,6 +27,12 @@ describe('LoginPage', () => {
   it('makes phone login available through the primary identifier field', async () => {
     render(<LoginPage />);
 
+    const homeLink = screen.getByRole('link', { name: '小气候' });
+    expect(homeLink).toHaveAttribute('href', '/');
+    expect(homeLink.querySelector('img')).toHaveAttribute(
+      'src',
+      expect.stringContaining('xiaoqihou-icon.png'),
+    );
     expect(await screen.findByLabelText('手机号 / 邮箱 / 用户名')).toBeInTheDocument();
     expect(screen.getByPlaceholderText('请输入手机号、邮箱或用户名')).toBeInTheDocument();
   });

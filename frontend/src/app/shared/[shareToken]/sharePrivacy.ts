@@ -49,6 +49,6 @@ export function buildSharedMetadata({
   return {
     title,
     description,
-    imageUrl: `${publicSiteBaseUrl(siteBaseUrl)}/logo-512.png`,
+    imageUrl: `${publicSiteBaseUrl(siteBaseUrl)}/icon.png`,
   };
 }

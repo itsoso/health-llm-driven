@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuth } from '@/contexts/AuthContext';
+import { BRAND_NAME, BrandIcon } from '@/components/BrandIcon';
 
 function LoginForm() {
   const router = useRouter();
@@ -55,10 +56,8 @@ function LoginForm() {
         {/* Logo */}
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center space-x-2">
-            <span className="text-4xl">🏥</span>
-            <span className="text-2xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
-              自由是自律的泡沫
-            </span>
+            <BrandIcon size={44} className="rounded-xl shadow-md" priority />
+            <span className="text-2xl font-bold text-[#1F513C]">{BRAND_NAME}</span>
           </Link>
         </div>
 
