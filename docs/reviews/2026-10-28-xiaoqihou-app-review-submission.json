@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-28T10:43:43.49Z",
+  "app": {
+    "app_store_connect_id": "6763569720",
+    "bundle_id": "life.executor.health",
+    "version": "1.3.6",
+    "build_number": "283"
+  },
+  "candidate": {
+    "source_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+    "eas_build_id": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+    "asc_build_id": "1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0",
+    "ipa_sha256": "14545db4331b53e6f9d1f39a55d93e19db21f5a0df147a83f71bdd74dd935fcd",
+    "processing_state": "VALID",
+    "audience": "APP_STORE_ELIGIBLE"
+  },
+  "gates": {
+    "release_pack": "PASSED",
+    "policy_ci_run": 40654808636,
+    "policy_ci_result": "SUCCESS_32_OF_32",
+    "production_backend_sha": "2f94c6f1a8dbee3bea2ce3e63c2020ed9b947852",
+    "production_backend_state": "SUCCEEDED_HEALTHY_AUTH_401",
+    "review_account_exact_oxygen_query": "PASSED_SYNTHETIC_ONLY",
+    "release_simulator": "PASSED_CORE_WITH_ENUMERATED_ACCEPTED_UNVERIFIED_CHECKS",
+    "age_rating": "17+_SAVED",
+    "app_privacy": "PUBLISHED_APP_LEVEL",
+    "regulated_medical_device": "NO",
+    "production_ota": "FROZEN_FOR_CANDIDATE"
+  },
+  "submission": {
+    "app_store_version_id": "2b23f694-830b-4e8b-9b2a-1718c753bfe2",
+    "review_submission_id": "e85560dc-7f3a-4b27-a8f2-02c1166a78b9",
+    "review_submission_item_id": "ZTg1NTYwZGMtN2YzYS00YjI3LWE4ZjItMDJjMTE2NmE3OGI5fDZ8ODkzNDMwMTE2",
+    "submitted_date": "2026-10-28T10:43:43.49Z",
+    "review_submission_state": "WAITING_FOR_REVIEW",
+    "version_state": "WAITING_FOR_REVIEW",
+    "release_type": "MANUAL"
+  },
+  "screenshots": {
+    "existing_app_store_set_retained": true,
+    "display_type": "APP_IPHONE_67",
+    "count": 5,
+    "candidate_283_sanitized_gate_set_uploaded": false
+  },
+  "boundaries": {
+    "real_health_data_used": false,
+    "phone_installation_verified": false,
+    "physical_hardware_checks_verified": false,
+    "manual_release_preserved": true,
+    "backups_created": false
+  }
+}
