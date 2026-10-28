@@ -56,5 +56,27 @@
     "review_submission_state_readback": "COMPLETE",
     "version_state_readback": "DEVELOPER_REJECTED",
     "mutation_replayed": false
+  },
+  "resubmission": {
+    "recorded_at": "2026-10-28T11:55:15.904Z",
+    "reason": "Nominal exact phrase repair deployed and verified against the synthetic App Review account.",
+    "backend_source_sha": "e37a9c6a34bd080bd96d474cf75d7d1a245fbd20",
+    "backend_ci_run": 40679430049,
+    "validate_run": 40681949042,
+    "backend_release_run": 40682044453,
+    "backend_receipt_sha256": "cd82b555f81fc324632a6f1a91a5f9ac4a76be2372d4f04b7d332387f2a8b1ff",
+    "synthetic_exact_query": "昨晚血氧饱和度情况",
+    "synthetic_exact_query_result": "PASSED_HEALTH_QUERY_PERSISTED_NO_FAILURE_COPY",
+    "final_release_pack": "PASSED",
+    "review_submission_id": "b1fa1609-5ef1-40fb-a3f8-c67b20840a48",
+    "review_submission_item_id": "YjFmYTE2MDktNWVmMS00MGZiLWEzZjgtYzY3YjIwODQwYTQ4fDZ8ODkzNDMwMTE2",
+    "review_submission_state": "WAITING_FOR_REVIEW",
+    "version_state": "WAITING_FOR_REVIEW",
+    "selected_build_id": "1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0",
+    "build_number": "283",
+    "processing_state": "VALID",
+    "release_type": "MANUAL",
+    "original_submission_reused": false,
+    "submission_replayed": false
   }
 }

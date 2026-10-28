@@ -2,15 +2,16 @@
 
 > 2026-10-28 candidate refresh: 小气候 and the downward-opening guardian icon are embedded in Store build 283. The exact IPA, source and signed capabilities have been checked against the new candidate. See `docs/dossiers/2026-10-27-xiaoqihou-brand.md`.
 
-Status: withdrawn by the developer while a known oxygen-query failure is repaired and revalidated.
+Status: submitted to App Review under review submission `b1fa1609-5ef1-40fb-a3f8-c67b20840a48`; awaiting review.
 
 Current candidate: 1.3.6 (283), source `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`.
 EAS build `ea1dda2a-86b3-4e46-adf8-b2b024465154` has finished and Apple build
 `1eb785e3-54c2-42dd-81d5-66f7bb1fd2e0` is VALID and available to both internal
 TestFlight groups. This is upload and processing evidence, not an App Review
-submission. The compatible backend repair `2f94c6f1a8dbee3bea2ce3e63c2020ed9b947852`
-is deployed with a SUCCEEDED receipt; production health and the exact oxygen-query
-path passed before final submission preparation resumed.
+submission. The compatible backend repair `e37a9c6a34bd080bd96d474cf75d7d1a245fbd20`
+is deployed with a SUCCEEDED receipt. Production health passed, and the App Review
+synthetic account completed the exact query `昨晚血氧饱和度情况` through
+`health_query` before final submission preparation resumed.
 Readiness uses the release owner's explicitly accepted simulator-risk path, not
 a claim of completed physical acceptance. Candidate-bound Release-simulator,
 live review-account, Store-IPA and App Store Connect checks passed before the
@@ -78,8 +79,11 @@ description's character limit. Keywords are also measured in UTF-8, with a
 App Store Connect previously accepted build 283 under review submission
 `e85560dc-7f3a-4b27-a8f2-02c1166a78b9`. That submission now reads `COMPLETE` and
 the version reads `DEVELOPER_REJECTED` after the developer withdrew it for the
-known oxygen-query repair. Build 283 remains selected and manual release is retained;
-a new submission must wait for the repaired production path and final gate.
+known oxygen-query repair. Build 283 remains selected and manual release is retained.
+After the repaired production path and final gate passed, the version was submitted
+once under new review submission `b1fa1609-5ef1-40fb-a3f8-c67b20840a48` at
+`2026-10-28T11:55:15.904Z`; submission and version both read back
+`WAITING_FOR_REVIEW`.
 
 ## Production Build Preflight
 
