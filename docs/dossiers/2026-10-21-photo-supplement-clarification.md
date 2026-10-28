@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | photo-supplement-clarification |
-| 当前阶段 | S6 TestFlight 可用，安装验收待验证 |
-| 状态 | shipping |
+| 当前阶段 | S5 昨晚血氧查询阻断修复，App Review 暂停 |
+| 状态 | building |
 
 ## G1 准入
 
@@ -133,3 +133,16 @@ Production independently reports exact ae7, durable backend SUCCEEDED receipt SH
 TestFlight distribution is complete. Signed-in phone installation, real-health-data behavior and local static inspection of this Store IPA remain unverified. Earlier simulator component and guardian-icon evidence is source/UI evidence, not same-IPA device acceptance. No real health records were read or written. EAS metadata checks are enforced in the successful trusted workflow; additional local read-only EAS metadata lookup was unavailable because no local Expo credential was available. No signing identity, upload or release was retried.
 
 Durable redacted release index: `docs/reviews/2026-10-28-xiaoqihou-testflight-release.json`.
+
+
+### New submission blocker: omitted single-domain oxygen read
+
+After requesting App Review, the user supplied another screenshot showing “昨晚血氧饱和度如何” ending in query-incomplete output. No App Review submission has occurred; submission is paused for this known failure. The revised header is visible, so earlier UI delivery does not prove query correctness. No production health records were inspected.
+
+Synthetic scope inspection confirms the literal phrase binds only the authenticated owner's SpO2, account-local wake date and period=sleep_night. Existing full-path tests use a provider that requests a tool. In contrast, the omitted-tool fallback `_initial_composed_read_calls` requires at least two scoped queries; a single-domain query can terminate incomplete without an actual read. New tests use the literal phrase and a tool-omitting provider through Pi/gateway/persistence. Preserve owner/date/night-period, no writes or sync, no new model-driven replay of failed reads, and clinical uncertainty. Old history is not edited or automatically replayed. The first new-test invocation used the wrong working directory and failed before creating the test; it is not behavioral RED evidence.
+
+
+- Behavioral RED after correcting test setup: all six exact-phrase/mode cases failed because no gateway read was dispatched (`/tmp/xiaoqihou-last-night-oxygen-behavior-red.log`). Initial unpack-count and missing Pi dependency failures are retained but are not behavioral RED.
+- Minimal change: permit the existing omitted-tool proposal path for exactly one already-bound SpO2 query as well as the existing multi-domain case. Pi schema validation, capability authorization and the existing transport retry budget are unchanged. No direct adapter dispatch, new sync, broad owner/date inference or stored-message rewrite.
+- Final focused/adjacent SQLite suite: 196 passed. Dedicated UTF-8 PostgreSQL 17 synthetic database: 55 passed, including real owner/time/source-bound sample filtering, no-data completion, read-error disclosure and third-party/cancel/restriction negatives. Early expanded tests incorrectly expected model prose to include samples and assumed no existing transport retry; corrected assertions inspect the real gateway payload and preserve its existing bounded two-attempt transport behavior. No production behavior was changed to satisfy those test assumptions.
+- App Review remains pending this fix's independent safety review, fresh live-model gate, exact main CI, backend deployment and acceptance. The mobile code is unchanged, so a fresh TestFlight build/OTA is not needed just for this server repair; 283 must be revalidated against the repaired backend before submission.

@@ -13512,7 +13512,13 @@ class AgentExecutor:
         else:
             if round_index != 0 or self._turn_composed_read_executions:
                 return []
-            queries = list(scope.queries) if scope is not None and len(scope.queries) >= 2 else []
+            # A single oxygen question also has a closed owner/date/period
+            # scope. Model prose cannot replace that read; propose it through
+            # the same Pi/capability gateway as a multi-domain read.
+            queries = list(scope.queries) if scope is not None and (
+                len(scope.queries) >= 2
+                or (len(scope.queries) == 1 and scope.queries[0]['dimension'] == 'spo2')
+            ) else []
         if not queries:
             return []
         return [{
