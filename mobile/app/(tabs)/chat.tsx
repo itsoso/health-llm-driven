@@ -1059,10 +1059,14 @@ export default function ChatScreen() {
   const activeTurnVisible = activeTurn.phase !== 'idle' && activeTurn.phase !== 'completed';
   // Progress belongs to the active reply. Keep terminal outcomes in the top
   // strip so partial results, missing facts and recoverable errors stay visible.
-  const progressInAssistantTurn = (
-    isStreaming && (activeTurn.phase === 'idle' || activeTurn.phase === 'completed')
-  ) || (
-    activeTurn.phase === 'submitted'
+  const hasInlineTurnProgress = messages.some((message, index) => {
+    if (message.role !== 'assistant' || !(message.streaming || message.recoveryPending)) return false;
+    if (activeTurn.turnId && message.sourceTurnId) return message.sourceTurnId === activeTurn.turnId;
+    return index === messages.length - 1;
+  });
+  const progressInAssistantTurn = hasInlineTurnProgress && (
+    (isStreaming && (activeTurn.phase === 'idle' || activeTurn.phase === 'completed'))
+    || activeTurn.phase === 'submitted'
     || activeTurn.phase === 'running'
     || activeTurn.phase === 'writing'
     || activeTurn.phase === 'verifying'
