@@ -244,6 +244,12 @@ the owner explicitly replaces the candidate. The actual IPA embedded update time
 `1793110673505` is later than the last update before this freeze (`1793097350609`).
 This preserves candidate content; it does not waive backend or submission gates.
 
+On 2026-10-28 the owner explicitly requested the EMBA practice OTA, replacing
+the frozen JavaScript candidate. The update keeps the Store 282 native app
+configuration and launcher/splash assets byte-bound to the reviewed cohort;
+the new guardian artwork uses a separate runtime asset. App Review content must
+be rechecked against this newer JavaScript update before submission or release.
+
 ## Screenshot Set
 
 Build 226 historical App Store Connect set (uploaded and API-verified on 2026-07-15):

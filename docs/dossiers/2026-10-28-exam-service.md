@@ -64,3 +64,18 @@ exam_recovery_credential和持久历史阻断；不保留第二套可执行恢�
 绕过当前证明。新候选还须核对替代实现全部审计目录不存在，否则停止并核清现场。
 前端制品22d2d1d259414eabb04b3cff3d56a335的失败记录为外部档案所报，未在本会话
 重新执行；前端和OTA均不因合并代码被视为已发布。
+
+### 2026-10-28 Web 与 OTA 接续
+
+`5ec09bc3ec893a7590878cf45c7add03b7faea22` 的完整 CI 与发布预检通过；后端
+发布回执为 GitHub run `40628656668`，生产回读确认该 SHA、四项服务健康，
+`life_exam_attempts` 已创建且 runtime 仅有 SELECT/INSERT，无 UPDATE/DELETE。
+Web 无备份发布操作 `d6364692216b4593a500c0d78b6274a6` 返回
+`FRONTEND_SUCCEEDED`；baokun 线上回读为 80/200、120 分钟计划，并显示历史、
+错题本与前后题导航。未提交合成答案，因此生产流水仍为 0 行。
+
+随后主干已有 guardian 图标源变更，但 Store 282 仍绑定上一组原生图标/启动图。
+为交付用户明确要求的备考 OTA，原生 `app.json` 与 launcher/splash 固定文件恢复
+到 Store 282 已审字节；新 guardian 图仅作为独立运行时资产供应用内头像使用。
+这不改变原生模块、权限、依赖或 runtimeVersion，仍须以最终精确 SHA 的 CI、
+后端同 SHA 回执和 OTA manifest 回读作为发布终态。

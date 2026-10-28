@@ -10,7 +10,7 @@
     "splash": {
       "image": "./assets/images/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#004D3D"
+      "backgroundColor": "#077882"
     },
     "ios": {
       "supportsTablet": false,
@@ -192,7 +192,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#004D3D"
+        "backgroundColor": "#077882"
       },
       "predictiveBackGestureEnabled": false,
       "package": "life.executor.health"

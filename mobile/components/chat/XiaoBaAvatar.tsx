@@ -15,8 +15,9 @@ const STATE_COLOR: Record<XiaoBaAvatarState, string> = {
   listening: C.greenBright,
 };
 
-// Every avatar size shares the selected guardian artwork with the launcher.
-const BRAND_ICON = require('../../assets/images/icon.png');
+// The in-app guardian can ship by OTA while the native launcher remains bound
+// to the reviewed Store 282 icon until the next native build.
+const BRAND_ICON = require('../../assets/images/guardian-icon.png');
 
 export default function XiaoBaAvatar({
   size = 32,
