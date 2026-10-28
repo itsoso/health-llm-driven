@@ -217,6 +217,7 @@ export default function AnswerEvidencePanel({
             style={({ pressed }) => [styles.evidenceButton, pressed && styles.pressed]}
             accessibilityRole="button"
             accessibilityLabel={`${open ? '收起' : '展开'}${detailLabel}`}
+            accessibilityHint={provenanceBoundary ? `回答边界：${provenanceBoundary}` : undefined}
             accessibilityState={{ expanded: open }}
           >
             <View style={styles.railIcon}>

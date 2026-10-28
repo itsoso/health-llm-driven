@@ -212,9 +212,20 @@ function ChatBubbleInner({
       assistantText,
       !isUser
         && !item.streaming
+        && item.terminalStatus === 'complete'
+        && item.completionStatus !== 'error'
+        && item.completionStatus !== 'interrupted'
         && (!!item.answerEvidence || (Array.isArray(item.sourcesUsed) && item.sourcesUsed.length > 0)),
     ),
-    [assistantText, isUser, item.answerEvidence, item.sourcesUsed, item.streaming],
+    [
+      assistantText,
+      isUser,
+      item.answerEvidence,
+      item.completionStatus,
+      item.sourcesUsed,
+      item.streaming,
+      item.terminalStatus,
+    ],
   );
   const presentedAssistantText = provenanceProjection.text;
   const hasHtmlContent = useMemo(

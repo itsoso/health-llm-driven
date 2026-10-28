@@ -753,6 +753,80 @@ describe('ChatBubble streaming degraded render', () => {
     expect(getByText('上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断')).toBeTruthy();
   });
 
+  it.each([
+    'partial',
+    'waiting_for_user',
+    'blocked',
+    'failed',
+    'refused',
+    'reconciliation_required',
+  ] as const)('keeps provenance inline for the %s business outcome', terminalStatus => {
+    const { getByText } = renderBubble({
+      id: `assistant-provenance-${terminalStatus}`,
+      role: 'assistant',
+      content: '信息来源：模型推断。\n本轮没有完整结束。',
+      streaming: false,
+      completionStatus: 'complete',
+      terminalStatus,
+      sourcesUsed: ['健康数据查询'],
+    });
+
+    expect(getByText(/信息来源：模型推断/)).toBeTruthy();
+  });
+
+  it.each(['error', 'interrupted'] as const)(
+    'keeps provenance inline when generation ends with %s despite an evidence surface',
+    completionStatus => {
+      const { getByText } = renderBubble({
+        id: `assistant-provenance-${completionStatus}`,
+        role: 'assistant',
+        content: '信息来源：已检索证据（未逐句核验）。\n本轮没有完整结束。',
+        streaming: false,
+        completionStatus,
+        terminalStatus: 'complete',
+        sourcesUsed: ['健康数据查询'],
+      });
+
+      expect(getByText(/信息来源：已检索证据（未逐句核验）/)).toBeTruthy();
+    },
+  );
+
+  it('keeps clinician attribution available to assistive technology when folded after success', () => {
+    const { getByLabelText, getByText, queryByText } = renderBubble({
+      id: 'assistant-clinician-provenance',
+      role: 'assistant',
+      content: '信息来源：医生确认指示、模型推断。\n请继续遵循医生已经确认的安排。',
+      streaming: false,
+      completionStatus: 'complete',
+      terminalStatus: 'complete',
+      sourcesUsed: ['医生确认记录'],
+    });
+
+    expect(queryByText(/信息来源：医生确认指示/)).toBeNull();
+    expect(getByLabelText('展开回答依据').props.accessibilityHint).toContain('医生确认指示');
+    fireEvent.press(getByLabelText('展开回答依据'));
+    expect(getByText('医生确认指示、模型推断')).toBeTruthy();
+  });
+
+  it('copies the original answer including folded provenance', async () => {
+    const rawAnswer = '信息来源：模型推断。\n这是一条通用说明。';
+    const { getByLabelText, getByTestId } = renderBubble({
+      id: 'assistant-copy-folded-provenance',
+      role: 'assistant',
+      content: rawAnswer,
+      streaming: false,
+      completionStatus: 'complete',
+      terminalStatus: 'complete',
+      sourcesUsed: ['健康数据查询'],
+    });
+
+    fireEvent(getByTestId('assistant-message-surface'), 'longPress');
+    await act(async () => {
+      fireEvent.press(getByLabelText('复制全文'));
+    });
+    expect(Clipboard.setStringAsync).toHaveBeenCalledWith(rawAnswer);
+  });
+
   it('keeps the provenance preface inline when no evidence surface is available', () => {
     const { getByText } = renderBubble({
       id: 'assistant-provenance-without-evidence',
