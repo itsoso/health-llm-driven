@@ -166,3 +166,21 @@ The Store IPA remains bound to EAS build `ea1dda2a-86b3-4e46-adf8-b2b024465154`,
 The release owner accepts the simulator-only residual risks listed in `/tmp/xiaoqihou-283-simulator-acceptance.json` under the standing policy in `docs/governance/simulator-review-acceptance.md`. This is not an Apple waiver and does not claim physical installation, microphone, camera, HealthKit, share handoff, background GPS or other hardware-only acceptance.
 
 The final release-pack gate passed with the exact Store IPA, native artifact receipt, source-bound Release-simulator acceptance, privacy-sanitized screenshot validation, current production review-account check, published privacy declaration, saved 17+ age rating and the `No` regulated-medical-device declaration. App Store Connect then replaced selected build 282 with VALID, App Store-eligible build 283 and read it back. Review submission `e85560dc-7f3a-4b27-a8f2-02c1166a78b9` contains only version 1.3.6 and was submitted once at `2026-10-28T10:43:43.49Z`; both the review submission and App Store version read back `WAITING_FOR_REVIEW`. Release type remains `MANUAL`. No App Review action was replayed, and the existing screenshots were retained rather than replacing them with privacy-blurred QA evidence.
+
+
+### 2026-10-28 nominal oxygen-query incident and review withdrawal
+
+A later production screenshot used the exact phrase `昨晚血氧饱和度情况`. Unlike the already repaired `昨晚血氧饱和度如何`, this nominal question contains no generic read verb. The semantic binder classified it as unknown, so no owner/date-bound SpO2 read reached the gateway. The visible failure is therefore a semantic-entry defect, not evidence that the prior omitted-tool recovery or Store build 283 was replaced. No production health records were inspected.
+
+The active App Review submission was withdrawn before repair. Readback shows the old review submission `COMPLETE` and App Store version `DEVELOPER_REJECTED`; the cancellation is not replayed. Store build 283 remains the selected frozen mobile candidate and manual release remains configured.
+
+The repair admits only a full utterance limited to optional current-user wording, `昨晚` / `昨夜`, blood-oxygen / SpO2, optional saturation wording, then `情况`. It reuses the existing owner-, wake-date- and `sleep_night`-bound query path. It does not authorize a generic `情况` suffix, arbitrary prefixes, third-party data, appended abnormality claims, writes, sync, broader dates, or model-authored owner scope. Behavioral RED was four exact phrase variants across panel and sample modes; all failed before the change because no read was dispatched. The first G4 review found that a suffix-search draft admitted named third-party prefixes; new 张三, 小王 and third-party-data-prefix tests reproduced three unauthorized reads. That draft was not committed or released. The implementation was narrowed to a whole-utterance match and the corrected G4 re-review returned GO.
+
+Fresh verification after the minimal change:
+
+- Focused exact phrase and expanded named-owner negative-boundary suite: 35 passed.
+- Adjacent SQLite semantic, owner-scope, adversarial, sleep oxygen and read-repair suites: 1,299 passed.
+- Dedicated UTF-8 PostgreSQL 17 exact and sleep-oxygen suites after the G4 correction: 107 passed. The earlier 96-test run applied to the rejected suffix-search draft and is not final evidence.
+- Full System Map, mobile navigation and doc-drift gate: passed.
+- The path-sensitive LLM change gate reports `live_llm_required=false` for this deterministic semantic-binder file. The no-cost synthesis gate passed invariants 12/12, health-agent core 50/50, trajectory contracts 12/12 and goldens 9/9. A separate live attempt using the ordinary local `.env` failed because no disclosed provider credential was present; it is retained as a failure and is not used as proof. No waiver or confirmation was set.
+- Corrected independent safety re-review: G4 GO. Exact-main CI, backend release and production review-account repetition remain required before resubmission. No OTA or new native build is required for this backend semantic repair.

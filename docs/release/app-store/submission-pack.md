@@ -2,7 +2,7 @@
 
 > 2026-10-28 candidate refresh: 小气候 and the downward-opening guardian icon are embedded in Store build 283. The exact IPA, source and signed capabilities have been checked against the new candidate. See `docs/dossiers/2026-10-27-xiaoqihou-brand.md`.
 
-Status: submitted for App Store review.
+Status: withdrawn by the developer while a known oxygen-query failure is repaired and revalidated.
 
 Current candidate: 1.3.6 (283), source `ae7a5972921ee9d51eec2c90c7893e6941d2d7ff`.
 EAS build `ea1dda2a-86b3-4e46-adf8-b2b024465154` has finished and Apple build
@@ -75,9 +75,11 @@ credentials and reviewer contact use their separate ASC fields. Notes has a
 description's character limit. Keywords are also measured in UTF-8, with a
 100-byte limit; avoid repeating the app/company name. See Apple's [platform version information](https://developer.apple.com/help/app-store-connect/reference/app-information/platform-version-information).
 
-App Store Connect has accepted build 283 for review. Review submission
-`e85560dc-7f3a-4b27-a8f2-02c1166a78b9` is `WAITING_FOR_REVIEW`. Manual release
-is retained.
+App Store Connect previously accepted build 283 under review submission
+`e85560dc-7f3a-4b27-a8f2-02c1166a78b9`. That submission now reads `COMPLETE` and
+the version reads `DEVELOPER_REJECTED` after the developer withdrew it for the
+known oxygen-query repair. Build 283 remains selected and manual release is retained;
+a new submission must wait for the repaired production path and final gate.
 
 ## Production Build Preflight
 

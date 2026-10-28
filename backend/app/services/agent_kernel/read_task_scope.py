@@ -33,7 +33,13 @@ OWNED_MULTI_READ_TOOL_NAMES = frozenset({
 })
 
 _READ = re.compile(
-    r"查询|查看|看一下|看看|获取|比较|对比|分析|洞察|复盘|总结|怎么样|怎样|如何|什么|啥"
+    r"查询|查看|看一下|看看|获取|比较|对比|分析|洞察|复盘|总结|怎么样|怎样|如何|什么|啥",
+    re.I,
+)
+_NOMINAL_LAST_NIGHT_SPO2_READ = re.compile(
+    r"(?:(?:我|本人)(?:的)?)?(?:昨晚|昨夜)(?:的)?"
+    r"(?:血氧|spo2)(?:饱和度)?(?:的)?情况(?:呢)?\s*[？?。]?$",
+    re.I,
 )
 _NON_AUTHORIZING = re.compile(
     r"假如|假设|假想|如果|举例|例句|我在想|不要|不用|无需|别|不(?:再|分析|洞察|复盘|总结|查询|查看|同步|刷新|拉取)|取消|停止"
@@ -417,7 +423,15 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     text = _active(snapshot.envelope.text)
     if text is not None:
         text = project_read_request_without_write_veto(text)
-    if text is None or not _owned_active(text) or _MUTATION.search(text) or not _READ.search(text):
+    if (
+        text is None
+        or not _owned_active(text)
+        or _MUTATION.search(text)
+        or not (
+            _READ.search(text)
+            or _NOMINAL_LAST_NIGHT_SPO2_READ.fullmatch(text)
+        )
+    ):
         return None
     # Prospective diet/medical advice does not implicitly authorize history.
     if re.search(r"应该|该吃|吃什么药|吃什么补剂|吃了什么药|吃了什么补剂", text):

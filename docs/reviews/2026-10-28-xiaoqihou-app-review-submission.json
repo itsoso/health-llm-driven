@@ -49,5 +49,12 @@
     "physical_hardware_checks_verified": false,
     "manual_release_preserved": true,
     "backups_created": false
+  },
+  "withdrawal": {
+    "recorded_at": "2026-10-28T11:12:23.040586Z",
+    "reason": "Known production query failure for the exact phrase 昨晚血氧饱和度情况; repair and production verification required before resubmission.",
+    "review_submission_state_readback": "COMPLETE",
+    "version_state_readback": "DEVELOPER_REJECTED",
+    "mutation_replayed": false
   }
 }

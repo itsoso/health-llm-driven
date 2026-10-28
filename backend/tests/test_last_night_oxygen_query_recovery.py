@@ -12,7 +12,17 @@ from tests.test_agent_read_repair_round_budget import (
 @pytest.mark.asyncio
 @pytest.mark.parametrize("panel", [False, True])
 @pytest.mark.parametrize("has_samples", [False, True])
-@pytest.mark.parametrize("query", ["昨晚血氧饱和度如何", "昨晚血氧如何", "分析昨晚的血氧数据。"])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "昨晚血氧饱和度如何",
+        "昨晚血氧饱和度情况",
+        "我昨晚的血氧饱和度情况？",
+        "昨夜SpO2情况呢",
+        "昨晚血氧如何",
+        "分析昨晚的血氧数据。",
+    ],
+)
 async def test_last_night_oxygen_omitted_tool_is_proposed_via_owned_gateway(
     db, four_domain_user, clock, monkeypatch, panel, query, has_samples,
 ):
@@ -100,8 +110,20 @@ async def test_failed_oxygen_adapter_is_disclosed_without_model_replay(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('query', ['我朋友昨晚血氧饱和度如何', '不要查询昨晚血氧',
-                                 '分析昨晚血氧，只看凌晨', '分析昨晚血氧并删除记录'])
+@pytest.mark.parametrize(
+    'query',
+    [
+        '我朋友昨晚血氧饱和度如何',
+        '朋友昨晚血氧饱和度情况',
+        '张三昨晚血氧饱和度情况',
+        '小王昨晚血氧饱和度情况',
+        '请基于张三的数据，昨晚血氧饱和度情况',
+        '昨晚血氧饱和度情况异常',
+        '不要查询昨晚血氧',
+        '分析昨晚血氧，只看凌晨',
+        '分析昨晚血氧并删除记录',
+    ],
+)
 async def test_single_domain_fallback_cannot_manufacture_scope(db, four_domain_user, monkeypatch, query):
     trace = batch_trace(db, monkeypatch, ['未读取个人数据。'])
     reads = []
