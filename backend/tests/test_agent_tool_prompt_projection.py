@@ -67,6 +67,20 @@ def test_only_bound_dimension_entries_are_included(text, kept, dropped):
         assert dropped not in description
 
 
+@pytest.mark.parametrize("dimension,kept,dropped", [
+    ("weight", "weight", "夜间血氧逐分钟"),
+    ("hrv", "hrv", "今日饮食记录"),
+    ("medical_exam", "medical_exam", "补剂服用依从率"),
+])
+def test_structured_registry_projects_additional_bound_dimensions(dimension, kept, dropped):
+    from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
+
+    scope = OwnedReadScope(({"dimension": dimension, "days": 7},))
+    result = project_owned_read_tool_descriptions(read_tools(), scope)
+    assert kept in result[0]["function"]["description"]
+    assert dropped not in result[0]["function"]["description"]
+
+
 def test_batch_keeps_calendar_aggregation_units_unknown_value_and_spo2_constraints():
     from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
 
@@ -85,7 +99,7 @@ def test_batch_keeps_calendar_aggregation_units_unknown_value_and_spo2_constrain
 @pytest.mark.parametrize("scope", [
     None, object(), OwnedReadScope(()), OwnedReadScope(({},)),
     OwnedReadScope(({"dimension": "unknown"},)),
-    OwnedReadScope(({"dimension": "sleep"}, {"dimension": "genetic"})),
+    OwnedReadScope(({"dimension": "sleep"}, {"dimension": "conversation"})),
     OwnedReadScope(({"dimension": ["sleep"]},)),
 ])
 def test_unknown_scope_is_unchanged(scope):
@@ -128,14 +142,18 @@ def test_never_adds_missing_tool_and_preserves_extension_fields_and_idempotency(
     assert tools[0]["function"]["parameters"]["required"] == ["queries"]
 
 
-def test_unknown_query_guide_format_falls_back_to_full_registry(monkeypatch):
+def test_editorial_query_guide_format_does_not_control_projection(monkeypatch):
     from app.services import agent_tool_prompt_projection as projection
 
     changed = deepcopy(HEALTH_TOOLS)
-    changed[0]["function"]["description"] = "新版结构，尚未支持安全投影"
+    changed[0]["function"]["description"] = "新版编辑排版；结构化指南仍是投影真源"
     monkeypatch.setattr(projection, "HEALTH_TOOLS", changed)
     tools = deepcopy(changed[:2])
-    assert projection.project_owned_read_tool_descriptions(tools, read_scope()) is tools
+    result = projection.project_owned_read_tool_descriptions(tools, read_scope())
+    assert result is not tools
+    assert "sleep" in result[0]["function"]["description"]
+    assert "spo2" in result[0]["function"]["description"]
+    assert "基因位点" not in result[0]["function"]["description"]
 
 
 def test_unknown_batch_guide_format_keeps_full_batch(monkeypatch):
@@ -149,15 +167,27 @@ def test_unknown_batch_guide_format_keeps_full_batch(monkeypatch):
     assert result[1] is tools[1]
 
 
-def test_registry_updates_to_relevant_safety_prose_are_reused(monkeypatch):
-    from app.services import agent_tool_prompt_projection as projection
+def test_full_and_projected_query_guidance_share_the_structured_registry():
+    from app.services.health_query_prompt_registry import render_health_query_description
 
-    changed = deepcopy(HEALTH_TOOLS)
-    description = changed[0]["function"]["description"]
-    changed[0]["function"]["description"] = description.replace(
-        "不确诊。", "不确诊。新增经过审核的限制。",
-    )
-    monkeypatch.setattr(projection, "HEALTH_TOOLS", changed)
-    tools = deepcopy(changed[:2])
-    result = projection.project_owned_read_tool_descriptions(tools, read_scope())
-    assert all("新增经过审核的限制" in t["function"]["description"] for t in result)
+    query = next(t for t in HEALTH_TOOLS if t["function"]["name"] == "health_query")
+    assert query["function"]["description"] == render_health_query_description()
+    scoped = render_health_query_description({"spo2"})
+    assert scoped is not None
+    assert "未验证睡眠期/连续监测" in scoped
+    assert "不推算 ODI" in scoped
+    assert "不把无数据当正常" in scoped
+
+
+def test_owned_read_prompt_contract_is_bounded_and_has_no_runtime_identity():
+    from app.services.agent_composed_read_completion import format_owned_read_scope_prompt
+
+    prompt = format_owned_read_scope_prompt(read_scope("昨晚血氧饱和度情况"))
+    assert "本轮只读任务契约" in prompt
+    assert '"dimension":"spo2"' in prompt
+    assert '"start_date":"2026-10-04"' in prompt
+    assert '"period":"sleep_night"' in prompt
+    assert "不得扩大维度、日期或用户范围" in prompt
+    assert "不能用旧记录或历史回答替代" in prompt
+    assert "user_id" not in prompt
+    assert "run_id" not in prompt

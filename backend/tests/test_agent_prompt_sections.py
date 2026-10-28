@@ -51,6 +51,14 @@ def test_extracted_parts_are_independent_between_requests():
     assert 'user-specific evidence' not in second
 
 
+def test_persona_is_xiaoqihou_and_does_not_encourage_scope_expansion():
+    prompt = _execution_prompt()
+    assert '你是“小气候”' in prompt
+    assert '严格完成本轮请求' in prompt
+    assert '不得主动扩大' in prompt
+    assert '唯一的对话入口' not in prompt
+
+
 def _execution_prompt():
     from app.services.agent_prompt_sections import build_base_prompt_parts
     return '\n'.join(build_base_prompt_parts(

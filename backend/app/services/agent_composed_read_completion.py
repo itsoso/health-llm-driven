@@ -10,6 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
+import json
 import re
 from typing import Iterable
 
@@ -1211,6 +1212,23 @@ def read_scope_notices(scope) -> tuple[str, ...]:
     ):
         lines.append("工作背景未查询结构化记录，不能据此判断工作状态或归因。")
     return tuple(lines)
+
+
+def format_owned_read_scope_prompt(scope: OwnedReadScope) -> str:
+    """Render one provider contract from the server-bound read scope.
+
+    The JSON is a task payload, not authority: owner and date admission already
+    happened in the kernel and every proposed call still passes Pi/Gateway.
+    """
+    return (
+        "\n## 本轮只读任务契约\n"
+        "服务端已绑定以下本人查询，必须逐项完成；参数可以按工具错误修正，但不得扩大维度、日期或用户范围："
+        + json.dumps(list(scope.queries), ensure_ascii=False, separators=(",", ":"))
+        + "。查询后再分析；缺失或失败项目必须明确说明，不能用旧记录或历史回答替代。"
+        "同步任务状态与数据可用性必须分开回答，入队不代表完成。"
+        + "".join(read_scope_notices(scope))
+        + read_scope_synthesis_instructions(scope)
+    )
 
 
 def evaluate_composed_read_completion(

@@ -2904,7 +2904,7 @@ def _build_compact_empty_retry_messages(messages: List[Dict[str, Any]]) -> List[
         sections.append(_clip_context(system_content, 520))
 
     compact_system_parts = [
-        "你是用户的 AI 健康助理。请用中文直接回答本轮问题。",
+        "你是“小气候”。请用中文直接回答本轮问题。",
         "必须基于已提供的健康上下文做判断；不要编造未给出的数据。",
         "输出应简洁、可执行；涉及诊断、治疗或用药时提醒咨询医生。",
         _HEALTH_STATUS_INTENT_PROMPT,
@@ -14984,14 +14984,12 @@ class AgentExecutor:
         yield {"event": "agent_start", "data": {"message": "多模型综合分析中…", "conversation_id": conv.id}}
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
-        from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
+        from app.services.agent_composed_read_completion import format_owned_read_scope_prompt
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         panel_read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         panel_composite_advice = bool(panel_read_scope and panel_read_scope.composite_advice)
         if panel_read_scope is not None:
-            system_content += ('\n本轮必须逐项完成的服务端只读范围：'
-                + json.dumps(list(panel_read_scope.queries), ensure_ascii=False)
-                + '。同步入队不是完成，不完整查询不能作完整复盘。' + '\n'.join(read_scope_notices(panel_read_scope)) + read_scope_synthesis_instructions(panel_read_scope))
+            system_content += format_owned_read_scope_prompt(panel_read_scope)
         turn_time_context = self._agent_kernel_time_context(client_time_context)
         from app.services.medical_citation_policy import (
             build_medical_citation_bundle,
@@ -18594,7 +18592,10 @@ class AgentExecutor:
         if completion_intent.reason == "conversation_feedback":
             tools = []
 
-        from app.services.agent_composed_read_completion import read_scope_notices, read_scope_synthesis_instructions
+        from app.services.agent_composed_read_completion import (
+            format_owned_read_scope_prompt,
+            read_scope_notices,
+        )
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
         composite_advice = bool(read_scope and read_scope.composite_advice)
@@ -18632,13 +18633,7 @@ class AgentExecutor:
             from app.services.agent_kernel.current_input_advice_scope import current_input_advice_instructions
             messages[0]["content"] += "\n" + current_input_advice_instructions(message)
         if read_scope is not None:
-            messages[0]["content"] += (
-                "\n本轮服务端确定的只读范围（逐项完成，参数可修正但不得扩展）："
-                + json.dumps(list(read_scope.queries), ensure_ascii=False)
-                + "。查询后分析；缺失项目明确说明。同步任务状态与数据可用性必须分开回答，入队不代表完成。"
-                + "\n".join(read_scope_notices(read_scope))
-                + read_scope_synthesis_instructions(read_scope)
-            )
+            messages[0]["content"] += format_owned_read_scope_prompt(read_scope)
 
         if self._public_task:
             allowed_public_tools = {"environment_check"} if self._public_task == "weather" else set()
@@ -23399,7 +23394,7 @@ class AgentExecutor:
         """
         current_time = self._agent_kernel_reference_now().isoformat(timespec="seconds")
         return "\n".join((
-            "你是用户的 AI 健康助理。本轮只负责选择并调用工具，不直接回答用户。",
+            "你是“小气候”。本轮只负责选择并调用工具，不直接回答用户。",
             f"当前用户本地时间：{current_time}。相对时间必须以此为准，不得猜测。",
             "需要查询真实数据时调用 health_query；没有工具结果时不得编造数据。",
             "只有用户明确要求新增记录时才调用 health_record；修改或删除已有记录才调用 health_manage。",
@@ -23462,7 +23457,7 @@ class AgentExecutor:
                              or self._has_isolated_report_scope())
         if prompt_snapshot is not None and "classifier:conversation_feedback" in prompt_snapshot.intent.evidence:
             return (
-                "你是 Reva 健康助手小气候。用户正在反馈对话质量。结合历史原话和实际工具结果，"
+                "你是“小气候”。用户正在反馈对话质量。结合历史原话和实际工具结果，"
                 "明确上一轮哪里没有完成任务，简短回应；不要把反馈当作新的健康查询或写入授权。"
                 "不得声称操作完成，也不提供未经核实的健康建议。历史回答仅是先前回答，不是本轮核验事实。"
             )

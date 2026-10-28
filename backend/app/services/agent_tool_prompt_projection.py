@@ -4,16 +4,15 @@ from __future__ import annotations
 
 from copy import deepcopy
 from functools import lru_cache
-import re
 from typing import Any
 
 from app.services.agent_kernel.read_task_scope import OwnedReadScope
+from app.services.health_query_prompt_registry import (
+    PROJECTABLE_QUERY_DIMENSIONS,
+    render_health_query_description,
+)
 from app.services.tool_schema_registry import HEALTH_TOOLS
 
-_SUPPORTED_DIMENSIONS = frozenset({"sleep", "spo2", "diet", "workout", "supplements"})
-_SECTION = re.compile(r"(?m)^【[^\n]+】\n")
-_ENTRY = re.compile(r"(?m)^  ([a-z][a-z0-9_]*(?: / [a-z][a-z0-9_]*)*)[ \t]+—")
-_DATE_RULES = "\ndays 参数只表示"
 _BATCH_PLAN = "\nplan 结构:\n"
 _BATCH_EXAMPLE = "\n完整示例 ("
 _BATCH_RESULT = "\n→ 每条回 "
@@ -23,40 +22,6 @@ _BATCH_RESULT = "\n→ 每条回 "
 # the keys, so registry edits miss immediately. No time-based TTL is needed for
 # these immutable text projections; each helper retains at most 64 LRU entries.
 # Never cache scopes, user data, authorized tool lists or mutable schemas.
-@lru_cache(maxsize=64)
-def _query_description(description: str, dimensions: frozenset[str]) -> str | None:
-    """Select whole registry entries including all indented safety prose."""
-    if description.count(_DATE_RULES) != 1:
-        return None
-    guide, date_rules = description.split(_DATE_RULES)
-    sections = list(_SECTION.finditer(guide))
-    if not sections:
-        return None
-    selected = []
-    found = set()
-    for index, section in enumerate(sections):
-        end = sections[index + 1].start() if index + 1 < len(sections) else len(guide)
-        body = guide[section.end():end]
-        entries = list(_ENTRY.finditer(body))
-        if not entries:
-            return None
-        kept = []
-        for offset, entry in enumerate(entries):
-            names = frozenset(entry[1].split(" / "))
-            if names & dimensions:
-                found.update(names & dimensions)
-                stop = entries[offset + 1].start() if offset + 1 < len(entries) else len(body)
-                kept.append(body[entry.start():stop].rstrip())
-        if kept:
-            selected.append(section[0] + body[:entries[0].start()] + "\n".join(kept))
-    if found != dimensions:
-        return None
-    return (
-        guide[:sections[0].start()].rstrip() + "\n\n"
-        + "\n\n".join(selected) + _DATE_RULES + date_rules
-    )
-
-
 @lru_cache(maxsize=64)
 def _batch_description(description: str, query_guidance: str) -> str | None:
     if any(description.count(marker) != 1 for marker in (
@@ -91,12 +56,10 @@ def project_owned_read_tool_descriptions(
     if any(not isinstance(query, dict) or not isinstance(query.get("dimension"), str) for query in scope.queries):
         return tools
     dimensions = frozenset(query.get("dimension") for query in scope.queries)
-    if not dimensions or not dimensions <= _SUPPORTED_DIMENSIONS:
+    if not dimensions or not dimensions <= PROJECTABLE_QUERY_DIMENSIONS:
         return tools
     canonical = {tool["function"]["name"]: tool for tool in HEALTH_TOOLS}
-    query_guidance = _query_description(
-        canonical["health_query"]["function"]["description"], dimensions,
-    )
+    query_guidance = render_health_query_description(dimensions)
     if query_guidance is None:
         return tools
     note = "本轮服务端已绑定查询维度：" + "、".join(sorted(dimensions)) + "。日期和范围以服务端绑定为准，不得自行扩大。\n\n"

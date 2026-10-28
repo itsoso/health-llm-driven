@@ -290,7 +290,7 @@ async def test_fast_tool_round_uses_lite_stack_synthesis_uses_full(db, monkeypat
     # lite 栈就是 [system, user] 两条。
     assert _roles(fast_round["messages"]) == ["system", "user"]
     # system 是 lite (含记录规则人格骨架, 但无世界观)。
-    assert "你是用户的 AI 健康助理" in fast_round["messages"][0]["content"]
+    assert "你是“小气候”" in fast_round["messages"][0]["content"]
     # 用户原话仍在。
     assert ADVICE_MSG in fast_text
 
