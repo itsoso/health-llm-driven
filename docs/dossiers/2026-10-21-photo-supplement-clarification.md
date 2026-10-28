@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | photo-supplement-clarification |
-| 当前阶段 | S5 验证 |
-| 状态 | building |
+| 当前阶段 | S7 上线验证 |
+| 状态 | shipping |
 
 ## G1 准入
 
@@ -71,3 +71,23 @@ The launcher repair re-enters the fixed secure Python 3.12 interpreter with `-I 
 - Added the new runtime suite to the CI release-invariants command and its required-suite contract. The new contract first failed (1 failed, 20 passed) because CI did not run the suite; the workflow now includes it. Final verification and fixed-commit independent safety review follow before any privileged installation.
 - Final launcher/history/bootstrap/CI-contract verification: 356 passed (`/tmp/xiaoqihou-publication-runtime-final.log`), including an actual subprocess `execve` into `-I -S -B` with synthetic injected environment values proving their removal. This does not impersonate the installed root entry or replace server-side ownership checks.
 - System Map selector for this release script is unindexed; full `system-map-check.sh` passed (`/tmp/xiaoqihou-publication-map.log`). Source and neighboring tests were inspected directly. Benchmark changes and other historical dossier/receipt changes remain outside this task's staging scope.
+
+## 2026-10-28 publication verified
+
+The final deployed source is `5ec09bc3ec893a7590878cf45c7add03b7faea22`. Exact full CI [40625433541](https://github.com/itsoso/health-llm-driven/actions/runs/40625433541) passed all 32 jobs. The local release-invariants command passed 5,243 tests with 65 existing skips and 127 subtests; independent fixed-commit launcher safety review returned GO. The previous failed readiness and credential-preparation attempts remain preserved.
+
+### G3 / G4 / G5
+
+- G3 verification: PASS for the recorded test and exact-CI scope. The earlier fresh synthetic live-model gate passed before the release-runtime-only continuation; no new health behavior was added by the launcher commit. Missing main baselines remain unclaimed.
+- G4 safety: PASS. Fixed code and operator preparation received independent GO; the Web path independently passed 92 tests with 2 skips.
+- G5 deployment health: PASS. Formal backend [40628656668](https://github.com/itsoso/health-llm-driven/actions/runs/40628656668) completed successfully. Independent production readback confirms exact source, `SUCCEEDED`, finalized no-backup runtime transaction, no business lease, healthy API/database/Redis/Celery, stable backend/worker/beat identities and zero restarts, and HTTP 401 for anonymous `/api/v1/agent/send`.
+
+The user confirmed another same-version release was theirs and instructed this task to wait. This task's Web artifact `6125ecc18bec4fdfb8c0ece0cec22e7d` is READY and was never published. The external operation `d6364692216b4593a500c0d78b6274a6` completed `FRONTEND_SUCCEEDED` with the same source and frontend tree. Independent readback verified its proof-file hashes, absent lease, active frontend, HTTP 200 login/privacy pages, and public `favicon.png` and `icon.png` bytes matching this candidate. No second Web publication was issued.
+
+The new native icon package was built and signed from a clean exact-source checkout as 1.3.6 (283), bundle `life.executor.health`, production channel/runtime 1.3.6. Existing ad-hoc provisioning covers one registered device. The public IPA, manifest, install page and QR were independently read back and hash-matched. IPA SHA-256: `4ee96dd6b9deafd708b98acf3cfa0d19b94746aa495caa6abb924cd900d3888d`. Install page: [小气候 1.3.6 (283)](https://health.executor.life/mobile-install/ios/xiaoqihou-guardian-5ec09bc3e/install.html).
+
+### G6 acceptance boundary
+
+Deployment and public artifact verification are complete. The approved icon was visually verified in the iOS simulator; phone installation, signed-in interaction and the original health-record request have not been exercised. No real health records were inspected, replayed or written. The clarification asks inventory versus actual intake and missing facts; it does not claim the old photo has been recognized or saved. This remains `shipping` for those unverified acceptance items. No OTA crossed the native icon boundary, no TestFlight/App Store submission was made, and the existing 282 review candidate was not replaced. No backups or rollback copies were created or inspected.
+
+Redacted durable evidence index: `docs/reviews/2026-10-28-xiaoqihou-guardian-release.json`.
