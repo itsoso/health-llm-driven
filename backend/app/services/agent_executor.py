@@ -9351,6 +9351,37 @@ _VOICE_SINGLE_DIET_RESIDUE_RE = re.compile(
     r"今天|昨天|前天|明天|后天|上周|下周|日期|"
     r"心率|血压|血糖|体重|体温|血氧|睡眠|运动|饮食)"
 )
+_CLOSED_MEAL_DIET_RECORD_RE = re.compile(
+    r"(?:请)?(?:记录(?:一下)?|记下|打卡)"
+    r"(?P<meal>早餐|早饭|午餐|午饭|晚餐|晚饭|加餐|零食|夜宵)"
+    r"[：:\s，,]*(?:我)?(?:吃了|吃的是|吃|有)?"
+    r"(?P<food>[^。！？!?；;]{1,1000})[。！？!?]?"
+)
+_CLOSED_MEAL_DIET_AMOUNT = (
+    r"(?:半|[零一二两三四五六七八九十百\d]+(?:\.\d+)?)"
+    r"(?:小|大)?(?:千克|公斤|毫升|kg|ml|个|粒|颗|枚|杯|碗|份|片|根|块|盒|瓶|克|g)"
+)
+_CLOSED_MEAL_DIET_FOOD = (
+    r"(?:白条鱼肉|白米饭|水蜜桃|猕猴桃|哈密瓜|西红柿|胡萝卜|"
+    r"鱼肉|羊肉|牛肉|猪肉|鸡肉|海参|干枣|红枣|蔬菜|米饭|燕麦|"
+    r"红薯|玉米|鸡蛋|面包|酸奶|牛奶|豆浆|豆腐|坚果|"
+    r"桃子|苹果|香蕉|橘子|橙子|草莓|蓝莓|葡萄|西瓜|芒果|"
+    r"黄瓜|番茄|土豆|花生|虾|鱼|梨)"
+)
+_CLOSED_MEAL_DIET_ITEM = (
+    rf"(?:{_CLOSED_MEAL_DIET_FOOD}{_CLOSED_MEAL_DIET_AMOUNT}|"
+    rf"{_CLOSED_MEAL_DIET_AMOUNT}{_CLOSED_MEAL_DIET_FOOD})"
+)
+_CLOSED_MEAL_DIET_FOOD_SEQUENCE_RE = re.compile(
+    rf"{_CLOSED_MEAL_DIET_ITEM}(?:(?:\s+|[、，,和与及+]){_CLOSED_MEAL_DIET_ITEM})*",
+    re.IGNORECASE,
+)
+_CLOSED_MEAL_TYPE = {
+    "早餐": "breakfast", "早饭": "breakfast",
+    "午餐": "lunch", "午饭": "lunch",
+    "晚餐": "dinner", "晚饭": "dinner",
+    "加餐": "snack", "零食": "snack", "夜宵": "snack",
+}
 
 
 def _is_explicit_single_food_voice_record(
@@ -9402,6 +9433,51 @@ def _is_explicit_single_food_voice_record(
     return True
 
 
+def _is_closed_preplanned_diet_record(
+    message: str,
+    *,
+    goal: Optional[GoalSpec],
+    current_date: Optional[str],
+) -> bool:
+    """Bind a deterministic diet fallback to one complete current-turn meal."""
+    if _is_explicit_single_food_voice_record(
+        message,
+        goal=goal,
+        current_date=current_date,
+    ):
+        return True
+    if goal is None or current_date is None:
+        return False
+    candidate = str(message or "").strip().replace("\u3000", " ")
+    match = _CLOSED_MEAL_DIET_RECORD_RE.fullmatch(candidate)
+    if match is None:
+        return False
+    food = match.group("food").strip(" \t\r\n，,")
+    compact_food = re.sub(r"[\s-]+", "", food.casefold())
+    values = dict(goal.target_values)
+    goal_food = re.sub(
+        r"[\s\u3000]+", "", str(values.get("food_items") or ""),
+    ).strip("，,。！？!?")
+    if (
+        not food
+        or _CLOSED_MEAL_DIET_FOOD_SEQUENCE_RE.fullmatch(food) is None
+        or contains_medication_reference(food)
+        or any(
+            re.sub(r"[\s-]+", "", term.casefold()) in compact_food
+            for term in supplement_name_entity_terms()
+        )
+        or goal.kind != "simple_health_record"
+        or goal.domain != "diet"
+        or goal.operation != "create"
+        or goal.target_record_type != "diet"
+        or values.get("meal_type") != _CLOSED_MEAL_TYPE[match.group("meal")]
+        or goal_food != re.sub(r"[\s\u3000]+", "", food)
+        or goal.target_date != current_date
+    ):
+        return False
+    return True
+
+
 def _build_preplanned_simple_diet_tool_call(
     goal: Optional[GoalSpec],
     *,
@@ -9421,7 +9497,7 @@ def _build_preplanned_simple_diet_tool_call(
     ToolGateway, checkpointed, and receipt-verified by the ordinary round loop.
     """
     if (
-        not _is_explicit_single_food_voice_record(
+        not _is_closed_preplanned_diet_record(
             source_message or "",
             goal=goal,
             current_date=current_date,

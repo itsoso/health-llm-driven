@@ -5,8 +5,8 @@
 | slug | daily-planning-and-diet-record-latency |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
-| 当前阶段 | G3 remediation and local verification |
-| 状态 | remediated candidate pending fresh G4, exact-SHA CI and backend release |
+| 当前阶段 | G5 exact-SHA CI |
+| 状态 | independent G4 GO; pending exact-SHA CI and backend release |
 
 ## G1 准入
 
@@ -28,6 +28,8 @@
 - 修复后的快速路径把份量和食物名作为一个闭合片段验证；食物名必须命中现有的受限餐食名词集合，未知实体不进入快路径；同时拒绝追加动作、日期、指标信号，并在任何直接饮食写之前复用药品引用和补剂实体词典。运行时还要求闭合食物片段与 GoalSpec 的 `food_items` 完全一致，且 GoalSpec 日期等于本轮上下文日期；任一条件不满足都会回到常规模型和安全策略路径。补剂说明改为无错误时段的“核对已确认方案的执行要求”。
 - 第二个固定提交 `d74b33cb42ff827bd56042d2bf66c1b59ae88e9d` 的 fresh G4 仍为 NO-GO：首轮入口已闭合，但模型返回无工具后的既有 deterministic fallback 没有复用资格证明，未知实体仍可经营养补全取得有效合成回执并完成。原负测通过抛异常表达“不得调用”，异常被执行器作为普通失败捕获，因而出现假绿。该提交同样未推送、未部署。
 - 第二次修复把 source message、当前日期和完整 GoalSpec 闭合校验下沉到 `_build_preplanned_simple_diet_tool_call`；两个入口及未来调用者缺任一证明都只能得到 `None`。负测改用有效营养和有效写回执，并分别覆盖空、非空的模型 stop/no-tools；测试直接断言 estimator 与 dispatcher 调用次数均为零，不再依赖异常传播。
+- 精确主干 CI `40910140319` 暴露了该次下沉的真实兼容性回归：`backend-test-balanced-14` 中 5 项失败，明确晚餐多食物、明确晚餐干枣及营养补全失败边界都被单食语音资格误拦截；其余已完成作业保持原始结果，整次运行按失败保留且不重跑。修复把“首轮跳过外层模型”的单食语音资格与“模型无工具后”的闭合餐次兜底分开；后者仍完整绑定当前 GoalSpec 的 owner 侧目标、日期、餐次和食物文本，并拒绝追加查询/写入、药品和补剂，不扩大到一般自由文本。
+- 该兼容修复的首次独立 G4 仍为 NO-GO：宽泛 food 捕获加残余词黑名单会把“给妈妈”“和妈妈吃的苹果”“并查血脂”“多少卡”与食物一起吞入 GoalSpec，并可在模型 stop/no-tools 后写入当前认证用户，造成第三方归属污染和复合查询误写。最终修复删除该黑名单授权方式；闭合餐次兜底只接受受限食物名、明确份量和受限分隔符构成的正向餐食项序列，其他自由文本继续留在模型及共享安全策略路径。
 
 ## Verification evidence
 
@@ -39,6 +41,7 @@
 - 离线 LLM Gate：invariants 12/12、health agent core 50/50、trajectory contract 12/12、goldens 9/9 通过，无模型费用。
 - 实时 LLM Gate 的 5 个 orchestrator 用例全部被隐私层以 `recipient_not_disclosed` 阻断，未取得评分，不能计为通过；脱敏 JSON SHA-256 为 `357fc74b78ed69809a5ad614e68286dd1a44d9cf4421356cd78d0f31cf5be1c5`。用户此前已明确授权一次性豁免和部署，豁免须在固定提交后绑定精确 SHA。
 - 修复后离线 LLM Gate 再次通过：invariants 12/12、health agent core 50/50、trajectory contract 12/12、goldens 9/9。`py_compile` 与 `git diff --check` 通过；Dossier、System Map、skill governance 和精确 SHA CI 等证据在下游 Gate 完成后追加。
+- 最终正向餐食序列修复后，原失败文件及全部相关日程、当前输入、执行器、症状、共享写意图回归共 844 passed；聚焦 48 项通过。执行器级负测向 estimator 和 dispatcher 提供可成功的合成实现，直接确认追加饮食查询、追加心率写、给妈妈、妈妈所吃食物、血脂查询、热量查询、否定、引用、布洛芬、钙片及未知实体均为零营养估算、零分发。离线 LLM Gate 仍为 12/12、50/50、12/12、9/9；System Map、Dossier 一致性、skill governance、`py_compile` 和 `git diff --check` 通过。该工作树增量仍待新的固定提交独立 G4 和新的精确 SHA 完整 CI，不能用失败运行的其他绿色作业替代。
 
 ## Safety boundaries
 
@@ -52,6 +55,6 @@
 - G1: PASS
 - G2: PASS，复用现有闭合 advice scope、GoalSpec、营养补全、Gateway 和 postcondition。
 - G3: PASS
-- G4: PENDING fresh independent safety review on a new remediated fixed commit; `2edface1` and `d74b33c` NO-GO were retained above
+- G4: GO on the final positive food-sequence remediation; prior `2edface1`, `d74b33c` and the first compatibility remediation NO-GO findings are retained above
 - G5: PENDING exact-main CI and trusted backend release
 - G6: PENDING production receipt, revision, health and anonymous-auth probes

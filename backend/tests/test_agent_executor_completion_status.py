@@ -16,6 +16,7 @@ from app.services.agent_executor import (
     AgentExecutor,
     _claims_unverified_write_success,
     _completion_status_from_finish_reason,
+    _is_closed_preplanned_diet_record,
     _is_explicit_single_food_voice_record,
     _recoverable_write_operation_key,
     _write_checkpoint_status_after_dispatch,
@@ -3617,6 +3618,38 @@ def test_voice_single_food_fast_path_requires_current_goal_binding(
     )
 
 
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录晚餐 五颗干枣然后查看昨天的饮食",
+        "记录晚餐 五颗干枣然后记录心率80",
+        "记录晚餐 五颗干枣给妈妈",
+        "记录晚餐 五颗干枣和妈妈吃的苹果",
+        "记录晚餐 五颗干枣并查血脂",
+        "记录晚餐 五颗干枣多少卡",
+        "记录晚餐 不要记录五颗干枣",
+        "他说‘记录晚餐 五颗干枣’",
+        "记录晚餐 一粒布洛芬",
+        "记录晚餐 一粒钙片",
+    ),
+)
+def test_closed_meal_fallback_rejects_residual_actions_and_non_food_intake(message):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date="2026-07-17",
+        target_record_type="diet",
+        target_values=(("meal_type", "dinner"), ("food_items", message[5:])),
+    )
+
+    assert not _is_closed_preplanned_diet_record(
+        message,
+        goal=goal,
+        current_date="2026-07-17",
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "message",
@@ -3626,6 +3659,12 @@ def test_voice_single_food_fast_path_requires_current_goal_binding(
         "记录下来，吃了一粒布洛芬",
         "记录下来，吃了一粒钙片",
         "记录下来，吃了一粒合成未知名称",
+        "记录晚餐 五颗干枣给妈妈",
+        "记录晚餐 五颗干枣和妈妈吃的苹果",
+        "记录晚餐 五颗干枣并查血脂",
+        "记录晚餐 五颗干枣多少卡",
+        "记录晚餐 不要记录五颗干枣",
+        "他说‘记录晚餐 五颗干枣’",
     ),
 )
 @pytest.mark.parametrize("model_content", ("", "请确认要处理的单一记录。"))
