@@ -7294,6 +7294,22 @@ def _is_complete_static_html_reply(text: str) -> bool:
     ) is not None
 
 
+def _is_exact_calorie_correction_goal(goal: Optional[GoalSpec]) -> bool:
+    """Identify only the server-compiled visible-meal calorie correction."""
+    return bool(
+        goal is not None
+        and goal.kind == "diet_recalculate_update"
+        and goal.operation == "update"
+        and goal.requires_lookup
+        and goal.requires_verification
+        and len(goal.target_meal_types) == 1
+        and len(goal.target_values) == 1
+        and goal.target_values[0][0] == "calories"
+        and tuple(goal.evidence)
+        == ("visible_card", "explicit_nutrition_correction")
+    )
+
+
 def _normalize_goal_guarded_tool_calls(
     tool_calls: List[Dict[str, Any]],
     goal: Optional[GoalSpec],
@@ -7494,9 +7510,7 @@ def _normalize_goal_guarded_tool_calls(
     }
     exact_calories = dict(goal.target_values).get("calories")
     is_exact_calorie_correction = bool(
-        exact_calories
-        and "explicit_nutrition_correction" in goal.evidence
-        and len(goal.target_meal_types) == 1
+        exact_calories and _is_exact_calorie_correction_goal(goal)
     )
     if is_exact_calorie_correction and not lookup_completed:
         seed_call = tool_calls[0] if tool_calls else {
@@ -20578,6 +20592,7 @@ class AgentExecutor:
                                 not proposed_calls
                                 and goal_lookup_completed
                                 and not write_receipts
+                                and _is_exact_calorie_correction_goal(current_goal)
                             ):
                                 deterministic_update_calls = (
                                     _normalize_goal_guarded_tool_calls(

@@ -8,6 +8,7 @@ from app.services.agent_executor import (
     _build_preplanned_simple_water_tool_call,
     _enrich_simple_diet_goal_tool_calls,
     _estimate_simple_diet_nutrition,
+    _is_exact_calorie_correction_goal,
     _merge_deterministic_supplement_batch,
     _normalize_goal_guarded_tool_calls,
     _should_replace_with_deterministic_supplement_calls,
@@ -1664,3 +1665,18 @@ def test_exact_calorie_correction_builds_update_when_model_omits_tool_call():
         "record_id": 91,
         "data": {"calories": 378},
     }
+
+
+def test_exact_calorie_fallback_never_accepts_batch_delete_goal():
+    delete_goal = GoalSpec(
+        kind="health_manage_mutation",
+        domain="diet",
+        operation="delete",
+        target_record_type="diet",
+        target_values=(("record_id", "977"), ("record_id", "979")),
+        requires_lookup=True,
+        evidence=("explicit_current_turn_mutation",),
+    )
+
+    assert _is_exact_calorie_correction_goal(delete_goal) is False
+    assert _is_exact_calorie_correction_goal(_exact_calorie_correction_goal()) is True
