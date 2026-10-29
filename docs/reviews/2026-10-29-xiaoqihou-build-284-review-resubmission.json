@@ -1,0 +1,94 @@
+{
+  "schema": "xiaoqihou-app-review-repair.v1",
+  "observed_at": "2026-10-29T00:23:47.72Z",
+  "candidate_sha": "a4ffb0b3567ab8e248fe86fc4af72c4322f673d2",
+  "rejection": {
+    "review_submission_id": "b1fa1609-5ef1-40fb-a3f8-c67b20840a48",
+    "guideline": "2.5.4",
+    "old_build": "283",
+    "old_ui_background_modes": [
+      "location"
+    ],
+    "old_always_location_description_present": true
+  },
+  "verification": {
+    "full_ci_run": 40788169859,
+    "full_ci_jobs": "success_32_of_32",
+    "mobile_passed": 4038,
+    "mobile_skipped": 1,
+    "independent_code_review": "GO",
+    "independent_release_review": "GO"
+  },
+  "publication": {
+    "validate_run": 40791768838,
+    "release_run": 40791875818,
+    "workflow_status": "success",
+    "eas_build_id": "bd388c63-4a28-491c-acea-f57bebb54fd1",
+    "eas_submission_id": "3162396c-7cd0-44ac-8eb0-85bd3725039a",
+    "version": "1.3.6",
+    "build": "284"
+  },
+  "backend": {
+    "production_sha": "a4ffb0b3567ab8e248fe86fc4af72c4322f673d2",
+    "receipt_state": "SUCCEEDED",
+    "receipt_sha256": "5f7debbd1cc1da6ba563f785fba743db36ee47713c77db9b49dab02e364c4bd3",
+    "health_status": 200,
+    "api": "running",
+    "database": "connected",
+    "redis": "connected",
+    "celery": "connected",
+    "anonymous_agent_post_status": 401,
+    "business_lease_present": false
+  },
+  "artifact": {
+    "asc_build_id": "eeddf3a7-2db7-4716-9d88-e50b731d1f24",
+    "ipa_sha256": "798d2e415f4a62e63b199c1bae897ff1c92319f47e98923098ce4d72ab528c79",
+    "bundle_id": "life.executor.health",
+    "distribution": "STORE",
+    "processing_state": "VALID",
+    "runtime_version": "1.3.6",
+    "channel": "production",
+    "store_signed": true,
+    "get_task_allow": false,
+    "beta_reports_active": true,
+    "ui_background_modes_location": false,
+    "always_location_description_present": false,
+    "when_in_use_location_description_present": true,
+    "launcher_icon_sha256": "9e06ab72041d5083c291dbfd1e2c0ad065c848ec1f60c3ced351b33c121d33f9",
+    "launcher_icon_matches_approved_build_283": true,
+    "hermes_bundle_sha256": "0e04b99c587e839a25604af6264dd837fdb0946456cc6fd941e9bd0177fb55cf",
+    "provenance_boundary_code_present": true
+  },
+  "testflight": {
+    "internal_build_state": "IN_BETA_TESTING",
+    "external_build_state": "READY_FOR_BETA_SUBMISSION",
+    "team_expo_group_contains_build": true,
+    "internal_group_contains_build": true,
+    "localized_notes_updated": [
+      "en-US",
+      "zh-Hans"
+    ]
+  },
+  "app_review": {
+    "review_submission_id": "b1fa1609-5ef1-40fb-a3f8-c67b20840a48",
+    "review_submission_item_id": "YjFmYTE2MDktNWVmMS00MGZiLWEzZjgtYzY3YjIwODQwYTQ4fDZ8ODkzNDMwMTE2",
+    "review_item_state": "READY_FOR_REVIEW",
+    "review_submission_state": "WAITING_FOR_REVIEW",
+    "version_state": "WAITING_FOR_REVIEW",
+    "selected_build_id": "eeddf3a7-2db7-4716-9d88-e50b731d1f24",
+    "selected_build": "284",
+    "release_type": "MANUAL",
+    "submitted_date": "2026-10-29T00:23:47.72Z",
+    "review_notes_updated": true
+  },
+  "acceptance": {
+    "signed_in_device_installation": "not_verified",
+    "physical_device_behavior": "not_verified",
+    "real_health_data_read_or_written": false,
+    "phone_operated": false,
+    "app_review_message_sent": false,
+    "tester_invitation_sent": false
+  },
+  "backups_created": false,
+  "secret_values_in_receipt": false
+}

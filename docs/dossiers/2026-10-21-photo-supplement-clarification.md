@@ -239,3 +239,43 @@ location for weather, air quality and user-initiated place lookup remains.
 The rejected submission has not been deleted, replied to or resubmitted. A new
 Store build, exact artifact inspection, App Review gate and one fresh submission
 are required. No OTA can repair this Info.plist change.
+
+### Build 284 removes the rejected capability and is waiting for review
+
+Exact repair candidate `a4ffb0b3567ab8e248fe86fc4af72c4322f673d2`
+passed full CI `40788169859` with all 32 jobs successful. The local Mobile
+suite passed 4,038 tests with one existing skip; TypeScript, scoped lint,
+release gates, System Map, Dossier consistency and tracked-secret checks also
+passed. Independent code and release-operation reviews returned GO. Canonical
+validate `40791768838` and the single release run `40791875818` succeeded.
+Production independently reports the exact candidate, durable backend
+`SUCCEEDED` receipt SHA256
+`5f7debbd1cc1da6ba563f785fba743db36ee47713c77db9b49dab02e364c4bd3`,
+healthy API/database/Redis/Celery, anonymous Agent POST 401 and no business
+lease.
+
+The trusted workflow created EAS Store build
+`bd388c63-4a28-491c-acea-f57bebb54fd1` and uploaded it once through submission
+`3162396c-7cd0-44ac-8eb0-85bd3725039a`. App Store Connect build
+`eeddf3a7-2db7-4716-9d88-e50b731d1f24` is 1.3.6 (284), `VALID`, App
+Store-eligible and `IN_BETA_TESTING`; both existing internal groups contain the
+exact build. The downloaded IPA SHA256 is
+`798d2e415f4a62e63b199c1bae897ff1c92319f47e98923098ce4d72ab528c79`.
+Static inspection confirms Store signing, bundle `life.executor.health`,
+production runtime 1.3.6, foreground location text retained, and both
+`UIBackgroundModes=location` and the Always-location description absent. The
+compiled launcher icon is byte-identical to approved build 283, while the
+Hermes bundle differs and contains the new provenance-boundary UI code.
+
+Reviewer notes now remove the stale statement that a production daily journey
+uses background location and explicitly explain the 2.5.4 fix. The existing
+rejected item was marked resolved and became `READY_FOR_REVIEW`; the same
+review submission `b1fa1609-5ef1-40fb-a3f8-c67b20840a48` was resubmitted once
+at `2026-10-29T00:23:47.72Z`. Submission and App Store version both read back
+`WAITING_FOR_REVIEW`, selected build is exactly 284, and release type remains
+`MANUAL`. No phone, real health data, App Review message, tester invitation or
+backup was used. Signed-in installation and physical-device behavior remain
+unverified under the standing simulator acceptance policy.
+
+Durable redacted receipt:
+`docs/reviews/2026-10-29-xiaoqihou-build-284-review-resubmission.json`.
