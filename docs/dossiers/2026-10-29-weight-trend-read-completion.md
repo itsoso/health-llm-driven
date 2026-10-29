@@ -50,6 +50,7 @@
 
 - 固定提交 `9a86360597c604b7522ea65a769db7502f45d593` 的独立审查未发现本次提交引入的可操作缺陷。
 - 审查侧目标与邻近测试 620 项通过；4 项因本地缺少 Pi Node 依赖未执行完成，交由精确提交 CI 复核。
+- canonical 成功身份闭环修复最终提交 `3ec53db25ab99bf378e2421374347dca5f9679ef` 的独立审查未发现可操作回归；本地仓库 venv 对相关发布测试实际运行 331 项全部通过。
 - 裁决：GO。
 
 ## G5 · 发布
@@ -58,6 +59,8 @@
 - 首次正式后端 run `40819779340` 在任何业务部署前因服务器授权仍绑定旧 SHA 而拒绝；生产仍为 `e6f26f6230e429a29113e4322ff5d7be22764787`，不得重放该 run。
 - 一次性外部轮换脚本的独立审查为 NO-GO：部分撤权审计未被 canonical 历史消费、未固定成功工作区回执、未在各 mutation 前重复核验 build lock。生产未执行该脚本。
 - 当前修复把成功身份撤权、旧 loopback 私钥销毁及普通 rotation 合并进同一 canonical 双锁操作；固定成功回执、部分审计和目标 SHA 均 fail-closed。需重新完成该新精确提交的独立 G4、完整 CI、canonical staging 与 validate 后再发布。
+- `3ec53db25ab99bf378e2421374347dca5f9679ef` 的完整 CI `40823280460` 32/32 成功，trusted validate `40824274123` 成功，canonical staging 已绑定同一 SHA。
+- 该候选的首次 canonical rotation 在任何 intent、撤权、私钥销毁或新授权写入前，因服务器 GitHub 只读发布凭据过期而拒绝。生产 HEAD 与旧授权均仍为 `e6f26f6230e429a29113e4322ff5d7be22764787`，业务租约不存在，旧 SHA 的 successful-auth 和 retired 记录均未创建。不重放该失败候选；先以独立未消费 attempt 更新有界 GitHub 只读凭据，再使用新的精确候选重走 G4、CI、validate 和发布。
 
 ## G6 · 线上验收
 
