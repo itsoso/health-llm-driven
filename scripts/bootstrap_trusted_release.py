@@ -760,6 +760,68 @@ def _installation_evidence(sha, config, library, *, history_only=False):
     return inventory
 
 
+def _legacy_successful_auth_revocation(entry, intent):
+    """Read completed historical formats only against canonical retirement evidence."""
+    base = {'old_sha', 'new_sha', 'state', 'old_executor_sha256'}
+    compact = base | {'old_receipt_sha256', 'workspace_sha256'}
+    expanded = base | {'old_authorized_sha256', 'loopback_public_sha256',
+                       'backend_succeeded', 'workspace', 'private_identity'}
+    formats = (compact, expanded | {'backend_receipt_sha256'},
+               expanded | {'ota_receipt_sha256'},
+               expanded | {'credential_sha256', 'no_backup', 'production_sha'})
+    if (set(intent) not in formats or intent['old_sha'] != entry.name
+            or intent['state'] != 'SUCCESSFUL_IDENTITY_REVOCATION_INTENT'
+            or not isinstance(intent['new_sha'], str)
+            or re.fullmatch(r'[0-9a-f]{40}', intent['new_sha']) is None
+            or intent['new_sha'] == entry.name):
+        raise BootstrapError('invalid historical successful identity intent')
+    for key, value in intent.items():
+        if key.endswith('_sha256') and (not isinstance(value, str)
+                or re.fullmatch(r'[0-9a-f]{64}', value) is None):
+            raise BootstrapError('invalid historical identity digest')
+    retired_path = STATE / 'retired' / entry.name
+    _inventory(retired_path, {'intent.json', 'completed.json'})
+    retired = _read_json(retired_path / 'intent.json')
+    if (not isinstance(retired, dict) or retired.get('old_sha') != entry.name
+            or retired.get('new_sha') != intent['new_sha']
+            or _read_json(retired_path / 'completed.json') != {
+                'old_sha': entry.name, 'new_sha': intent['new_sha'], 'state': 'RETIRED'}):
+        raise BootstrapError('historical successful identity retirement differs')
+    workspace = _workspace_evidence(entry.name, historical=True)
+    if workspace.get('state') != 'SUCCEEDED' or retired.get('workspace') != workspace:
+        raise BootstrapError('historical successful workspace differs')
+    executor_digest = hashlib.sha256(
+        (canonical_source(entry.name) / 'scripts/trusted_release_server.py').read_bytes()
+    ).hexdigest()
+    if intent['old_executor_sha256'] != executor_digest:
+        raise BootstrapError('historical successful executor differs')
+    receipt_digest = hashlib.sha256((STATE / entry.name / 'completed.json').read_bytes()).hexdigest()
+    installation_digest = _digest_json(retired.get('installation'))
+    expected_done = dict(intent, state='SUCCESSFUL_IDENTITY_REVOKED')
+    if set(intent) == compact:
+        if (intent['old_receipt_sha256'] != receipt_digest
+                or intent['workspace_sha256'] != _digest_json(workspace)):
+            raise BootstrapError('historical successful receipt differs')
+    else:
+        identity = intent['private_identity']
+        if (intent['backend_succeeded'] is not True or intent['workspace'] != workspace
+                or not isinstance(identity, dict) or set(identity) != {'dev', 'ino'}
+                or any(type(value) is not int or value <= 0 for value in identity.values())):
+            raise BootstrapError('historical successful identity evidence differs')
+        if 'backend_receipt_sha256' in intent and intent['backend_receipt_sha256'] != receipt_digest:
+            raise BootstrapError('historical backend receipt differs')
+        if 'no_backup' in intent and (intent['no_backup'] is not True or intent['production_sha'] != entry.name):
+            raise BootstrapError('historical successful production identity differs')
+        expected_done['installation_sha256'] = installation_digest
+    if _read_json(entry / 'completed.json') != expected_done:
+        raise BootstrapError('historical successful completion differs')
+    # _retired_history also verifies the actual installation, revoked keys and
+    # successor chain. Extra credential/OTA digests are historical audit metadata,
+    # never an authority to refresh credentials, publish OTA or skip those checks.
+    return {'old_sha': entry.name, 'new_sha': intent['new_sha'],
+            'workspace': workspace, 'installation_sha256': installation_digest}
+
+
 def _successful_auth_revocation_history():
     root = STATE / "successful-auth-revocations"
     if not os.path.lexists(root):
@@ -774,6 +836,9 @@ def _successful_auth_revocation_history():
                 raise BootstrapError("invalid successful identity SHA")
             _inventory(entry, {"intent.json", "completed.json"})
             intent = _read_json(entry / "intent.json")
+            if isinstance(intent, dict) and 'state' in intent:
+                history[entry.name] = _legacy_successful_auth_revocation(entry, intent)
+                continue
             expected = {
                 "old_sha", "new_sha", "workspace", "workspace_completed_sha256",
                 "old_executor_sha256", "old_authorized_sha256",

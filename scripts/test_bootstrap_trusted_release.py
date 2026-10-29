@@ -703,6 +703,91 @@ def test_successful_identity_history_revalidates_pinned_workspace_receipt(monkey
         bootstrap._successful_auth_revocation_history()
 
 
+def legacy_successful_history_fixture(monkeypatch, tmp_path, variant):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    record = bootstrap.STATE / 'successful-auth-revocations' / SHA
+    original = json.loads((record / 'intent.json').read_text())
+    completed = json.loads((record / 'completed.json').read_text())
+    intent = {key: original[key] for key in ('old_sha', 'new_sha', 'old_executor_sha256')}
+    intent['state'] = 'SUCCESSFUL_IDENTITY_REVOCATION_INTENT'
+    if variant == 'digest':
+        intent.update(old_receipt_sha256=receipt,
+                      workspace_sha256=bootstrap._digest_json(original['workspace']))
+    else:
+        intent.update({key: original[key] for key in (
+            'old_authorized_sha256', 'loopback_public_sha256', 'backend_succeeded', 'workspace')})
+        intent['private_identity'] = {'dev': 1, 'ino': 2}
+        if variant == 'backend':
+            intent['backend_receipt_sha256'] = receipt
+        elif variant == 'ota':
+            intent['ota_receipt_sha256'] = 'a' * 64
+        else:
+            intent.update(credential_sha256='b' * 64, no_backup=True, production_sha=SHA)
+    done = dict(intent, state='SUCCESSFUL_IDENTITY_REVOKED')
+    if variant != 'digest':
+        done['installation_sha256'] = completed['installation_sha256']
+    (record / 'intent.json').write_text(json.dumps(intent))
+    (record / 'completed.json').write_text(json.dumps(done))
+    return bootstrap, record
+
+
+@pytest.mark.parametrize('variant', ['digest', 'backend', 'ota', 'credential'])
+def test_legacy_successful_history_revalidates_canonical_retirement(monkeypatch, tmp_path, variant):
+    bootstrap, record = legacy_successful_history_fixture(monkeypatch, tmp_path, variant)
+    before = {p.name: p.read_bytes() for p in record.iterdir()}
+    assert bootstrap._retired_history()[SHA]['new_sha'] == NEW_SHA
+    assert {p.name: p.read_bytes() for p in record.iterdir()} == before
+
+
+@pytest.mark.parametrize('variant', ['digest', 'backend', 'ota', 'credential'])
+@pytest.mark.parametrize('fault', [
+    'partial', 'extra', 'missing', 'mixed', 'state', 'done', 'self',
+    'target', 'executor', 'workspace', 'receipt', 'retirement',
+    'failed_workspace', 'installation', 'restored_key',
+])
+def test_legacy_successful_history_rejects_changed_or_partial_evidence(monkeypatch, tmp_path, variant, fault):
+    bootstrap, record = legacy_successful_history_fixture(monkeypatch, tmp_path, variant)
+    intent = json.loads((record / 'intent.json').read_text())
+    done = json.loads((record / 'completed.json').read_text())
+    if fault == 'partial':
+        (record / 'completed.json').unlink()
+    elif fault == 'retirement':
+        (bootstrap.STATE / 'retired' / SHA / 'completed.json').unlink()
+    elif fault == 'failed_workspace':
+        (bootstrap.STATE / SHA / 'completed.json').write_text(json.dumps({'sha': SHA, 'state': 'FAILED'}))
+    elif fault == 'installation':
+        retired_path = bootstrap.STATE / 'retired' / SHA / 'intent.json'
+        retired = json.loads(retired_path.read_text())
+        retired['installation']['library'][bootstrap.INSTALLED.name]['sha256'] = '0' * 64
+        retired_path.write_text(json.dumps(retired))
+    elif fault == 'restored_key':
+        with bootstrap.AUTHORIZED.open('a') as output:
+            output.write(LOOPBACK + '\n')
+    else:
+        if fault == 'extra': intent['unknown'] = True
+        elif fault == 'missing': intent.pop('old_executor_sha256')
+        elif fault == 'mixed': intent['workspace_completed_sha256'] = '0' * 64
+        elif fault == 'state': intent['state'] = 'STARTED'
+        elif fault == 'self': intent['new_sha'] = SHA
+        elif fault == 'target': intent['new_sha'] = 'c' * 40
+        elif fault == 'executor': intent['old_executor_sha256'] = '0' * 64
+        elif fault == 'workspace':
+            intent['workspace_sha256' if variant == 'digest' else 'workspace'] = '0' * 64
+        elif fault == 'receipt':
+            if variant == 'digest': intent['old_receipt_sha256'] = '0' * 64
+            elif variant == 'backend': intent['backend_receipt_sha256'] = '0' * 64
+            else: done['installation_sha256'] = '0' * 64
+        # Mutate matching fields in both records: mere equality is insufficient.
+        for key in intent:
+            if key != 'state': done[key] = intent[key]
+        if fault == 'done': done['new_sha'] = 'c' * 40
+        (record / 'intent.json').write_text(json.dumps(intent))
+        (record / 'completed.json').write_text(json.dumps(done))
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap._retired_history()
+
+
 def test_successful_identity_rechecks_build_lock_before_revocation(monkeypatch, tmp_path):
     bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
     build_lock = bootstrap.STATE / SHA / "build.lock"
