@@ -30,11 +30,11 @@ test('default unchecked, taken disabled, cancel never writes', async () => {
 test('one selected ID is submitted once; busy blocks double tap and close', async () => {
   let resolve: (v: any) => void = () => {};
   submit.mockImplementation(() => new Promise(r => { resolve = r; }));
-  const close = jest.fn(); const ui = render(<Sheet onClose={close} />);
+  const close = jest.fn(); const record = jest.fn(); const ui = render(<Sheet onClose={close} onManualRecord={record} />);
   fireEvent.press(await ui.findByLabelText('测试补剂 A'));
   const button = ui.getByText('确认已服 · 1 项');
-  fireEvent.press(button); fireEvent.press(button); fireEvent.press(ui.getByLabelText('关闭补剂打卡'));
-  expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][1]).toEqual([1]); expect(close).not.toHaveBeenCalled();
+  fireEvent.press(button); fireEvent.press(button); fireEvent.press(ui.getByLabelText('关闭补剂打卡')); fireEvent.press(ui.getByText('填写本次数量和时间'));
+  expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][1]).toEqual([1]); expect(close).not.toHaveBeenCalled(); expect(record).not.toHaveBeenCalled();
   await act(async () => resolve({ status: 'saved', snapshot })); expect(ui.getByText('已记录本次勾选的已服状态')).toBeTruthy();
 });
 test('existing list also offers exact manual quantity and time without writing', async () => {
@@ -94,6 +94,8 @@ test('group operation blocks closing and refreshes individual statuses only afte
   await act(async () => mockGroupProps.onBusyChange(false)); expect(load).toHaveBeenCalledTimes(2);
 });
 test('unknown group write also disables individual submission in this sheet', async () => {
-  const ui = render(<Sheet onClose={jest.fn()} />); await ui.findByLabelText('测试补剂 A');
+  const record = jest.fn(); const ui = render(<Sheet onClose={jest.fn()} onManualRecord={record} />); await ui.findByLabelText('测试补剂 A');
   act(() => mockGroupProps.onUncertain()); expect(ui.getByLabelText('测试补剂 A').props.accessibilityState.disabled).toBe(true);
+  expect(ui.getByRole('button', { name: '填写本次数量和时间' }).props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(ui.getByText('填写本次数量和时间')); expect(record).not.toHaveBeenCalled();
 });

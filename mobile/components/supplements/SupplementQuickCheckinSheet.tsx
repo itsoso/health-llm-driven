@@ -142,6 +142,10 @@ export default function SupplementQuickCheckinSheet({ onClose, onManualRecord }:
     }
   };
   const disabled = busy || loading || loadError || uncertain || sessionChanged || invalidSession.current;
+  const manualRecord = () => {
+    if (disabled || busyRef.current || loadingRef.current) return;
+    onManualRecord?.();
+  };
   const manage = () => { if (!busyRef.current) { onClose(); router.push('/(tabs)/record'); } };
   return (
     <Modal transparent animationType="slide" visible onRequestClose={close}>
@@ -165,7 +169,7 @@ export default function SupplementQuickCheckinSheet({ onClose, onManualRecord }:
                 {snapshot?.rows.length === 0 && <View style={styles.emptyBlock}>
                   <Text style={styles.emptyTitle}>暂无可勾选的补剂</Text>
                   <Text style={styles.subtitle}>无需拍照，填写完整名称、本次数量和服用时间。</Text>
-                  {!!onManualRecord && <Pressable accessibilityRole="button" onPress={onManualRecord} style={styles.addButton}><Text style={styles.addButtonText}>手动记录本次</Text></Pressable>}
+                  {!!onManualRecord && <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={manualRecord} style={[styles.addButton, disabled && styles.actionDisabled]}><Text style={styles.addButtonText}>手动记录本次</Text></Pressable>}
                 </View>}
                 {snapshot?.rows.map(row => {
                   const taken = row.record?.taken === true;
@@ -180,7 +184,7 @@ export default function SupplementQuickCheckinSheet({ onClose, onManualRecord }:
                   </Pressable>;
                 })}
               </>}
-              {!!snapshot?.rows.length && !!onManualRecord && <Pressable accessibilityRole="button" onPress={onManualRecord} style={styles.manage}><Text style={styles.linkText}>填写本次数量和时间</Text></Pressable>}
+              {!!snapshot?.rows.length && !!onManualRecord && <Pressable accessibilityRole="button" accessibilityState={{ disabled }} disabled={disabled} onPress={manualRecord} style={[styles.manage, disabled && styles.actionDisabled]}><Text style={styles.linkText}>填写本次数量和时间</Text></Pressable>}
               <Pressable accessibilityRole="button" disabled={busy} onPress={manage} style={styles.manage}><Text style={styles.linkText}>查看补剂记录</Text></Pressable>
             </>}
           </ScrollView>
@@ -218,6 +222,7 @@ const styles = StyleSheet.create({
   emptyBlock: { paddingVertical: 24, alignItems: 'center' }, emptyTitle: { fontSize: 17, color: colors.ink1, fontWeight: '600' },
   addButton: { minHeight: 44, marginTop: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: colors.green500, alignItems: 'center', justifyContent: 'center' },
   addButtonText: { color: colors.greenOn, fontSize: 14, fontWeight: '700' },
+  actionDisabled: { opacity: 0.45 },
   message: { padding: 12, borderRadius: 12, color: colors.green700, backgroundColor: colors.green50, fontSize: 14, lineHeight: 21 },
   warning: { color: revaSemantic.caution.fg, backgroundColor: revaSemantic.caution.bg },
   secondary: { padding: 14, alignItems: 'center' }, manage: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 }, linkText: { color: colors.green600, fontSize: 14, fontWeight: '600' },
