@@ -9406,6 +9406,8 @@ def _build_preplanned_simple_diet_tool_call(
     goal: Optional[GoalSpec],
     *,
     write_receipts: Sequence[dict[str, Any]],
+    source_message: Optional[str] = None,
+    current_date: Optional[str] = None,
     has_attachment: bool = False,
     runtime_write_blocked: bool = False,
     read_only_turn: bool = False,
@@ -9419,7 +9421,12 @@ def _build_preplanned_simple_diet_tool_call(
     ToolGateway, checkpointed, and receipt-verified by the ordinary round loop.
     """
     if (
-        goal is None
+        not _is_explicit_single_food_voice_record(
+            source_message or "",
+            goal=goal,
+            current_date=current_date,
+        )
+        or goal is None
         or goal.kind != "simple_health_record"
         or goal.domain != "diet"
         or goal.operation != "create"
@@ -20236,6 +20243,11 @@ class AgentExecutor:
                                 diet_call = _build_preplanned_simple_diet_tool_call(
                                     self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                                     write_receipts=write_receipts,
+                                    source_message=message,
+                                    current_date=(
+                                        self._agent_kernel_snapshot.context.current_time.date().isoformat()
+                                        if self._agent_kernel_snapshot else None
+                                    ),
                                     has_attachment=bool(
                                         images or file_base64 or self._current_turn_has_attachment
                                     ),
@@ -20360,6 +20372,11 @@ class AgentExecutor:
                                 diet_call = _build_preplanned_simple_diet_tool_call(
                                     self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                                     write_receipts=write_receipts,
+                                    source_message=message,
+                                    current_date=(
+                                        self._agent_kernel_snapshot.context.current_time.date().isoformat()
+                                        if self._agent_kernel_snapshot else None
+                                    ),
                                     has_attachment=bool(images or file_base64 or self._current_turn_has_attachment),
                                     runtime_write_blocked=bool(self._runtime_write_block_reason),
                                     read_only_turn=self._read_only_turn,

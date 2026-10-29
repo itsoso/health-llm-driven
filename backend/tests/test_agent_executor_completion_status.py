@@ -3628,33 +3628,52 @@ def test_voice_single_food_fast_path_requires_current_goal_binding(
         "记录下来，吃了一粒合成未知名称",
     ),
 )
+@pytest.mark.parametrize("model_content", ("", "请确认要处理的单一记录。"))
 async def test_voice_fast_path_never_dispatches_unsafe_food_span(
-    db, auth_user_and_headers, monkeypatch, message,
+    db, auth_user_and_headers, monkeypatch, message, model_content,
 ):
     user, _headers = auth_user_and_headers
     executor = AgentExecutor(db)
     model_calls = []
+    estimate_calls = []
+    dispatch_calls = []
 
     async def safe_model(messages, tools):
         model_calls.append((messages, tools))
         return {
-            "content": "请确认要处理的单一记录。",
+            "content": model_content,
             "finish_reason": "stop",
         }
 
-    async def forbid_estimate(_food_items):
-        raise AssertionError("unsafe food span must not enter diet enrichment")
+    async def valid_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
 
-    async def forbid_dispatch(_request, _user_token):
-        raise AssertionError("unsafe food span must not dispatch a direct diet write")
+    async def valid_dispatch(request, user_token):
+        dispatch_calls.append((request, user_token))
+        return json.dumps(
+            {
+                "id": 913,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"].get("calories"),
+            },
+            ensure_ascii=False,
+        )
 
     monkeypatch.setattr(executor, "_call_llm", safe_model)
     monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(safe_model))
     monkeypatch.setattr(
         "app.services.agent_executor._estimate_simple_diet_nutrition",
-        forbid_estimate,
+        valid_estimate,
     )
-    monkeypatch.setattr(executor, "_dispatch_tool_request", forbid_dispatch)
+    monkeypatch.setattr(executor, "_dispatch_tool_request", valid_dispatch)
 
     events = [
         event
@@ -3663,11 +3682,13 @@ async def test_voice_fast_path_never_dispatches_unsafe_food_span(
             message=message,
             channel="voice",
             user_auth_token="test-token",
-            client_turn_id=f"turn-unsafe-voice-{abs(hash(message))}",
+            client_turn_id=f"turn-unsafe-voice-{abs(hash((message, model_content)))}",
         )
     ]
 
     assert model_calls
+    assert estimate_calls == []
+    assert dispatch_calls == []
     done = next(event for event in events if event.get("event") == "done")
     assert done["data"]["llm_rounds"] >= 1
     assert done["data"]["write_receipts"] == []
