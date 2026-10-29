@@ -1,5 +1,6 @@
 """Personal dietary advice must read its declared evidence before synthesis."""
 from dataclasses import replace
+import json
 import pytest
 
 from app.services.agent_kernel.capability_policy import decide_tool_capability
@@ -77,7 +78,7 @@ async def test_real_turn_reads_declared_basis_before_answer(db, auth_user_and_he
     first = '已经充分了解你的资料。' if skip_reads else [('health_query_batch', {'queries': queries})]
     answer = '年龄36岁，体重记录70千克；基因资料不足。信息有限，先给有条件的通用搭配建议：蔬菜、全谷物和适量蛋白质。'
     monkeypatch.setattr('tests.test_agent_read_repair_round_budget.ANSWER', answer)
-    trace = batch_trace(db, monkeypatch, [first, answer])
+    trace = batch_trace(db, monkeypatch, [first, answer, answer])
     # Use the same fixture DB at the in-process transport boundary.
     async def in_process(reader, *args, **kwargs):
         return reader(db, *args, **kwargs)
@@ -174,6 +175,46 @@ async def test_synthesis_retry_can_finish_without_more_reads(db, auth_user_and_h
     assert len(trace.calls) == 3
     assert not trace.calls[-1][1]  # no tools in synthesis repair
 
+
+@pytest.mark.parametrize('panel', [False, True])
+async def test_complete_diet_draft_is_resynthesized_from_current_reads_only(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, panel):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume
+    user, _ = auth_user_and_headers
+    contaminated = '年龄、体重和基因已查询。旧上下文标记：你今天已摄入780千卡，建议蔬菜少盐，每天总钠5g。'
+    answer = '年龄、体重和基因资料有限。在无相应禁忌时，可选择蔬菜配全谷物和鱼肉；少用高盐酱料。'
+    trace = batch_trace(db, monkeypatch, ['先查资料。', contaminated, answer])
+    async def in_process(reader, *args, **kwargs):
+        return reader(db, *args, **kwargs)
+    monkeypatch.setattr(trace.executor, '_read_in_process', in_process)
+    done, saved = await consume(db, trace, user, panel=panel, query=REQUEST)
+    assert done['turn_outcome']['status'] == 'complete'
+    assert '旧上下文标记' not in saved.content
+    assert '总钠5g' not in saved.content
+    assert len(trace.calls) == 3 and len(trace.dispatches) == 1
+    assert not trace.calls[-1][1]
+    assert '旧上下文标记' not in json.dumps(trace.calls[-1][0], ensure_ascii=False)
+
+
+@pytest.mark.parametrize('panel', [False, True])
+@pytest.mark.parametrize('bad_reply', [
+    {'finish_reason': 'length', 'content': '年龄、体重和基因不足，建议蔬菜。'},
+    {'finish_reason': 'stop', 'content': None},
+    {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜。', 'tool_calls': [{'id': 'unexpected'}]},
+])
+async def test_failed_evidence_synthesis_never_publishes_complete_untrusted_draft(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, panel, bad_reply):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume
+    user, _ = auth_user_and_headers
+    draft = '年龄、体重和基因已查询。旧上下文标记：建议蔬菜。'
+    trace = batch_trace(db, monkeypatch, ['先查。', draft, bad_reply])
+    async def in_process(reader, *args, **kwargs):
+        return reader(db, *args, **kwargs)
+    monkeypatch.setattr(trace.executor, '_read_in_process', in_process)
+    done, saved = await consume(db, trace, user, panel=panel, query=REQUEST)
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '旧上下文标记' not in saved.content
+    assert '饮食分析和建议尚未完成' in saved.content
+    assert len(trace.dispatches) == 1 and len(trace.calls) == 3
+
 @pytest.mark.parametrize('reply', ['已查询基因年龄体重。', '年龄未知，体重未知，基因未知。尚未提供蔬菜建议。', '年龄体重基因。', '基因、年龄、体重已查询。需要我给你蔬菜搭配建议吗？', '基因、年龄、体重已查询。接下来我会给你关于蔬菜的建议。'])
 def test_answer_goal_rejects_data_only_or_negated_advice(reply):
     from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope, personal_diet_answer_complete
@@ -197,7 +238,8 @@ async def test_diet_genetic_read_keeps_user_and_active_profile_boundaries(db, au
                                       (other.id, foreign.id, 'SyntheticForeign'),
                                       (other.id, active.id, 'SyntheticMismatched')]])
     db.commit()
-    trace = batch_trace(db, monkeypatch, ['先读取。', '基因结果仅为检测记录，不能判断饮食禁忌。一般可选择蔬菜与全谷物搭配。'])
+    answer = '基因结果仅为检测记录，不能判断饮食禁忌。一般可选择蔬菜与全谷物搭配。'
+    trace = batch_trace(db, monkeypatch, ['先读取。', answer, answer])
     async def in_process(reader, *args, **kwargs):
         return reader(db, *args, **kwargs)
     monkeypatch.setattr(trace.executor, '_read_in_process', in_process)

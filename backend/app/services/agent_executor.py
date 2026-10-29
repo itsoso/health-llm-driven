@@ -13393,13 +13393,13 @@ class AgentExecutor:
         )
         scope = resolve_personal_diet_scope(self._current_turn_user_message)
         goals = self._exercise_plan_goal_outcomes() if scope else []
-        if (scope is None or not goals or any(g['status'] != 'verified' for g in goals)
-                or personal_diet_answer_complete(scope, text)):
+        if scope is None or not goals or any(g['status'] != 'verified' for g in goals):
             return text
-        incomplete_notice = '\n\n本轮饮食分析和建议尚未完成；以上仅为查询结果，不能视为个性化饮食方案。'
+        incomplete_notice = '\n\n查询已完成，但本轮饮食分析和建议尚未完成，不能视为个性化饮食方案。'
         messages = [
             {'role': 'system', 'content': personal_diet_prompt(scope)
-             + '上次回复只有数据或遗漏了饮食建议。请解释列出的依据或缺失信息，给出有条件的食物搭配；不要调用工具。'},
+             + '只使用下面的 read_results 作为个人事实来源，不使用先前草稿或会话背景。'
+               '请解释列出的依据或缺失信息，给出有条件的食物搭配；不要调用工具。'},
             {'role': 'user', 'content': json.dumps({
                 'request': self._current_turn_user_message,
                 'current_time': self._ensure_agent_kernel_turn().context.current_time.isoformat(),
@@ -13415,11 +13415,11 @@ class AgentExecutor:
         except Exception as exc:
             logger.warning('Diet synthesis repair failed error_type=%s', type(exc).__name__)
             self._record_model_fallback_reason('personal_diet_synthesis_repair_failed')
-            return text + incomplete_notice
+            return incomplete_notice.strip()
         if (not isinstance(reply, dict) or reply.get('finish_reason') != 'stop'
                 or reply.get('tool_calls') or not isinstance(reply.get('content'), str)):
             self._record_model_fallback_reason('personal_diet_synthesis_repair_incomplete')
-            return text + incomplete_notice
+            return incomplete_notice.strip()
         self._record_model_fallback_reason('personal_diet_synthesis_repair_attempted')
         candidate = reply['content']
         return candidate if personal_diet_answer_complete(scope, candidate) else candidate + incomplete_notice
