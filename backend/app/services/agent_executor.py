@@ -13387,17 +13387,21 @@ class AgentExecutor:
             return None, elapsed_ms
         return candidate, elapsed_ms
 
-    async def _repair_personal_diet_answer(self, text: str) -> str:
+    def _personal_diet_synthesis_messages(self) -> Optional[List[Dict[str, Any]]]:
         from app.services.agent_kernel.personal_diet_scope import (
-            resolve_personal_diet_scope, personal_diet_answer_complete, personal_diet_prompt,
-            PERSONAL_DIET_INCOMPLETE_NOTICE,
+            resolve_personal_diet_scope, personal_diet_prompt,
         )
+        snapshot = self._agent_kernel_snapshot
+        if (snapshot is None or snapshot.envelope.text != self._current_turn_user_message
+                or snapshot.envelope.user_id != self._current_user_id
+                or snapshot.context.user_id != self._current_user_id
+                or self._current_turn_has_attachment):
+            return None
         scope = resolve_personal_diet_scope(self._current_turn_user_message)
         goals = self._exercise_plan_goal_outcomes() if scope else []
         if scope is None or not goals or any(g['status'] != 'verified' for g in goals):
-            return text
-        incomplete_notice = PERSONAL_DIET_INCOMPLETE_NOTICE
-        messages = [
+            return None
+        return [
             {'role': 'system', 'content': personal_diet_prompt(scope)
              + '只使用下面的 read_results 作为个人事实来源，不使用先前草稿或会话背景。'
                '请解释列出的依据或缺失信息，给出有条件的食物搭配；不要调用工具。'},
@@ -13410,6 +13414,20 @@ class AgentExecutor:
                                  and execution.decision.reason == 'personal_diet_explicit_evidence'],
             }, ensure_ascii=False)},
         ]
+
+    async def _repair_personal_diet_answer(self, text: str) -> str:
+        from app.services.agent_kernel.personal_diet_scope import (
+            resolve_personal_diet_scope, personal_diet_answer_complete,
+            PERSONAL_DIET_INCOMPLETE_NOTICE,
+        )
+        messages = self._personal_diet_synthesis_messages()
+        scope = resolve_personal_diet_scope(self._current_turn_user_message)
+        if messages is None:
+            goals = self._exercise_plan_goal_outcomes() if scope else []
+            if goals and all(g['status'] == 'verified' for g in goals):
+                return PERSONAL_DIET_INCOMPLETE_NOTICE
+            return text
+        incomplete_notice = PERSONAL_DIET_INCOMPLETE_NOTICE
         try:
             async with asyncio.timeout(40):
                 reply = await self._call_llm(messages, [])
@@ -13594,6 +13612,9 @@ class AgentExecutor:
             or classify_clinician_turn(message).kind != "none"
         ):
             return None
+        diet_messages = self._personal_diet_synthesis_messages()
+        if diet_messages is not None:
+            return diet_messages
         from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
 
         clinical_scope = resolve_owned_read_scope(snapshot)

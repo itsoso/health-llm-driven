@@ -101,6 +101,29 @@ async def test_real_turn_reads_declared_basis_before_answer(db, auth_user_and_he
     assert len(done['turn_outcome']['goals']) == 4
     assert not done['write_receipts']
 
+@pytest.mark.parametrize('panel', [False, True])
+async def test_diet_enters_evidence_only_synthesis_immediately_after_reads(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, panel):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume
+    user, _ = auth_user_and_headers
+    answer = '年龄、体重和基因资料有限。在无相应禁忌时，可选择蔬菜配全谷物和鱼肉。'
+    trace = batch_trace(db, monkeypatch, [[('health_query_batch', {'queries': [
+        {'dimension': d} for d in ('genetic', 'age', 'weight')]})], answer, answer])
+    async def in_process(reader, *args, **kwargs):
+        return reader(db, *args, **kwargs)
+    monkeypatch.setattr(trace.executor, '_read_in_process', in_process)
+    done, saved = await consume(db, trace, user, panel=panel, query=REQUEST)
+    messages, tools = trace.calls[1]
+    assert tools == []
+    assert len(messages) == 2
+    evidence = json.loads(messages[1]['content'])
+    assert evidence['request'] == REQUEST
+    assert set(evidence) == {'request', 'current_time', 'timezone', 'read_results'}
+    assert evidence['read_results']
+    assert len(trace.dispatches) == 1
+    assert done['turn_outcome']['status'] == 'complete'
+    assert '可选择蔬菜' in saved.content
+
+
 async def test_age_reader_projects_only_owned_age_and_missing_is_explicit(db, auth_user_and_headers):
     from datetime import date
     from app.services.personal_diet_read import read_age
