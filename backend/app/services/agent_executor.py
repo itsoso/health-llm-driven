@@ -13421,12 +13421,16 @@ class AgentExecutor:
     def _maybe_apply_personal_diet_thinking_budget(
         self, kwargs: Dict[str, Any], messages: List[Dict[str, Any]],
     ) -> None:
+        if kwargs.get('tools'):
+            return
+        diet_messages = self._personal_diet_synthesis_messages()
+        if diet_messages is None or messages != diet_messages:
+            return
         from app.services.llm.model_registry import get_model
         entry = get_model(str(self._last_effective_model_id or ''))
-        if (kwargs.get('tools') or entry is None or entry.verified_synthesis_thinking_budget is None
-                or messages != self._personal_diet_synthesis_messages()):
-            return
-        kwargs['thinking_budget'] = entry.verified_synthesis_thinking_budget
+        budget = getattr(entry, 'verified_synthesis_thinking_budget', None)
+        if budget is not None:
+            kwargs['thinking_budget'] = budget
 
     async def _repair_personal_diet_answer(self, text: str) -> str:
         from app.services.agent_kernel.personal_diet_scope import (
