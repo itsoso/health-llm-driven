@@ -97,3 +97,10 @@ it('waits for pending hydration before foreground refresh can expose questions',
  await act(async()=>hydrate(null));await waitFor(()=>v.getByText('A new server question'));expect(fetchExamPractice).toHaveBeenCalledTimes(1);
  fireEvent.press(v.getByLabelText('A. Alpha'));await act(async()=>{listener('background');listener('active');});expect(fetchExamPractice).toHaveBeenCalledTimes(1);expect(v.getByLabelText('A. Alpha').props.accessibilityState.checked).toBe(true);
 });
+it('shows the sanitized original management-paper crop',async()=>{
+ model={...initial(),questions:[{...initial().questions[0],id:'real-2024-199-001',subject:'数学',paper_year:2024,paper_subject:'199',question_number:1,image_path:'/exam-papers/2024/199/q01.webp'}],queue:['real-2024-199-001']};
+ const v=render(<ServerExamPractice owner={7} day={day} initialSubject="数学"/>);
+ await waitFor(()=>v.getByText('A new server question'));
+ const image=v.getByLabelText('2024 年管综第 1 题原卷裁图');
+ expect(image.props.source.uri).toBe('https://health.executor.life/exam-papers/2024/199/q01.webp');
+});

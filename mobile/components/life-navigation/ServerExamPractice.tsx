@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
-import { Alert, AppState, Pressable, ScrollView, Text, View } from 'react-native';
+import { Alert, AppState, Image, Pressable, ScrollView, Text, View } from 'react-native';
 import { uuid } from 'expo-modules-core';
 import { fetchExamPractice, fetchExamAttempts, submitExamAttempt, type ExamPractice, type ExamQuestion, type ExamAttempt, type ExamAttemptWrite, type ExamAttempts, type ExamSubject } from '../../services/examPractice';
 import { useLifeControls } from './Controls';
 import { readPendingExamAttempt, writePendingExamAttempt, clearPendingExamAttempt } from '../../services/examAttemptPending';
+import { BASE_URL } from '../../services/api';
 
 type Mode='next'|'wrong'|'history'|'mistakes'|'all';
 const modes:{key:Mode;label:string}[]=[{key:'next',label:'今日练习'},{key:'wrong',label:'待复练'},{key:'history',label:'答题历史'},{key:'mistakes',label:'错题本'},{key:'all',label:'全部题库'}];
@@ -51,6 +52,7 @@ function Practice({owner,day,disabled=false,initialSubject='英语',initialMode=
  const previousId=trail.at(-1)??pool.filter(item=>item.id!==q?.id&&progress.has(item.id)).at(-1)?.id;
  const nextIndex=available.findIndex(item=>item.id===q?.id);
  const next=available[nextIndex+1]??available[0];
+ const questionImage=q?.image_path?new URL(q.image_path,BASE_URL).toString():null;
  const loadHistory=useCallback(async(id:string,offset=0)=>{
   const epoch=++historyEpoch.current;setHistoryLoading(true);setHistoryError('');
   try{const h=await fetchExamAttempts(owner,id,offset);if(alive.current&&foreground.current&&epoch===historyEpoch.current)setHistory(old=>offset&&old?{items:[...old.items,...h.items],total:h.total}:h);}
@@ -104,7 +106,7 @@ function Practice({owner,day,disabled=false,initialSubject='英语',initialMode=
   <View style={{flexDirection:'row',gap:8}}>{(['英语','数学','逻辑'] as const).map(s=>button(s,()=>switchView(s,mode),navigationBlocked||subject===s))}</View>
   <ScrollView horizontal keyboardShouldPersistTaps="handled"><View style={{flexDirection:'row',gap:6}}>{available.map(item=><View key={item.id}>{button(`${item.topic} · ${progress.has(item.id)?'复习':'新题'}`,()=>pick(item),navigationBlocked||q?.id===item.id)}</View>)}</View></ScrollView>
   {pendingVersionChanged?<View style={card}>{text('题目版本已变化。此前答案与请求标识仍保留，请先重试确认原提交。')}{text(`原题 ${pending.current?.question_id} · 版本 ${pending.current?.question_version} · 作答 ${String.fromCharCode(65+(pending.current?.choice_index??0))}`)}{button('重试保存',()=>{void submit();},historical)}</View>:q?<View style={card}>
-   {heading(q.topic)}{text(`${q.subject} · ${q.source} · ${q.difficulty}`)}{text(q.prompt)}
+   {heading(q.topic)}{text(`${q.paper_year?`${q.paper_year} 年 ${q.paper_subject} 第 ${q.question_number} 题 · `:''}${q.subject} · ${q.source} · ${q.difficulty}`)}{questionImage&&<Image source={{uri:questionImage}} accessibilityLabel={`${q.paper_year} 年管综第 ${q.question_number} 题原卷裁图`} resizeMode="contain" style={{width:'100%',height:280,backgroundColor:'#fff',borderRadius:8}}/>}{text(q.prompt)}
    {q.options.map((option,i)=><Pressable key={`${q.id}:${i}`} accessibilityRole="radio" accessibilityLabel={`${String.fromCharCode(65+i)}. ${option}`} accessibilityState={{checked:choice===i,disabled:disabled||historical||readOnly||!!result||phase!=='idle'}} disabled={disabled||historical||readOnly||!!result||phase!=='idle'} onPress={()=>{setSelected(q.id);setChoice(i);choiceRef.current=i;}} style={{minHeight:44,padding:12,borderWidth:1,borderColor:choice===i?c.brand:c.separator,borderRadius:8}}>{text(`${String.fromCharCode(65+i)}. ${option}`)}</Pressable>)}
    {result?<View style={{gap:8}} accessibilityLiveRegion="polite">{heading(result.correct?'本次答对':'本次答错')}{text('作答已保存')}{text(`已记入 ${result.study_date}`)}{result.study_date!==day&&text(`当前查看 ${day}；本次记录以服务器保存日期为准。`)}{text(`正确答案 ${String.fromCharCode(65+result.correct_index)}`)}{text(result.explanation)}{button('重新作答',()=>{reset();setRetryId(q.id);},historical)}</View>:readOnly?<View style={{gap:8}}>
     {heading(record?.latest_correct?'最近一次答对':'待复练')}{text(`已保存 ${record?.attempt_count} 次记录`)}

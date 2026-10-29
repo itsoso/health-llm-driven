@@ -25116,6 +25116,14 @@ export interface components {
             source: string;
             /** Difficulty */
             difficulty: string;
+            /** Paper Year */
+            paper_year?: number | null;
+            /** Paper Subject */
+            paper_subject?: ("199" | "204") | null;
+            /** Question Number */
+            question_number?: number | null;
+            /** Image Path */
+            image_path?: string | null;
         };
         /** ExcretionDailySummary */
         ExcretionDailySummary: {

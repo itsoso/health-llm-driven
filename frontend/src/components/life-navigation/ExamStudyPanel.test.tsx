@@ -28,8 +28,15 @@ describe('real paper daily plan', () => {
  it('shows dated paper sections and two-hour allocation without replacing warmup history', () => {
   render(<ExamStudyPanel owner={7} data={blankData()} day="2026-10-27" edit={()=>{}} focus={()=>{}}/>);
   expect(screen.getByText('本日已勾选完成 0 / 120 分钟计划')).toBeTruthy();
-  expect(screen.getByRole('link',{name:'打开2024年英语（二）原卷 ↗'}).getAttribute('href')).toContain('bbfa3fc');
-  expect(screen.getByText(/尚不支持真题在线自动判分/)).toBeTruthy();
+  expect(screen.getByRole('button',{name:'在线做2024年英语（二）'})).toBeTruthy();
+  expect(screen.getAllByRole('link',{name:'打开原卷 ↗'}).some(link=>link.getAttribute('href')?.includes('bbfa3fc'))).toBe(true);
+  expect(screen.getByText(/客观题可在线作答、判分/)).toBeTruthy();
+ });
+ it('offers online entry for all six papers and keeps subjective scoring honest',()=>{
+  render(<ExamStudyPanel owner={7} data={blankData()} day="2026-10-27" edit={()=>{}} focus={()=>{}}/>);
+  fireEvent.click(screen.getByRole('button',{name:'真题与路线'}));
+  expect(screen.getAllByRole('button',{name:/在线做 20(24|25|26) ·/})).toHaveLength(6);
+  expect(screen.getByText(/写作和翻译保留原卷与参考材料/)).toBeTruthy();
  });
 });
 

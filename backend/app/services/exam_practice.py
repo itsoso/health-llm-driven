@@ -16,6 +16,7 @@ from app.schemas.exam_practice import Catalog, ExamAttempt, ExamAttemptWrite, Ex
 
 TAIPEI = ZoneInfo('Asia/Taipei')
 CATALOG_PATH = Path(__file__).resolve().parents[1] / 'data' / 'exam_questions.json'
+REAL_CATALOG_PATH = Path(__file__).resolve().parents[1] / 'data' / 'exam_real_questions.json'
 LEGACY_KEYS = ['english','comprehensive','review','e01','e02','e03','e04','e05','e06','e07','e08','m01','m02','m03','m04','m05','m06','l01','l02','l03','l04','l05','l06','writing','paper-english','paper-comprehensive','paper-writing','paper-review']
 LEGACY_NOTICE = '旧工作区仅能证明每日首次与最近复练，精确时间和被覆盖的中间尝试未知；同日旧记录先于服务端流水展示，不代表已核实先后顺序。新提交逐次保留，不随工作区覆盖。'
 
@@ -26,9 +27,21 @@ def utcnow():
 
 def load_catalog():
     try:
-        return Catalog.model_validate(json.loads(CATALOG_PATH.read_text(encoding='utf-8')))
+        original = Catalog.model_validate(json.loads(CATALOG_PATH.read_text(encoding='utf-8')))
+        real = Catalog.model_validate(json.loads(REAL_CATALOG_PATH.read_text(encoding='utf-8')))
+        return Catalog(catalog_version=f'{original.catalog_version}+{real.catalog_version}',
+                       questions=[*original.questions, *real.questions])
     except (OSError, ValueError, ValidationError) as exc:
         raise HTTPException(503, '审校题库暂不可用，请稍后重试') from exc
+
+
+def _eligible_for_daily_queue(question, day):
+    """Keep the staged study plan while allowing deliberate full-paper practice."""
+    if question.paper_year is None or question.paper_year == 2024:
+        return True
+    if question.paper_year == 2025:
+        return day >= date(2026, 11, 9)
+    return day >= date(2026, 11, 30)
 
 
 def legacy_task_id(day, key):
@@ -179,7 +192,7 @@ def practice(db, user_id, day=None):
     weak_topics = {(q.subject, q.topic) for q in catalog.questions if q.id in by_id and not by_id[q.id].latest_correct}
     queue = []
     for subject in ['英语', '数学', '逻辑']:
-        pool = [q for q in catalog.questions if q.subject == subject]
+        pool = [q for q in catalog.questions if q.subject == subject and _eligible_for_daily_queue(q, day)]
         due = [q for q in pool if q.id in by_id and by_id[q.id].next_review_date <= day]
         due.sort(key=lambda q:(by_id[q.id].latest_correct, by_id[q.id].next_review_date, q.id))
         unseen = [q for q in pool if q.id not in by_id]

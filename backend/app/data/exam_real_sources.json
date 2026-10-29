@@ -1,0 +1,14 @@
+{
+  "structured_management_revision": "3bcabc9647772c73868c03b86532aa194087d0e4",
+  "structured_management_repository": "https://github.com/dollarser/kaoyan-199-guanzong-real-exams",
+  "english_transcription_base": "https://english.deyideyi.com/downloads/",
+  "transcription_notes": "题面来自六份 PDF；扫描件经 OCR 后与公开结构化转录交叉核对。参考答案均为高校转载或第三方整理，不宣称考试机构官方答案。2026 管综详解含第三方推演；其公开题图中内嵌的答案行已在发布图片中遮除。",
+  "papers": [
+    {"id": "2024-199", "url": "https://pdc.bit.edu.cn/docs/2025-09/871304dae4a245f8a70f32c540604faa.pdf", "sha256": "47625c262c4826e62636a9007ebde2d44f1f8901d75608126c8539e1cae0f8ee"},
+    {"id": "2024-204", "url": "https://pdc.bit.edu.cn/docs/2025-09/bbfa3fc39c39494c83c89c6bf0611e42.pdf", "sha256": "a740259e236e69c339df52d7c26501119945b1fe95706ce73bc54ec8ec9829ea"},
+    {"id": "2025-199", "url": "https://pdc.bit.edu.cn/docs/2025-09/aa0b64304fd942d38bb5ea3cb7b243ae.pdf", "sha256": "edd32b61380a64e493ff34b9c48b0f516379742824064e1d353ddd112b6d927f"},
+    {"id": "2025-204", "url": "https://pdc.bit.edu.cn/docs/2025-09/cd4d2e557dab49a695bfe3d287069f36.pdf", "sha256": "18cebff5480fdaea923ee5561ec6effe08bf90d38cb13bb4e40646c4efdab91e"},
+    {"id": "2026-199", "url": "https://static.kaoyan.cn/file/question/2026/02/03/4099476555b47f9d67587eb6183c7de5.pdf", "sha256": "f493551c9620d6c129570aabb8804c311bd20ddfda2022166cf6b09b7691662a"},
+    {"id": "2026-204", "url": "https://downloads.lazynote.cn/kaoyan/2026-english-two/%E8%80%83%E7%A0%94%E8%8B%B1%E8%AF%AD%E4%BA%8C2026%E5%B9%B4%E7%9C%9F%E9%A2%98%EF%BC%88%E6%95%B4%E5%8D%B7%EF%BC%89.pdf", "sha256": "120dc2a2c94ec8ce93f2156b039d6cec7ca3f92d3f8e70c4f3aeaad237da1adc"}
+  ]
+}

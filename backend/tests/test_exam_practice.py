@@ -5,6 +5,7 @@ from fastapi import HTTPException
 from pydantic import ValidationError
 from app.services import exam_practice as service
 from app.schemas.exam_practice import ExamAttemptWrite
+from app.schemas.exam_practice import CatalogQuestion
 from app.models.exam_practice import ExamAttemptRecord
 from app.models.life_navigation import LifeNavigationWorkspace
 
@@ -181,12 +182,27 @@ def test_cross_midnight_retry_preserves_receipt_but_new_id_uses_server_today(db,
 def test_real_reviewed_catalog_loads_public_questions_without_answers(db,auth_user_and_headers):
     user,_=auth_user_and_headers
     catalog=service.load_catalog()
-    assert len(catalog.questions)>=80
+    assert len(catalog.questions)==500
     assert all(len(q.options)>q.answer>=0 for q in catalog.questions)
     view=service.practice(db,user.id,date(2026,10,28))
     assert len(view.queue)<=18 and len(set(view.queue))==len(view.queue)
     assert len(view.questions)==len(catalog.questions)
-    assert all(set(q.model_dump())=={'id','version','subject','topic','prompt','options','source','difficulty'} for q in view.questions)
+    assert all('answer' not in q.model_dump() and 'explanation' not in q.model_dump() for q in view.questions)
+    real = next(q for q in view.questions if q.id == 'real-2024-199-001')
+    assert (real.paper_year, real.paper_subject, real.question_number) == (2024, '199', 1)
+    assert real.image_path == '/exam-papers/2024/199/q01.webp'
     for q in catalog.questions:
         if service.legacy_task_id(date(2026,10,27),q.id) is not None:
             assert q.version==1
+
+
+def test_daily_queue_preserves_staged_release_of_real_papers(monkeypatch):
+    questions = [
+        CatalogQuestion(id=f'real-{year}-204-001', version=1, subject='英语', topic='真题',
+            prompt=f'{year} question', options=['A','B'], answer=0, explanation='answer', source='真题',
+            difficulty='历年真题', paper_year=year, paper_subject='204', question_number=1)
+        for year in (2024, 2025, 2026)
+    ]
+    assert [q.paper_year for q in questions if service._eligible_for_daily_queue(q, date(2026,10,28))] == [2024]
+    assert [q.paper_year for q in questions if service._eligible_for_daily_queue(q, date(2026,11,9))] == [2024,2025]
+    assert [q.paper_year for q in questions if service._eligible_for_daily_queue(q, date(2026,11,30))] == [2024,2025,2026]
