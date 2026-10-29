@@ -25,8 +25,8 @@ EAS = SOURCE / "scripts/release-tools/node_modules/eas-cli/bin/run"
 EXPO = SOURCE / "mobile/node_modules/expo/bin/cli"
 PROJECT = "911ea84f-bc7e-4a12-90cf-33966b6f7398"
 RUNTIME = "1.3.6"
-NATIVE_SHA = "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff"
-NATIVE_BUILD = "ea1dda2a-86b3-4e46-adf8-b2b024465154"
+NATIVE_SHA = "e6f26f6230e429a29113e4322ff5d7be22764787"
+NATIVE_BUILD = "cc90f439-f400-4059-9a60-c1b400ff298a"
 BUNDLE = "life.executor.health"
 API_URL = "https://health.executor.life/api"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -147,15 +147,21 @@ def identifier(value):
 # accompany reviewed fingerprints; any future production build requires new review.
 REVIEWED_NATIVE_COHORT = {
     "399eb452-402e-47cd-a0e3-18dff2d1ca51": (
-        "1ba724dcb62ac389a72e41eecf40fea7aaca27e3", "cfb1606da3744f6df32d89364535e307d3f2ed70"),
+        "1ba724dcb62ac389a72e41eecf40fea7aaca27e3", "cfb1606da3744f6df32d89364535e307d3f2ed70", "279"),
     "1faa3a05-2385-44fd-bf84-296cc68e84c2": (
-        "c28050786c1e9aa70cca33d7e3d5c093652aeb26", "2c29cc641498ac6653d89d54f986dc12fe22e9e0"),
+        "c28050786c1e9aa70cca33d7e3d5c093652aeb26", "2c29cc641498ac6653d89d54f986dc12fe22e9e0", "280"),
     "a40a61f3-02db-4a88-a308-56884c53500b": (
-        "8f7d94696424f92ff57243edb906cd6d2dd14a3a", "43972dceac5ad3916bf8c91d1dd5adc6188ef427"),
+        "8f7d94696424f92ff57243edb906cd6d2dd14a3a", "43972dceac5ad3916bf8c91d1dd5adc6188ef427", "281"),
     "267aad01-a185-4343-b0fb-13ee7e8fabc7": (
-        "83876750fcbb404255b7439482688fee82a490d4", "43972dceac5ad3916bf8c91d1dd5adc6188ef427"),
+        "83876750fcbb404255b7439482688fee82a490d4", "43972dceac5ad3916bf8c91d1dd5adc6188ef427", "282"),
     "ea1dda2a-86b3-4e46-adf8-b2b024465154": (
-        "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff", "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4"),
+        "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff", "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4", "283"),
+    "bd388c63-4a28-491c-acea-f57bebb54fd1": (
+        "a4ffb0b3567ab8e248fe86fc4af72c4322f673d2", "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a", "284"),
+    "d1d281f4-8e4b-4cac-8106-0f93fb67778e": (
+        "35bb63e155e6349596ff29455b4aa97066b9b73b", "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a", "285"),
+    "cc90f439-f400-4059-9a60-c1b400ff298a": (
+        "e6f26f6230e429a29113e4322ff5d7be22764787", "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a", "286"),
 }
 
 
@@ -177,6 +183,7 @@ def validate_builds(base, cohort):
             )
             or item.get("app", {}).get("id") != PROJECT
             or item.get("runtime", {}).get("version") != RUNTIME
+                or item.get("appVersion") != RUNTIME
             or item.get("updateChannel", {}).get("name") != "production"
             or (
                 pinned
@@ -206,10 +213,10 @@ def validate_builds(base, cohort):
         or set(REVIEWED_NATIVE_COHORT) != {b.get("id") for b in cohort}
     ):
         raise PublishError("native cohort incomplete or duplicated")
-    if (base.get("gitCommitHash"), expected) != REVIEWED_NATIVE_COHORT[NATIVE_BUILD]:
+    if (base.get("gitCommitHash"), expected, base.get("appBuildVersion")) != REVIEWED_NATIVE_COHORT[NATIVE_BUILD]:
         raise PublishError("production runtime native fingerprints differ")
     for item in cohort:
-        if (item.get("gitCommitHash"), validate(item)) != REVIEWED_NATIVE_COHORT[item["id"]]:
+        if (item.get("gitCommitHash"), validate(item), item.get("appBuildVersion")) != REVIEWED_NATIVE_COHORT[item["id"]]:
             raise PublishError("production runtime native fingerprints differ")
     return expected
 

@@ -529,6 +529,17 @@ TestFlight 内部组可用，含已确认的下开口守护图标与聊天 UI �
 也不替代每次 trusted validate/publish 的实时 cohort、制品、环境、精确 CI 与后端回执复验。
 证据见 [283 守护图标基线](../reviews/2026-10-29-ota-runtime136-guardian-baseline.json)。
 
+2026-10-29 后台定位隐私修复基线迁移：production iOS STORE 286
+（`cc90f439-f400-4059-9a60-c1b400ff298a`，源码
+`e6f26f6230e429a29113e4322ff5d7be22764787`，fingerprint
+`0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a`）已完成、签名、Apple 处理状态
+`VALID` 且在 TestFlight 内部组可用。该宿主移除了未交付的 production 后台定位
+能力和 always-location 描述，同时保留 build 283 的守护图标。runtime 1.3.6 的实时
+闭集精确扩展为 279–286；284–286 的原生指纹一致，但仍逐个绑定 build ID、源码和
+指纹，缺失旧宿主、出现额外 build 或任一字段漂移均阻断。当前 App Review 状态与 OTA
+准入相互独立；基线迁移不提交、回复或更改审核。证据见
+[286 后台定位隐私修复基线](../reviews/2026-10-29-ota-runtime136-build286-baseline.json)。
+
 只导出一次 iOS 制品，SHA256 绑定实际 bundle 和全部 asset 字节，不凭 CLI 成功判断上线。
 
 服务器在 launcher 与原 build 双锁内验证同 SHA 后端 SUCCEEDED、真实生产健康和 CI，
