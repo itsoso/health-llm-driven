@@ -36,3 +36,12 @@ it('opens a selected real-paper year in question order and shows the original cr
  expect(screen.getByRole('button',{name:'2024 真题'})).toHaveAttribute('aria-pressed','true');
  expect(screen.getByRole('img',{name:'2024 年管综第 1 题原卷裁图'})).toHaveAttribute('src','/exam-papers/2024/199/q01.webp');
 });
+it('renders inline LaTeX in real-paper prompts and options instead of exposing source markup',async()=>{
+ const formulaQuestion:ExamPractice['questions'][number]={...practice.questions[0],id:'real-2026-199-001',subject:'数学',prompt:'红球比例分别为 $\\frac{1}{4}$ 和 $\\frac{1}{3}$。',options:['$\\frac{11}{12}$','$\\frac{7}{12}$'],paper_year:2026,paper_subject:'199',question_number:1};
+ vi.mocked(getExamPractice).mockResolvedValue({...practice,questions:[formulaQuestion],queue:[formulaQuestion.id]});
+ const view=render(<ServerExamPractice owner={7} day={day} initialSubject="数学" initialPaperYear={2026}/>);
+ await screen.findByText(/红球比例分别为/);
+ expect(view.container.querySelectorAll('.katex')).toHaveLength(4);
+ expect(screen.queryByText('$\\frac{1}{4}$')).toBeNull();
+ expect(screen.queryByText('$\\frac{11}{12}$')).toBeNull();
+});
