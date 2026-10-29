@@ -41,8 +41,15 @@ class QueryWindow:
                 **({"period": self.period} if self.period is not None else {})}
 
 
-def parse_query_window(args: Mapping[str, Any]) -> QueryWindow:
-    """Validate explicit bounds. No partial dates or rolling-window fallback."""
+def parse_query_window(
+    args: Mapping[str, Any], *, max_days: int = MAX_CALENDAR_DAYS
+) -> QueryWindow:
+    """Validate explicit bounds. No partial dates or rolling-window fallback.
+
+    Weight trends are a low-frequency measurement surface and may use a
+    server-bound window of up to one year. Other calendar reads retain the
+    existing 31-day ceiling.
+    """
     try:
         start = date.fromisoformat(str(args["start_date"]))
         end = date.fromisoformat(str(args["end_date"]))
@@ -50,7 +57,11 @@ def parse_query_window(args: Mapping[str, Any]) -> QueryWindow:
         ZoneInfo(zone)
     except (KeyError, TypeError, ValueError, ZoneInfoNotFoundError) as exc:
         raise ValueError("calendar_query_window_invalid") from exc
-    if not 0 <= (end - start).days < MAX_CALENDAR_DAYS:
+    if type(max_days) is not int or max_days <= 0:
+        raise ValueError("calendar_query_window_invalid")
+    if max_days == MAX_CALENDAR_DAYS and args.get("dimension") == "weight":
+        max_days = 366
+    if not 0 <= (end - start).days < max_days:
         raise ValueError("calendar_query_window_out_of_bounds")
     period = args.get('period')
     if period is not None and (period != 'sleep_night' or start != end):
