@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | visible-diet-calorie-correction |
-| 当前阶段 | S5 发布基础设施修复 |
-| 状态 | implementation ready; exact-main rotation gate pending G4/CI |
+| 当前阶段 | S6 已部署并完成独立生产核验 |
+| 状态 | delivered; device and authenticated real-data acceptance unverified |
 
 ## G1 准入
 
@@ -28,9 +28,9 @@
 - G1: PASS
 - G2: PASS，采用现有 `diet_recalculate_update` 查询、更新和读回合同的窄化分支。
 - G3: PASS，任务拆分为安全引用投影、严格语法、能力绑定、执行器参数规范化和回归验证。
-- G4: `fba72e494864c559b3df1a517b85c8d1b9a1680a` 已获 GO；随后 CI 修复收窄了 executor fallback，最终新 SHA 仍须复审。首次审查发现的 capability 写授权与热量读回两项阻断已关闭。
-- G5: exact-main CI `40878802973` 在 `backend-test-balanced-12` 发现本变更引入的批量删除回归，已停止发布并修复；新 SHA 的完整 CI 待重新验证。
-- G6: pending
+- G4: PASS。实现候选 `0e43b522a9290d411258f2c4d3d6a383495f7203` 与发布基础设施候选 `feb5d55a917e1f3281e0d6777fa421b568a85e58` 均获独立安全审查 GO；首次审查发现的 capability 写授权、热量读回和 exact-main 轮换窗口均已关闭。
+- G5: PASS。最终 exact-main CI `40885514914` 为 32/32 成功，trusted validate `40887059549` 成功，后端发布 `40889059298` 成功。
+- G6: PASS。服务器持久回执为 `SUCCEEDED`，生产 HEAD 精确匹配 `feb5d55…` 且工作树干净，核心服务 active，公网健康接口 200，匿名 agent 请求 401。未执行真实健康数据验收或设备端验收。
 
 ## Implementation evidence
 
@@ -60,3 +60,7 @@
 - 首次 backend run `40882405618` 在任何部署 intent 前因服务器授权仍绑定生产 `53f9c6aee3eb30d8937a4582e206cce47de80157` 而拒绝；后端 job 未启动，生产未变化，禁止重放该 run。
 - GitHub 只读凭据已过期。第一版更新脚本在 mint intent 前因 macOS 系统 Git 多硬链接断言停止，本地和远端均无操作回执、凭据摘要未变、业务租约不存在；没有重放。新的 `v2` 操作经独立 G4 后成功更新只读凭据，随后 canonical staging 精确检出 `0e43b522…`。
 - 授权轮换审查发现 canonical `rotate` 的默认 full gate 未传 `--observed-main`，可能在外层检查后接受纯文档后代。修复将 install/rotate 的默认门禁都绑定精确 current main；新增用例先产生 2 个预期失败，修复后 bootstrap 套件 259 项通过。该发布基础设施修复需形成新的精确候选，重新完成独立 G4、完整 CI、validate、staging 和轮换后再部署。
+- 最终候选 `feb5d55a917e1f3281e0d6777fa421b568a85e58` 的完整 CI `40885514914` 32/32 成功；同 SHA 的 trusted validate `40887059549` 成功。canonical staging 后，固定一次性授权轮换经独立 G4 GO，完整门禁绑定 `--observed-main`，终态为 `INSTALLED`，旧生产授权正常退休。
+- 同 SHA 后端发布 `40889059298` 成功。服务器持久回执 `/var/lib/reva-release/feb5d55…/completed.json` 为 `{"sha":"feb5d55…","state":"SUCCEEDED"}`，回执 SHA-256 为 `b4fb43a9e47a5acd074a05582a05af3bc72ff6b6b435ba8f7a38aa09ca3ddf45`。
+- 独立生产核验：`/opt/health-app` HEAD 为 `feb5d55…` 且工作树干净；`health-backend.service`、`health-backend.socket`、`celery-worker.service`、`celery-beat.service`、`health-frontend.service` 均 active/running；业务发布租约已释放且无发布进程；公网 `/api/v1/health` 返回 200 与 healthy，匿名 `/api/v1/agent/send` 返回 401。
+- 本次仅为后端与发布基础设施变更，不满足也不需要 OTA 边界，因此未触发 OTA。设备安装、截图场景的真实账号回归和真实健康数据写入均未执行，不能据此宣称已完成端侧验收。
