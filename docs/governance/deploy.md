@@ -618,10 +618,16 @@ lease 认定为失败原因，因此收口只记录“领取前失败”，不�
 `123404134816`、artifact `12890544500`（2566 bytes）及固定 publisher 源码摘要，
 并要求同期操作 `dbbb6a5caeb94991ab079a39b7a1275d` 已以
 `FRONTEND_SUCCEEDED` 完整收口、business lease 已释放、53f 后端终态和线上健康均
-保持一致。它只在 `ota-preintent-failure-closures/53f…` 写一次审计终态，不创建 OTA
+保持一致。执行收口前必须先把精确绿色 closing SHA 的授权策略和 canonical
+`trusted_release_server.py` 安装为当前 consumer；operator 在 launcher/build 双锁内
+对 closing SHA、策略、执行器源码与已安装字节做前后两次一致性验证。禁止用旧 53f
+consumer 写 closure 后再轮换，因为释放双锁到安装新 consumer 之间会留下重发窗口。
+它只在 `ota-preintent-failure-closures/53f…` 写一次审计终态，不创建 OTA
 intent、不释放或改名任何 lease、不调用 Expo；历史消费者永久拒绝 53f 再次 claim。
 任何已出现的 `ota/53f…`、vendor receipt、活动 lease、前端收据漂移或非固定官方
-制品均阻断。后续候选仍须独立通过完整 CI、后端部署及 trusted validate/publish。
+制品均阻断。固定 artifact entry 摘要按 ZIP 内原始字节核验，JSON 解析只承担结构与
+语义检查，禁止用 canonical JSON 摘要替代原始证据。后续候选仍须独立通过完整 CI、
+后端部署及 trusted validate/publish。
 
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，

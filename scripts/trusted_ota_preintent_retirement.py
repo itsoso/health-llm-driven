@@ -18,6 +18,7 @@ import ssl
 import stat
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -117,12 +118,14 @@ def validate_artifact(raw):
         if (len(infos) != 3 or {item.filename for item in infos} != expected_names
                 or any(item.is_dir() or item.flag_bits & 1 or item.file_size > 100_000 for item in infos)):
             raise ClosureError('unknown publication phase or archive inventory')
-        entries = {item.filename: parsed(archive.read(item)) for item in infos}
+        raw_entries = {item.filename: archive.read(item) for item in infos}
+        if ({name: hashlib.sha256(value).hexdigest() for name, value in raw_entries.items()}
+                != ENTRY_DIGESTS):
+            raise ClosureError('reviewed artifact entries differ')
+        entries = {name: parsed(value) for name, value in raw_entries.items()}
     expected = {'sha': FAILED_SHA, 'state': 'BLOCKED', 'phase': 'claim-ota', 'reason': 'command_failed'}
     if entries['ota-diagnostic.json'] != expected:
         raise ClosureError('not a proved pre-intent claim failure')
-    if {name: digest(value) for name, value in entries.items()} != ENTRY_DIGESTS:
-        raise ClosureError('reviewed artifact entries differ')
     if any(name in entries for name in ('ota-vendor-receipt.json', 'ota-receipt.json')):
         raise ClosureError('vendor evidence forbids pre-intent failure closure')
     return entries
@@ -294,6 +297,39 @@ def production_health(server):
             'loopback': 'healthy', 'public': 'healthy'}
 
 
+def installed_consumer_evidence(bootstrap, server, source, closing_sha):
+    """Prove the closure-aware executor is installed before durable closure."""
+    canonical = source / 'scripts/trusted_release_server.py'
+    server.secure_path(canonical)
+    expected = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+        '-c', 'core.fsmonitor=false', '-C', str(source), 'show',
+        closing_sha + ':scripts/trusted_release_server.py'], env=ENV,
+        capture_output=True, check=True, timeout=30).stdout
+    if canonical.read_bytes() != expected:
+        raise ClosureError('canonical closing consumer changed')
+    executor_sha256 = hashlib.sha256(expected).hexdigest()
+    policy_path = bootstrap.CONFIG / 'authorized-release.json'
+    bootstrap.secure(policy_path, private=True)
+    policy = bootstrap._read_json(policy_path)
+    try:
+        server.validate_policy(policy, now=int(time.time()))
+    except Exception:  # noqa: BLE001 - expose only a fixed closure diagnostic
+        raise ClosureError('closure-aware release authorization required') from None
+    if (policy['sha'] != closing_sha
+            or policy['executor_sha256'] != executor_sha256):
+        raise ClosureError('closure-aware release authorization required')
+    bootstrap.secure(bootstrap.INSTALLED, private=True)
+    if hashlib.sha256(bootstrap.INSTALLED.read_bytes()).hexdigest() != executor_sha256:
+        raise ClosureError('closure-aware installed executor required')
+    return {
+        'sha': closing_sha,
+        'executor_sha256': executor_sha256,
+        'authorization': policy,
+        'authorization_file': file_identity(server, policy_path),
+        'installed_executor': file_identity(server, bootstrap.INSTALLED),
+    }
+
+
 class Adapter:
     def __init__(self, bootstrap, server, source, closing_sha, token, check_locks):
         self.b, self.server, self.source = bootstrap, server, source
@@ -313,6 +349,7 @@ class Adapter:
             raise ClosureError('closing source changed')
         operator = self.source / 'scripts/trusted_ota_preintent_retirement.py'
         server.secure_path(operator)
+        consumer = installed_consumer_evidence(b, server, self.source, self.closing_sha)
         failed_source = b.canonical_source(FAILED_SHA)
         for name, expected in SOURCE_HASHES.items():
             server.secure_path(failed_source / name)
@@ -323,17 +360,17 @@ class Adapter:
                 or os.path.lexists(server.BUSINESS_LEASE)):
             raise ClosureError('claim or business lease now exists')
         frontend = frontend_publication_evidence(server)
-        official, entries = official_evidence(self.token)
-        if digest(entries['ota-claim.json']) != ENTRY_DIGESTS['ota-claim.json']:
-            raise ClosureError('official claim proof differs')
+        official, _entries = official_evidence(self.token)
         production = production_health(server)
         self.check_locks()
         if (os.path.lexists(server.STATE / 'ota' / FAILED_SHA)
                 or os.path.lexists(server.BUSINESS_LEASE)
-                or frontend_publication_evidence(server) != frontend):
+                or frontend_publication_evidence(server) != frontend
+                or installed_consumer_evidence(b, server, self.source, self.closing_sha) != consumer):
             raise ClosureError('pre-intent failure proof changed')
         return {'failed_sha': FAILED_SHA, 'closing_sha': self.closing_sha,
                 'closure_operator_sha256': hashlib.sha256(operator.read_bytes()).hexdigest(),
+                'installed_consumer': consumer,
                 'source_hashes': SOURCE_HASHES, 'official': official,
                 'frontend_publication': frontend, 'production': production,
                 'locks': {name: file_identity(server, path) for name, path in {
@@ -386,7 +423,7 @@ def validate_closed_history(server, record):
         raise ClosureError('unfinished pre-intent failure closure remains blocked')
     intent = server._json(server._read_private(record / 'intent.json'))
     completed = server._json(server._read_private(record / 'completed.json'))
-    keys = {'failed_sha', 'closing_sha', 'closure_operator_sha256', 'source_hashes',
+    keys = {'failed_sha', 'closing_sha', 'closure_operator_sha256', 'installed_consumer', 'source_hashes',
             'official', 'frontend_publication', 'production', 'locks', 'ota_state_absent',
             'business_lease_absent', 'state', 'evidence_sha256'}
     if (not isinstance(intent, dict) or set(intent) != keys or intent['failed_sha'] != FAILED_SHA
@@ -404,6 +441,39 @@ def validate_closed_history(server, record):
             or completed != {'state': TERMINAL, 'failed_sha': FAILED_SHA,
                               'intent_sha256': digest(intent)}):
         raise ClosureError('pre-intent failure closure binding differs')
+    consumer = intent['installed_consumer']
+    source = server.STATE / 'bootstrap' / intent['closing_sha'] / 'source'
+    closing_executor = source / 'scripts/trusted_release_server.py'
+    server.secure_path(closing_executor)
+    expected_executor = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null',
+        '-C', str(source), 'show', intent['closing_sha'] + ':scripts/trusted_release_server.py'],
+        env=ENV, capture_output=True, check=True, timeout=30).stdout
+    if closing_executor.read_bytes() != expected_executor:
+        raise ClosureError('historical closing consumer changed')
+    executor_sha256 = hashlib.sha256(expected_executor).hexdigest()
+    authorization = consumer.get('authorization') if isinstance(consumer, dict) else None
+    try:
+        server.validate_policy(authorization, now=0)
+    except Exception:  # noqa: BLE001 - historical validator emits one fixed diagnostic
+        raise ClosureError('closure-aware installed consumer binding differs') from None
+
+    def valid_identity(value, expected_sha256=None):
+        return (isinstance(value, dict) and set(value) == {'device', 'inode', 'sha256'}
+                and type(value['device']) is int and value['device'] >= 0
+                and type(value['inode']) is int and value['inode'] > 0
+                and isinstance(value['sha256'], str)
+                and re.fullmatch(r'[a-f0-9]{64}', value['sha256']) is not None
+                and (expected_sha256 is None or value['sha256'] == expected_sha256))
+
+    if (not isinstance(consumer, dict) or set(consumer) != {
+            'sha', 'executor_sha256', 'authorization', 'authorization_file', 'installed_executor'}
+            or consumer['sha'] != intent['closing_sha']
+            or consumer['executor_sha256'] != executor_sha256
+            or authorization['sha'] != intent['closing_sha']
+            or authorization['executor_sha256'] != executor_sha256
+            or not valid_identity(consumer['authorization_file'])
+            or not valid_identity(consumer['installed_executor'], executor_sha256)):
+        raise ClosureError('closure-aware installed consumer binding differs')
     official = intent['official']
     expected_run = {'id': RUN_ID, 'run_attempt': RUN_ATTEMPT, 'workflow_id': WORKFLOW_ID,
         'path': '.github/workflows/trusted-ota.yml', 'head_sha': FAILED_SHA,
@@ -423,7 +493,6 @@ def validate_closed_history(server, record):
         {**official['artifact'], 'workflow_run': official['workflow_run']})
     if frontend_publication_evidence(server) != intent['frontend_publication']:
         raise ClosureError('historical frontend publication changed')
-    source = server.STATE / 'bootstrap' / intent['closing_sha'] / 'source'
     operator = source / 'scripts/trusted_ota_preintent_retirement.py'
     server.secure_path(operator)
     expected = subprocess.run(['/usr/bin/git', '-c', 'core.hooksPath=/dev/null', '-C', str(source),

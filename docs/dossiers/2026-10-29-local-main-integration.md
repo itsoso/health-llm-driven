@@ -152,7 +152,14 @@ without conflicts onto `ee7cbfda15378b3e1eac11d0581cf5cd10898d74` after canonica
   lease, backend terminal, and health readback. It writes one durable closure and
   makes a future 53f claim fail closed. It never creates an OTA intent, calls the
   vendor, or grants retry authority.
+- Independent review found that ZIP entry digests were incorrectly compared after
+  JSON canonicalization and that closing under the old installed executor would
+  leave a retry window. The repair validates the fixed artifact's raw entry bytes
+  and requires the exact closing SHA policy plus closure-aware installed executor
+  before and throughout the locked closure transaction. Release order is therefore
+  exact CI, canonical staging and authorization rotation, durable 53f closure,
+  successor backend release, then successor OTA validate/publish.
 - Focused recovery/history verification currently passes 438 tests with two
-  existing skips. Independent G4 and exact successor CI are still required before
-  the operator may be staged or executed. The failed 53f publish will not be
-  replayed.
+  existing skips from the pre-review candidate. Fresh verification, independent G4,
+  and exact successor CI are still required before the operator may be staged or
+  executed. The failed 53f publish will not be replayed.
