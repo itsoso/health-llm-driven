@@ -15,8 +15,8 @@ from pathlib import Path
 PROJECT = '911ea84f-bc7e-4a12-90cf-33966b6f7398'
 RUNTIME = '1.3.6'
 CHANNEL = 'production'
-NATIVE_SHA = 'ae7a5972921ee9d51eec2c90c7893e6941d2d7ff'
-NATIVE_BUILD = 'ea1dda2a-86b3-4e46-adf8-b2b024465154'
+NATIVE_SHA = 'e6f26f6230e429a29113e4322ff5d7be22764787'
+NATIVE_BUILD = 'cc90f439-f400-4059-9a60-c1b400ff298a'
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
 
@@ -42,7 +42,7 @@ def read_json(stream, bound=2000000):
 
 
 # These paths are native, dependency, or baseline branding inputs. Historical
-# byte exceptions remain in review evidence only; after Store build 283 any
+# byte exceptions remain in review evidence only; after Store build 286 any
 # committed diff to one of these paths requires another native baseline.
 NATIVE_BASELINE_PATHS = frozenset({
     "mobile/package-lock.json",
