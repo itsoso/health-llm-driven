@@ -78,3 +78,57 @@ async def test_call_llm_no_fallback_when_primary_ok(db, monkeypatch):
 
     assert resp["content"] == "fallback ok"
     assert primary.calls and not fb.calls, "主 provider 正常时不应触发回退"
+
+
+async def test_diet_budget_is_not_forwarded_to_unverified_chat_fallback(db, monkeypatch):
+    from app.services.agent_executor import AgentExecutor, settings
+    monkeypatch.setattr(settings, 'agent_base_url', None)
+    monkeypatch.setattr(settings, 'agent_api_key', None)
+    ex = AgentExecutor(db)
+    ex._current_user_id = 1
+    ex._last_effective_model_id = 'qwen3.8-max'
+    messages = [{'role': 'user', 'content': 'synthetic verified evidence'}]
+    monkeypatch.setattr(ex, '_personal_diet_synthesis_messages', lambda: messages)
+    primary_calls = []
+    class Primary:
+        model = 'qwen3.8-max'
+        async def chat(self, **kwargs):
+            primary_calls.append(dict(kwargs))
+            raise RuntimeError('synthetic provider failure')
+    fallback = _Ok()
+    monkeypatch.setattr(ex, '_resolve_chat_provider', lambda tools: (Primary(), []))
+    monkeypatch.setattr(ex, '_stable_fallback_provider', lambda *a, **k: fallback)
+    result = await ex._call_llm(messages, [])
+    assert result['finish_reason'] == 'stop'
+    assert primary_calls[0]['thinking_budget'] == 1024
+    assert 'thinking_budget' not in fallback.calls[0]
+
+
+async def test_diet_budget_is_not_forwarded_to_unverified_stream_fallback(db, monkeypatch):
+    from app.services.agent_executor import AgentExecutor, settings
+    monkeypatch.setattr(settings, 'agent_base_url', None)
+    monkeypatch.setattr(settings, 'agent_api_key', None)
+    ex = AgentExecutor(db)
+    ex._current_user_id = 1
+    ex._last_effective_model_id = 'qwen3.8-max'
+    messages = [{'role': 'user', 'content': 'synthetic verified evidence'}]
+    monkeypatch.setattr(ex, '_personal_diet_synthesis_messages', lambda: messages)
+    primary_calls, fallback_calls = [], []
+    class Primary:
+        model = 'qwen3.8-max'
+        async def chat_stream(self, **kwargs):
+            primary_calls.append(dict(kwargs))
+            raise RuntimeError('synthetic provider failure')
+            yield
+    class Fallback:
+        model = 'unverified-model'
+        async def chat_stream(self, **kwargs):
+            fallback_calls.append(dict(kwargs))
+            yield {'type': 'content', 'text': 'fallback ok'}
+            yield {'type': 'finish', 'finish_reason': 'stop'}
+    monkeypatch.setattr(ex, '_resolve_chat_provider', lambda tools: (Primary(), []))
+    monkeypatch.setattr(ex, '_stable_fallback_provider', lambda *a, **k: Fallback())
+    events = [e async for e in ex._call_llm_stream(messages, [])]
+    assert events[-1] == {'type': 'finish', 'finish_reason': 'stop'}
+    assert primary_calls[0]['thinking_budget'] == 1024
+    assert 'thinking_budget' not in fallback_calls[0]

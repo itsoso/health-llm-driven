@@ -24493,6 +24493,7 @@ class AgentExecutor:
                 bool(pass_tools),
                 failed_provider=provider,
             )
+            chat_kwargs.pop("thinking_budget", None)
             return await fb.chat(**chat_kwargs)
 
     @staticmethod
@@ -25101,6 +25102,7 @@ class AgentExecutor:
         # 且回退目标未必过探针验证 —— 回退前剥除, 绝不让 force 把整轮打死。
         stream_kwargs.pop("tool_choice", None)
         stream_kwargs.pop("enable_thinking", None)
+        stream_kwargs.pop("thinking_budget", None)
         fb = self._stable_fallback_provider(
             bool(pass_tools),
             failed_provider=failed_provider,
