@@ -10,8 +10,14 @@ import { loadSupplementSnapshot, submitSupplementSelection, type SupplementSnaps
 import SupplementGroupsPanel from './SupplementGroupsPanel';
 import { revaColors as colors, revaSemantic } from '../../constants/revaTheme';
 
+interface Props {
+  onClose: () => void;
+  /** Returns to the composer with a user-editable draft. Never submits a health write. */
+  onManualRecord?: () => void;
+}
+
 /** Mounted only while open. No defaults, model calls, or implicit dosage writes. */
-export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () => void }) {
+export default function SupplementQuickCheckinSheet({ onClose, onManualRecord }: Props) {
   const { user, token } = useAuth();
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -146,17 +152,21 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
           <View style={styles.heading}>
             <View style={styles.headingText}>
               <Text style={styles.title}>补剂打卡</Text>
-              <Text style={styles.subtitle}>{snapshot ? `${snapshot.date} · ${snapshot.timezone}` : '勾选本次已经服用的补剂'}</Text>
+              <Text style={styles.subtitle}>{snapshot ? `${snapshot.date} · ${snapshot.timezone}` : '无需拍照，勾选本次已经服用的补剂'}</Text>
             </View>
             <Pressable accessibilityRole="button" accessibilityLabel="关闭补剂打卡" accessibilityState={{ disabled: busy }} disabled={busy} onPress={close} style={styles.close}><Text style={styles.closeText}>×</Text></Pressable>
           </View>
-          <View style={styles.notice}><Text style={styles.noticeText}>只记录已服状态，不记录本次剂量。常规用量仅供核对，不是服用建议。</Text></View>
+          <View style={styles.notice}><Text style={styles.noticeText}>无需拍照。这里只记录已服状态，不记录本次剂量。常规用量仅供核对，不是服用建议。</Text></View>
           <ScrollView style={styles.list} contentContainerStyle={styles.listContent} keyboardShouldPersistTaps="handled" keyboardDismissMode="on-drag">
             {sessionChanged || invalidSession.current ? <Text style={styles.empty}>登录状态已变化，请关闭后重新打开</Text> : loading ? <View style={styles.loading}><ActivityIndicator color={colors.green500} /><Text style={styles.subtitle}>正在加载我的补剂…</Text></View> : <>
               {snapshot && !loadError && <SupplementGroupsPanel snapshot={snapshot} disabled={disabled} onBusyChange={handleGroupBusy} onRecorded={handleGroupRecorded} onUncertain={() => setUncertain(true)} />}
               {!!message && <Text accessibilityRole="alert" style={[styles.message, uncertain || loadError ? styles.warning : null]}>{message}</Text>}
               {loadError ? <Pressable accessibilityRole="button" onPress={() => void refresh()} style={styles.secondary}><Text style={styles.linkText}>重新加载</Text></Pressable> : <>
-                {snapshot?.rows.length === 0 && <View style={styles.emptyBlock}><Text style={styles.emptyTitle}>暂无可勾选的补剂</Text><Text style={styles.subtitle}>请先在对话中添加补剂清单，再回来打卡。</Text></View>}
+                {snapshot?.rows.length === 0 && <View style={styles.emptyBlock}>
+                  <Text style={styles.emptyTitle}>暂无可勾选的补剂</Text>
+                  <Text style={styles.subtitle}>无需拍照，填写完整名称、本次数量和服用时间。</Text>
+                  {!!onManualRecord && <Pressable accessibilityRole="button" onPress={onManualRecord} style={styles.addButton}><Text style={styles.addButtonText}>手动记录本次</Text></Pressable>}
+                </View>}
                 {snapshot?.rows.map(row => {
                   const taken = row.record?.taken === true;
                   const checked = selected.includes(row.supplement.id);
@@ -170,6 +180,7 @@ export default function SupplementQuickCheckinSheet({ onClose }: { onClose: () =
                   </Pressable>;
                 })}
               </>}
+              {!!snapshot?.rows.length && !!onManualRecord && <Pressable accessibilityRole="button" onPress={onManualRecord} style={styles.manage}><Text style={styles.linkText}>填写本次数量和时间</Text></Pressable>}
               <Pressable accessibilityRole="button" disabled={busy} onPress={manage} style={styles.manage}><Text style={styles.linkText}>查看补剂记录</Text></Pressable>
             </>}
           </ScrollView>
@@ -205,6 +216,8 @@ const styles = StyleSheet.create({
   checkboxSelected: { backgroundColor: colors.green500, borderColor: colors.green500 }, check: { fontSize: 17, fontWeight: '700', color: colors.greenOn },
   taken: { fontSize: 12, color: colors.green600 }, empty: { padding: 20, color: colors.ink2, lineHeight: 22 },
   emptyBlock: { paddingVertical: 24, alignItems: 'center' }, emptyTitle: { fontSize: 17, color: colors.ink1, fontWeight: '600' },
+  addButton: { minHeight: 44, marginTop: 16, paddingHorizontal: 20, borderRadius: 14, backgroundColor: colors.green500, alignItems: 'center', justifyContent: 'center' },
+  addButtonText: { color: colors.greenOn, fontSize: 14, fontWeight: '700' },
   message: { padding: 12, borderRadius: 12, color: colors.green700, backgroundColor: colors.green50, fontSize: 14, lineHeight: 21 },
   warning: { color: revaSemantic.caution.fg, backgroundColor: revaSemantic.caution.bg },
   secondary: { padding: 14, alignItems: 'center' }, manage: { minHeight: 44, alignItems: 'center', justifyContent: 'center', marginTop: 4 }, linkText: { color: colors.green600, fontSize: 14, fontWeight: '600' },

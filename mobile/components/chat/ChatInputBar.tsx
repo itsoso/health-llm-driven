@@ -1235,7 +1235,7 @@ export default function ChatInputBar({
               <AttachmentGridItem
                 icon="checkbox-outline"
                 label="补剂打卡"
-                hint="勾选已有补剂，确认本次已服用"
+                hint="勾选已有补剂，确认本次已服；无需拍照"
                 onPress={() => {
                   closeAttachmentMenu();
                   Keyboard.dismiss();
@@ -1403,7 +1403,15 @@ export default function ChatInputBar({
       </View>
 
       {showSupplementCheckin && (
-        <SupplementQuickCheckinSheet onClose={() => setShowSupplementCheckin(false)} />
+        <SupplementQuickCheckinSheet
+          onClose={() => setShowSupplementCheckin(false)}
+          onManualRecord={() => {
+            setShowSupplementCheckin(false);
+            if (isVoiceMode) dispatchComposer({ type: 'toggle_mode' });
+            setInput(current => current.trim() ? current : '记录补剂：');
+            setTimeout(() => textInputRef.current?.focus(), 30);
+          }}
+        />
       )}
       <MedicalExamImportFlow
         visible={showMedicalImportFlow}

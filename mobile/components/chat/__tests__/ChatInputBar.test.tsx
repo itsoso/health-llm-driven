@@ -19,8 +19,11 @@ import { revaColors } from '../../../constants/revaTheme';
 jest.mock('../../supplements/SupplementQuickCheckinSheet', () => {
   const React = require('react');
   const { Pressable, Text } = require('react-native');
-  return { __esModule: true, default: ({ onClose }: any) => (
-    <Pressable accessibilityLabel="关闭补剂弹窗" onPress={onClose}><Text>补剂选择弹窗</Text></Pressable>
+  return { __esModule: true, default: ({ onClose, onManualRecord }: any) => (
+    <>
+      <Pressable accessibilityLabel="关闭补剂弹窗" onPress={onClose}><Text>补剂选择弹窗</Text></Pressable>
+      <Pressable accessibilityLabel="手动记录本次" onPress={onManualRecord}><Text>手动记录本次</Text></Pressable>
+    </>
   ) };
 }, { virtual: true });
 
@@ -414,12 +417,13 @@ describe('ChatInputBar', () => {
     expect(getByText('导入体检报告').props.numberOfLines).toBeUndefined();
   });
 
-  it('opens and dismisses supplement selection without sending a chat or losing its draft', () => {
+  it('keeps the familiar supplement check-in entry and dismisses it without sending or losing its draft', () => {
     const onSend = jest.fn();
     const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
     enterKeyboardMode(view);
     fireEvent.press(view.getByLabelText('附件菜单'));
     fireEvent.changeText(view.getByLabelText('消息输入框'), '未发送草稿');
+    expect(view.getByLabelText('补剂打卡').props.accessibilityHint).toBe('勾选已有补剂，确认本次已服；无需拍照');
     fireEvent.press(view.getByLabelText('补剂打卡'));
     expect(view.getByText('补剂选择弹窗')).toBeTruthy();
     expect(view.queryByTestId('attachment-action-grid')).toBeNull();
@@ -427,6 +431,27 @@ describe('ChatInputBar', () => {
     fireEvent.press(view.getByLabelText('关闭补剂弹窗'));
     expect(view.queryByText('补剂选择弹窗')).toBeNull();
     expect(view.getByDisplayValue('未发送草稿')).toBeTruthy();
+  });
+
+  it('prefills a manual intake draft without sending or overwriting existing text', () => {
+    const onSend = jest.fn();
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    enterKeyboardMode(view);
+    fireEvent.press(view.getByLabelText('附件菜单'));
+    fireEvent.press(view.getByLabelText('补剂打卡'));
+    fireEvent.press(view.getByLabelText('手动记录本次'));
+    expect(view.getByLabelText('消息输入框').props.value).toBe('记录补剂：');
+    expect(view.queryByText('补剂选择弹窗')).toBeNull();
+    expect(onSend).not.toHaveBeenCalled();
+
+    view.unmount();
+    const withDraft = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    enterKeyboardMode(withDraft);
+    fireEvent.press(withDraft.getByLabelText('附件菜单'));
+    fireEvent.changeText(withDraft.getByLabelText('消息输入框'), '我的原草稿');
+    fireEvent.press(withDraft.getByLabelText('补剂打卡'));
+    fireEvent.press(withDraft.getByLabelText('手动记录本次'));
+    expect(withDraft.getByLabelText('消息输入框').props.value).toBe('我的原草稿');
   });
 
   it('opens private bowel recording from chat without sending the photo to the conversation', () => {

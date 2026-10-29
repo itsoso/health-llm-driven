@@ -1,5 +1,5 @@
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render } from '@testing-library/react-native';
 import Sheet from '../SupplementQuickCheckinSheet';
 import { loadSupplementSnapshot, submitSupplementSelection } from '../../../services/supplementQuickCheckin';
 let mockGroupProps: any;
@@ -37,9 +37,18 @@ test('one selected ID is submitted once; busy blocks double tap and close', asyn
   expect(submit).toHaveBeenCalledTimes(1); expect(submit.mock.calls[0][1]).toEqual([1]); expect(close).not.toHaveBeenCalled();
   await act(async () => resolve({ status: 'saved', snapshot })); expect(ui.getByText('已记录本次勾选的已服状态')).toBeTruthy();
 });
-test('empty state directs adding in chat and provides records route', async () => {
-  load.mockResolvedValue({ ...snapshot, rows: [] }); const close = jest.fn(); const ui = render(<Sheet onClose={close} />);
-  await ui.findByText('暂无可勾选的补剂'); expect(ui.getByText('请先在对话中添加补剂清单，再回来打卡。')).toBeTruthy(); fireEvent.press(ui.getByText('查看补剂记录'));
+test('existing list also offers exact manual quantity and time without writing', async () => {
+  const record = jest.fn(); const ui = render(<Sheet onClose={jest.fn()} onManualRecord={record} />);
+  await ui.findByLabelText('测试补剂 A'); fireEvent.press(ui.getByText('填写本次数量和时间'));
+  expect(record).toHaveBeenCalledTimes(1); expect(submit).not.toHaveBeenCalled();
+});
+test('empty state offers no-photo manual recording without writing and provides records route', async () => {
+  load.mockResolvedValue({ ...snapshot, rows: [] }); const close = jest.fn(); const record = jest.fn(); const ui = render(<Sheet onClose={close} onManualRecord={record} />);
+  await ui.findByText('暂无可勾选的补剂');
+  expect(ui.getByText('无需拍照，填写完整名称、本次数量和服用时间。')).toBeTruthy();
+  fireEvent.press(ui.getByText('手动记录本次'));
+  expect(record).toHaveBeenCalledTimes(1); expect(submit).not.toHaveBeenCalled();
+  fireEvent.press(ui.getByText('查看补剂记录'));
   expect(mockPush).toHaveBeenCalledWith('/(tabs)/record'); expect(close).toHaveBeenCalled();
 });
 test('load failure supports retry without write', async () => {
