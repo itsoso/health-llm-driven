@@ -56,6 +56,13 @@ _DOMAINS = {
     "diet": re.compile(r"饮食|餐食|早餐|午餐|晚餐|吃了(?:什么|啥)|吃过(?:什么|啥)"),
 }
 _RETROSPECTIVE = re.compile(r"(?:分析|洞察|复盘|总结).*(?:行动|健康情况|健康状态|一天|日程)")
+_WEIGHT_TREND_ADVICE = re.compile(
+    r"(?:(?:我|本人)(?:的)?)?体重"
+    r"(?:最近|近|过去)?半年(?:来|内)?"
+    r"(?:增加|上升|上涨|变重|长)(?:了)?(?:很多|不少|较多|明显)?\s*"
+    r"(?:怎么办|怎么(?:办|处理|改善|控制)|如何(?:处理|改善|控制|应对)|该怎么办)"
+    r"[?？。.!！]?"
+)
 _OWNED_ANALYSIS_REFERENCE = re.compile(
     r"(?:并|再)?(?:基于|结合|根据)(?:这些记录|上述数据|以上记录)"
     r"(?:进行)?(?:分析|总结|评价|评估|复盘)(?:一下)?"
@@ -306,6 +313,21 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
+    active = _active(snapshot.envelope.text)
+    if active is not None and _owned_active(active) and not _MUTATION.search(active):
+        weight_trend = _WEIGHT_TREND_ADVICE.fullmatch(active)
+        if weight_trend is not None:
+            zone = ZoneInfo(snapshot.context.timezone)
+            now = snapshot.context.current_time
+            today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+            days = 183
+            return OwnedReadScope(({
+                "dimension": "weight",
+                "days": days,
+                "start_date": (today - timedelta(days=days - 1)).isoformat(),
+                "end_date": today.isoformat(),
+                "timezone": snapshot.context.timezone,
+            },), ("weight_trend_review",), composite_advice=True)
     from app.services.agent_kernel.body_measurement_review_scope import (
         is_body_measurement_review_request, has_body_measurement_review_reference,
     )

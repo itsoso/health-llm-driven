@@ -602,6 +602,13 @@ preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前�
 后续授权使用同一 bootstrap 的显式 `rotate --retire-sha <old> --sha <new>`，仅从
 新 SHA 的上述受审 canonical staging 执行。必须先撤销旧 cloud/loopback 授权并删除
 旧 loopback 私钥，证明旧后端成功终止或从未启动、业务 lease 不存在、无发布进程。
+当前身份对应已成功完成的后端发布时，撤权与轮换必须由同一个 canonical `rotate`
+进程持原 launcher/build 双锁执行，并显式传入该成功工作区 `completed.json` 的固定
+SHA256。发布器先持久化 `successful-auth-revocations/<old>/intent.json`，重复核验成功
+工作区、固定回执、授权文件、执行器、双锁和 loopback 公私钥，再撤权、销毁原私钥并
+写完成证明；随后才进入普通 retirement intent。该成功关闭记录由所有后续轮换重读，
+缺少完成证明、与 canonical retirement 不匹配或目标 SHA 漂移都必须阻断，禁止改用
+另一候选或重放来绕过部分关闭。
 轮换持有原 launcher.lock，核验旧源码哈希、私有目录库存和消费记录，原样归档旧安装，
 再安装绑定新 SHA 的授权。默认永久模式可沿用**当前** `cloud.pub`，从而无需在每次
 发布时更新 GitHub `REVA_RELEASE_SSH_KEY`；显式限时模式继续要求新身份。

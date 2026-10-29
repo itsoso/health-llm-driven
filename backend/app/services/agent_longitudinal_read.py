@@ -34,6 +34,7 @@ from app.services.agent_query_window import (
     _WEEK_RE,
     parse_query_window,
     read_calendar_health_query,
+    MAX_CALENDAR_DAYS,
     MAX_CALENDAR_ROWS,
     _bounded_result,
     _serial,
@@ -1057,7 +1058,9 @@ def read_longitudinal_health_query(
     """
     if isinstance(user_id, bool) or not isinstance(user_id, int) or user_id <= 0:
         raise ValueError("longitudinal_query_owner_required")
-    window = parse_query_window(window.as_dict())
+    window = parse_query_window(
+        window.as_dict(), max_days=366 if dimension == "weight" else MAX_CALENDAR_DAYS
+    )
     if dimension in {"diet", "sleep", "spo2"}:
         return read_calendar_health_query(db, user_id, dimension, window)
     if dimension == "medication":
@@ -1068,8 +1071,32 @@ def read_longitudinal_health_query(
         return read_conversation_evidence(db, user_id, window)
     if window.period is not None:
         raise ValueError('calendar_query_period_unsupported')
-    if dimension not in {"workout", "supplements"}:
+    if dimension not in {"weight", "workout", "supplements"}:
         raise ValueError("longitudinal_query_dimension_unsupported")
+    if dimension == "weight":
+        from app.models.weight import WeightRecord
+
+        records = [
+            {
+                "id": row.id,
+                "record_date": row.record_date.isoformat(),
+                "source": row.source or "unknown",
+                "source_table": "weight_records",
+                "weight": row.weight,
+            }
+            for row in _rows(db, WeightRecord, WeightRecord.record_date, user_id, window)
+        ]
+        return _bounded_result({
+            "dimension": dimension,
+            "window": window.as_dict(),
+            "records": records,
+            "source_scope": "owned_weight_records",
+            "availability": "available" if records else "no_data",
+            "limitations": [
+                "recorded_measurements_not_continuous_history",
+                "missing_measurement_is_unknown_not_zero",
+            ],
+        })
     from app.models.daily_health import WorkoutRecord, ExerciseRecord, SupplementIntake
     from app.models.supplement import SupplementDefinition, SupplementRecord
 

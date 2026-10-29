@@ -17,7 +17,7 @@ from typing import Iterable
 from app.services.agent_daily_read_execution import _summary_decimal, _summary_display
 from app.services.agent_kernel.read_task_scope import OwnedReadScope
 from app.services.agent_kernel.types import ToolExecutionResult
-from app.services.agent_query_window import parse_query_window
+from app.services.agent_query_window import MAX_CALENDAR_DAYS, parse_query_window
 from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
@@ -31,6 +31,15 @@ _ACTUAL_SOURCES = {
     ),
 }
 _TERMINAL = {"success", "completed", "complete", "ok", "succeeded"}
+
+
+def _parse_bound_window(bound: dict):
+    return parse_query_window(
+        bound,
+        max_days=366
+        if bound.get("dimension") == "weight"
+        else MAX_CALENDAR_DAYS,
+    )
 
 
 @dataclass(frozen=True)
@@ -884,7 +893,7 @@ def _terminal(payload: dict) -> bool:
 def _validate(bound: dict, payload) -> str | None:
     if not isinstance(payload, dict) or not _terminal(payload):
         return "query_result_unavailable"
-    if payload.get("dimension") != bound["dimension"] or payload.get("window") != parse_query_window(bound).as_dict():
+    if payload.get("dimension") != bound["dimension"] or payload.get("window") != _parse_bound_window(bound).as_dict():
         return "query_result_scope_conflict"
     if (
         payload.get("truncated")
@@ -1163,6 +1172,10 @@ def read_scope_notices(scope) -> tuple[str, ...]:
         lines.append('未指定体重腰围趋势范围，本次默认查询包含今天的最近30天已保存记录；'
                      '饮食和运动只查询账号本地日期的今天。未记录不代表没有发生，数据不足不能判断趋势；'
                      '体重腰围记录不能单独确诊代谢疾病。后续记录建议不会自动写入健康数据。')
+    if 'weight_trend_review' in scope.limitations:
+        lines.append('本次按账号时区查询包含今天的最近183天已保存体重记录。'
+                     '测量记录可能不连续，缺少记录不代表体重没有变化；'
+                     '只能描述已记录日期之间的差值，不能据此诊断增重原因或代谢疾病。')
     if 'sleep_wake_date_not_sync_completion' in scope.limitations:
         lines.append('昨晚按账号时区的醒来日期查询。以下是已保存的睡眠日汇总，可能包含多个设备来源；'
                      '不能据此确认本次佳明同步已完成，也不能单凭读数判断恢复程度。')
@@ -1245,7 +1258,7 @@ def evaluate_composed_read_completion(
     for query in scope.queries:
         dimension = query.get("dimension")
         try:
-            parsed_window = parse_query_window(query)
+            parsed_window = _parse_bound_window(query)
             window = parsed_window.as_dict()
         except (ValueError, TypeError) as exc:
             raise ValueError("composed_read_scope_invalid") from exc
