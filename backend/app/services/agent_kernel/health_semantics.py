@@ -2684,7 +2684,7 @@ def health_read_has_nonself_subject(text: str) -> bool:
     from app.services.agent_kernel.read_task_scope import daily_supplement_question_day
     if daily_supplement_question_day(text) is not None:
         return False  # Whole utterance proof; principal and date bind separately.
-    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
     from app.services.agent_longitudinal_read import is_recent_workout_read
 
     from app.services.agent_kernel.post_record_recovery_scope import is_post_record_recovery_request
@@ -2696,7 +2696,7 @@ def health_read_has_nonself_subject(text: str) -> bool:
 
     if _product_report_interpretation_clause(text):
         return False
-    if resolve_exercise_plan_scope(text) is not None:
+    if resolve_evidence_advice_scope(text) is not None:
         # Full role consumption proves only that there is no foreign subject.
         # Evidence read authority is checked independently at the gateway.
         return False

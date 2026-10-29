@@ -131,7 +131,7 @@ def exercise_plan_prompt(scope: ExercisePlanScope) -> str:
     )
 
 
-def exercise_plan_evidence_outcomes(scope: ExercisePlanScope, executions) -> list[dict]:
+def exercise_plan_evidence_outcomes(scope, executions, *, decision_reason="exercise_plan_explicit_evidence") -> list[dict]:
     """Attest actual adapter results, never the model's claim of having read."""
     from app.services.agent_write_outcome import result_declares_explicit_failure
 
@@ -141,7 +141,7 @@ def exercise_plan_evidence_outcomes(scope: ExercisePlanScope, executions) -> lis
     for execution in executions:
         decision = execution.decision
         if (decision is None or decision.action != 'allow'
-                or decision.reason != 'exercise_plan_explicit_evidence'
+                or decision.reason != decision_reason
                 or execution.tool_name != decision.normalized_tool_name):
             continue
         args = decision.normalized_args

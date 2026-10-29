@@ -61,9 +61,9 @@ def scope_tools_for_analyzed_material(
 
 
 def scope_tools_for_exercise_plan(tools: list[dict[str, Any]], message: str) -> list[dict[str, Any]]:
-    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+    from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
-    scope = resolve_exercise_plan_scope(message)
+    scope = resolve_evidence_advice_scope(message)
     if scope is None:
         return tools
     allowed = {"knowledge_search"}

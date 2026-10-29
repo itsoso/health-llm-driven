@@ -50,6 +50,7 @@ QUERY_GUIDE_SECTIONS = (
         QueryGuideEntry(("activity",), "activity           — 步数 / 活动分钟数 / 日常活动 (读可穿戴 daily, 与上面同源)"),
     )),
     QueryGuideSection("体重 / 血压 / 饮食 / 饮水", (
+        QueryGuideEntry(("age",), "age — 明确基于本人年龄给饮食建议时查询周岁；不返回生日或联系方式，缺失返回未知。"),
         QueryGuideEntry(("weight",), "weight           — 体重历史"),
         QueryGuideEntry(("waist",), "waist            — 腰围历史；体重腰围复盘入口中与 weight 一起查询，服务端绑定近30天。\n                   同次复盘的 diet/workout 只查今天；未来记录建议不授权新增记录。"),
         QueryGuideEntry(("blood_pressure",), "blood_pressure   — 血压历史"),
@@ -59,7 +60,7 @@ QUERY_GUIDE_SECTIONS = (
     )),
     QueryGuideSection("体检 / 基因 / 用药", (
         QueryGuideEntry(("medical_exam",), "medical_exam     — 化验/体检/影像报告 (MRI/核磁/CT/X光/B超/胃镜等也在这里; 读归一化指标表 + 最近检查报告摘要, 与 Twin 同源).\n                   不传 indicator → 返回用户全部化验指标清单 + 每项最新值 (问\"我有哪些化验指标\"走这里).\n                   传 indicator (如 'HCY'/'LDL'/'HbA1c') → 返回该指标时间序列.\n                   传 keyword (如 '膝关节MRI'/'核磁'/'影像') → 查询相关体检/影像条目.\n                   问\"最近24小时上传的记录/最近导入的报告\" → 用 dimension='medical_exam' + uploaded_days,\n                   返回按上传/导入时间排序的体检/影像报告清单.\n                   化验是低频数据, days 自动放宽到至少 365 天, 不会因 days 太小漏数据."),
-        QueryGuideEntry(("genetic",), "genetic          — 基因位点 (必须配 indicator 参数, 如 'MTHFR', 'APOE')"),
+        QueryGuideEntry(("genetic",), "genetic          — 基因位点 (指定基因时配 indicator 参数，如 'MTHFR', 'APOE'；明确个人饮食依据读取由服务端限定活动档案)"),
         QueryGuideEntry(("genetic_cognitive", "genetic_personality", "genetic_comprehensive"), "genetic_cognitive / genetic_personality / genetic_comprehensive — 整合性基因解读"),
         QueryGuideEntry(("medication",), "medication       — 用药清单 (非单次服药, 是长期用药列表)"),
     )),

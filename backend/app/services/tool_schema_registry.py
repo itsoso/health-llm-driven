@@ -34,6 +34,7 @@ HEALTH_TOOLS: List[Dict[str, Any]] = [
                             "spo2",
                             "spo2_sleep_correlation",
                             "weight",
+                            "age",
                             "waist",
                             "bmi",
                             "blood_pressure",

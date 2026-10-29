@@ -2573,6 +2573,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
     from app.services.agent_diet_continuation import diet_continuation_contract_payload
     from app.services.water_backfill import water_backfill_contract_payload
     from app.services.agent_longitudinal_read import longitudinal_read_contract_payload
+    from app.services.agent_kernel.personal_diet_scope import personal_diet_scope_contract_payload
     from app.services.agent_kernel.exercise_plan_scope import exercise_plan_scope_contract_payload
     from app.services.agent_kernel.current_input_advice_scope import current_input_advice_scope_contract_payload
     from app.services.agent_kernel.garmin_workout_review_scope import garmin_workout_review_scope_contract_payload
@@ -2590,6 +2591,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "garmin_workout_review_scope": garmin_workout_review_scope_contract_payload(),
         "current_input_advice_scope": current_input_advice_scope_contract_payload(),
         "exercise_plan_scope": exercise_plan_scope_contract_payload(),
+        "personal_diet_scope": personal_diet_scope_contract_payload(),
         "read_task_scope": read_task_scope_contract_payload(),
         "read_task_continuation": read_task_continuation_contract_payload(),
         "diet_continuation": diet_continuation_contract_payload(),
@@ -2889,13 +2891,12 @@ def decide_tool_capability(
         reason = ("longitudinal_read_scope_unresolved" if identity_valid
                   else "health_query_subject_not_current_user")
         return _decision("block", reason, tool_name, args)
-    from app.services.agent_kernel.exercise_plan_scope import (
-        resolve_exercise_plan_scope, has_unresolved_exercise_plan_basis,
-    )
+    from app.services.agent_kernel.exercise_plan_scope import has_unresolved_exercise_plan_basis
+    from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
     if (tool_name in {"health_query", "health_query_batch", "health_manage"}
             and has_unresolved_exercise_plan_basis(snapshot.envelope.text)):
         return _decision("block", "health_query_semantics_unresolved", tool_name, args)
-    exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)
+    exercise_plan = resolve_evidence_advice_scope(snapshot.envelope.text)
     if exercise_plan is not None:
         # The authenticated principal never comes from language or model args.
         if (type(snapshot.context.user_id) is not int or snapshot.context.user_id <= 0
@@ -2912,7 +2913,7 @@ def decide_tool_capability(
             if any(key in container for container in containers
                    for key in ("user_id", "owner_id", "tenant_id")):
                 return _decision("block", "health_query_subject_not_current_user", tool_name, args)
-            if (not isinstance(proposals, list) or not 1 <= len(proposals) <= 2
+            if (not isinstance(proposals, list) or not 1 <= len(proposals) <= len(exercise_plan.evidence_dimensions)
                     or any(not isinstance(p, dict) or set(p) != {"dimension"} for p in proposals)
                     or (tool_name == "health_query_batch" and (
                         set(args) not in ({"queries"}, {"plan"}) or set(plan) != {"queries"}))):
@@ -2922,10 +2923,15 @@ def decide_tool_capability(
                     or len(set(dimensions)) != len(dimensions)):
                 return _decision("block", "health_query_dimension_conflict", tool_name, args)
             bound = [{"dimension": d} for d in dimensions]
-            return _decision("allow", "exercise_plan_explicit_evidence", tool_name,
+            from app.services.agent_kernel.personal_diet_scope import PersonalDietScope
+            reason = ("personal_diet_explicit_evidence" if isinstance(exercise_plan, PersonalDietScope)
+                      else "exercise_plan_explicit_evidence")
+            return _decision("allow", reason, tool_name,
                              bound[0] if tool_name == "health_query" else {"queries": bound})
         if tool_name != "knowledge_search":
             return _decision("block", "owned_read_tool_out_of_scope", tool_name, args)
+    if tool_name == 'health_query' and args.get('dimension') == 'age':
+        return _decision('block', 'owned_read_tool_out_of_scope', tool_name, args)
     if owned_scope is not None and owned_scope.weather_city is not None and tool_name == "environment_check":
         # Public weather is an independent goal, never an expanded health read.
         expected = {"check_type": "weather"}

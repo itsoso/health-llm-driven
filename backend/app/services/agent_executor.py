@@ -12938,7 +12938,7 @@ class AgentExecutor:
         from app.services.agent_kernel.read_task_scope import (
             has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
         )
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
         snapshot = self._agent_kernel_snapshot
         decision = self._agent_kernel_last_decision
@@ -12949,7 +12949,7 @@ class AgentExecutor:
             or self._turn_daily_read_plan is not None or self._turn_sync_attempted
             or has_owned_sync_instruction(snapshot.envelope.text)
             or resolve_sync_status_query(snapshot) is not None
-            or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+            or resolve_evidence_advice_scope(snapshot.envelope.text) is not None
             or classify_clinician_turn(snapshot.envelope.text).kind != "none"
             or self._agent_kernel_pending_confirmation_tools
             or decision is None or decision.action != "allow"
@@ -13056,14 +13056,14 @@ class AgentExecutor:
         from app.services.agent_kernel.read_task_scope import (
             has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
         )
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
         snapshot = self._agent_kernel_snapshot
         if (snapshot is None or snapshot.intent.is_write
                 or self._turn_daily_read_plan is not None or self._turn_sync_attempted
                 or has_owned_sync_instruction(snapshot.envelope.text)
                 or resolve_sync_status_query(snapshot) is not None
-                or resolve_exercise_plan_scope(snapshot.envelope.text) is not None
+                or resolve_evidence_advice_scope(snapshot.envelope.text) is not None
                 or classify_clinician_turn(snapshot.envelope.text).kind != "none"
                 or self._agent_kernel_pending_confirmation_tools):
             return False
@@ -13149,13 +13149,13 @@ class AgentExecutor:
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
         snapshot = self._agent_kernel_snapshot
         if snapshot is None or snapshot.intent.is_write:
             return False
         text = snapshot.envelope.text
-        plan = resolve_exercise_plan_scope(text)
+        plan = resolve_evidence_advice_scope(text)
         return (is_general_advice_only_request(text)
                 or self._has_current_input_recovery_advice_goal()
                 or (plan is not None and not plan.evidence_dimensions))
@@ -13387,13 +13387,63 @@ class AgentExecutor:
             return None, elapsed_ms
         return candidate, elapsed_ms
 
+    async def _repair_personal_diet_answer(self, text: str) -> str:
+        from app.services.agent_kernel.personal_diet_scope import (
+            resolve_personal_diet_scope, personal_diet_answer_complete, personal_diet_prompt,
+        )
+        scope = resolve_personal_diet_scope(self._current_turn_user_message)
+        goals = self._exercise_plan_goal_outcomes() if scope else []
+        if (scope is None or not goals or any(g['status'] != 'verified' for g in goals)
+                or personal_diet_answer_complete(scope, text)):
+            return text
+        incomplete_notice = '\n\n本轮饮食分析和建议尚未完成；以上仅为查询结果，不能视为个性化饮食方案。'
+        messages = [
+            {'role': 'system', 'content': personal_diet_prompt(scope)
+             + '上次回复只有数据或遗漏了饮食建议。请解释列出的依据或缺失信息，给出有条件的食物搭配；不要调用工具。'},
+            {'role': 'user', 'content': json.dumps({
+                'request': self._current_turn_user_message,
+                'current_time': self._ensure_agent_kernel_turn().context.current_time.isoformat(),
+                'timezone': self._ensure_agent_kernel_turn().context.timezone,
+                'read_results': [execution.content for execution in self._turn_composed_read_executions
+                                 if execution.decision is not None and execution.decision.action == 'allow'
+                                 and execution.decision.reason == 'personal_diet_explicit_evidence'],
+            }, ensure_ascii=False)},
+        ]
+        try:
+            async with asyncio.timeout(40):
+                reply = await self._call_llm(messages, [])
+        except Exception as exc:
+            logger.warning('Diet synthesis repair failed error_type=%s', type(exc).__name__)
+            self._record_model_fallback_reason('personal_diet_synthesis_repair_failed')
+            return text + incomplete_notice
+        if (not isinstance(reply, dict) or reply.get('finish_reason') != 'stop'
+                or reply.get('tool_calls') or not isinstance(reply.get('content'), str)):
+            self._record_model_fallback_reason('personal_diet_synthesis_repair_incomplete')
+            return text + incomplete_notice
+        self._record_model_fallback_reason('personal_diet_synthesis_repair_attempted')
+        candidate = reply['content']
+        return candidate if personal_diet_answer_complete(scope, candidate) else candidate + incomplete_notice
+
+    def _personal_diet_answer_goals(self, text: str) -> list[dict]:
+        from app.services.agent_kernel.personal_diet_scope import (
+            resolve_personal_diet_scope, personal_diet_answer_complete,
+        )
+        scope = resolve_personal_diet_scope(self._current_turn_user_message)
+        if scope is None:
+            return []
+        reads_complete = all(g['status'] == 'verified' for g in self._exercise_plan_goal_outcomes())
+        complete = reads_complete and personal_diet_answer_complete(scope, _strip_reva_ui_from_llm_text(text))
+        return [{'goal_id': 'personal_diet_answer', 'kind': 'answer',
+                 'status': 'verified' if complete else 'failed',
+                 'reason_code': 'diet_advice_present' if complete else 'diet_advice_incomplete'}]
+
     def _exercise_plan_goal_outcomes(self) -> list[dict]:
-        from app.services.agent_kernel.exercise_plan_scope import (
-            resolve_exercise_plan_scope, exercise_plan_evidence_outcomes,
+        from app.services.agent_kernel.evidence_advice_scope import (
+            resolve_evidence_advice_scope, evidence_advice_outcomes,
         )
         snapshot = self._agent_kernel_snapshot
-        scope = resolve_exercise_plan_scope(snapshot.envelope.text) if snapshot is not None else None
-        return exercise_plan_evidence_outcomes(scope, self._turn_composed_read_executions) if scope else []
+        scope = resolve_evidence_advice_scope(snapshot.envelope.text) if snapshot is not None else None
+        return evidence_advice_outcomes(scope, self._turn_composed_read_executions) if scope else []
 
     def _verified_static_cycling_report(self, *, sealed: bool = False) -> Optional[str]:
         """Finish an already-attested static document, never replace read authority.
@@ -13494,8 +13544,8 @@ class AgentExecutor:
         if has_owned_sync_instruction(snapshot.envelope.text) and not queued_sync:
             return []
         scope = resolve_owned_read_scope(snapshot)
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
-        exercise_plan = resolve_exercise_plan_scope(snapshot.envelope.text)
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
+        exercise_plan = resolve_evidence_advice_scope(snapshot.envelope.text)
         if exercise_plan is not None:
             # Fill omitted evidence after an optional search or partial read;
             # failed adapters are disclosed, not retried indefinitely.
@@ -14268,8 +14318,8 @@ class AgentExecutor:
             except (TypeError, ValueError):
                 configured = HEALTH_EVIDENCE_ANSWER_MAX_TOKENS
             return min(ANSWER_MAX_TOKENS, max(1, configured))
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
-        document_scope = resolve_exercise_plan_scope(self._current_turn_user_message)
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
+        document_scope = resolve_evidence_advice_scope(self._current_turn_user_message)
         if document_scope is not None and document_scope.output_format == "html":
             # Structured documents need closing tags, even on a fast model.
             return ANSWER_MAX_TOKENS
@@ -16039,6 +16089,8 @@ class AgentExecutor:
             # Incomplete trusted summaries already carry the canonical notices.
             full_reply = '\n\n'.join((*read_scope_notices(panel_read_scope), full_reply))
         full_reply = self._unresolved_read_failure_notice() or full_reply
+        if completion_status == 'complete':
+            full_reply = await self._repair_personal_diet_answer(full_reply)
         full_reply = _guard_panel_narrative(full_reply)
         if protocol_failure_text:
             full_reply = protocol_failure_text
@@ -16071,7 +16123,8 @@ class AgentExecutor:
                 self._record_model_fallback_reason("unverified_current_input_answer")
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
-            full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
+            from app.services.agent_kernel.evidence_advice_scope import incomplete_evidence_advice_notice
+            full_reply = incomplete_evidence_advice_notice(message)
         self._recover_irrelevant_read_blocks_after_completed_answer(
             completion_status=completion_status, final_text=full_reply,
         )
@@ -16080,7 +16133,7 @@ class AgentExecutor:
             final_text=full_reply,
             capability_block_reasons=[reason for reason in self._agent_kernel_capability_block_reasons
                                       if reason not in self._agent_kernel_recovered_capability_block_reasons],
-            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes() + plan_goals,
+            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes() + plan_goals + self._personal_diet_answer_goals(full_reply),
             tool_failure_tools=self._agent_kernel_tool_failure_tools,
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
@@ -20482,8 +20535,8 @@ class AgentExecutor:
                                     # The refused action remains refused. A closed
                                     # static-document request may be answered once
                                     # without tools; no media action is performed.
-                                    from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
-                                    html_scope = resolve_exercise_plan_scope(message)
+                                    from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
+                                    html_scope = resolve_evidence_advice_scope(message)
                                     may_render_html = (
                                         html_scope is not None and html_scope.output_format == "html"
                                         and not static_html_recovery_attempted
@@ -20902,7 +20955,8 @@ class AgentExecutor:
         composed_completion = self._composed_read_completion()
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
-            full_reply = "制定计划所需的体检或病史依据尚未查询完成，暂不能据此提供个性化恢复方案。请稍后重试。"
+            from app.services.agent_kernel.evidence_advice_scope import incomplete_evidence_advice_notice
+            full_reply = incomplete_evidence_advice_notice(message)
         sync_summary = self._trusted_sync_summary()
         if composed_completion is not None and not composed_completion.complete:
             full_reply = composed_completion.trusted_fact_summary
@@ -20984,6 +21038,8 @@ class AgentExecutor:
             ) if part)
         from app.services.agent_composed_read_completion import enforce_composed_synthesis_boundaries
 
+        if final_finish_reason == 'stop':
+            full_reply = await self._repair_personal_diet_answer(full_reply)
         composed_boundary = enforce_composed_synthesis_boundaries(
             full_reply, composed_completion if composed_synthesis_used or composite_advice else None,
             require_advice_boundary=composite_advice,
@@ -21498,7 +21554,7 @@ class AgentExecutor:
             goal_outcomes=intake_goal_outcomes + daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
-            + plan_goals
+            + plan_goals + self._personal_diet_answer_goals(full_reply)
             + self._sync_goal_outcomes()
             + ([{'goal_id': 'bmi', 'kind': 'answer',
                  'status': 'verified' if self._turn_bmi_result.get('status') == 'complete' else 'waiting_for_user',
@@ -23408,8 +23464,8 @@ class AgentExecutor:
 
     @staticmethod
     def _exercise_plan_prompt_parts(snapshot) -> list[str]:
-        from app.services.agent_kernel.exercise_plan_scope import (
-            resolve_exercise_plan_scope, exercise_plan_prompt,
+        from app.services.agent_kernel.evidence_advice_scope import (
+            resolve_evidence_advice_scope, evidence_advice_prompt,
         )
         if snapshot is None:
             return []
@@ -23419,8 +23475,8 @@ class AgentExecutor:
                     '只调用已开放的只读工具，不能同步、保存健康记录或发布外部网站。'
                     '无数据或查询失败时如实说明，不能从历史对话猜测距离、心率、耗时或运动表现。'
                     '最终HTML文档由服务端根据核验的查询结果生成，不调用媒体创作工具。']
-        scope = resolve_exercise_plan_scope(snapshot.envelope.text)
-        return [exercise_plan_prompt(scope)] if scope is not None else []
+        scope = resolve_evidence_advice_scope(snapshot.envelope.text)
+        return [evidence_advice_prompt(scope)] if scope is not None else []
 
     def _build_system_prompt(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
@@ -27903,6 +27959,23 @@ class AgentExecutor:
         supplied_args = dict(args)
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == 'age':
+            from zoneinfo import ZoneInfo
+            from app.services.personal_diet_read import read_age
+            from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope
+            snapshot = self._ensure_agent_kernel_turn()
+            scope = resolve_personal_diet_scope(snapshot.envelope.text)
+            if (scope is None or 'age' not in scope.evidence_dimensions
+                    or supplied_args != {'dimension': 'age'}
+                    or type(self._current_user_id) is not int
+                    or snapshot.context.user_id != self._current_user_id
+                    or snapshot.envelope.user_id != self._current_user_id
+                    or snapshot.envelope.text != self._current_turn_user_message):
+                return 'Error: 年龄查询范围与当前请求不一致。'
+            now = snapshot.context.current_time
+            zone = ZoneInfo(snapshot.context.timezone)
+            today = (now.replace(tzinfo=zone) if now.utcoffset() is None else now.astimezone(zone)).date()
+            return json.dumps(read_age(self.db, self._current_user_id, today), ensure_ascii=False)
         if dim == 'bmi':
             from app.services.agent_kernel.bmi_read_scope import bmi_query_authorized
             from app.services.bmi_read import read_bmi
@@ -28254,8 +28327,8 @@ class AgentExecutor:
         """
         from app.services import health_query_batch as hqb
 
-        from app.services.agent_kernel.exercise_plan_scope import resolve_exercise_plan_scope
-        plan_scope = resolve_exercise_plan_scope(self._current_turn_user_message)
+        from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
+        plan_scope = resolve_evidence_advice_scope(self._current_turn_user_message)
         if plan_scope is not None:
             # The generic batch adapter defaults to seven days. A plan's
             # declared history must retain the same semantics as a single read.
