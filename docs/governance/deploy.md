@@ -610,6 +610,19 @@ preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前�
 不允许重发 1c30，也不把它记为 OTA 成功。新的 OTA 候选必须重新通过自己的完整 CI、
 后端部署及 trusted validate/publish。
 
+`53f9c6aee3eb30d8937a4582e206cce47de80157` 的 run `40861067214` 在
+`claim-ota` RPC 处失败；服务器尚未创建 `ota/<sha>` intent，publisher 也未进入
+vendor update。同期 no-backup Web 流程随后完成，但现有持久证据不足以把该流程或其
+lease 认定为失败原因，因此收口只记录“领取前失败”，不写入未经证明的因果。
+专用 `trusted_ota_preintent_retirement.py` 仅接受该 run 的 attempt `1`、job
+`123404134816`、artifact `12890544500`（2566 bytes）及固定 publisher 源码摘要，
+并要求同期操作 `dbbb6a5caeb94991ab079a39b7a1275d` 已以
+`FRONTEND_SUCCEEDED` 完整收口、business lease 已释放、53f 后端终态和线上健康均
+保持一致。它只在 `ota-preintent-failure-closures/53f…` 写一次审计终态，不创建 OTA
+intent、不释放或改名任何 lease、不调用 Expo；历史消费者永久拒绝 53f 再次 claim。
+任何已出现的 `ota/53f…`、vendor receipt、活动 lease、前端收据漂移或非固定官方
+制品均阻断。后续候选仍须独立通过完整 CI、后端部署及 trusted validate/publish。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的

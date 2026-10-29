@@ -4,8 +4,8 @@
 |---|---|
 | slug | `local-main-integration` |
 | 创建日期 | 2026-10-29 |
-| 当前阶段 | G5 发布恢复 |
-| 状态 | release recovery |
+| 当前阶段 | G4 OTA 领取冲突收口审查 |
+| 状态 | recovery implementation verified locally |
 | 负责 | Codex |
 
 ## Scope
@@ -127,3 +127,32 @@ without conflicts onto `ee7cbfda15378b3e1eac11d0581cf5cd10898d74` after canonica
   own backend and OTA validate/publish sequence.
 - TestFlight, App Review, phone operation, and real health-data acceptance remain
   outside this recovery and were not changed.
+
+## 53f successor delivery and pre-intent-failure incident
+
+- Successor `53f9c6aee3eb30d8937a4582e206cce47de80157` closed the 1c30 unpublished
+  preclaim, passed exact CI run `40854228341` (32/32), and deployed its backend
+  through run `40859955295`. Production source and the durable backend receipt
+  bind 53f; public health is 200/healthy and anonymous auth is 401.
+- OTA validate `40860774134` passed. The single publish run `40861067214`
+  failed at `claim-ota` before server OTA intent creation and before the vendor
+  call. Official artifact `12890544500` has ZIP SHA256
+  `261128bc5c7ba573a6df56fb6a33255610ce877d2009e6018131fdc8180fde50`
+  and contains only claim, preflight, and sanitized failure diagnostics.
+- The overlapping no-backup Web operation
+  `dbbb6a5caeb94991ab079a39b7a1275d` is now durably
+  `FRONTEND_SUCCEEDED` for 53f, with the fixed frontend tree and artifact digest;
+  the business lease is absent. No `ota/53f…` server directory exists.
+- The frontend operation's durable files begin after the GitHub failure timestamp,
+  so the closure does not claim that its lease caused the failure. It binds the
+  completed overlapping operation only to prove that no related publication or
+  lease remains unfinished.
+- A dedicated pre-intent-failure closure operator now binds the official failed workflow,
+  exact publisher bytes, completed frontend receipt, absent OTA state, absent
+  lease, backend terminal, and health readback. It writes one durable closure and
+  makes a future 53f claim fail closed. It never creates an OTA intent, calls the
+  vendor, or grants retry authority.
+- Focused recovery/history verification currently passes 438 tests with two
+  existing skips. Independent G4 and exact successor CI are still required before
+  the operator may be staged or executed. The failed 53f publish will not be
+  replayed.

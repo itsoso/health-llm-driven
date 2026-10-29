@@ -1073,7 +1073,8 @@ def assert_ota_history(*, _exam_pending_rotation=None):
     exam_options = {} if _exam_pending_rotation is None else {'_exam_pending_rotation': _exam_pending_rotation}
     assert_exam_recovery_history(**exam_options)
     assert_xiaoqihou_briefing_history()
-    if not any(os.path.lexists(STATE / name) for name in ("ota", "retained-testflight")):
+    if not any(os.path.lexists(STATE / name) for name in
+               ("ota", "retained-testflight", "ota-preintent-failure-closures")):
         return
     path = Path(__file__).with_name("trusted_release_server.py")
     secure(path)

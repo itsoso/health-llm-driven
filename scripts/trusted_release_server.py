@@ -402,6 +402,41 @@ def _load_ota_unclaimed_retirement():
     return module
 
 
+def _load_ota_preintent_retirement():
+    """Load only the pre-intent-failure closure helper committed with this executor."""
+    entry = Path(__file__).absolute()
+    if entry == Path("/usr/local/lib/reva-release/trusted_release_server.py"):
+        policy = validate_policy(_json(_read_private(POLICY)), now=0)
+        secure_path(entry)
+        if hashlib.sha256(entry.read_bytes()).hexdigest() != policy["executor_sha256"]:
+            raise LaunchError("installed executor binding differs")
+        sha = policy["sha"]
+        source = STATE / "bootstrap" / sha / "source"
+    else:
+        source = entry.parent.parent
+        sha = source.parent.name
+        if (re.fullmatch(r"[0-9a-f]{40}", sha) is None
+                or source != STATE / "bootstrap" / sha / "source"
+                or entry != source / "scripts/trusted_release_server.py"):
+            raise LaunchError("canonical OTA pre-intent failure helper source required")
+    script = source / "scripts/trusted_ota_preintent_retirement.py"
+    secure_path(script)
+    if os.path.lexists(script.parent / "__pycache__"):
+        raise LaunchError("cached OTA pre-intent failure helper forbidden")
+    env = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "GIT_CONFIG_NOSYSTEM": "1",
+           "GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
+    expected = subprocess.run(["/usr/bin/git", "-c", "core.hooksPath=/dev/null", "-C", str(source),
+                               "show", sha + ":scripts/trusted_ota_preintent_retirement.py"],
+                              env=env, stdin=subprocess.DEVNULL, capture_output=True, check=True, timeout=30).stdout
+    if script.read_bytes() != expected:
+        raise LaunchError("OTA pre-intent failure helper differs from canonical source")
+    sys.dont_write_bytecode = True
+    spec = importlib.util.spec_from_file_location("canonical_ota_preintent_retirement", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def _frontend_publication_backup_entries(root, *, live=False):
     """Revalidate every entry on every pass, including cache hits."""
     root = Path(root)
@@ -1929,6 +1964,18 @@ def assert_ota_history(*, _exam_pending_rotation=None):
     assert_retained_history()
     root = STATE / "ota"
     closures = STATE / "ota-preclaim-closures"
+    conflicts = STATE / "ota-preintent-failure-closures"
+    if os.path.lexists(conflicts):
+        secure_path(conflicts, directory=True)
+        if stat.S_IMODE(conflicts.stat().st_mode) != 0o700:
+            raise LaunchError("invalid OTA pre-intent failure closure root")
+        for conflict in conflicts.iterdir():
+            secure_path(conflict, directory=True)
+            if (re.fullmatch(r"[0-9a-f]{40}", conflict.name) is None
+                    or os.path.lexists(root / conflict.name)):
+                raise LaunchError("invalid OTA pre-intent failure closure")
+            _load_ota_preintent_retirement().validate_closed_history(
+                SimpleNamespace(**globals()), conflict)
     if os.path.lexists(closures):
         secure_path(closures, directory=True)
         if stat.S_IMODE(closures.stat().st_mode) != 0o700:
@@ -1965,7 +2012,14 @@ def assert_ota_history(*, _exam_pending_rotation=None):
         validate_ota_archive(operation)
 
 
+def assert_ota_preintent_not_closed(sha):
+    if os.path.lexists(STATE / "ota-preintent-failure-closures" / sha):
+        raise LaunchError("closed OTA pre-intent failure; retry forbidden")
+
+
 def ota_rpc(policy, action):
+    if action == "claim":
+        assert_ota_preintent_not_closed(policy["sha"])
     source = STATE / "bootstrap" / policy["sha"] / "source"
     script = source / "scripts/trusted_ota_server.py"
     secure_path(script)
