@@ -3,8 +3,8 @@
 | 字段 | 值 |
 |---|---|
 | slug | visible-diet-calorie-correction |
-| 当前阶段 | S5 独立安全审查 |
-| 状态 | first G4 repaired; awaiting re-review |
+| 当前阶段 | S5 发布基础设施修复 |
+| 状态 | implementation ready; exact-main rotation gate pending G4/CI |
 
 ## G1 准入
 
@@ -53,3 +53,10 @@
 - System Map、mobile navigation 和 doc drift 检查通过；`git diff --check`、修改文件 `py_compile`、新增规则的 `ISC004/FURB157` 检查通过。
 - 全量后端回归首次因缺少锁定依赖在收集阶段失败；补齐依赖后执行 36,219 项，34,350 passed、157 skipped、1,704 failed、8 errors。失败分布在运行身份、工具投影缓存、同步、可穿戴、天气等非本变更区域，因此该结果保留为全量 NO-GO，不计作本修复通过证据。精确提交仍须依赖独立 G4 与目标 SHA 的 CI Gate。
 - 首个主干候选 `fba72e494864c559b3df1a517b85c8d1b9a1680a` 的 CI `40878802973` 在既有批量删除续轮用例失败：热量纠正的“模型省略调用”兜底条件误覆盖所有需要 lookup 的 Goal，导致批量删除在查询后自动执行。发布未触发；修复将兜底收窄为服务端精确热量纠正谓词，官方 Pi runtime 下原失败两组用例 2/2 通过，并新增批量删除 Goal 不匹配该谓词的单元回归。
+
+## Release evidence
+
+- 精确候选 `0e43b522a9290d411258f2c4d3d6a383495f7203` 的独立增量 G4 为 GO，完整 CI `40880694813` 32/32 成功，trusted validate `40882308433` 成功。
+- 首次 backend run `40882405618` 在任何部署 intent 前因服务器授权仍绑定生产 `53f9c6aee3eb30d8937a4582e206cce47de80157` 而拒绝；后端 job 未启动，生产未变化，禁止重放该 run。
+- GitHub 只读凭据已过期。第一版更新脚本在 mint intent 前因 macOS 系统 Git 多硬链接断言停止，本地和远端均无操作回执、凭据摘要未变、业务租约不存在；没有重放。新的 `v2` 操作经独立 G4 后成功更新只读凭据，随后 canonical staging 精确检出 `0e43b522…`。
+- 授权轮换审查发现 canonical `rotate` 的默认 full gate 未传 `--observed-main`，可能在外层检查后接受纯文档后代。修复将 install/rotate 的默认门禁都绑定精确 current main；新增用例先产生 2 个预期失败，修复后 bootstrap 套件 259 项通过。该发布基础设施修复需形成新的精确候选，重新完成独立 G4、完整 CI、validate、staging 和轮换后再部署。

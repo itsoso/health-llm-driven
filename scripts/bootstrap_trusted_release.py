@@ -230,7 +230,8 @@ def install(sha, expiry, public, *, backend_ci=False):
     if backend_ci:
         _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
     else:
-        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"),
+              "--sha", sha, "--workflow-sha", sha, "--observed-main", sha])
     fd = os.open(STATE / "launcher.lock", os.O_RDWR | os.O_CREAT | os.O_NOFOLLOW, 0o600)
     try:
         secure(STATE / "launcher.lock", private=True)
@@ -1467,7 +1468,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
             raise BootstrapError("backend CI admission cannot replace recovery or native closure gates")
         _run(["/usr/bin/python3.12", "-I", "-S", "-B", str(source / "scripts/trusted_backend_admission.py"), "--sha", sha])
     else:
-        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"), "--sha", sha, "--workflow-sha", sha])
+        _run(["/usr/bin/python3.12", "-I", str(source / "scripts/trusted_release_gate.py"),
+              "--sha", sha, "--workflow-sha", sha, "--observed-main", sha])
     secure(STATE)
     # Rotation may not recreate the global lock inode of an existing install.
     secure(STATE / "launcher.lock", private=True)

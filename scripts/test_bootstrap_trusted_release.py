@@ -240,7 +240,9 @@ def test_install_verifies_first_preserves_unrelated_keys_and_does_not_export_pri
     metadata = bootstrap.AUTHORIZED.stat()
     result = bootstrap.install(SHA, 200, PUBLIC)
     assert result == {"sha": SHA, "state": "INSTALLED"}
-    assert "trusted_release_gate.py" in " ".join(calls[0])
+    gate_call = calls[0]
+    assert "trusted_release_gate.py" in " ".join(gate_call)
+    assert gate_call[gate_call.index("--observed-main") + 1] == SHA
     assert "ssh-keygen" in " ".join(calls[1])
     assert bootstrap.AUTHORIZED.read_text().startswith("ssh-ed25519 AAAAExisting unrelated\n")
     after = bootstrap.AUTHORIZED.stat()
@@ -924,7 +926,9 @@ def test_rotation_discards_revoked_install_keeps_once_audit(monkeypatch, tmp_pat
     if succeeded:
         assert {p.name: p.read_bytes() for p in (bootstrap.STATE / SHA).iterdir()} == old_markers
     assert json.loads((bootstrap.CONFIG / "authorized-release.json").read_bytes())["sha"] == NEW_SHA
-    assert "trusted_release_gate.py" in " ".join(calls[0])
+    gate_call = calls[0]
+    assert "trusted_release_gate.py" in " ".join(gate_call)
+    assert gate_call[gate_call.index("--observed-main") + 1] == NEW_SHA
     with pytest.raises(bootstrap.BootstrapError):
         bootstrap.rotate(NEW_SHA, NEW_SHA, 200, PUBLIC)
     with pytest.raises(bootstrap.BootstrapError):
