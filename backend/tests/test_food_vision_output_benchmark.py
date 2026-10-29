@@ -155,3 +155,194 @@ def test_replay_normalizes_production_wrapper_and_wire_keys_only_for_candidate()
     assert benchmark.check_response(benchmark.normalize_replay_response(wrapped, "wire"), EXPECTED) == []
     assert benchmark.check_response(benchmark.normalize_replay_response(wrapped, "compact"), EXPECTED)
     assert benchmark.check_response(benchmark.normalize_replay_response("```json\n" + json.dumps(canonical) + "\n```", "compact"), EXPECTED) == []
+
+
+def chunk(content=None, finish=None, usage=None):
+    return SimpleNamespace(choices=[SimpleNamespace(
+        delta=SimpleNamespace(content=content), finish_reason=finish)], usage=usage)
+
+
+@pytest.mark.parametrize("finish", ["stop", "length", None])
+def test_stream_probe_times_content_not_role_and_retains_finish(finish):
+    ticks = iter([1.0, 1.4, 1.9, 2.0])
+    closed = []
+    async def stream():
+        try:
+            yield chunk()  # role-only is not first content
+            yield chunk("{")
+            yield chunk("}", finish)
+            yield chunk(usage=SimpleNamespace(prompt_tokens=20, completion_tokens=2))
+        finally:
+            closed.append(True)
+    content, metrics = asyncio.run(benchmark.measure_vision_stream(stream(), clock=lambda: next(ticks)))
+    assert content == "{}"
+    assert metrics["first_content_ms"] == 400
+    assert metrics["last_content_ms"] == 900
+    assert metrics["stream_ms"] == 1000
+    assert metrics["completion_tokens"] == 2
+    assert metrics["finish_reason"] == finish
+    assert closed == [True]
+
+
+def test_stream_probe_empty_does_not_invent_first_content():
+    async def stream():
+        yield chunk(finish="stop")
+    content, metrics = asyncio.run(benchmark.measure_vision_stream(stream()))
+    assert content == ""
+    assert metrics["first_content_ms"] is None
+    assert metrics["last_content_ms"] is None
+
+
+def test_stream_probe_closes_on_size_limit():
+    closed = []
+    async def stream():
+        try:
+            yield chunk("private" * 10000)
+        finally:
+            closed.append(True)
+    with pytest.raises(ValueError, match="response_too_large"):
+        asyncio.run(benchmark.measure_vision_stream(stream()))
+    assert closed == [True]
+
+
+@pytest.mark.parametrize("probe_name", ["probe_stream", "probe_async"])
+def test_stream_probe_denied_consent_never_constructs_client(monkeypatch, probe_name):
+    from app.services import ai_consent
+    def deny(**kwargs):
+        raise PermissionError("synthetic denied")
+    monkeypatch.setattr(ai_consent, "require_ai_consent", deny)
+    provider = SimpleNamespace(base_url="https://synthetic.invalid")
+    with pytest.raises(PermissionError):
+        asyncio.run(getattr(benchmark, probe_name)(provider, "policy", "synthetic-image"))
+
+
+def test_stream_probe_preserves_model_policy_and_closes_cancelled_stream(monkeypatch):
+    from app.services import ai_consent
+    from app.services.llm.providers.openai_provider import OpenAIProvider
+    consent = []
+    calls = []
+    closed = []
+    monkeypatch.setattr(ai_consent, "require_ai_consent", lambda **kwargs: consent.append(kwargs))
+    async def stream():
+        try:
+            yield chunk("{")
+            raise asyncio.CancelledError()
+        finally:
+            closed.append(True)
+    async def create(**kwargs):
+        assert consent == [{"destination": "https://synthetic.invalid"}]
+        calls.append(kwargs)
+        return stream()
+    provider = SimpleNamespace(
+        model="qwen3.8-flash", base_url="https://synthetic.invalid",
+        _build_vision_messages=OpenAIProvider._build_vision_messages,
+        _get_async_client=lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))),
+    )
+    with pytest.raises(asyncio.CancelledError):
+        asyncio.run(benchmark.probe_stream(provider, "complete-policy", "synthetic-image"))
+    assert closed == [True]
+    assert len(calls) == 1
+    assert calls[0]["max_tokens"] == 2000
+    assert calls[0]["temperature"] == 0.1
+    assert calls[0]["model"] == provider.model
+    assert calls[0]["extra_body"] == {"enable_thinking": False}
+    assert calls[0]["messages"][0] == {"role": "system", "content": "complete-policy"}
+    assert calls[0]["messages"][1]["content"][1]["image_url"]["url"] == "synthetic-image"
+
+
+def test_stream_variant_uses_exact_current_wire_policy():
+    assert benchmark.variant_prompt("wire_stream") == benchmark.variant_prompt("wire")
+    assert benchmark.normalize_replay_response('{"foods":[],"meal":"x","tips":"y"}', "wire_stream") == benchmark.normalize_replay_response('{"foods":[],"meal":"x","tips":"y"}', "wire")
+
+
+def test_stream_summary_excludes_absent_timings_and_keeps_failures():
+    rows = [dict(variant="wire_stream", api_success=True, latency_ms=100,
+                 completion_tokens=2, failures=[], first_content_ms=20,
+                 last_content_ms=80, stream_ms=100),
+            dict(variant="wire_stream", api_success=False, latency_ms=10,
+                 failures=["api_or_evaluation_failure"])]
+    result = benchmark.summarize(rows)["wire_stream"]
+    assert result["first_content_ms"] == dict(samples=1, p50=20, sample_p95=20, sample_p99=20)
+    assert result["contract_failures"] == 1
+
+
+@pytest.mark.parametrize("variant,probe_name", [("wire_stream", "probe_stream"), ("wire_async", "probe_async")])
+@pytest.mark.parametrize("finish", ["stop", "length", None])
+def test_stream_replay_enforces_full_oracle_and_terminal_metadata(monkeypatch, tmp_path, capsys, finish, variant, probe_name):
+    from contextlib import nullcontext
+    from app.services import ai_consent
+    from app.services.llm import factory
+    image = tmp_path / "synthetic.jpg"
+    image.write_bytes(b"synthetic")
+    original_client = SimpleNamespace()
+    provider = SimpleNamespace(model="qwen3.8-flash", _get_client=lambda: original_client)
+    monkeypatch.setattr(factory, "get_vision_provider", lambda: provider)
+    monkeypatch.setattr(ai_consent, "ai_user_scope", lambda user_id: nullcontext())
+    async def probe(provider, prompt, image_url):
+        return json.dumps(response()), dict(finish_reason=finish, completion_tokens=20,
+                                           first_content_ms=10, last_content_ms=20, stream_ms=21)
+    monkeypatch.setattr(benchmark, probe_name, probe)
+    rows = asyncio.run(benchmark.replay([dict(image_path=str(image), expected=EXPECTED)], [variant], 1, 123))
+    assert rows[0]["failures"] == ([] if finish == "stop" else ["incomplete_response"])
+    output = capsys.readouterr().out
+    assert "合成燕麦片" not in output
+    assert str(image) not in output
+
+
+def test_async_baseline_matches_stream_request_and_preserves_unknown_usage(monkeypatch):
+    from app.services import ai_consent
+    from app.services.llm.providers.openai_provider import OpenAIProvider
+    monkeypatch.setattr(ai_consent, "require_ai_consent", lambda **kwargs: None)
+    calls = []
+    async def create(**kwargs):
+        calls.append(kwargs)
+        if kwargs["stream"]:
+            async def stream():
+                yield chunk("{}", "stop")
+            return stream()
+        return SimpleNamespace(usage=None, choices=[SimpleNamespace(
+            message=SimpleNamespace(content="{}"), finish_reason="stop")])
+    provider = SimpleNamespace(model="qwen3.8-flash", base_url="https://synthetic.invalid",
+        _build_vision_messages=OpenAIProvider._build_vision_messages,
+        _get_async_client=lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    async def run():
+        result = await benchmark.probe_async(provider, "policy", "synthetic")
+        await benchmark.probe_stream(provider, "policy", "synthetic")
+        return result
+    content, metrics = asyncio.run(run())
+    assert content == "{}"
+    assert metrics == dict(finish_reason="stop", prompt_tokens=None, completion_tokens=None, cached_tokens=None)
+    assert calls[0].pop("stream") is False
+    assert calls[1].pop("stream") is True
+    assert calls[1].pop("stream_options") == {"include_usage": True}
+    assert calls[0] == calls[1]
+    assert benchmark.variant_prompt("wire_async") == benchmark.variant_prompt("wire")
+    assert benchmark.normalize_replay_response('{"foods":[],"meal":"x","tips":"y"}', "wire_async") == benchmark.normalize_replay_response('{"foods":[],"meal":"x","tips":"y"}', "wire")
+
+
+@pytest.mark.parametrize("outcome", ["cancel", "oversized", "usage"])
+def test_async_control_failure_and_usage_boundaries(monkeypatch, outcome):
+    from app.services import ai_consent
+    monkeypatch.setattr(ai_consent, "require_ai_consent", lambda **kwargs: None)
+    calls = []
+    async def create(**kwargs):
+        calls.append(kwargs)
+        if outcome == "cancel":
+            raise asyncio.CancelledError()
+        return SimpleNamespace(usage=SimpleNamespace(prompt_tokens=17, completion_tokens=3,
+            prompt_tokens_details=SimpleNamespace(cached_tokens=5)), choices=[SimpleNamespace(
+                message=SimpleNamespace(content="x" * 32001 if outcome == "oversized" else "{}"),
+                finish_reason="stop")])
+    provider = SimpleNamespace(model="qwen3.8-flash", base_url="https://synthetic.invalid",
+        _build_vision_messages=lambda messages, image: messages,
+        _get_async_client=lambda: SimpleNamespace(chat=SimpleNamespace(completions=SimpleNamespace(create=create))))
+    if outcome == "cancel":
+        with pytest.raises(asyncio.CancelledError):
+            asyncio.run(benchmark.probe_async(provider, "policy", "synthetic"))
+    elif outcome == "oversized":
+        with pytest.raises(ValueError, match="response_too_large"):
+            asyncio.run(benchmark.probe_async(provider, "policy", "synthetic"))
+    else:
+        _, metrics = asyncio.run(benchmark.probe_async(provider, "policy", "synthetic"))
+        assert metrics == dict(prompt_tokens=17, completion_tokens=3, cached_tokens=5, finish_reason="stop")
+    assert len(calls) == 1

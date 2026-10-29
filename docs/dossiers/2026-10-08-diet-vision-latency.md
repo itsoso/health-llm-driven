@@ -121,3 +121,39 @@ bootstrap 允许的生产 Git 对象缓存验证路径补齐同 SHA，未重发�
 
 独立只读发布复验于 2026-10-08 11:07:16 UTC 给出 **G5 GO**，绑定上述候选；
 真实照片的手机端到端保存与生产 P95/持续提速仍为 G6 未覆盖项。
+
+## 2026-10-11 推理阶段性能续接（本地诊断）
+
+用户要求继续优化拍照记餐，特别关注推理层空间，并以阿福的速度作为体验参照。
+未取得阿福内部调用链或可比请求，不推断其模型、缓存或推理实现。
+沿用本 dossier/controller；本线程不暂存、提交、推送或发布，统一发布 owner 已收到边界协调。
+
+当前源码核对：
+
+- FoodRecognitionService 已使用紧凑 JSON、传输短字段；Qwen3 请求显式关闭 thinking。
+- Vision 仍等待完整响应后才解析；仅关闭 thinking 并不是本轮新增优化。
+- 聊天多图识别先去重，但最多三张的 provider 调用仍串行；校准是本地食品表批量匹配。
+- Mobile 图像最长边上限 1568、JPEG quality 0.7；该编码同时服务餐照和细字标签，不宜无对照统一降低分辨率。
+- `/diet/recognize` 已有 vision/calibration/draft 分段；现有报告不能证明当前生产的首内容等待与生成时间占比。
+
+本轮仅改独立 benchmark 和测试，新增 `wire_stream` 诊断变体：保持当前模型、完整 wire prompt、温度、输出上限和 thinking 设置，沿用同意校验与受保护 SDK 客户端；60 秒界限、响应长度上限，取消/失败关闭流。保留 finish_reason，截断或缺失终态不通过同一个完整响应 oracle。role-only chunk 不算首内容；缺失 usage 不补零；报告仅记录样本编号、耗时、token 元数据及裁决，不输出图片路径或识别正文。
+
+真实对照入口为既有脚本的 `--variants wire wire_stream`（需现有已授权 manifest、user-id 和 include-live-llm）。没有发送真实照片或调用外部模型，没有改线上配置或饮食写入路径。首内容耗时包含网络、排队与图像处理；流式探针使用异步传输，不能把两侧总耗时差全部归因为 streaming。
+
+验证：新增时序/终态/清理反例先 5 failed、31 passed；最终 benchmark、识别输出合同、usage scope 共 **68 passed**，日志 `/tmp/reva-food-inference-probe-tests.log`。`.venv/bin/python scripts/check_system_map.py` 通过且无生成物变化；标准 shell 入口因 python3.12 不在 PATH 未启动。两个现有 Python 环境均未安装 Ruff，未把 lint 记为通过。
+
+下一步依同批真实请求分段基线选择最小运行改动：
+
+1. 输出阶段占主导：评估记录专用精简输出，把可选营养提示移出关键路径；保留身份、份量、未知值、来源与标签基准，不能截短 max_tokens 冒充提速。
+2. 首内容等待占主导：评估图像 token/分辨率、网络和模型队列；普通餐照与细字标签分别验收，不能只看 JPEG 字节数。
+3. 多图串行占主导：协调 executor 所有权后评估有界并发，保留去重、顺序映射、部分失败、取消及原子写入边界。
+
+主指标暂按“发送照片到可核对餐食结果”，另列确认到回执；同样本比较 P50/P95/P99、完整合同失败率、输出 token 与费用。未知值/标签/来源/授权退化、长尾或成本上升时不采用候选。当前没有新的生产加速数值或真实识别质量结论。
+
+### 同传输对照补齐
+
+用户再次要求继续性能优化。新增 `wire_async`，与 `wire_stream` 共用同一受保护异步客户端、完整 wire prompt、模型、图片构造、temperature/max_tokens/thinking 参数和 60 秒调用上限，唯一请求配置差异是流式开关及流式 usage 请求。保留原 `wire` 用于比较当前同步 SDK 路径，不能把同步/异步传输差异全部归因于模型推理。推荐有界矩阵 `--variants wire wire_async wire_stream`；队列、缓存、SDK 重试和采样波动仍不能由此消除，不宣称严格因果实验。
+
+新增对照先得到 **5 failed、43 passed**，再实现共享请求构造和非流式异步 probe；补充取消传播、超长响应拒绝、未知 usage 不补零、实际 usage 保留。完整响应 oracle 和 finish_reason 判定同样覆盖异步对照，缺失/截断终态仍失败，不输出图片或识别正文。关联三个测试文件新鲜运行 **76 passed、6 warnings**，日志 `/tmp/reva-food-async-regression.log`，真实退出码 0；diff-check 通过。
+
+发布 owner 最新只读核对：旧七样本 manifest 的图片引用不完整，不能直接复跑；发布租约释放不代表共享 executor 编辑所有权已交接。本次没有真实外部模型调用或运行路径改动，没有性能发布收益声明。下一步需恢复授权样本及现有 consent 调用上下文，先跑同批基线，再裁决精简输出或多图有界并发；不通过缺失样本、不同图片或旧测速替代当前基线。
