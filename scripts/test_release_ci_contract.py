@@ -25,6 +25,7 @@ RELEASE_TESTS = (
     "scripts/test_release_performance_report.py",
     "scripts/test_trusted_ota_startup.py",
     "scripts/test_trusted_ota_unclaimed_retirement.py",
+    "scripts/test_trusted_ota_preintent_retirement.py",
     "scripts/test_generate_api_types.py",
     "scripts/test_health_evidence_activation_runner.py",
     "scripts/test_release_lock.py",

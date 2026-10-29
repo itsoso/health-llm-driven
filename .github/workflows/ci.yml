@@ -417,6 +417,7 @@ jobs:
           scripts/test_trusted_ota_workflow.py
           scripts/test_trusted_ota_publish.py
           scripts/test_trusted_ota_unclaimed_retirement.py
+          scripts/test_trusted_ota_preintent_retirement.py
           scripts/test_testflight_only.py
           scripts/test_trusted_retained_testflight.py
           scripts/test_trusted_frontend_rebuild.py
