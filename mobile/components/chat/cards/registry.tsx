@@ -37,6 +37,7 @@ import { isMedicationInstructionName } from '../../../utils/medicationInstructio
 import { SupplementDraftCardSpec } from './SupplementDraftCard';
 import { DietCardSpec } from './DietCard';
 import { DietDraftCardSpec } from './DietDraftCard';
+import { dietCommunityActionDisposition } from './dietCommunityAction';
 import { WorkoutCardSpec } from './WorkoutCard';
 import { MedicalReportCardSpec } from './MedicalReportCard';
 import { MedicalExamImportResultCardSpec } from './MedicalExamImportResultCard';
@@ -515,14 +516,13 @@ function isEmbeddedRecordedDietAction(
   cardType: string,
   data: any,
 ): boolean {
-  if (cardType !== 'diet_draft' || data?.recorded !== true) return false;
-  if (
-    action.id === 'share-with-peers'
-    && action.action === 'route.open'
-    && textValue(action.payload?.route)?.startsWith('/community?composeRecordId=')
-  ) {
+  const communityDisposition = dietCommunityActionDisposition(action, cardType, data);
+  if (communityDisposition !== 'other') {
+    // Valid actions render inside the recorded-meal footer. Invalid candidates
+    // are also removed here so they cannot fall through to generic navigation.
     return true;
   }
+  if (cardType !== 'diet_draft' || data?.recorded !== true) return false;
   if (textValue(action.payload?.target) !== 'adjust_record') return false;
   const patch = readInlineExpandPatch(action);
   return Boolean(

@@ -26,6 +26,7 @@ import type {
   ChatCardActionDescriptor,
   ChatCardActionRuntimeState,
 } from './types';
+import { dietCommunityActionDisposition } from './dietCommunityAction';
 import { revaColors as C, revaFonts, revaRadii, revaSemantic } from '../../../constants/revaTheme';
 
 // 饮食类目 accent (橙) = 「是饮食卡」装饰色, 保留字面量 (= legacy orange/tintOrange).
@@ -330,13 +331,15 @@ function findDietAdjustRecord(
 }
 
 function findDietCommunityAction(
+  data: DietDraftData,
   actions?: ChatCardActionDescriptor[],
 ): ChatCardActionDescriptor | undefined {
   return actions?.find((action) => (
-    action.id === 'share-with-peers'
-    && action.action === 'route.open'
-    && typeof action.payload?.route === 'string'
-    && action.payload.route.startsWith('/community?composeRecordId=')
+    dietCommunityActionDisposition(
+      action,
+      'diet_draft',
+      data as Record<string, unknown>,
+    ) === 'embedded'
   ));
 }
 
@@ -1307,7 +1310,7 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   },
   render: (data, options?: CardRenderOptions) => {
     const confirmAction = findDietConfirmAction(options?.cardActions);
-    const communityAction = findDietCommunityAction(options?.cardActions);
+    const communityAction = findDietCommunityAction(data, options?.cardActions);
     const adjustRecord = objectValue(data.adjust_record)
       ?? findDietAdjustRecord(options?.cardActions);
     const confirmActionKey = confirmAction

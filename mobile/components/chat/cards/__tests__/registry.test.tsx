@@ -2453,6 +2453,43 @@ describe('renderCard 安全降级', () => {
     );
   });
 
+  it.each([
+    ['a different record', true, 807, '/community?composeRecordId=808'],
+    ['trailing parameters', true, 807, '/community?composeRecordId=807&source=card'],
+    ['a non-numeric route id', true, 807, '/community?composeRecordId=record-807'],
+    ['an unsafe route id', true, 807, '/community?composeRecordId=9007199254740992'],
+    ['a missing card record id', true, undefined, '/community?composeRecordId=807'],
+    ['an invalid card record id', true, 0, '/community?composeRecordId=807'],
+    ['an unrecorded card', false, 807, '/community?composeRecordId=807'],
+  ])('rejects peer sharing for %s', (_case, recorded, recordId, route) => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        recorded,
+        record_id: recordId,
+        food_items: '合成餐食',
+        meal_type: 'snack',
+        calories: 150,
+      },
+      actions: [{
+        id: 'share-with-peers',
+        label: '发到同行圈',
+        action: 'route.open',
+        payload: { route },
+        style: 'secondary',
+      }],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+    const screen = render(element!);
+
+    expect(screen.queryByLabelText('发到同行圈')).toBeNull();
+    expect(screen.queryByText('同行圈')).toBeNull();
+    expect(onAction).not.toHaveBeenCalled();
+  });
+
   it('keeps the correction entry on the card when the generic action bar is absent', () => {
     const element = renderCard({
       type: 'diet_draft',
