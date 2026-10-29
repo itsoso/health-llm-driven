@@ -47,7 +47,7 @@ def test_parameter_repair_does_not_require_verified_data_or_reset_budget(
         snapshot = executor._agent_kernel_snapshot
         executor._agent_kernel_snapshot = replace(snapshot, intent=replace(snapshot.intent, is_write=True))
     elif boundary == "exercise":
-        monkeypatch.setattr("app.services.agent_kernel.exercise_plan_scope.resolve_exercise_plan_scope", lambda text: object())
+        monkeypatch.setattr("app.services.agent_kernel.evidence_advice_scope.resolve_exercise_plan_scope", lambda text: object())
     elif boundary == "clinician":
         from types import SimpleNamespace
         monkeypatch.setattr("app.services.agent_executor.classify_clinician_turn", lambda text: SimpleNamespace(kind="feedback"))
