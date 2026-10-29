@@ -4,7 +4,7 @@
 |---|---|
 | slug | visible-diet-calorie-correction |
 | 当前阶段 | S5 独立安全审查 |
-| 状态 | implemented; awaiting G4 |
+| 状态 | first G4 repaired; awaiting re-review |
 
 ## G1 准入
 
@@ -28,7 +28,7 @@
 - G1: PASS
 - G2: PASS，采用现有 `diet_recalculate_update` 查询、更新和读回合同的窄化分支。
 - G3: PASS，任务拆分为安全引用投影、严格语法、能力绑定、执行器参数规范化和回归验证。
-- G4: pending，提交后由独立安全 reviewer 裁决。
+- G4: 首次 NO-GO 已修复，等待新提交复审。首次审查发现 capability policy 未放行最终 update，且 postcondition 未核对目标热量；两处均已补实现和正负测试。
 - G5: pending
 - G6: pending
 
@@ -38,13 +38,16 @@
 - 严格语法只接受当前可见单餐的单一明确热量纠正；问句、假设、转述、第三方、否定、多值、其他营养指标、无卡片和多餐场景均保持拒绝。
 - 查询权限由服务端 GoalSpec 绑定到认证用户、卡片日期与餐次；模型提供的 ID 或跨域读写不会扩权。
 - 唯一 owner-scoped 查询成功后，执行器只生成 `data={"calories": ...}`；即使模型提供其他字段或省略工具调用，也不会改变其他营养信息。
-- 更新后沿用现有 Goal postcondition 读回核验；无唯一记录、无回执或读回不一致均不能宣称完成。
+- 最终 capability policy 会再次核对精确 GoalSpec、认证用户、日期、餐次、唯一 owner-scoped 记录、记录 ID、唯一字段和目标值；原始 intent 即使为 `unknown` 也只能通过这一条服务端窄化授权。
+- 更新后的 Goal postcondition 会把权威读回 `calories` 与目标数值严格比较；缺失、非数值、布尔值或不一致均不能宣称完成。
 
 ## Verification evidence
 
 - RED：实现前新增用例产生 5 个预期失败，其余 2,635 项通过。
-- 核心与邻近回归：2,856 passed，覆盖 actionable context、GoalSpec、capability policy、owner/date lookup、执行器规范化、postcondition 与事件流。
+- 首次 G4 绑定提交 `27fc3a034c5b8331fe22b496b8381bdd8c62ff5c`，裁决 NO-GO；阻断项为最终 update capability 未授权和读回未比较热量，未推送、未部署。
+- G4 修复 RED：目标 378 时，读回 284、缺失、布尔值或非数字的 4 个用例在旧实现上均错误通过；最终 capability 正向用例也由独立 reviewer 复现为 `ambiguous_intent_requires_clarification`。
+- 修复后核心与邻近回归：2,867 passed，覆盖 actionable context、GoalSpec、最终 capability 正负决策、owner/date/meal 唯一 lookup、执行器规范化、数值 postcondition 与事件流。
 - 新退化用例：模型省略工具调用时，由服务端基于唯一 owner-scoped lookup 生成只含 `calories` 的更新。
-- 实时 LLM Gate：invariants 12/12、health agent core 50/50、orchestrator 5/5（平均分 0.96）、trajectory contract 12/12、goldens 9/9；仅合成数据与 SQLite 内存库。脱敏日志 SHA-256：`4ae28581ca2d34f8ad4779e2c4278e3b69803e7237c9d89fc2e91f4664857421`。
+- 修复后实时 LLM Gate：invariants 12/12、health agent core 50/50、orchestrator 5/5（平均分 0.96）、trajectory contract 12/12、goldens 9/9；仅合成数据与 SQLite 内存库。脱敏日志 SHA-256：`93df6407196ad0ae68c8c3399f855cbcc001f21e25ff3527c6749016f449eb5b`。
 - System Map、mobile navigation 和 doc drift 检查通过；`git diff --check`、修改文件 `py_compile`、新增规则的 `ISC004/FURB157` 检查通过。
 - 全量后端回归首次因缺少锁定依赖在收集阶段失败；补齐依赖后执行 36,219 项，34,350 passed、157 skipped、1,704 failed、8 errors。失败分布在运行身份、工具投影缓存、同步、可穿戴、天气等非本变更区域，因此该结果保留为全量 NO-GO，不计作本修复通过证据。精确提交仍须依赖独立 G4 与目标 SHA 的 CI Gate。

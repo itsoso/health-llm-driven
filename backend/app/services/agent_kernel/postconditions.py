@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 from typing import Any, Sequence
 
 from app.services.agent_kernel.goal_registry import (
@@ -56,13 +57,33 @@ def _verify_diet_recalculation(
     rows = _result_rows(verification_result)
     verified_ids: list[str] = []
     verified_meals: set[str] = set()
+    expected_calories = _exact_calorie_target(goal)
+    if (
+        "explicit_nutrition_correction" in goal.evidence
+        and expected_calories is None
+    ):
+        return PostconditionResult(False, "verification_target_invalid")
+    mismatched_meals: set[str] = set()
     for row in rows:
         resource_id = _row_id(row)
         meal_type = str(row.get("meal_type") or "").strip().lower()
         if resource_id not in receipt_ids or meal_type not in goal.target_meal_types:
             continue
+        if expected_calories is not None:
+            actual_calories = _decimal_number(row.get("calories"))
+            if actual_calories is None or actual_calories != expected_calories:
+                mismatched_meals.add(meal_type)
+                continue
         verified_ids.append(resource_id)
         verified_meals.add(meal_type)
+
+    if mismatched_meals:
+        return PostconditionResult(
+            False,
+            "verification_value_mismatch",
+            missing_targets=tuple(sorted(mismatched_meals)),
+            verified_resource_ids=tuple(verified_ids),
+        )
 
     missing = tuple(
         meal_type
@@ -81,6 +102,27 @@ def _verify_diet_recalculation(
         "verified",
         verified_resource_ids=tuple(verified_ids),
     )
+
+
+def _exact_calorie_target(goal: GoalSpec) -> Decimal | None:
+    if "explicit_nutrition_correction" not in goal.evidence:
+        return None
+    if len(goal.target_values) != 1 or goal.target_values[0][0] != "calories":
+        return None
+    value = _decimal_number(goal.target_values[0][1])
+    if value is None or value <= 0:
+        return None
+    return value
+
+
+def _decimal_number(value: Any) -> Decimal | None:
+    if isinstance(value, bool) or value in (None, ""):
+        return None
+    try:
+        number = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    return number if number.is_finite() else None
 
 
 def _verify_simple_health_record(

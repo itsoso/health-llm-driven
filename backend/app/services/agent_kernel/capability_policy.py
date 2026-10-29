@@ -108,7 +108,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v53"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v54"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -1099,6 +1099,85 @@ def _authorized_diet_portion_update_args(
         return None
     return {"record_type": "diet", "operation": "update",
             "record_id": requested_id, "data": expected}
+
+
+def _authorized_exact_calorie_update_args(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Authorize one exact calorie patch after a unique owner/date/meal lookup."""
+    goal = snapshot.goal
+    if (
+        type(snapshot.context.user_id) is not int
+        or snapshot.context.user_id <= 0
+        or type(snapshot.envelope.user_id) is not int
+        or snapshot.envelope.user_id != snapshot.context.user_id
+        or goal is None
+        or goal.kind != "diet_recalculate_update"
+        or goal.operation != "update"
+        or not goal.requires_lookup
+        or not goal.requires_verification
+        or not goal.target_date
+        or len(goal.target_meal_types) != 1
+        or tuple(goal.evidence)
+        != ("visible_card", "explicit_nutrition_correction")
+        or len(goal.target_values) != 1
+        or goal.target_values[0][0] != "calories"
+        or set(args) != {"record_type", "operation", "record_id", "data"}
+        or canonical_health_manage_record_type(args.get("record_type")) != "diet"
+        or str(args.get("operation") or "").strip().lower() != "update"
+    ):
+        return None
+
+    requested_id = canonical_health_manage_record_id(args.get("record_id"))
+    data = args.get("data")
+    if (
+        requested_id is None
+        or not isinstance(data, dict)
+        or set(data) != {"calories"}
+        or isinstance(data.get("calories"), bool)
+        or not isinstance(data.get("calories"), (int, float))
+    ):
+        return None
+    try:
+        expected_calories = Decimal(str(goal.target_values[0][1]))
+        requested_calories = Decimal(str(data["calories"]))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if (
+        not expected_calories.is_finite()
+        or not requested_calories.is_finite()
+        or expected_calories <= 0
+        or requested_calories != expected_calories
+    ):
+        return None
+
+    meal_type = goal.target_meal_types[0]
+    matching_records = [
+        record
+        for record in _owner_scoped_manage_list_records(snapshot, "diet")
+        if str(record.get("record_date") or "").strip()[:10] == goal.target_date
+        and str(record.get("meal_type") or "").strip().lower() == meal_type
+    ]
+    if len(matching_records) != 1:
+        return None
+    owner_record_id = canonical_health_manage_record_id(
+        matching_records[0].get("id", matching_records[0].get("record_id"))
+    )
+    if owner_record_id is None or requested_id != owner_record_id:
+        return None
+
+    normalized_calories: int | float = (
+        int(expected_calories)
+        if expected_calories == expected_calories.to_integral_value()
+        else float(expected_calories)
+    )
+    return {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": requested_id,
+        "data": {"calories": normalized_calories},
+    }
 
 
 def _authorized_health_manage_update_args(
@@ -3838,6 +3917,19 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
+        if operation == "update":
+            exact_calorie_update = _authorized_exact_calorie_update_args(
+                snapshot,
+                args,
+            )
+            if exact_calorie_update is not None:
+                return _decision(
+                    "allow",
+                    "explicit_visible_calorie_correction",
+                    tool_name,
+                    exact_calorie_update,
+                    receipt_required=True,
+                )
         if operation == "delete" and (
             (primary == "mutate" and snapshot.intent.operation == "delete")
             or is_explicit_write_cancellation(snapshot.envelope.text)

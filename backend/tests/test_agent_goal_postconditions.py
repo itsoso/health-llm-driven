@@ -1,5 +1,7 @@
 import json
 
+import pytest
+
 from app.services.agent_kernel.postconditions import (
     registered_goal_verifier_kinds,
     verify_goal_postconditions,
@@ -53,6 +55,53 @@ def test_goal_postconditions_fail_when_a_target_meal_is_missing():
     assert result.satisfied is False
     assert result.missing_targets == ("lunch",)
     assert result.reason == "verification_targets_missing"
+
+
+def _exact_calorie_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-10-29",
+        target_meal_types=("breakfast",),
+        target_values=(("calories", "378"),),
+        requires_lookup=True,
+        requires_verification=True,
+        postconditions=("existing_records_only", "read_back_verified"),
+        evidence=("visible_card", "explicit_nutrition_correction"),
+    )
+
+
+def test_exact_calorie_postcondition_requires_matching_readback_value():
+    result = verify_goal_postconditions(
+        _exact_calorie_goal(),
+        write_receipts=[{"resource_type": "diet_record", "resource_id": "812"}],
+        verification_result=[{
+            "id": 812,
+            "meal_type": "breakfast",
+            "calories": 378,
+        }],
+    )
+
+    assert result.satisfied is True
+    assert result.verified_resource_ids == ("812",)
+
+
+@pytest.mark.parametrize("readback", (284, None, True, "not-a-number"))
+def test_exact_calorie_postcondition_rejects_missing_or_mismatched_value(readback):
+    result = verify_goal_postconditions(
+        _exact_calorie_goal(),
+        write_receipts=[{"resource_type": "diet_record", "resource_id": "812"}],
+        verification_result=[{
+            "id": 812,
+            "meal_type": "breakfast",
+            "calories": readback,
+        }],
+    )
+
+    assert result.satisfied is False
+    assert result.reason == "verification_value_mismatch"
+    assert result.missing_targets == ("breakfast",)
 
 
 def test_goal_postconditions_do_not_accept_unreceipted_rows():

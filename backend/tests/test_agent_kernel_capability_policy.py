@@ -3064,6 +3064,120 @@ def test_read_turn_blocks_health_manage_update():
     assert decision.reason == "manage_write_without_mutate_intent"
 
 
+def _exact_visible_calorie_update_snapshot(
+    *,
+    owner_records: tuple[dict, ...] = ({
+        "id": 812,
+        "record_date": "2026-10-29",
+        "meal_type": "breakfast",
+        "calories": 284,
+    },),
+) -> TurnSnapshot:
+    snapshot = _snapshot("热量是 378 大卡 之前计算的热量不对", channel="mobile")
+    visible_card = ActionableReference(
+        kind="diet_draft",
+        source_message_id="recorded-card",
+        data={
+            "record_date": "2026-10-29",
+            "meals": ({
+                "meal_type": "breakfast",
+                "food_items": "纯牛奶 1 盒",
+                "calories": 284,
+            },),
+        },
+    )
+    goal = compile_goal_spec(
+        envelope=snapshot.envelope,
+        context=snapshot.context,
+        intent=snapshot.intent,
+        actionable_references=(visible_card,),
+    )
+    return replace(
+        snapshot,
+        goal=goal,
+        actionable_references=(
+            visible_card,
+            ActionableReference(
+                kind="owner_scoped_health_manage_list",
+                data={"record_type": "diet", "records": owner_records},
+            ),
+        ),
+    )
+
+
+def test_exact_visible_calorie_correction_allows_only_bound_update():
+    snapshot = _exact_visible_calorie_update_snapshot()
+
+    assert snapshot.intent.primary == "unknown"
+    decision = decide_tool_capability(
+        snapshot,
+        _request(
+            "health_manage",
+            {
+                "record_type": "diet",
+                "operation": "update",
+                "record_id": 812,
+                "data": {"calories": 378},
+            },
+        ),
+    )
+
+    assert decision.action == "allow"
+    assert decision.reason == "explicit_visible_calorie_correction"
+    assert decision.normalized_args == {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 812,
+        "data": {"calories": 378},
+    }
+    assert decision.receipt_required is True
+
+
+@pytest.mark.parametrize(
+    ("owner_records", "arguments"),
+    (
+        (
+            ({"id": 812, "record_date": "2026-10-29", "meal_type": "breakfast"},),
+            {"record_type": "diet", "operation": "update", "record_id": 813,
+             "data": {"calories": 378}},
+        ),
+        (
+            ({"id": 812, "record_date": "2026-10-29", "meal_type": "breakfast"},),
+            {"record_type": "diet", "operation": "update", "record_id": 812,
+             "data": {"calories": 379}},
+        ),
+        (
+            ({"id": 812, "record_date": "2026-10-29", "meal_type": "breakfast"},),
+            {"record_type": "diet", "operation": "update", "record_id": 812,
+             "data": {"calories": 378, "protein": 99}},
+        ),
+        (
+            ({"id": 812, "record_date": "2026-10-28", "meal_type": "breakfast"},),
+            {"record_type": "diet", "operation": "update", "record_id": 812,
+             "data": {"calories": 378}},
+        ),
+        (
+            (
+                {"id": 812, "record_date": "2026-10-29", "meal_type": "breakfast"},
+                {"id": 813, "record_date": "2026-10-29", "meal_type": "breakfast"},
+            ),
+            {"record_type": "diet", "operation": "update", "record_id": 812,
+             "data": {"calories": 378}},
+        ),
+    ),
+)
+def test_exact_visible_calorie_correction_rejects_unbound_or_widened_update(
+    owner_records,
+    arguments,
+):
+    decision = decide_tool_capability(
+        _exact_visible_calorie_update_snapshot(owner_records=owner_records),
+        _request("health_manage", arguments),
+    )
+
+    assert decision.action == "block"
+
+
 def test_mutation_turn_allows_health_manage_delete_with_receipt():
     snapshot = replace(
         _snapshot("删除饮食记录 1"),
@@ -5561,7 +5675,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v53"
+    assert payload["contract_version"] == "agent-capability-policy-v54"
     assert payload["health_semantics"]["version"] == "health-semantics-v15"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
