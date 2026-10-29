@@ -9340,17 +9340,66 @@ _VOICE_SINGLE_DIET_RECORD_RE = re.compile(
 )
 _VOICE_SINGLE_DIET_PORTION_RE = re.compile(
     r"(?:半|[零一二两三四五六七八九十百\d]+)"
-    r"(?:个|粒|颗|枚|杯|碗|份|片|根|块|盒|瓶|克|千克|公斤|g|kg|毫升|ml)"
+    r"(?:千克|公斤|毫升|kg|ml|个|粒|颗|枚|杯|碗|份|片|根|块|盒|瓶|克|g)"
+    r"[A-Za-z\u4e00-\u9fff]{1,12}",
+    re.IGNORECASE,
+)
+_VOICE_SINGLE_DIET_RESIDUE_RE = re.compile(
+    r"(?:然后|接着|随后|同时|并且|以及|之后|以前|"
+    r"查看|查询|查一下|看看|分析|总结|告诉|回答|"
+    r"记录|保存|写入|添加|新增|修改|删除|撤销|安排|提醒|"
+    r"今天|昨天|前天|明天|后天|上周|下周|日期|"
+    r"心率|血压|血糖|体重|体温|血氧|睡眠|运动|饮食)"
 )
 
 
-def _is_explicit_single_food_voice_record(message: str) -> bool:
-    """Prove the voice fast path has one explicit food portion and no residue."""
+def _is_explicit_single_food_voice_record(
+    message: str,
+    *,
+    goal: Optional[GoalSpec] = None,
+    current_date: Optional[str] = None,
+) -> bool:
+    """Prove one closed food span, with no second action or non-food intake."""
     candidate = str(message or "").replace(" ", "").replace("\u3000", "")
     match = _VOICE_SINGLE_DIET_RECORD_RE.fullmatch(candidate)
     if match is None:
         return False
-    return len(_VOICE_SINGLE_DIET_PORTION_RE.findall(match.group("food"))) == 1
+    food = match.group("food")
+    from app.services.write_intent_scope import is_quantified_meal_observation
+
+    if (
+        _VOICE_SINGLE_DIET_PORTION_RE.fullmatch(food) is None
+        or not is_quantified_meal_observation(f"加餐{food}")
+        or _VOICE_SINGLE_DIET_RESIDUE_RE.search(food) is not None
+        or contains_medication_reference(food)
+    ):
+        return False
+
+    compact_food = re.sub(r"[\s-]+", "", food.casefold())
+    if any(
+        re.sub(r"[\s-]+", "", term.casefold()) in compact_food
+        for term in supplement_name_entity_terms()
+    ):
+        return False
+
+    if goal is not None:
+        values = dict(goal.target_values)
+        goal_food = re.sub(
+            r"[\s\u3000]+",
+            "",
+            str(values.get("food_items") or ""),
+        ).strip("，,。！？!?")
+        if (
+            goal.kind != "simple_health_record"
+            or goal.domain != "diet"
+            or goal.operation != "create"
+            or goal.target_record_type != "diet"
+            or goal_food != food
+            or current_date is None
+            or goal.target_date != current_date
+        ):
+            return False
+    return True
 
 
 def _build_preplanned_simple_diet_tool_call(
@@ -20160,7 +20209,17 @@ class AgentExecutor:
                             if (
                                 not proposed_calls and round_idx == 0
                                 and channel == "voice"
-                                and _is_explicit_single_food_voice_record(message)
+                                and _is_explicit_single_food_voice_record(
+                                    message,
+                                    goal=(
+                                        self._agent_kernel_snapshot.goal
+                                        if self._agent_kernel_snapshot else None
+                                    ),
+                                    current_date=(
+                                        self._agent_kernel_snapshot.context.current_time.date().isoformat()
+                                        if self._agent_kernel_snapshot else None
+                                    ),
+                                )
                                 and not health_advice_buffered and not self._read_only_turn
                                 and not deterministic_simple_record_fallback_attempted
                                 and not unverified_write_operations and not failed_write_operations

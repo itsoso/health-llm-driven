@@ -10,11 +10,13 @@ from app.agents.safety_guardian.schema import Alert, Severity
 from app.models.blood_pressure import BloodPressureRecord
 from app.models.user_profile import UserProfile
 from app.models.agent_conversation import AgentConversation, AgentMessage
+from app.services.agent_kernel.types import GoalSpec
 from app.services.agent_executor import (
     INTERRUPTED_COMPLETION_NOTICE,
     AgentExecutor,
     _claims_unverified_write_success,
     _completion_status_from_finish_reason,
+    _is_explicit_single_food_voice_record,
     _recoverable_write_operation_key,
     _write_checkpoint_status_after_dispatch,
     _write_outcome_event_fields,
@@ -3571,6 +3573,104 @@ async def test_agent_stream_exact_voice_peach_record_skips_outer_tool_model(
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["write_receipts"][0]["resource_id"] == "112"
     assert done["data"]["llm_rounds"] == 0
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录下来，吃了一粒桃子然后查看昨天的饮食",
+        "记录下来，吃了一粒桃子然后记录心率80",
+        "记录下来，吃了一粒布洛芬",
+        "记录下来，吃了一粒钙片",
+        "记录下来，吃了一粒合成未知名称",
+    ),
+)
+def test_voice_single_food_fast_path_rejects_residual_actions_and_non_food_intake(
+    message,
+):
+    assert _is_explicit_single_food_voice_record(message) is False
+
+
+@pytest.mark.parametrize(
+    ("target_date", "food_items"),
+    (
+        ("2026-07-16", "一粒桃子"),
+        ("2026-07-17", "一粒桃子然后查看昨天的饮食"),
+    ),
+)
+def test_voice_single_food_fast_path_requires_current_goal_binding(
+    target_date, food_items,
+):
+    goal = GoalSpec(
+        kind="simple_health_record",
+        domain="diet",
+        operation="create",
+        target_date=target_date,
+        target_record_type="diet",
+        target_values=(("meal_type", "snack"), ("food_items", food_items)),
+    )
+
+    assert not _is_explicit_single_food_voice_record(
+        "记录下来，吃了一粒桃子。",
+        goal=goal,
+        current_date="2026-07-17",
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录下来，吃了一粒桃子然后查看昨天的饮食",
+        "记录下来，吃了一粒桃子然后记录心率80",
+        "记录下来，吃了一粒布洛芬",
+        "记录下来，吃了一粒钙片",
+        "记录下来，吃了一粒合成未知名称",
+    ),
+)
+async def test_voice_fast_path_never_dispatches_unsafe_food_span(
+    db, auth_user_and_headers, monkeypatch, message,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    model_calls = []
+
+    async def safe_model(messages, tools):
+        model_calls.append((messages, tools))
+        return {
+            "content": "请确认要处理的单一记录。",
+            "finish_reason": "stop",
+        }
+
+    async def forbid_estimate(_food_items):
+        raise AssertionError("unsafe food span must not enter diet enrichment")
+
+    async def forbid_dispatch(_request, _user_token):
+        raise AssertionError("unsafe food span must not dispatch a direct diet write")
+
+    monkeypatch.setattr(executor, "_call_llm", safe_model)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(safe_model))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        forbid_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", forbid_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            channel="voice",
+            user_auth_token="test-token",
+            client_turn_id=f"turn-unsafe-voice-{abs(hash(message))}",
+        )
+    ]
+
+    assert model_calls
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["llm_rounds"] >= 1
+    assert done["data"]["write_receipts"] == []
 
 
 @pytest.mark.asyncio

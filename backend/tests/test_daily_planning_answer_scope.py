@@ -56,6 +56,16 @@ def test_supplement_daily_draft_is_local_and_never_invents_an_intake_plan():
     assert '未查询个人记录、未保存计划' in answer
     assert '不读取个人补剂记录' in current_input_advice_instructions(message)
 
+
+def test_supplement_daily_draft_does_not_hardcode_a_different_day():
+    from app.services.agent_kernel.current_input_advice_scope import local_advice_response
+
+    _kind, answer = local_advice_response('安排我今天的运动、饮食和补剂的摄入。')
+
+    assert '今天的通用安排' in answer
+    assert '明天的执行要求' not in answer
+    assert '核对已确认方案的执行要求' in answer
+
 @pytest.mark.parametrize('text', [
     '规划今天饮食运动和睡眠，并查询我的病史', '根据我昨天的睡眠规划今天饮食运动和睡眠',
     '给妈妈规划今天饮食运动和睡眠', '“规划今天饮食运动和睡眠”',
