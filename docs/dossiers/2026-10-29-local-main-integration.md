@@ -4,8 +4,8 @@
 |---|---|
 | slug | `local-main-integration` |
 | 创建日期 | 2026-10-29 |
-| 当前阶段 | S5 实现 |
-| 状态 | building |
+| 当前阶段 | G5 发布恢复 |
+| 状态 | release recovery |
 | 负责 | Codex |
 
 ## Scope
@@ -83,8 +83,47 @@ without conflicts onto `ee7cbfda15378b3e1eac11d0581cf5cd10898d74` after canonica
 
 ## Gate state
 
-- G3: IN PROGRESS pending the exact candidate Linux CI. Local product behavior is
-  green; the platform-specific release-invariants failure is recorded above.
-- G4: GO for the exact code candidate through `2144420ae`.
-- G5/G6: NOT STARTED. No push, deployment, OTA publication, or App Store mutation
-  is claimed by this document.
+- G3: PASS for canonical main `1c30cfa94a689f5b99f6c638a27c622a87a35d35`;
+  exact Linux CI run `40847684852` is green across all 32 jobs.
+- G4: GO for the integrated product changes. The preclaim recovery extension is
+  limited to fixed release evidence and requires its own review before use.
+- G5: backend PASS; OTA validate PASS; OTA publish BLOCKED for 1c30 at the
+  preclaim boundary. The original failed operation is preserved and cannot be
+  replayed.
+- G6: backend production path verified; Mobile device installation and real-data
+  acceptance remain unverified.
+
+## Main integration and production evidence
+
+- The reconciled Mobile changes, build-286 OTA baseline, dietary reasoning fixes,
+  and provider fallback repair were integrated at
+  `1c30cfa94a689f5b99f6c638a27c622a87a35d35` and remain in the ancestry of the
+  current successor main revision. Production remains on 1c30 until its failed
+  preclaim is closed and the successor completes its own backend release.
+- Exact CI run `40847684852` completed successfully with all 32 jobs green.
+- Trusted Release validation `40849267386` passed. Backend release run
+  `40850051454` completed successfully; production source and completed receipt
+  both bind 1c30, all backend/worker services are active, public health returns
+  200 healthy, and anonymous `/api/v1/auth/me` returns 401.
+- OTA validation run `40850818571` passed for the same revision and build-286
+  runtime cohort.
+
+## OTA preclaim incident and recovery
+
+- The only OTA publish run, `40851087780`, failed at `claim-ota`. Its official
+  artifact `12887890387` has ZIP SHA256
+  `304d625462b5577c3c2a166ab7a5edc164f652f35474f51aec6f03b9b73e1476`
+  and contains exactly `ota-claim.json`, `ota-preflight.json`, and the sanitized
+  `command_failed` diagnostic. There is no vendor or completion receipt.
+- Read-only server evidence shows `/var/lib/reva-release/ota/1c30…` contains only
+  `intent.json` and `lease.json`; `claimed.json`, `verified.json`, and
+  `completed.json` are absent. The original business lease remains present with
+  its recorded device/inode identity. The vendor publish call was never reached.
+- G5 is **BLOCKED** for 1c30 and that SHA must never be republished. A fixed,
+  byte-bound preclaim-closure profile is being added in the next reviewed main
+  revision. It accepts only this exact failed workflow/job/artifact and original
+  publisher source hashes, and requires a fresh exact-CI-green closing SHA plus
+  unchanged server evidence. After closure, the successor SHA must complete its
+  own backend and OTA validate/publish sequence.
+- TestFlight, App Review, phone operation, and real health-data acceptance remain
+  outside this recovery and were not changed.

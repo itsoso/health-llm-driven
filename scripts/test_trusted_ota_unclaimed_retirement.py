@@ -39,7 +39,8 @@ def test_requires_exact_failed_profile_and_no_mutation_on_changed_inspection(tmp
                                       '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
                                       'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                                       'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
-                                      'a4d922886c859f4a2a43d4322fd43d128bf934f3'])
+                                      'a4d922886c859f4a2a43d4322fd43d128bf934f3',
+                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35'])
 def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch, failed_sha):
     m = load()
     m.select_profile(failed_sha)
@@ -94,7 +95,8 @@ def metadata(m):
                                       '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
                                       'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                                       'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
-                                      'a4d922886c859f4a2a43d4322fd43d128bf934f3'])
+                                      'a4d922886c859f4a2a43d4322fd43d128bf934f3',
+                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35'])
 def test_official_metadata_failures_are_closed(fault, failed_sha):
     m = load(); m.select_profile(failed_sha)
     run, jobs, artifact = metadata(m)
@@ -116,7 +118,8 @@ def test_official_metadata_failures_are_closed(fault, failed_sha):
                         '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
                         'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                         'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
-                        'a4d922886c859f4a2a43d4322fd43d128bf934f3'))
+                        'a4d922886c859f4a2a43d4322fd43d128bf934f3',
+                        '1c30cfa94a689f5b99f6c638a27c622a87a35d35'))
 def transaction(tmp_path, monkeypatch, request):
     m = load()
     m.select_profile(request.param)
@@ -282,6 +285,11 @@ def test_producer_to_actual_server_history_consumer(transaction, monkeypatch, fa
     server=importlib.util.module_from_spec(spec);spec.loader.exec_module(server)
     monkeypatch.setattr(server,'STATE',a.server.STATE)
     monkeypatch.setattr(server,'BUSINESS_LEASE',a.server.BUSINESS_LEASE)
+    monkeypatch.setattr(server,'EXAM_PROVIDER_REFRESH_ROOT',a.server.STATE/'provider-refresh')
+    monkeypatch.setattr(server,'EXAM_CREDENTIAL_ROOT',a.server.STATE/'credential-root')
+    monkeypatch.setattr(server,'EXAM_RETIRED_INSTALLATIONS',(
+        a.server.STATE/'retired-installation-config',
+        a.server.STATE/'retired-installation-runtime'))
     # Only canonical-loader and OS ownership/sticky-parent dependencies are
     # replaced. The transaction, closure validator, and history consumer run.
     monkeypatch.setattr(server,'secure_path',a.server.secure_path)
@@ -373,7 +381,7 @@ def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(
                'intent_sha256':m.digest(intent)}
     (a.record/'intent.json').write_text(json.dumps(intent))
     (a.record/'completed.json').write_text(json.dumps(completed))
-    if m.FAILED_SHA == A4D_FAILED_SHA:
+    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA}:
         with pytest.raises(m.ClosureError):
             m.validate_closed_history(a.server,op)
     else:
@@ -382,8 +390,8 @@ def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(
 
 def test_history_rejects_mixed_ctime_schema_for_legacy_profiles(transaction):
     m,a,op,_lease,_calls=transaction
-    if m.FAILED_SHA == A4D_FAILED_SHA:
-        pytest.skip('a4d already requires ctime on every lease file')
+    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA}:
+        pytest.skip('current profiles already require ctime on every lease file')
     inspected=m.close_transaction(a)
     m.close_transaction(a,inspected['evidence_sha256'])
     intent=json.loads((a.record/'intent.json').read_text())
@@ -479,6 +487,7 @@ def test_f202_rejects_foreign_profile_and_preserves_loaded_history(foreign_sha):
 
 C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
 A4D_FAILED_SHA = 'a4d922886c859f4a2a43d4322fd43d128bf934f3'
+ONEC_FAILED_SHA = '1c30cfa94a689f5b99f6c638a27c622a87a35d35'
 
 
 def test_c29d_fixed_official_profile():
@@ -550,7 +559,7 @@ def test_closing_ci_failure_does_not_retry_another_credential(monkeypatch):
 
 @pytest.mark.parametrize('foreign_sha', [
     'da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA, F202_FAILED_SHA,
-    A4D_FAILED_SHA])
+    A4D_FAILED_SHA, ONEC_FAILED_SHA])
 def test_c29d_does_not_change_or_accept_historical_profiles(foreign_sha):
     import copy
     old=load();old.select_profile(foreign_sha)
@@ -600,9 +609,49 @@ def test_a4d_fixed_official_profile():
     assert m.validate_official_metadata(*metadata(m))['run']['head_sha'] == A4D_FAILED_SHA
 
 
+def test_1c30_fixed_official_profile():
+    m = load(); m.select_profile(ONEC_FAILED_SHA)
+    assert (m.RUN_ID, m.RUN_ATTEMPT, m.WORKFLOW_ID, m.JOB_ID,
+            m.ARTIFACT_ID, m.ARTIFACT_SIZE) == (
+        40851087780, 1, 370218159, 123370445233, 12887890387, 2568)
+    assert m.ARTIFACT_ZIP_SHA256 == (
+        '304d625462b5577c3c2a166ab7a5edc164f652f35474f51aec6f03b9b73e1476')
+    assert m.ENTRY_DIGESTS == {
+        'ota-diagnostic.json': 'e9d202364bddba6f3275d33965be641b3b48b32bafc009c2b8091735a44093b7',
+        'ota-claim.json': '4b483475d52ba5a69f7c57c90cd977bc75c146b5b5437519125d0f6a3349611c',
+        'ota-preflight.json': '2561a9ae44386cc95d36d7fc0bb858b8ebe3ba72d52fedf7c910c2f802f3a223'}
+    assert m.SOURCE_HASHES == {
+        '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+        'scripts/trusted_ota_publish.py': '18766c3b0138d501e65e8254ae24a31f2baadc5f9be0d8aee3e3c228e47cc0b5',
+        'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+        'scripts/trusted_ota.py': '16c3e5e691882e9776e344803f0739152537d04af52012bebf31ec9df00b2061'}
+    assert m.validate_official_metadata(*metadata(m))['run']['head_sha'] == ONEC_FAILED_SHA
+
+
 @pytest.mark.parametrize('foreign_sha', [
     'da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA,
-    F202_FAILED_SHA, C29D_FAILED_SHA])
+    F202_FAILED_SHA, C29D_FAILED_SHA, A4D_FAILED_SHA])
+def test_1c30_does_not_change_or_accept_historical_profiles(foreign_sha):
+    import copy
+    old = load(); old.select_profile(foreign_sha)
+    old_metadata = copy.deepcopy(metadata(old))
+    old_entries = copy.deepcopy(old.ENTRY_DIGESTS)
+    new = load(); new.select_profile(ONEC_FAILED_SHA)
+    for index in range(3):
+        mixed = list(metadata(new)); mixed[index] = old_metadata[index]
+        with pytest.raises(new.ClosureError):
+            new.validate_official_metadata(*mixed)
+    with pytest.raises(new.ClosureError):
+        new.select_profile(foreign_sha)
+    with pytest.raises(old.ClosureError):
+        old.select_profile(ONEC_FAILED_SHA)
+    assert metadata(old) == old_metadata and old.ENTRY_DIGESTS == old_entries
+    assert new.FAILED_SHA == ONEC_FAILED_SHA
+
+
+@pytest.mark.parametrize('foreign_sha', [
+    'da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA,
+    F202_FAILED_SHA, C29D_FAILED_SHA, ONEC_FAILED_SHA])
 def test_a4d_does_not_change_or_accept_historical_profiles(foreign_sha):
     import copy
     old = load(); old.select_profile(foreign_sha)

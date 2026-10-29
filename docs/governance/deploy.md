@@ -600,6 +600,16 @@ preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前�
 使用旧 schema 或全部使用含 `ctime_ns` 的新 schema，禁止部分降级或混用；a4d 的新记录
 必须在全部文件中包含该字段。
 
+`1c30cfa94a689f5b99f6c638a27c622a87a35d35` 的固定 profile 仅接受 run
+`40851087780`、attempt `1`、job `123370445233` 和官方 artifact `12887890387`
+（2568 bytes）。官方 ZIP 精确包含 intent、preflight 和 `claim-ota` 的
+`command_failed` 诊断；服务器现场同样只有 `intent.json` 与 `lease.json`，没有
+`claimed.json`、vendor receipt 或完成回执。收口仍须由后续精确绿色 reviewed SHA
+执行，重新验证原 intent/lease、双锁、生产后端终态和健康状态，并为全部 lease 文件
+绑定 device、inode、内容摘要和 `ctime_ns`。该终态只证明 1c30 未发布并关闭其原租约；
+不允许重发 1c30，也不把它记为 OTA 成功。新的 OTA 候选必须重新通过自己的完整 CI、
+后端部署及 trusted validate/publish。
+
 首次安装仅属于经授权的发布基础设施配置：管理员以固定系统 Git 从 canonical GitHub
 检出已通过独立 G4 和 CI 的 SHA 到 `/var/lib/reva-release/bootstrap/<sha>/source`，
 核验干净 revision、root ownership 与受审字节，再以系统 Python `-I` 执行该源码中的
