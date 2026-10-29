@@ -84,36 +84,57 @@ export default function ChatHeader({
             <Pressable
               onPress={onNewChat}
               hitSlop={8}
-              style={({ pressed }) => [
-                styles.headerAction,
-                styles.primaryHeaderAction,
-                pressed && styles.primaryHeaderActionPressed,
-              ]}
+              style={styles.headerAction}
               accessibilityLabel="新建对话"
               accessibilityHint="开始新对话，当前对话保留在历史中"
               accessibilityRole="button"
             >
-              <Ionicons name="create-outline" size={20} color={C.greenOn} />
+              {({ pressed }) => (
+                <View
+                  testID="chat-header-new-visual"
+                  style={[
+                    styles.headerActionVisual,
+                    styles.primaryHeaderAction,
+                    pressed && styles.primaryHeaderActionPressed,
+                  ]}
+                >
+                  <Ionicons name="create-outline" size={20} color={C.greenOn} />
+                </View>
+              )}
             </Pressable>
             <Pressable
               onPress={onOpenHistory}
               hitSlop={8}
-              style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
+              style={styles.headerAction}
               accessibilityLabel="对话历史"
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={20} color={C.green700} />
+              {({ pressed }) => (
+                <View
+                  testID="chat-header-history-visual"
+                  style={[styles.headerActionVisual, pressed && styles.headerActionPressed]}
+                >
+                  <Ionicons name="time-outline" size={20} color={C.green700} />
+                </View>
+              )}
             </Pressable>
             <Pressable
               onPress={onOpenToolMenu}
               hitSlop={8}
-              style={({ pressed }) => [styles.headerAction, pressed && styles.headerActionPressed]}
+              style={styles.headerAction}
               accessibilityLabel="更多会诊操作"
               accessibilityHint="打开更多会诊操作"
               accessibilityRole="button"
             >
-              <Ionicons name="ellipsis-horizontal" size={20} color={C.green700} />
+              {({ pressed }) => (
+                <View
+                  testID="chat-header-more-visual"
+                  style={[styles.headerActionVisual, pressed && styles.headerActionPressed]}
+                >
+                  <Ionicons name="ellipsis-horizontal" size={20} color={C.green700} />
+                </View>
+              )}
             </Pressable>
           </View>
         </View>
@@ -151,20 +172,28 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     minHeight: 46,
     gap: 2,
-    padding: 3,
+    padding: 1,
     borderRadius: revaRadii.pill,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.green100,
     backgroundColor: C.green50,
   },
   headerAction: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 0,
+  },
+  headerActionVisual: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
-    borderWidth: 0,
   },
   backAction: {
     width: 44,

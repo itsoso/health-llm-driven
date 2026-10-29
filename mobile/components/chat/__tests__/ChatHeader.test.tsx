@@ -100,16 +100,19 @@ describe('ChatHeader', () => {
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 44, height: 44 }),
     );
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 44, height: 44 }),
     );
     expect(StyleSheet.flatten(getByTestId('chat-header-action-group').props.style)).toEqual(
       expect.objectContaining({ backgroundColor: C.green50, borderColor: C.green100 }),
     );
-    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
+    expect(StyleSheet.flatten(getByTestId('chat-header-new-visual').props.style)).toEqual(
       expect.objectContaining({ backgroundColor: C.green700 }),
+    );
+    expect(StyleSheet.flatten(getByTestId('chat-header-new-visual').props.style)).toEqual(
+      expect.objectContaining({ width: 40, height: 40 }),
     );
 
     fireEvent.press(getByLabelText('新建对话'));
