@@ -3,6 +3,7 @@
 import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Bookmark, Check, ChevronDown, Copy, Share2, ThumbsDown, ThumbsUp } from 'lucide-react';
 import { ChatMessage } from '@/services/api/ai';
+import { BrandIcon } from '@/components/BrandIcon';
 import MarkdownRenderer from '@/components/assistant/MarkdownRenderer';
 import MealPlanCard from '@/components/assistant/MealPlanCard';
 import ToolCallChip from '@/components/assistant/ToolCallChip';
@@ -41,13 +42,8 @@ const STYLE = {
   userBubbleClass: 'bg-[#F3E4DC] text-[#29261F]',
 };
 
-/** 助理头像 — clay 圆角方块 "巴", 与顶栏品牌 mark 一致。 */
 function AssistantAvatar({ className = '' }: { className?: string }) {
-  return (
-    <div className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-[#C96442] text-[13px] font-semibold text-white ${className}`}>
-      巴
-    </div>
-  );
+  return <BrandIcon size={28} className={`h-7 w-7 shrink-0 rounded-lg ${className}`} />;
 }
 
 function parseMessageDate(value?: string | null): Date | null {

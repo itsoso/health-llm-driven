@@ -15,6 +15,7 @@ def _isolate_twin_cache(isolated_agent_protocol_transport):
 @pytest.mark.asyncio
 @pytest.mark.parametrize('panel', [False, True])
 @pytest.mark.parametrize('query,tool,args,expected', [
+    ('晚餐吃了啥', 'health_query', {'dimension': 'diet'}, ('diet',)),
     ('今日我吃了啥', 'health_manage', {'record_type': 'diet', 'operation': 'list'}, ('diet',)),
     ('今天晚上我吃了什么？给我一些建议。', 'health_query', {'dimension': 'diet'}, ('diet',)),
     ('给我今天总结 给我建议', 'health_analysis', {'analysis_type': 'orchestrator'}, ('diet', 'sleep')),
@@ -50,7 +51,7 @@ async def test_daily_read_runs_through_pi_with_verified_scope(db, auth_user_and_
     assert {r.arguments.get('dimension') or r.arguments.get('record_type') for r in dispatched} == set(expected)
     for request in dispatched:
         assert request.arguments.get('date') or request.arguments['start_date'] == request.arguments['end_date']
-    if '晚上' in query:
+    if '晚上' in query or '晚餐' in query:
         assert dispatched[0].arguments['meal_type'] == 'dinner'
     assert done['turn_outcome']['status'] == 'complete'
     assert {g['goal_id'] for g in done['turn_outcome']['goals'] if g['kind'] == 'query'} == set(expected)

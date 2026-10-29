@@ -144,7 +144,8 @@ async def test_rejected_model_calendar_scope_never_reaches_adapter(mode):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("tool", ["health_query", "health_manage"])
-async def test_meal_read_dispatches_only_requested_meal(tool):
+@pytest.mark.parametrize('message', ['今天晚上我吃了什么？给我一些建议', '晚餐吃了啥'])
+async def test_meal_read_dispatches_only_requested_meal(tool, message):
     from app.services.agent_kernel.tool_gateway import ToolGateway
     calls = []
 
@@ -154,7 +155,7 @@ async def test_meal_read_dispatches_only_requested_meal(tool):
 
     args = ({"dimension": "diet", "days": 30} if tool == "health_query" else
             {"record_type": "diet", "operation": "list", "meal_type": "breakfast"})
-    await ToolGateway(snapshot("今天晚上我吃了什么？给我一些建议")).execute(
+    await ToolGateway(snapshot(message)).execute(
         ToolExecutionRequest(tool_name=tool, arguments=args), dispatch)
     assert calls == [("health_manage", {"record_type": "diet", "operation": "list",
                                        "date": "2026-07-17", "meal_type": "dinner", "limit": 100})]
@@ -226,8 +227,9 @@ async def test_daily_plan_reaches_owned_exact_date_postgres_rows(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize('message', ['今天晚上我吃了什么？给我一些建议', '晚餐吃了啥'])
 async def test_dinner_plan_reaches_authenticated_postgres_meal_filter(
-    db, client, auth_user_and_headers, monkeypatch,
+    db, client, auth_user_and_headers, monkeypatch, message,
 ):
     if db.get_bind().dialect.name != "postgresql":
         pytest.skip("requires isolated TEST_DATABASE_URL PostgreSQL")
@@ -254,7 +256,7 @@ async def test_dinner_plan_reaches_authenticated_postgres_meal_filter(
     db.commit()
     executor = AgentExecutor(db)
     executor._current_user_id = owner.id
-    snap = snapshot("今天晚上我吃了什么？给我一些建议")
+    snap = snapshot(message)
     executor._current_turn_user_message = snap.envelope.text
     snap = replace(snap, envelope=replace(snap.envelope, user_id=owner.id),
                    context=replace(snap.context, user_id=owner.id))
@@ -364,3 +366,30 @@ def test_sync_does_not_bypass_source_specific_permission(source, expected):
     decision = decide_tool_capability(snapshot("帮我同步佳明数据"), ToolExecutionRequest(
         tool_name="health_record", arguments={"record_type": "garmin_sync", "data": {}}, source=source))
     assert decision.action == expected
+
+@pytest.mark.parametrize('message', ['晚餐吃了啥', '晚饭吃了什么？', '我晚餐吃了哪些东西', '今天晚餐吃了啥'])
+def test_implicit_dinner_recall_defaults_to_owned_today_only(message):
+    result = decide(message, 'health_query', {'dimension': 'diet', 'days': 30})
+    assert result.action == 'allow', result.reason
+    assert result.normalized_tool_name == 'health_manage'
+    assert result.normalized_args == {'record_type': 'diet', 'operation': 'list',
+        'date': '2026-07-17', 'meal_type': 'dinner', 'limit': 100}
+
+@pytest.mark.parametrize('message', ['妈妈晚餐吃了啥', '晚餐吃了啥，查妈妈的', '晚餐吃了啥，删掉记录',
+    '不要查晚餐吃了啥', '假如问晚餐吃了啥', '“晚餐吃了啥”', '晚餐应该吃啥', '上周晚餐吃了啥'])
+def test_dinner_recall_residue_does_not_gain_default_scope(message):
+    from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan
+    snap = snapshot(message)
+    assert resolve_daily_read_plan(message, snap.context.current_time) is None
+
+@pytest.mark.parametrize('text,zone,expected', [
+    ('晚餐吃了啥', 'Asia/Taipei', '2026-10-30'),
+    ('晚餐吃了啥', 'America/Los_Angeles', '2026-10-29'),
+    ('昨天晚餐吃了啥', 'Asia/Taipei', '2026-10-29'),
+])
+def test_dinner_recall_date_uses_frozen_account_timezone(text, zone, expected):
+    from datetime import datetime, timezone
+    from app.services.agent_kernel.daily_read_plan import resolve_daily_read_plan
+    plan = resolve_daily_read_plan(text, datetime(2026, 10, 29, 18, tzinfo=timezone.utc), timezone_name=zone)
+    assert plan.start_date == plan.end_date == expected
+    assert plan.meal_type == 'dinner'

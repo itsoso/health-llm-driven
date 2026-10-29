@@ -41,6 +41,10 @@ _QUESTION_RE = re.compile(
     r"吃(?:得|的)(?:怎么样|怎样|如何)|"
     r"(?P<recall>(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?))"
 )
+_DINNER_RECALL_RE = re.compile(
+    rf"(?:我(?:的)?)?(?P<day>{_DAY})?(?:的)?(?:晚餐|晚饭)(?:我)?"
+    r"(?:都)?吃(?:了|过)(?:些)?(?:什么|啥|哪些)(?:东西|食物)?"
+)
 _SUMMARY_DAY = r"今天|今日|昨天|昨日|前天"
 _SUMMARY_RE = re.compile(
     rf"(?:(?:请)?(?:给我|帮我)?(?:做|做个|做一份)?(?:{_SUMMARY_DAY})(?:的)?"
@@ -126,6 +130,9 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
     suffix = _ADVICE_SUFFIX_RE.search(normalized)
     core = normalized[:suffix.start()] if suffix else normalized
     core = core.strip("，,。.!！?？；;")
+    dinner = _DINNER_RECALL_RE.fullmatch(core)
+    if dinner and normalized == original and not sync_status:
+        return dinner['day'] or '今天', ('diet',), suffix is not None, False, 'dinner', False
     question = _QUESTION_RE.fullmatch(core)
     if question:
         dimension = "sleep" if question.group("sleep") else "diet"
