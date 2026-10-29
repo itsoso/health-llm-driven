@@ -159,7 +159,9 @@ without conflicts onto `ee7cbfda15378b3e1eac11d0581cf5cd10898d74` after canonica
   before and throughout the locked closure transaction. Release order is therefore
   exact CI, canonical staging and authorization rotation, durable 53f closure,
   successor backend release, then successor OTA validate/publish.
-- Focused recovery/history verification currently passes 438 tests with two
-  existing skips from the pre-review candidate. Fresh verification, independent G4,
-  and exact successor CI are still required before the operator may be staged or
-  executed. The failed 53f publish will not be replayed.
+- Focused release/OTA/history verification passes 704 tests with one existing
+  skip. The full local CI-mode release-invariants gate passes 5,638 tests with
+  67 skips and 127 subtests. Independent G4 reviewed implementation commit
+  `4badbbec12b45320a67f576cdf563a0c04aa940e` and returned GO after fresh official
+  artifact readback; the final documentation-only successor requires exact-main
+  CI before staging or execution. The failed 53f publish will not be replayed.
