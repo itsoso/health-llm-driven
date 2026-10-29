@@ -202,6 +202,8 @@ async def test_complete_diet_draft_is_resynthesized_from_current_reads_only(db, 
     {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜。', 'tool_calls': [{'id': 'unexpected'}]},
     {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，每天总钠少于5g。'},
     {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，少油少盐（<5g/天总钠）。'},
+    {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，每天总钠少于 **5g**。'},
+    {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，钠：**5g/天**。'},
 ])
 async def test_failed_evidence_synthesis_never_publishes_complete_untrusted_draft(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, panel, bad_reply):
     from tests.test_agent_read_repair_round_budget import batch_trace, consume
@@ -236,7 +238,7 @@ def test_answer_goal_rejects_data_only_or_negated_advice(reply):
     assert not personal_diet_answer_complete(resolve_personal_diet_scope(REQUEST), reply)
 
 
-@pytest.mark.parametrize('advice', ['建议少盐清蒸鱼150克，搭配蔬菜。', '建议蔬菜200g，少放盐。'])
+@pytest.mark.parametrize('advice', ['建议少盐清蒸鱼150克，搭配蔬菜。', '建议蔬菜200g，少放盐。', '建议少盐清蒸鱼**150克**，搭配蔬菜。'])
 def test_food_portions_do_not_trigger_sodium_quantity_boundary(advice):
     from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope, personal_diet_answer_complete
     assert personal_diet_answer_complete(resolve_personal_diet_scope(REQUEST), '年龄、体重和基因信息有限。' + advice)

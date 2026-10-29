@@ -87,7 +87,8 @@ _SALT_QUANTITY = re.compile(
 
 def personal_diet_answer_complete(scope: PersonalDietScope, text: str) -> bool:
     """Task coverage only, never proof of medical correctness or read authority."""
-    if _SALT_QUANTITY.search(text) or not all(re.search(_BASIS_LABELS[d], text) for d in scope.evidence_dimensions):
+    matching_text = re.sub(r'[*_`]', '', text)
+    if _SALT_QUANTITY.search(matching_text) or not all(re.search(_BASIS_LABELS[d], text) for d in scope.evidence_dimensions):
         return False
     clauses = re.findall(r'[^。！？!?\n]+[。！？!?]?', text)
     return any(_FOOD.search(clause) and _DIET_ACTION.search(clause)
