@@ -13,7 +13,12 @@ _REVA_UI_BLOCK = re.compile(
     r"```reva-ui[^\n]*\n(?P<payload>.*?)\n?```",
     re.IGNORECASE | re.DOTALL,
 )
-_ACTIONABLE_CARD_TYPES = {"diet_daily_summary", "diet", "diet_record"}
+_ACTIONABLE_CARD_TYPES = {
+    "diet_daily_summary",
+    "diet",
+    "diet_record",
+    "diet_draft",
+}
 _MEAL_TYPES = {"breakfast", "lunch", "dinner", "snack"}
 _MEAL_LABELS = {
     "breakfast": "早餐",
@@ -106,6 +111,17 @@ def _project_descriptor(
     data = descriptor.get("data")
     if card_type not in _ACTIONABLE_CARD_TYPES or not isinstance(data, dict):
         return None
+    if card_type == "diet_draft":
+        if data.get("recorded") is not True:
+            return None
+        data = {
+            "record_date": data.get("record_date"),
+            "meals": [{
+                "meal_type": data.get("meal_type"),
+                "food_items": data.get("food_items"),
+                **{field: data.get(field) for field in _NUMERIC_FIELDS},
+            }],
+        }
     meals: list[dict[str, Any]] = []
     for raw_meal in data.get("meals") or ():
         if not isinstance(raw_meal, dict):

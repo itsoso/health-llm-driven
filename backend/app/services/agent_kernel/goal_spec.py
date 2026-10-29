@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import replace
 from datetime import date, timedelta
+from decimal import Decimal, InvalidOperation
 import hashlib
 import json
 import re
@@ -164,7 +165,35 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v45"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v46"
+_ACTIONABLE_DIET_CARD_TYPES = {
+    "diet_daily_summary",
+    "diet",
+    "diet_record",
+    "diet_draft",
+}
+_CALORIE_VALUE_PATTERN = r"(?P<calories>\d{1,5}(?:\.\d{1,2})?)\s*(?:大卡|千卡|kcal)"
+_VISIBLE_CALORIE_CORRECTION_PATTERNS = tuple(
+    re.compile(pattern, re.IGNORECASE)
+    for pattern in (
+        (
+            rf"^(?:这餐|这顿|本餐)?(?:的)?热量(?:是|为|应为|应该是|正确(?:是|为))?"
+            rf"{_CALORIE_VALUE_PATTERN}[，,。；;]*"
+            r"(?:之前|原来|先前)(?:计算|估算|记录|算)?(?:的)?热量?"
+            r"(?:不对|有误|算错(?:了)?|错(?:了)?)[。.!！]*$"
+        ),
+        (
+            r"^(?:之前|原来|先前)(?:计算|估算|记录|算)?(?:的)?热量?"
+            r"(?:不对|有误|算错(?:了)?|错(?:了)?)[，,。；;]*"
+            rf"(?:正确)?(?:的)?热量(?:是|为|应为|应该是)?{_CALORIE_VALUE_PATTERN}"
+            r"[。.!！]*$"
+        ),
+        (
+            rf"^(?:请)?(?:把|将)(?:这餐|这顿|本餐)(?:的)?热量"
+            rf"(?:改成|改为|更正为|修正为){_CALORIE_VALUE_PATTERN}[。.!！]*$"
+        ),
+    )
+)
 HEALTH_MANAGE_MUTATION_COMMAND_RE = re.compile(
     r"(?:"
     r"^(?:请(?:你|您)?|麻烦(?:你|您)?|请帮我|帮我|给我|替我)?"
@@ -290,6 +319,31 @@ def _compile_diet_recalculation_goal(
         target_meals,
         target_date=target_date,
     )
+    exact_correction = _visible_single_meal_calorie_correction(
+        text,
+        actionable_references,
+    )
+    if exact_correction is not None:
+        correction_date, correction_meal, calories = exact_correction
+        correction_foods = _reference_foods(
+            actionable_references,
+            (correction_meal,),
+            target_date=correction_date,
+        )
+        return GoalSpec(
+            kind="diet_recalculate_update",
+            domain="diet",
+            operation="update",
+            target_date=correction_date,
+            target_meal_types=(correction_meal,),
+            target_values=(("calories", calories),),
+            reference_foods=correction_foods,
+            requires_lookup=True,
+            requires_verification=True,
+            prohibited_operations=("create", "delete"),
+            postconditions=("existing_records_only", "read_back_verified"),
+            evidence=("visible_card", "explicit_nutrition_correction"),
+        )
     is_recalculation = _has_any(text, RECALCULATE_SIGNALS)
     wants_update = _has_any(text, UPDATE_SIGNALS)
     is_negated = _has_any(text, NEGATION_SIGNALS)
@@ -653,6 +707,19 @@ def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
     targets = "、".join(
         meal_labels.get(meal_type, meal_type) for meal_type in goal.target_meal_types
     )
+    exact_calories = dict(goal.target_values).get("calories")
+    if "explicit_nutrition_correction" in goal.evidence and exact_calories:
+        return (
+            "## 本轮任务契约（必须完整执行）\n"
+            f"- 目标: 将 {goal.target_date} 的 {targets} 热量精确改为 "
+            f"{exact_calories} 大卡。\n"
+            "- 顺序: 先查询当天现有饮食记录；按餐次匹配唯一记录；使用 "
+            "health_manage update 只更新 calories；最后再次查询并核对结果。\n"
+            "- 禁止: 不得重新估算，不得修改蛋白质、碳水、脂肪、纤维、"
+            "食物内容、日期或餐次，也不得新增记录。\n"
+            "- 完成标准: 收到唯一原记录的可验证更新回执，且读回 calories "
+            "与用户给出的值一致。"
+        )
     return (
         "## 本轮任务契约（必须完整执行）\n"
         f"- 目标: 重新估算并更新 {goal.target_date} 的 {targets}。\n"
@@ -1008,7 +1075,7 @@ def _visible_meal_types(
 ) -> tuple[str, ...]:
     result: list[str] = []
     for reference in references:
-        if reference.kind not in {"diet_daily_summary", "diet", "diet_record"}:
+        if reference.kind not in _ACTIONABLE_DIET_CARD_TYPES:
             continue
         for meal in reference.data.get("meals") or ():
             meal_type = str(meal.get("meal_type") or "").strip().lower()
@@ -1025,7 +1092,7 @@ def _reference_foods(
 ) -> tuple[tuple[str, str], ...]:
     result: list[tuple[str, str]] = []
     for reference in references:
-        if reference.kind not in {"diet_daily_summary", "diet", "diet_record"}:
+        if reference.kind not in _ACTIONABLE_DIET_CARD_TYPES:
             continue
         reference_date = str(reference.data.get("record_date") or "").strip()[:10]
         if reference_date and reference_date != target_date:
@@ -1036,6 +1103,51 @@ def _reference_foods(
             if meal_type in target_meals and food_items:
                 result.append((meal_type, food_items[:500]))
     return tuple(result)
+
+
+def _visible_single_meal_calorie_correction(
+    text: str,
+    references: Sequence[ActionableReference],
+) -> tuple[str, str, str] | None:
+    """Bind one exact calorie correction to the newest visible single meal."""
+    match = next(
+        (pattern.fullmatch(text) for pattern in _VISIBLE_CALORIE_CORRECTION_PATTERNS
+         if pattern.fullmatch(text) is not None),
+        None,
+    )
+    if match is None:
+        return None
+    try:
+        value = Decimal(match.group("calories"))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
+    if value <= 0 or value > Decimal(10000):
+        return None
+    calories = (
+        str(int(value))
+        if value == value.to_integral_value()
+        else format(value, "f").rstrip("0").rstrip(".")
+    )
+    if not calories:
+        return None
+
+    for reference in references:
+        if reference.kind not in _ACTIONABLE_DIET_CARD_TYPES:
+            continue
+        meals = [
+            meal
+            for meal in (reference.data.get("meals") or ())
+            if isinstance(meal, dict)
+            and str(meal.get("meal_type") or "").strip().lower() in MEAL_SIGNALS
+        ]
+        if len(meals) != 1:
+            return None
+        record_date = str(reference.data.get("record_date") or "").strip()[:10]
+        meal_type = str(meals[0].get("meal_type") or "").strip().lower()
+        if not record_date:
+            return None
+        return record_date, meal_type, calories
+    return None
 
 
 def _target_date(

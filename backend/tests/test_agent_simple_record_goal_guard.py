@@ -1575,3 +1575,92 @@ def test_diet_recalculation_blocks_cross_domain_health_manage_update():
     )
 
     assert _normalize_goal_guarded_tool_calls([call], goal) == []
+
+
+def _exact_calorie_correction_goal() -> GoalSpec:
+    return GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-10-29",
+        target_meal_types=("breakfast",),
+        target_values=(("calories", "378"),),
+        prohibited_operations=("create", "delete"),
+        requires_lookup=True,
+        requires_verification=True,
+        evidence=("visible_card", "explicit_nutrition_correction"),
+    )
+
+
+def test_exact_calorie_correction_replaces_model_read_with_owner_scoped_lookup():
+    call = _tool_call(
+        "model-read",
+        {"dimension": "diet", "start_date": "2020-01-01"},
+        name="health_query",
+    )
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _exact_calorie_correction_goal(),
+        lookup_completed=False,
+    )
+
+    assert len(normalized) == 1
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "list",
+        "date": "2026-10-29",
+        "limit": 20,
+    }
+
+
+def test_exact_calorie_correction_canonicalizes_update_to_allowed_id_and_calories_only():
+    call = _tool_call(
+        "model-update",
+        {
+            "record_type": "diet",
+            "operation": "update",
+            "record_id": 91,
+            "data": {
+                "calories": 999,
+                "protein": 99,
+                "meal_type": "dinner",
+                "food_items": "model invented",
+            },
+        },
+        name="health_manage",
+    )
+
+    normalized = _normalize_goal_guarded_tool_calls(
+        [call],
+        _exact_calorie_correction_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"91"},
+    )
+
+    assert len(normalized) == 1
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 91,
+        "data": {"calories": 378},
+    }
+
+
+def test_exact_calorie_correction_builds_update_when_model_omits_tool_call():
+    normalized = _normalize_goal_guarded_tool_calls(
+        [],
+        _exact_calorie_correction_goal(),
+        lookup_completed=True,
+        allowed_record_ids={"91"},
+    )
+
+    assert len(normalized) == 1
+    assert normalized[0]["function"]["name"] == "health_manage"
+    assert json.loads(normalized[0]["function"]["arguments"]) == {
+        "record_type": "diet",
+        "operation": "update",
+        "record_id": 91,
+        "data": {"calories": 378},
+    }

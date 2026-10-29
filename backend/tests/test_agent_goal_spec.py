@@ -236,6 +236,96 @@ def test_recalculate_update_goal_keeps_visible_foods_as_context_not_write_author
     assert set(goal.prohibited_operations) == {"create", "delete"}
 
 
+def _compile_visible_calorie_correction(
+    message: str,
+    *,
+    meals: list[dict] | None = None,
+):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+    references = () if meals is None else (
+        ActionableReference(
+            kind="diet_draft",
+            source_message_id="recorded-card",
+            data={"record_date": "2026-10-29", "meals": meals},
+        ),
+    )
+    return compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+        actionable_references=references,
+    )
+
+
+def test_visible_single_meal_exact_calorie_correction_compiles_bounded_update():
+    goal = _compile_visible_calorie_correction(
+        "热量是 378 大卡，之前计算的热量不对",
+        meals=[{
+            "meal_type": "breakfast",
+            "food_items": "纯牛奶 1 盒",
+            "calories": 284,
+        }],
+    )
+
+    assert goal.kind == "diet_recalculate_update"
+    assert goal.operation == "update"
+    assert goal.target_date == "2026-10-29"
+    assert goal.target_meal_types == ("breakfast",)
+    assert dict(goal.target_values) == {"calories": "378"}
+    assert goal.requires_lookup is True
+    assert goal.requires_verification is True
+    assert set(goal.prohibited_operations) == {"create", "delete"}
+    assert "visible_card" in goal.evidence
+    assert "explicit_nutrition_correction" in goal.evidence
+    prompt = format_goal_contract_prompt(goal)
+    assert "精确改为 378 大卡" in prompt
+    assert "不得重新估算" in prompt
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "热量是378大卡吗？之前计算的不对吗？",
+        "如果热量是378大卡，之前计算的可能不对",
+        "他说热量是378大卡，之前计算的不对",
+        "张三的热量是378大卡，之前计算的不对",
+        "不要把热量改成378大卡",
+        "热量可能是378或420大卡，之前计算的不对",
+        "蛋白质18克，热量378大卡，之前计算的不对",
+    ),
+)
+def test_visible_calorie_correction_rejects_non_authorizing_or_ambiguous_text(message):
+    goal = _compile_visible_calorie_correction(
+        message,
+        meals=[{"meal_type": "breakfast", "food_items": "纯牛奶 1 盒"}],
+    )
+
+    assert "explicit_nutrition_correction" not in goal.evidence
+    assert dict(goal.target_values).get("calories") is None
+
+
+@pytest.mark.parametrize(
+    "meals",
+    (
+        None,
+        [
+            {"meal_type": "breakfast", "food_items": "纯牛奶 1 盒"},
+            {"meal_type": "lunch", "food_items": "米饭"},
+        ],
+    ),
+)
+def test_visible_calorie_correction_requires_exactly_one_visible_recorded_meal(meals):
+    goal = _compile_visible_calorie_correction(
+        "热量是378大卡，之前计算的热量不对",
+        meals=meals,
+    )
+
+    assert "explicit_nutrition_correction" not in goal.evidence
+    assert dict(goal.target_values).get("calories") is None
+
+
 def test_recalculate_goal_uses_only_the_latest_card_date_for_visible_foods():
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(

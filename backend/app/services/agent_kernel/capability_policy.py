@@ -108,7 +108,7 @@ _RECIPE_RECORD_TYPE_ALIASES = {
     "blood-pressure": "blood_pressure",
     "bloodpressure": "blood_pressure",
 }
-_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v52"
+_CAPABILITY_POLICY_CONTRACT_VERSION = "agent-capability-policy-v53"
 _HEALTH_RECORD_TARGET_BINDING_VERSION = "authorized-target-set-v35"
 _HEALTH_MANAGE_UPDATE_EVIDENCE_VERSION = "record-update-evidence-v24"
 _SERVER_AUTHORIZED_HEALTH_RECORD_FIELDS_KEY = "_server_authorized_health_record_fields"
@@ -160,6 +160,21 @@ def bind_server_authorized_manage_lookup(
     authorized_lookup_record_id = (
         expected_record_id if requested_record_type == "illness" else None
     )
+    exact_calorie_lookup = bool(
+        goal is not None
+        and goal.kind == "diet_recalculate_update"
+        and goal.operation == "update"
+        and goal.requires_lookup
+        and goal.target_date
+        and len(goal.target_meal_types) == 1
+        and dict(goal.target_values).get("calories")
+        and "explicit_nutrition_correction" in goal.evidence
+        and requested_record_type == "diet"
+        and requested_record_id is None
+        and str(args.get("operation") or "").strip().lower() == "list"
+        and str(args.get("date") or "").strip() == goal.target_date
+        and args.get("limit") == 20
+    )
     if (
         goal is not None
         and goal.kind == "health_manage_mutation"
@@ -169,7 +184,7 @@ def bind_server_authorized_manage_lookup(
         and requested_record_id == authorized_lookup_record_id
         and str(args.get("operation") or "").strip().lower() == "list"
         and "explicit_current_turn_mutation" in goal.evidence
-    ):
+    ) or exact_calorie_lookup:
         args[_SERVER_AUTHORIZED_MANAGE_LOOKUP_KEY] = _ServerAuthorizedManageLookup(
             record_type=requested_record_type,
             operation=goal.operation,

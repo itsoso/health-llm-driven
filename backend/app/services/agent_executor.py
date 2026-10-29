@@ -7492,6 +7492,68 @@ def _normalize_goal_guarded_tool_calls(
         "date": goal.target_date,
         "limit": 20,
     }
+    exact_calories = dict(goal.target_values).get("calories")
+    is_exact_calorie_correction = bool(
+        exact_calories
+        and "explicit_nutrition_correction" in goal.evidence
+        and len(goal.target_meal_types) == 1
+    )
+    if is_exact_calorie_correction and not lookup_completed:
+        seed_call = tool_calls[0] if tool_calls else {
+            "id": f"goal-lookup-{_sha12(repr(goal))}",
+            "type": "function",
+            "function": {},
+        }
+        function = seed_call.get("function") or {}
+        return [{
+            **seed_call,
+            "function": {
+                **function,
+                "name": "health_manage",
+                "arguments": json.dumps(lookup_args, ensure_ascii=False),
+            },
+        }]
+    if is_exact_calorie_correction and lookup_completed:
+        if allowed_record_ids is None or len(allowed_record_ids) != 1:
+            logger.error(
+                "[agent_executor] blocked exact calorie correction without one "
+                "owner-scoped target"
+            )
+            return []
+        try:
+            calorie_number = float(exact_calories)
+        except (TypeError, ValueError):
+            return []
+        calories: int | float = (
+            int(calorie_number) if calorie_number.is_integer() else calorie_number
+        )
+        record_id_text = next(iter(allowed_record_ids))
+        try:
+            record_id = int(record_id_text)
+        except (TypeError, ValueError):
+            return []
+        seed_call = tool_calls[0] if tool_calls else {
+            "id": f"goal-update-{_sha12(repr(goal))}",
+            "type": "function",
+            "function": {},
+        }
+        function = seed_call.get("function") or {}
+        return [{
+            **seed_call,
+            "function": {
+                **function,
+                "name": "health_manage",
+                "arguments": json.dumps(
+                    {
+                        "record_type": "diet",
+                        "operation": "update",
+                        "record_id": record_id,
+                        "data": {"calories": calories},
+                    },
+                    ensure_ascii=False,
+                ),
+            },
+        }]
     normalized: list[dict[str, Any]] = []
     for tool_call in tool_calls:
         function = tool_call.get("function") or {}
@@ -20492,6 +20554,46 @@ class AgentExecutor:
                                     write_receipts,
                                 )
                                 finish_reason = "error"
+                            current_goal = (
+                                self._agent_kernel_snapshot.goal
+                                if self._agent_kernel_snapshot is not None else None
+                            )
+                            if (
+                                not proposed_calls
+                                and not goal_lookup_completed
+                                and not deterministic_goal_lookup_attempted
+                            ):
+                                deterministic_goal_call = (
+                                    _build_deterministic_goal_lookup_tool_call(
+                                        current_goal,
+                                        write_receipts=write_receipts,
+                                    )
+                                )
+                                if deterministic_goal_call is not None:
+                                    deterministic_goal_lookup_attempted = True
+                                    proposed_calls = [deterministic_goal_call]
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
+                            if (
+                                not proposed_calls
+                                and goal_lookup_completed
+                                and not write_receipts
+                            ):
+                                deterministic_update_calls = (
+                                    _normalize_goal_guarded_tool_calls(
+                                        [],
+                                        current_goal,
+                                        lookup_completed=True,
+                                        allowed_record_ids=goal_allowed_record_ids,
+                                        original_user_message=(
+                                            self._current_turn_user_message
+                                        ),
+                                    )
+                                )
+                                if deterministic_update_calls:
+                                    proposed_calls = deterministic_update_calls
+                                    candidate = ""
+                                    finish_reason = "tool_calls"
                             if proposed_calls:
                                 proposed_calls = _drop_replayed_supplement_writes(
                                     proposed_calls,

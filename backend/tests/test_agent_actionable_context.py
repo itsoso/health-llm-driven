@@ -109,6 +109,79 @@ def test_drops_non_actionable_fields_and_non_diet_cards():
     assert "diagnosis" not in rendered
 
 
+def test_recorded_diet_draft_projects_one_safe_meal_without_write_authority():
+    references = extract_actionable_references(
+        [
+            {
+                "id": 104,
+                "content": "已计入饮食记录。",
+                "meta": {
+                    "cards": [
+                        {
+                            "type": "diet_draft",
+                            "data": {
+                                "recorded": True,
+                                "record_id": 812,
+                                "user_id": 33,
+                                "record_date": "2026-10-29",
+                                "meal_type": "breakfast",
+                                "food_items": "纯牛奶 1 盒",
+                                "calories": 284,
+                                "protein": 18,
+                                "carbs": 42,
+                                "fat": 14,
+                                "source": "user_corrected",
+                                "photo_url": "https://private.example/signed",
+                                "adjust_record": {"record_id": 812, "calories": 999},
+                            },
+                            "actions": [{"payload": {"record_id": 812}}],
+                        }
+                    ]
+                },
+            }
+        ]
+    )
+
+    assert len(references) == 1
+    assert references[0].kind == "diet_draft"
+    assert references[0].source_message_id == "104"
+    assert references[0].data == {
+        "record_date": "2026-10-29",
+        "meals": [
+            {
+                "meal_type": "breakfast",
+                "food_items": "纯牛奶 1 盒",
+                "calories": 284,
+                "protein": 18,
+                "carbs": 42,
+                "fat": 14,
+            }
+        ],
+    }
+    rendered = repr(references[0].data)
+    assert "record_id" not in rendered
+    assert "user_id" not in rendered
+    assert "private.example" not in rendered
+    assert "adjust_record" not in rendered
+
+
+def test_unrecorded_diet_draft_is_not_actionable_for_correction():
+    references = extract_actionable_references(
+        [{"id": 105, "meta": {"cards": [{
+            "type": "diet_draft",
+            "data": {
+                "recorded": False,
+                "record_date": "2026-10-29",
+                "meal_type": "breakfast",
+                "food_items": "纯牛奶 1 盒",
+                "calories": 284,
+            },
+        }]}}]
+    )
+
+    assert references == ()
+
+
 def test_conversation_service_recovers_recent_persisted_card_as_typed_context(
     db,
     auth_user_and_headers,

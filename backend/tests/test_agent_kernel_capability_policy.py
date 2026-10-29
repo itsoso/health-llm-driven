@@ -5561,7 +5561,7 @@ def test_capability_policy_digest_is_deterministic_content_free_sha256():
 
     assert first == second
     assert re.fullmatch(r"[0-9a-f]{64}", first)
-    assert payload["contract_version"] == "agent-capability-policy-v52"
+    assert payload["contract_version"] == "agent-capability-policy-v53"
     assert payload["health_semantics"]["version"] == "health-semantics-v15"
     assert re.fullmatch(r"[0-9a-f]{64}", payload["health_semantics"]["content_digest"])
     assert payload["health_record_target_binding"] == {
@@ -5675,6 +5675,56 @@ def test_v41_server_bound_manage_lookup_requires_typed_goal():
     assert goal.requires_lookup is True
     assert decision.action == "allow"
     assert "_server_authorized_manage_lookup" not in decision.normalized_args
+
+
+def test_visible_calorie_correction_gets_only_server_bound_diet_lookup_authority():
+    snapshot = _snapshot("热量是378大卡，之前计算的热量不对")
+    goal = goal_spec_module.GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-10-29",
+        target_meal_types=("breakfast",),
+        target_values=(("calories", "378"),),
+        requires_lookup=True,
+        requires_verification=True,
+        evidence=("visible_card", "explicit_nutrition_correction"),
+    )
+    args = bind_server_authorized_manage_lookup(
+        {
+            "record_type": "diet",
+            "operation": "list",
+            "date": "2026-10-29",
+            "limit": 20,
+        },
+        goal,
+    )
+    decision = decide_tool_capability(
+        replace(snapshot, goal=goal),
+        _request("health_manage", args),
+    )
+
+    assert decision.action == "allow"
+    assert "_server_authorized_manage_lookup" not in decision.normalized_args
+
+
+def test_visible_calorie_correction_cannot_authorize_another_record_type_lookup():
+    goal = goal_spec_module.GoalSpec(
+        kind="diet_recalculate_update",
+        domain="diet",
+        operation="update",
+        target_date="2026-10-29",
+        target_meal_types=("breakfast",),
+        target_values=(("calories", "378"),),
+        requires_lookup=True,
+        evidence=("visible_card", "explicit_nutrition_correction"),
+    )
+    args = bind_server_authorized_manage_lookup(
+        {"record_type": "sleep", "operation": "list"},
+        goal,
+    )
+
+    assert "_server_authorized_manage_lookup" not in args
 
 
 def test_v41_capability_digest_tracks_authoritative_goal_grammar(monkeypatch):
