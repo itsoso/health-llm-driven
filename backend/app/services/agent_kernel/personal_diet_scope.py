@@ -76,11 +76,18 @@ def personal_diet_scope_contract_payload():
 _BASIS_LABELS = {'age': r'年龄|周岁|岁', 'weight': r'体重', 'genetic': r'基因|位点|遗传'}
 _FOOD = re.compile(r'蔬菜|水果|全谷|粗粮|杂粮|豆类|豆腐|鱼|鸡蛋|蛋白质|奶|坚果|主食|含糖饮料|盐|油炸')
 _DIET_ACTION = re.compile(r'建议|可(?:以)?(?:先|选|以|用|尝试|搭配)|选择|搭配|替换|减少|增加|优先|限制|少吃|多吃')
+PERSONAL_DIET_INCOMPLETE_NOTICE = '查询已完成，但本轮饮食分析和建议尚未完成，不能视为个性化饮食方案。'
+_SALT_QUANTITY = re.compile(
+    r'(?:钠|盐)(?:摄入量|摄入|用量|总量|每日|每天|一天|建议|应|需|控制在|限制在|低于|少于|不超过|小于|最多|约|为|总|含量|目标|[<≤=：:（）()\s／/]|天){0,12}'
+    r'(?:\d+(?:\.\d+)?|[一二三四五六七八九十两半]+)\s*(?:毫克|克|mg|g)'
+    r'|(?:\d+(?:\.\d+)?|[一二三四五六七八九十两半]+)\s*(?:毫克|克|mg|g)\s*(?:[/／每]天)?\s*(?:总钠|钠|食盐|盐)',
+    re.IGNORECASE,
+)
 
 
 def personal_diet_answer_complete(scope: PersonalDietScope, text: str) -> bool:
     """Task coverage only, never proof of medical correctness or read authority."""
-    if not all(re.search(_BASIS_LABELS[d], text) for d in scope.evidence_dimensions):
+    if _SALT_QUANTITY.search(text) or not all(re.search(_BASIS_LABELS[d], text) for d in scope.evidence_dimensions):
         return False
     clauses = re.findall(r'[^。！？!?\n]+[。！？!?]?', text)
     return any(_FOOD.search(clause) and _DIET_ACTION.search(clause)

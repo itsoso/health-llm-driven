@@ -200,6 +200,8 @@ async def test_complete_diet_draft_is_resynthesized_from_current_reads_only(db, 
     {'finish_reason': 'length', 'content': '年龄、体重和基因不足，建议蔬菜。'},
     {'finish_reason': 'stop', 'content': None},
     {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜。', 'tool_calls': [{'id': 'unexpected'}]},
+    {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，每天总钠少于5g。'},
+    {'finish_reason': 'stop', 'content': '年龄、体重和基因不足，建议蔬菜，少油少盐（<5g/天总钠）。'},
 ])
 async def test_failed_evidence_synthesis_never_publishes_complete_untrusted_draft(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, panel, bad_reply):
     from tests.test_agent_read_repair_round_budget import batch_trace, consume
@@ -215,10 +217,29 @@ async def test_failed_evidence_synthesis_never_publishes_complete_untrusted_draf
     assert '饮食分析和建议尚未完成' in saved.content
     assert len(trace.dispatches) == 1 and len(trace.calls) == 3
 
+
+async def test_interrupted_diet_draft_never_escapes_evidence_boundary(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume
+    user, _ = auth_user_and_headers
+    draft = '年龄、体重和基因已查询。旧上下文标记：建议蔬菜。'
+    trace = batch_trace(db, monkeypatch, ['先查。', {'finish_reason': 'length', 'content': draft}])
+    async def in_process(reader, *args, **kwargs):
+        return reader(db, *args, **kwargs)
+    monkeypatch.setattr(trace.executor, '_read_in_process', in_process)
+    done, saved = await consume(db, trace, user, query=REQUEST)
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '旧上下文标记' not in saved.content
+
 @pytest.mark.parametrize('reply', ['已查询基因年龄体重。', '年龄未知，体重未知，基因未知。尚未提供蔬菜建议。', '年龄体重基因。', '基因、年龄、体重已查询。需要我给你蔬菜搭配建议吗？', '基因、年龄、体重已查询。接下来我会给你关于蔬菜的建议。'])
 def test_answer_goal_rejects_data_only_or_negated_advice(reply):
     from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope, personal_diet_answer_complete
     assert not personal_diet_answer_complete(resolve_personal_diet_scope(REQUEST), reply)
+
+
+@pytest.mark.parametrize('advice', ['建议少盐清蒸鱼150克，搭配蔬菜。', '建议蔬菜200g，少放盐。'])
+def test_food_portions_do_not_trigger_sodium_quantity_boundary(advice):
+    from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope, personal_diet_answer_complete
+    assert personal_diet_answer_complete(resolve_personal_diet_scope(REQUEST), '年龄、体重和基因信息有限。' + advice)
 
 async def test_diet_genetic_read_keeps_user_and_active_profile_boundaries(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport):
     from datetime import date

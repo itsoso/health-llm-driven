@@ -13390,12 +13390,13 @@ class AgentExecutor:
     async def _repair_personal_diet_answer(self, text: str) -> str:
         from app.services.agent_kernel.personal_diet_scope import (
             resolve_personal_diet_scope, personal_diet_answer_complete, personal_diet_prompt,
+            PERSONAL_DIET_INCOMPLETE_NOTICE,
         )
         scope = resolve_personal_diet_scope(self._current_turn_user_message)
         goals = self._exercise_plan_goal_outcomes() if scope else []
         if scope is None or not goals or any(g['status'] != 'verified' for g in goals):
             return text
-        incomplete_notice = '\n\n查询已完成，但本轮饮食分析和建议尚未完成，不能视为个性化饮食方案。'
+        incomplete_notice = PERSONAL_DIET_INCOMPLETE_NOTICE
         messages = [
             {'role': 'system', 'content': personal_diet_prompt(scope)
              + '只使用下面的 read_results 作为个人事实来源，不使用先前草稿或会话背景。'
@@ -13422,7 +13423,7 @@ class AgentExecutor:
             return incomplete_notice.strip()
         self._record_model_fallback_reason('personal_diet_synthesis_repair_attempted')
         candidate = reply['content']
-        return candidate if personal_diet_answer_complete(scope, candidate) else candidate + incomplete_notice
+        return candidate if personal_diet_answer_complete(scope, candidate) else incomplete_notice
 
     def _personal_diet_answer_goals(self, text: str) -> list[dict]:
         from app.services.agent_kernel.personal_diet_scope import (
@@ -16091,6 +16092,10 @@ class AgentExecutor:
         full_reply = self._unresolved_read_failure_notice() or full_reply
         if completion_status == 'complete':
             full_reply = await self._repair_personal_diet_answer(full_reply)
+        else:
+            from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope
+            if resolve_personal_diet_scope(message) is not None:
+                full_reply = '本轮饮食分析和建议尚未完成，请稍后重试。'
         full_reply = _guard_panel_narrative(full_reply)
         if protocol_failure_text:
             full_reply = protocol_failure_text
@@ -21040,6 +21045,10 @@ class AgentExecutor:
 
         if final_finish_reason == 'stop':
             full_reply = await self._repair_personal_diet_answer(full_reply)
+        else:
+            from app.services.agent_kernel.personal_diet_scope import resolve_personal_diet_scope
+            if resolve_personal_diet_scope(message) is not None:
+                full_reply = '本轮饮食分析和建议尚未完成，请稍后重试。'
         composed_boundary = enforce_composed_synthesis_boundaries(
             full_reply, composed_completion if composed_synthesis_used or composite_advice else None,
             require_advice_boundary=composite_advice,
