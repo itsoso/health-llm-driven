@@ -294,3 +294,37 @@ async def test_diet_genetic_read_keeps_user_and_active_profile_boundaries(db, au
     result = trace.results[0][1]
     assert 'SyntheticOwned' in result
     assert all(name not in result for name in ('SyntheticOld', 'SyntheticForeign', 'SyntheticMismatched'))
+
+async def test_diet_final_synthesis_uses_cancellable_stream(db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport):
+    from tests.test_agent_read_repair_round_budget import batch_trace, consume
+    user, _ = auth_user_and_headers
+    answer = '年龄、体重和基因资料有限。在无相应禁忌时，可选择蔬菜配全谷物和鱼肉。'
+    trace = batch_trace(db, monkeypatch, ['先查资料。', answer, answer])
+    async def in_process(reader, *args, **kwargs):
+        return reader(db, *args, **kwargs)
+    async def non_cancellable(*args, **kwargs):
+        raise RuntimeError('non-streaming provider cannot cancel its worker thread')
+    monkeypatch.setattr(trace.executor, '_read_in_process', in_process)
+    monkeypatch.setattr(trace.executor, '_call_llm', non_cancellable)
+    done, saved = await consume(db, trace, user, query=REQUEST)
+    assert done['turn_outcome']['status'] == 'complete'
+    assert '可选择蔬菜' in saved.content
+    assert len(trace.calls) == 3 and not trace.calls[-1][1]
+
+@pytest.mark.parametrize('model,verified,tools,expected', [
+    ('qwen3.8-max', True, False, 1024),
+    ('qwen3.8-max-preview', True, False, 1024),
+    ('qwen3.8-max', False, False, None),
+    ('qwen3.8-max', True, True, None),
+    ('qwen3.8-flash', True, False, None),
+])
+def test_diet_thinking_budget_only_for_verified_projection_and_supported_model(db, monkeypatch, model, verified, tools, expected):
+    from app.services.agent_executor import AgentExecutor
+    ex = AgentExecutor(db)
+    ex._last_effective_model_id = model
+    messages = [{'role': 'system', 'content': 'synthetic evidence projection'}]
+    monkeypatch.setattr(ex, '_personal_diet_synthesis_messages', lambda: messages if verified else None)
+    kwargs = {'tools': [{'type': 'function'}]} if tools else {}
+    ex._maybe_apply_personal_diet_thinking_budget(kwargs, messages)
+    assert kwargs.get('thinking_budget') == expected
+    assert 'enable_thinking' not in kwargs

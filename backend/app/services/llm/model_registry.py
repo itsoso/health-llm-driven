@@ -40,6 +40,8 @@ class ModelEntry:
     #   例如 langbridge-proxy 经万擎公网转发的商用模型: 网关无 SSE, 整段答案一次到。
     #   agent_executor 在答案轮据此发一条 thinking 状态 detail, 让 mac 端如实显示
     #   「需等待完整回答」而非误导性的 token 滚动。拿不准时保守标 True (走正常滚动)。
+    verified_synthesis_thinking_budget: int | None = None
+    # Optional explicit budget verified by a live synthesis probe; no global opt-in.
     supports_thinking_budget: bool = False
     # ↑ 该模型是否接受 DashScope/qwen 的思考控制参数 (enable_thinking / thinking_budget,
     #   经 extra_body 顶层放置)。True 才允许 agent_executor 在合成轮给思考阶段封顶
@@ -73,6 +75,8 @@ MODELS: List[ModelEntry] = [
         label="Qwen3.8 Max · 千问",
         provider="tokenplan",
         model="qwen3.8-max",
+        # Synthetic dietary synthesis probe, 2026-10-29: budget=1024 completed.
+        verified_synthesis_thinking_budget=1024,
         speed_tier="reasoning",
         note="正式版 / 文本生成 / 推理 / 视觉理解",
         requires_env=("TOKENPLAN_API_KEY",),
@@ -94,6 +98,8 @@ MODELS: List[ModelEntry] = [
         label="Qwen3.8 Max Preview · 千问",
         provider="tokenplan",
         model="qwen3.8-max",
+        # Synthetic dietary synthesis probe, 2026-10-29: budget=1024 completed.
+        verified_synthesis_thinking_budget=1024,
         speed_tier="reasoning",
         note="已下线兼容 ID / 自动路由至 qwen3.8-max",
         requires_env=("TOKENPLAN_API_KEY",),
