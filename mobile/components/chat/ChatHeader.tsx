@@ -93,7 +93,7 @@ export default function ChatHeader({
               accessibilityHint="开始新对话，当前对话保留在历史中"
               accessibilityRole="button"
             >
-              <Ionicons name="create-outline" size={21} color={C.green700} />
+              <Ionicons name="create-outline" size={20} color={C.greenOn} />
             </Pressable>
             <Pressable
               onPress={onOpenHistory}
@@ -103,7 +103,7 @@ export default function ChatHeader({
               accessibilityHint="查看和切换历史对话"
               accessibilityRole="button"
             >
-              <Ionicons name="time-outline" size={21} color={C.ink2} />
+              <Ionicons name="time-outline" size={20} color={C.green700} />
             </Pressable>
             <Pressable
               onPress={onOpenToolMenu}
@@ -113,7 +113,7 @@ export default function ChatHeader({
               accessibilityHint="打开更多会诊操作"
               accessibilityRole="button"
             >
-              <Ionicons name="ellipsis-horizontal" size={21} color={C.ink2} />
+              <Ionicons name="ellipsis-horizontal" size={20} color={C.green700} />
             </Pressable>
           </View>
         </View>
@@ -144,17 +144,23 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 'auto',
   },
-  // 新建是轻量主动作，历史与更多保持独立触控区，不再套双层胶囊。
+  // 三个动作共用一块浅绿「气候带」；新建作为主动作使用深绿实心面。
+  // 统一尺寸、圆角和颜色语法，避免一个按钮像卡片、另外两个像裸图标。
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 40,
+    minHeight: 46,
     gap: 2,
+    padding: 3,
+    borderRadius: revaRadii.pill,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: C.green100,
+    backgroundColor: C.green50,
   },
   headerAction: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
     backgroundColor: 'transparent',
@@ -168,15 +174,13 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   headerActionPressed: {
-    backgroundColor: C.green50,
+    backgroundColor: C.green100,
   },
   primaryHeaderAction: {
-    borderRadius: revaRadii.md,
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
+    borderRadius: 20,
+    backgroundColor: C.green700,
   },
   primaryHeaderActionPressed: {
-    backgroundColor: C.green100,
+    backgroundColor: C.green600,
   },
 });

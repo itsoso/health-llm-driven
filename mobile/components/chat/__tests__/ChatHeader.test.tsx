@@ -3,6 +3,7 @@ import { render, fireEvent } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 
 import ChatHeader from '../ChatHeader';
+import { revaColors as C } from '../../../constants/revaTheme';
 
 describe('ChatHeader', () => {
   it('shows a source return action for contextual health discussions', () => {
@@ -99,10 +100,16 @@ describe('ChatHeader', () => {
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({ width: 40, height: 40 }),
     );
     expect(StyleSheet.flatten(getByLabelText('更多会诊操作').props.style)).toEqual(
-      expect.objectContaining({ width: 44, height: 44 }),
+      expect.objectContaining({ width: 40, height: 40 }),
+    );
+    expect(StyleSheet.flatten(getByTestId('chat-header-action-group').props.style)).toEqual(
+      expect.objectContaining({ backgroundColor: C.green50, borderColor: C.green100 }),
+    );
+    expect(StyleSheet.flatten(getByLabelText('新建对话').props.style)).toEqual(
+      expect.objectContaining({ backgroundColor: C.green700 }),
     );
 
     fireEvent.press(getByLabelText('新建对话'));
