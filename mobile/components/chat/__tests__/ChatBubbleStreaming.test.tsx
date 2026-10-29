@@ -132,7 +132,9 @@ describe('ChatBubble streaming degraded render', () => {
     fireEvent(view.UNSAFE_getByType(Image), 'error', { error: 'preview unavailable' });
     expect(view.UNSAFE_getByType(Image).props.source.uri).toBe(uri);
     fireEvent(view.UNSAFE_getByType(Image), 'error', { error: 'original unavailable' });
-    expect(view.UNSAFE_getByType(Image).props.source.uri).toBe(uri);
+    expect(view.getByLabelText('图片暂时无法加载，轻触重试')).toBeTruthy();
+    fireEvent.press(view.getByLabelText('图片暂时无法加载，轻触重试'));
+    expect(view.UNSAFE_getByType(Image).props.source.uri).toBe(`${uri}&variant=preview`);
   });
 
   it('renders rich Markdown while the assistant reply is streaming', () => {

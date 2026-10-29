@@ -1,6 +1,8 @@
 import React from 'react';
 import { fireEvent, render } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { DietDraftCardView } from '../DietDraftCard';
+import { revaColors as C } from '../../../../constants/revaTheme';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -67,6 +69,16 @@ it('keeps saved meal actions together after the nutrition and estimate note', ()
   expect(screen.getByTestId('diet-adjust-inline-editor')).toBeTruthy();
   fireEvent.press(screen.getByRole('button', { name: '收起本餐修正' }));
   expect(screen.queryByTestId('diet-adjust-inline-editor')).toBeNull();
+});
+
+it('uses a compact branded nutrition strip and human-readable record source', () => {
+  const screen = render(<DietDraftCardView recorded source="agent_text" food_items="米饭"
+    protein={10} carbs={32} fat={3} fiber={1.5} />);
+  expect(screen.getByText('记录方式：对话文字')).toBeTruthy();
+  expect(screen.queryByText('来源: agent_text')).toBeNull();
+  expect(StyleSheet.flatten(screen.getByTestId('diet-record-nutrition-strip').props.style)).toEqual(
+    expect.objectContaining({ backgroundColor: C.paper2, flexWrap: 'nowrap' }),
+  );
 });
 
 it('renders an unavailable stored record as read-only instead of a confirmable draft', () => {

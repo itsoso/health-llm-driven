@@ -75,11 +75,13 @@ const MEAL_LABELS: Record<string, string> = {
 };
 
 const SOURCE_LABELS: Record<string, string> = {
-  chat: '对话',
-  chat_photo: '对话/图片',
-  photo: '图片',
-  voice: '语音',
-  text: '文字',
+  chat: '对话输入',
+  chat_photo: '图片识别',
+  photo: '图片识别',
+  voice: '语音输入',
+  text: '文字输入',
+  agent_text: '对话文字',
+  agent_photo: '图片识别',
   meal_monitor: '餐食监控',
 };
 
@@ -124,6 +126,8 @@ interface DietDraftCardViewProps extends DietDraftData {
   confirmAction?: ChatCardActionDescriptor;
   confirmActionState?: ChatCardActionRuntimeState;
   onConfirmAction?: (action: ChatCardActionDescriptor) => void;
+  communityAction?: ChatCardActionDescriptor;
+  onCommunityAction?: (action: ChatCardActionDescriptor) => void;
 }
 
 function clearDietDraftNutritionDerivations(data: DietDraftData): DietDraftData {
@@ -250,7 +254,8 @@ function compactMealTitle(items: string[], fallback: string): string {
 function sourceLabel(value: unknown): string | undefined {
   const source = text(value);
   if (!source) return undefined;
-  return `来源: ${SOURCE_LABELS[source] || source}`;
+  const label = SOURCE_LABELS[source];
+  return label ? `记录方式：${label}` : undefined;
 }
 
 function isPhotoSource(value: unknown): boolean {
@@ -322,6 +327,17 @@ function findDietAdjustRecord(
   const seed = objectValue(patch?.adjust_record);
   const recordId = numberValue(seed?.record_id);
   return recordId != null && Number.isInteger(recordId) && recordId > 0 ? seed : null;
+}
+
+function findDietCommunityAction(
+  actions?: ChatCardActionDescriptor[],
+): ChatCardActionDescriptor | undefined {
+  return actions?.find((action) => (
+    action.id === 'share-with-peers'
+    && action.action === 'route.open'
+    && typeof action.payload?.route === 'string'
+    && action.payload.route.startsWith('/community?composeRecordId=')
+  ));
 }
 
 export function DietDraftCardView(data: DietDraftCardViewProps) {
@@ -415,7 +431,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
       carbs: overrides.carbs ?? draftCarbs,
       fat: overrides.fat ?? draftFat,
     };
-    const { onDraftChange, confirmAction, onConfirmAction, ...baseData } = data;
+    const {
+      onDraftChange,
+      confirmAction,
+      onConfirmAction,
+      communityAction,
+      onCommunityAction,
+      ...baseData
+    } = data;
     const next: DietDraftData = {
       ...baseData,
       meal_type: values.mealType,
@@ -823,12 +846,15 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
 
       {/* 已记录态使用紧凑的标签 / 读数布局，只渲染存在的 macro。 */}
       {macros.length > 0 ? (
-        <View style={styles.macroGrid}>
+        <View
+          testID={isRecorded ? 'diet-record-nutrition-strip' : undefined}
+          style={[styles.macroGrid, isRecorded && styles.recordedMacroGrid]}
+        >
           {macros.map((row) => (
             <View key={row.label} style={[styles.macroCell, isRecorded && styles.recordedMacroCell]}>
               <View style={styles.macroHeading}>
                 <View style={[styles.macroDot, { backgroundColor: row.color }]} />
-                <Text maxFontSizeMultiplier={1.1} style={styles.macroLabel}>
+                <Text maxFontSizeMultiplier={1.1} style={[styles.macroLabel, isRecorded && styles.recordedMacroLabel]}>
                   {row.label}
                 </Text>
               </View>
@@ -858,7 +884,12 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
 
       {isRecorded ? (
         <View style={styles.recordedBox}>
-          <Text maxFontSizeMultiplier={1.12} style={styles.recordedEyebrow}>接下来</Text>
+          <View style={styles.recordedBoxHeader}>
+            <View style={styles.recordedSignal}>
+              <Ionicons name="leaf-outline" size={12} color={C.green700} />
+            </View>
+            <Text maxFontSizeMultiplier={1.12} style={styles.recordedEyebrow}>接下来</Text>
+          </View>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedNext}>{recordedNextStep}</Text>
           <Text maxFontSizeMultiplier={1.15} style={styles.recordedHelp}>
             基于本餐估算和今日饮食进度
@@ -958,11 +989,16 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
                 router.push('/diet');
               }
             }}
-            style={({ pressed }) => [styles.recordedAdjustButton, styles.recordedViewButton, pressed && styles.editButtonPressed]}
+            style={({ pressed }) => [
+              styles.recordedAdjustButton,
+              data.communityAction && styles.recordedActionCompact,
+              styles.recordedViewButton,
+              pressed && styles.editButtonPressed,
+            ]}
           >
-            <Ionicons name="list-outline" size={16} color={C.green700} />
+            <Ionicons name="list-outline" size={16} color={C.greenOn} />
             <View style={styles.recordedAdjustCopy}>
-              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>查看饮食记录</Text>
+              <Text maxFontSizeMultiplier={1.12} style={[styles.recordedAdjustTitle, styles.recordedViewTitle]}>饮食记录</Text>
             </View>
           </Pressable>
           {adjustRecord && adjustRecordId != null ? (
@@ -974,6 +1010,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               accessibilityState={{ expanded: savedAdjustOpen }}
               style={({ pressed }) => [
                 styles.recordedAdjustButton,
+                data.communityAction && styles.recordedActionCompact,
                 savedAdjustOpen && styles.recordedAdjustButtonOpen,
                 pressed && styles.editButtonPressed,
               ]}
@@ -981,8 +1018,22 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               <Ionicons name="create-outline" size={16} color={C.green700} />
               <View style={styles.recordedAdjustCopy}>
                 <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>
-                  {savedAdjustOpen ? '收起修正' : '继续修正本餐'}
+                  {savedAdjustOpen ? '收起修正' : '修正本餐'}
                 </Text>
+              </View>
+            </Pressable>
+          ) : null}
+          {data.communityAction && data.onCommunityAction ? (
+            <Pressable
+              onPress={() => data.onCommunityAction?.(data.communityAction!)}
+              accessibilityRole="button"
+              accessibilityLabel="发到同行圈"
+              accessibilityHint="带着这餐记录打开同行圈发布页"
+              style={({ pressed }) => [styles.recordedAdjustButton, styles.recordedActionCompact, pressed && styles.editButtonPressed]}
+            >
+              <Ionicons name="people-outline" size={16} color={C.green700} />
+              <View style={styles.recordedAdjustCopy}>
+                <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>同行圈</Text>
               </View>
             </Pressable>
           ) : null}
@@ -1256,6 +1307,7 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
   },
   render: (data, options?: CardRenderOptions) => {
     const confirmAction = findDietConfirmAction(options?.cardActions);
+    const communityAction = findDietCommunityAction(options?.cardActions);
     const adjustRecord = objectValue(data.adjust_record)
       ?? findDietAdjustRecord(options?.cardActions);
     const confirmActionKey = confirmAction
@@ -1269,6 +1321,8 @@ export const DietDraftCardSpec: CardSpec<DietDraftData> = {
         confirmAction={confirmAction}
         confirmActionState={confirmActionKey ? options?.actionStateByKey?.[confirmActionKey] : undefined}
         onConfirmAction={options?.onCardAction}
+        communityAction={communityAction}
+        onCommunityAction={options?.onCardAction}
       />
     );
   },
@@ -1721,9 +1775,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8,
     paddingVertical: 8,
   },
+  recordedActionCompact: {
+    flexBasis: 88,
+    paddingHorizontal: 5,
+  },
   recordedViewButton: {
-    backgroundColor: C.green50,
-    borderColor: C.green100,
+    backgroundColor: C.green700,
+    borderColor: C.green700,
   },
   recordedAdjustButtonOpen: {
     backgroundColor: C.green50,
@@ -1740,6 +1798,9 @@ const styles = StyleSheet.create({
     color: C.green700,
     fontWeight: '900',
     textAlign: 'center',
+  } as TextStyle,
+  recordedViewTitle: {
+    color: C.greenOn,
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',
@@ -1913,6 +1974,14 @@ const styles = StyleSheet.create({
     rowGap: 8,
     marginTop: 14,
   },
+  recordedMacroGrid: {
+    flexWrap: 'nowrap',
+    justifyContent: 'flex-start',
+    gap: 2,
+    padding: 4,
+    borderRadius: revaRadii.md,
+    backgroundColor: C.paper2,
+  },
   macroCell: {
     width: '48%',
     minWidth: 0,
@@ -1923,17 +1992,19 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.65)',
   },
   recordedMacroCell: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    minHeight: 44,
-    paddingHorizontal: 8,
-    paddingVertical: 8,
-    backgroundColor: C.paper2,
+    width: 'auto',
+    flexBasis: 0,
+    flexGrow: 1,
+    flexShrink: 1,
+    justifyContent: 'center',
+    minHeight: 58,
+    paddingHorizontal: 7,
+    paddingVertical: 6,
+    backgroundColor: 'transparent',
   },
   recordedMacroValue: {
-    fontSize: 16,
+    fontSize: 15,
+    lineHeight: 19,
   } as TextStyle,
   macroHeading: {
     flexDirection: 'row',
@@ -1951,6 +2022,10 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: C.ink2,
     fontWeight: '700',
+  } as TextStyle,
+  recordedMacroLabel: {
+    fontSize: 10.5,
+    lineHeight: 14,
   } as TextStyle,
   macroValue: {
     fontFamily: revaFonts.mono,
@@ -1980,6 +2055,19 @@ const styles = StyleSheet.create({
     borderColor: C.green100,
     paddingHorizontal: 10,
     paddingVertical: 9,
+  },
+  recordedBoxHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  recordedSignal: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: C.green100,
   },
   recordedEyebrow: {
     fontFamily: revaFonts.sans,

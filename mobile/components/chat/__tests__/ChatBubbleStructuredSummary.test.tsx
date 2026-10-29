@@ -902,7 +902,7 @@ ${sectionTitle}
       flexWrap: 'wrap',
     });
     expect(getByLabelText('制作饮食分享图')).toBeTruthy();
-    expect(getByLabelText('分享饮食文字')).toBeTruthy();
+    expect(getByLabelText('分享给好友')).toBeTruthy();
     fireEvent.press(getByLabelText('制作饮食分享图'));
     expect(mockCaptureRefCalls).toHaveLength(0);
     expect(getByTestId('mock-diet-share-composer')).toBeTruthy();
@@ -920,7 +920,7 @@ ${sectionTitle}
       message: expect.stringContaining('地点：杭州 · 示例餐厅'),
     }));
 
-    fireEvent.press(getByLabelText('分享饮食文字'));
+    fireEvent.press(getByLabelText('分享给好友'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -973,7 +973,7 @@ ${sectionTitle}
       </QueryClientProvider>,
     );
 
-    fireEvent.press(getByLabelText('分享饮食文字'));
+    fireEvent.press(getByLabelText('分享给好友'));
 
     await waitFor(() => {
       expect(sharePlainText).toHaveBeenCalledWith(expect.objectContaining({
@@ -2199,7 +2199,7 @@ ${sectionTitle}
     });
   });
 
-  it('keeps text sharing but disables image editing when a restored record has no accessible photo', () => {
+  it('keeps one clear share action when a restored record has no accessible photo', () => {
     renderCard.mockImplementationOnce(() => {
       const { Text } = require('react-native');
       return <Text>午餐已记录</Text>;
@@ -2229,10 +2229,9 @@ ${sectionTitle}
     );
 
     expect(getByText('午餐已记录')).toBeTruthy();
-    expect(getByLabelText('制作饮食分享图')).toHaveAccessibilityState({ disabled: true });
-    expect(getByLabelText('制作饮食分享图').props.accessibilityHint).toBe('需要这餐的可用照片才能制作分享图');
-    expect(getByText('原照片暂不可用，仍可分享文字')).toBeTruthy();
-    expect(getByLabelText('分享饮食文字')).toBeTruthy();
+    expect(queryByLabelText('制作饮食分享图')).toBeNull();
+    expect(getByText('未保留原照片，将分享文字摘要')).toBeTruthy();
+    expect(getByLabelText('分享给好友')).toBeTruthy();
     expect(queryByLabelText('分享卡片图片')).toBeNull();
   });
 
@@ -2270,7 +2269,7 @@ ${sectionTitle}
       </QueryClientProvider>,
     );
 
-    fireEvent.press(getByLabelText('分享饮食文字'));
+    fireEvent.press(getByLabelText('分享给好友'));
     await waitFor(() => expect(sharePlainText).toHaveBeenCalledTimes(1));
     const payload = sharePlainText.mock.calls[0][0];
     expect(payload.message).toContain('营养待核对');

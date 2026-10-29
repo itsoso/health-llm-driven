@@ -245,7 +245,7 @@ function StatefulCardRenderer({
     // private job projection after the one-time confirmation succeeds.
     if (descriptor.type === 'aigc_media_confirmation' || !actions.length || !options.onAction) return rendered;
     const visibleActions = actions.filter((action) => {
-      if (isEmbeddedRecordedDietAdjustAction(action, descriptor.type, data)) {
+      if (isEmbeddedRecordedDietAction(action, descriptor.type, data)) {
         return false;
       }
       const actionKey = getCardActionRuntimeKey(action, descriptor);
@@ -510,12 +510,19 @@ function isRepeatableDietCorrection(action: ChatCardActionDescriptor, cardType: 
     && patch.expanded_sections.includes('adjust_record');
 }
 
-function isEmbeddedRecordedDietAdjustAction(
+function isEmbeddedRecordedDietAction(
   action: ChatCardActionDescriptor,
   cardType: string,
   data: any,
 ): boolean {
   if (cardType !== 'diet_draft' || data?.recorded !== true) return false;
+  if (
+    action.id === 'share-with-peers'
+    && action.action === 'route.open'
+    && textValue(action.payload?.route)?.startsWith('/community?composeRecordId=')
+  ) {
+    return true;
+  }
   if (textValue(action.payload?.target) !== 'adjust_record') return false;
   const patch = readInlineExpandPatch(action);
   return Boolean(

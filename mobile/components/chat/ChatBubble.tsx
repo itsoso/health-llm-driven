@@ -852,7 +852,7 @@ function ChatBubbleInner({
               {showMessageTime ? <MessageTime label={sentTimeShort} isUser={false} /> : null}
               {(showCardActions || isRecordedDietCard) && cardSharePayload && !selectionMode ? (
                 <View testID="assistant-card-share-actions" style={styles.cardShareActions}>
-                  {isRecordedDietCard ? (
+                  {isRecordedDietCard && canEditDietShare ? (
                     <Pressable
                       onPress={() => {
                         if (canEditDietShare) setDietShareComposerOpen(true);
@@ -865,7 +865,6 @@ function ChatBubbleInner({
                       accessibilityState={{ disabled: !canEditDietShare }}
                       style={({ pressed }) => [
                         styles.cardSaveButton,
-                        !canEditDietShare && styles.actionBtnDisabled,
                         pressed && styles.actionBtnPressed,
                       ]}
                     >
@@ -877,11 +876,11 @@ function ChatBubbleInner({
                     onPress={handleCardShare}
                     hitSlop={6}
                     accessibilityRole="button"
-                    accessibilityLabel="分享饮食文字"
+                    accessibilityLabel={isRecordedDietCard ? '分享给好友' : '分享饮食文字'}
                     style={({ pressed }) => [styles.cardShareButton, pressed && styles.actionBtnPressed]}
                   >
                     <Ionicons name="document-text-outline" size={13} color={C.green700} />
-                    <Text style={txt.cardShareButton}>分享文字</Text>
+                    <Text style={txt.cardShareButton}>{isRecordedDietCard ? '分享给好友' : '分享文字'}</Text>
                   </Pressable>
                   {!isRecordedDietCard ? (
                     <Pressable
@@ -896,7 +895,7 @@ function ChatBubbleInner({
                     </Pressable>
                   ) : null}
                   {isRecordedDietCard && !canEditDietShare ? (
-                    <Text style={txt.cardShareUnavailableHint}>原照片暂不可用，仍可分享文字</Text>
+                    <Text style={txt.cardShareUnavailableHint}>未保留原照片，将分享文字摘要</Text>
                   ) : null}
                 </View>
               ) : null}

@@ -35,7 +35,7 @@ import {
   shouldDismissDietPhotoGallery,
 } from '../DietDraftCard';
 import type { CardContext } from '../types';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { Animated, AppState, Modal } from 'react-native';
 import { Image } from 'expo-image';
 import NetInfo from '@react-native-community/netinfo';
@@ -2410,7 +2410,7 @@ describe('renderCard 安全降级', () => {
     expect(element).not.toBeNull();
     const { getByLabelText, getByText, getByTestId, queryByText } = render(element!);
 
-    expect(getByText('继续修正本餐')).toBeTruthy();
+    expect(getByText('修正本餐')).toBeTruthy();
     expect(getByLabelText('继续修正本餐').props.accessibilityHint).toBe('修改餐次、食物或营养估算');
     expect(queryByText('调整记录')).toBeNull();
     fireEvent.press(getByLabelText('继续修正本餐'));
@@ -2418,6 +2418,39 @@ describe('renderCard 安全降级', () => {
     expect(getByTestId('diet-adjust-inline-editor')).toBeTruthy();
     expect(getByText(/^(?:重新估算并保存|保存份额|保存修正)$/)).toBeTruthy();
     expect((getByLabelText('膳食纤维').props as any).value).toBe('6');
+  });
+
+  it('keeps the peer-share route inside the recorded meal action group', () => {
+    const onAction = jest.fn();
+    const descriptor = {
+      type: 'diet_draft',
+      data: {
+        recorded: true,
+        record_id: 807,
+        food_items: '小米粥 1 碗',
+        meal_type: 'snack',
+        calories: 150,
+      },
+      actions: [{
+        id: 'share-with-peers',
+        label: '发到同行圈',
+        action: 'route.open',
+        payload: { route: '/community?composeRecordId=807' },
+        style: 'secondary',
+      }],
+    } as any;
+
+    const element = renderCard(descriptor, { onAction });
+    expect(element).not.toBeNull();
+    const screen = render(element!);
+
+    const recordedActions = screen.getByTestId('diet-record-actions');
+    expect(within(recordedActions).getByLabelText('发到同行圈')).toBeTruthy();
+    fireEvent.press(within(recordedActions).getByLabelText('发到同行圈'));
+    expect(onAction).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'share-with-peers', action: 'route.open' }),
+      expect.objectContaining({ type: 'diet_draft' }),
+    );
   });
 
   it('keeps the correction entry on the card when the generic action bar is absent', () => {
