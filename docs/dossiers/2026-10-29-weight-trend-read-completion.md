@@ -4,8 +4,8 @@
 |---|---|
 | slug | `weight-trend-read-completion` |
 | 创建日期 | 2026-10-29 |
-| 当前阶段 | S6 验证 |
-| 状态 | shipping |
+| 当前阶段 | S5 发布修复 |
+| 状态 | in_progress |
 | 负责 | Codex |
 | 反馈环 | backend deploy |
 
@@ -54,7 +54,10 @@
 
 ## G5 · 发布
 
-- 精确提交已推送，完整 CI 与后端发布待完成。
+- 功能候选 `10ac4391982090d37b14e3d311748715fc4a6d87` 的完整 CI `40818721566` 32/32 成功，trusted validate `40819736208` 成功。
+- 首次正式后端 run `40819779340` 在任何业务部署前因服务器授权仍绑定旧 SHA 而拒绝；生产仍为 `e6f26f6230e429a29113e4322ff5d7be22764787`，不得重放该 run。
+- 一次性外部轮换脚本的独立审查为 NO-GO：部分撤权审计未被 canonical 历史消费、未固定成功工作区回执、未在各 mutation 前重复核验 build lock。生产未执行该脚本。
+- 当前修复把成功身份撤权、旧 loopback 私钥销毁及普通 rotation 合并进同一 canonical 双锁操作；固定成功回执、部分审计和目标 SHA 均 fail-closed。需重新完成该新精确提交的独立 G4、完整 CI、canonical staging 与 validate 后再发布。
 
 ## G6 · 线上验收
 

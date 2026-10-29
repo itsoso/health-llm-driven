@@ -760,12 +760,68 @@ def _installation_evidence(sha, config, library, *, history_only=False):
     return inventory
 
 
+def _successful_auth_revocation_history():
+    root = STATE / "successful-auth-revocations"
+    if not os.path.lexists(root):
+        return {}
+    secure(root)
+    if not root.is_dir() or stat.S_IMODE(root.lstat().st_mode) != 0o700:
+        raise BootstrapError("successful identity revocation audit is invalid")
+    history = {}
+    for entry in root.iterdir():
+        try:
+            if re.fullmatch(r"[0-9a-f]{40}", entry.name) is None:
+                raise BootstrapError("invalid successful identity SHA")
+            _inventory(entry, {"intent.json", "completed.json"})
+            intent = _read_json(entry / "intent.json")
+            expected = {
+                "old_sha", "new_sha", "workspace", "workspace_completed_sha256",
+                "old_executor_sha256", "old_authorized_sha256",
+                "loopback_public_sha256", "backend_succeeded",
+            }
+            if (not isinstance(intent, dict) or set(intent) != expected
+                    or intent["old_sha"] != entry.name
+                    or not isinstance(intent["new_sha"], str)
+                    or re.fullmatch(r"[0-9a-f]{40}", intent["new_sha"]) is None
+                    or intent["new_sha"] == entry.name
+                    or intent["backend_succeeded"] is not True
+                    or any(not isinstance(intent[name], str)
+                           or re.fullmatch(r"[0-9a-f]{64}", intent[name]) is None
+                           for name in ("workspace_completed_sha256", "old_executor_sha256",
+                                        "old_authorized_sha256", "loopback_public_sha256"))):
+                raise BootstrapError("invalid successful identity intent")
+            expected_executor = hashlib.sha256(
+                (canonical_source(entry.name) / "scripts/trusted_release_server.py").read_bytes()
+            ).hexdigest()
+            if intent["old_executor_sha256"] != expected_executor:
+                raise BootstrapError("successful identity executor differs from canonical source")
+            completed = _read_json(entry / "completed.json")
+            workspace = _workspace_evidence(entry.name, historical=True)
+            workspace_completed = STATE / entry.name / "completed.json"
+            if (not isinstance(completed, dict)
+                    or set(completed) != {"old_sha", "new_sha", "state", "installation_sha256"}
+                    or completed.get("old_sha") != entry.name
+                    or completed.get("new_sha") != intent["new_sha"]
+                    or completed.get("state") != "SUCCESSFUL_IDENTITY_REVOKED"
+                    or not isinstance(completed.get("installation_sha256"), str)
+                    or re.fullmatch(r"[0-9a-f]{64}", completed["installation_sha256"]) is None
+                    or workspace != intent["workspace"]
+                    or hashlib.sha256(workspace_completed.read_bytes()).hexdigest()
+                       != intent["workspace_completed_sha256"]):
+                raise BootstrapError("invalid successful identity completion")
+            history[entry.name] = {**intent, "installation_sha256": completed["installation_sha256"]}
+        except (BootstrapError, OSError, ValueError, KeyError, TypeError):
+            raise BootstrapError("successful identity revocation audit is incomplete or invalid") from None
+    return history
+
+
 def _retired_history():
     _native_rotation_recovery()
+    successful = _successful_auth_revocation_history()
     root = STATE / "retired"
     if not os.path.lexists(root):
-        if LEGACY_RETIREMENTS:
-            raise BootstrapError("pinned legacy retirement is missing")
+        if LEGACY_RETIREMENTS or successful:
+            raise BootstrapError("pinned or successful retirement is incomplete")
         return {}
     secure(root)
     if not set(LEGACY_RETIREMENTS) <= {p.name for p in root.iterdir()}:
@@ -848,6 +904,13 @@ def _retired_history():
         if observed != intent["workspace"]:
             raise BootstrapError("retired consumption evidence changed")
         history[entry.name] = intent
+    for old_sha, proof in successful.items():
+        retired = history.get(old_sha)
+        if (not isinstance(retired, dict)
+                or retired.get("new_sha") != proof["new_sha"]
+                or _digest_json(retired.get("installation")) != proof["installation_sha256"]
+                or retired.get("workspace") != proof["workspace"]):
+            raise BootstrapError("successful identity closure lacks matching canonical retirement")
     return history
 
 
@@ -859,7 +922,9 @@ def _retired_config(sha, evidence):
 
 def _assert_fresh_sha(sha, history):
     recovery = _native_rotation_recovery()
+    successful = _successful_auth_revocation_history()
     if (os.path.lexists(STATE / sha) or sha in history
+            or any(item["new_sha"] == sha for item in successful.values())
             or (recovery is not None and recovery['publisher_sha'] == sha)
             or sha in LEGACY_RETIREMENTS
             or any(item.get("new_sha") == sha for item in history.values())
@@ -1187,7 +1252,108 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None, dinner_guard_github_token=None):
+def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, check_locks):
+    workspace = _workspace_evidence(old_sha)
+    completed_path = STATE / old_sha / "completed.json"
+    if (workspace.get("state") != "SUCCEEDED"
+            or hashlib.sha256(completed_path.read_bytes()).hexdigest() != workspace_completed_sha256):
+        raise BootstrapError("successful workspace receipt differs from fixed release evidence")
+    policy = _read_json(CONFIG / "authorized-release.json")
+    old_source = canonical_source(old_sha)
+    executor_digest = hashlib.sha256(
+        (old_source / "scripts/trusted_release_server.py").read_bytes()).hexdigest()
+    config_names = {
+        "authorized-release.json", "cloud.pub", "loopback.pub",
+        "known_hosts", "loopback.conf", "loopback.key",
+    }
+    pre_installation = {
+        "config": _inventory(CONFIG, config_names),
+        "library": _inventory(INSTALLED.parent, {INSTALLED.name}),
+    }
+    if (not isinstance(policy, dict)
+            or set(policy) != {"sha", "expires_at", "executor_sha256"}
+            or policy.get("sha") != old_sha
+            or type(policy.get("expires_at")) is not int
+            or policy["expires_at"] < 0
+            or policy.get("executor_sha256") != executor_digest
+            or pre_installation["library"][INSTALLED.name]["sha256"] != executor_digest):
+        raise BootstrapError("successful identity installation differs from fixed release evidence")
+    key = CONFIG / "loopback.key"
+    secure(key, private=True)
+    identity = key.lstat()
+    if identity.st_nlink != 1:
+        raise BootstrapError("successful identity private key has unexpected links")
+    public = (CONFIG / "loopback.pub").read_text().strip()
+    cloud = (CONFIG / "cloud.pub").read_text().strip()
+    for current_public in (cloud, public):
+        validate_install(old_sha, 1, current_public, now=0)
+    derived = _run(["/usr/bin/ssh-keygen", "-y", "-f", str(key)], capture=True).stdout.strip()
+    if derived.split()[:2] != public.split()[:2]:
+        raise BootstrapError("successful identity private key differs from public key")
+    authorized_digest = hashlib.sha256(AUTHORIZED.read_bytes()).hexdigest()
+    expected_lines = key_lines(policy["expires_at"], cloud, public)
+    authorized_lines = AUTHORIZED.read_text().splitlines()
+    for current_public, expected_line in zip((cloud, public), expected_lines):
+        if [line for line in authorized_lines if current_public.split()[1] in line] != [expected_line]:
+            raise BootstrapError("successful identity authorization differs from managed policy")
+    _assert_backend_terminated_or_unstarted(old_sha)
+    proof = {
+        "old_sha": old_sha,
+        "new_sha": new_sha,
+        "workspace": workspace,
+        "workspace_completed_sha256": workspace_completed_sha256,
+        "old_executor_sha256": executor_digest,
+        "old_authorized_sha256": authorized_digest,
+        "loopback_public_sha256": hashlib.sha256(public.encode()).hexdigest(),
+        "backend_succeeded": True,
+    }
+    root = STATE / "successful-auth-revocations"
+    if not root.exists():
+        root.mkdir(mode=0o700)
+        _sync_parent(root)
+    secure(root)
+    record = root / old_sha
+    record.mkdir(mode=0o700)
+    _sync_parent(record)
+    _write(record / "intent.json", json.dumps(proof, sort_keys=True).encode())
+    check_locks()
+    if (pre_installation != {
+            "config": _inventory(CONFIG, config_names),
+            "library": _inventory(INSTALLED.parent, {INSTALLED.name}),
+        }
+            or _workspace_evidence(old_sha) != workspace
+            or hashlib.sha256(completed_path.read_bytes()).hexdigest() != workspace_completed_sha256
+            or hashlib.sha256(AUTHORIZED.read_bytes()).hexdigest() != authorized_digest):
+        raise BootstrapError("successful identity evidence changed before revocation")
+    _assert_idle()
+    check_locks()
+    if _revoke_locked(old_sha) != {"sha": old_sha, "state": "REVOKED"}:
+        raise BootstrapError("successful identity revocation did not complete")
+    check_locks()
+    secure(key, private=True)
+    current = key.lstat()
+    if ((current.st_dev, current.st_ino, current.st_size, current.st_mtime_ns, current.st_ctime_ns)
+            != (identity.st_dev, identity.st_ino, identity.st_size,
+                identity.st_mtime_ns, identity.st_ctime_ns)):
+        raise BootstrapError("successful identity private key changed before destruction")
+    key.unlink()
+    _sync_parent(key)
+    check_locks()
+    installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
+    if (_workspace_evidence(old_sha) != workspace
+            or hashlib.sha256(completed_path.read_bytes()).hexdigest() != workspace_completed_sha256):
+        raise BootstrapError("successful identity evidence changed after revocation")
+    _write(record / "completed.json", json.dumps({
+        "old_sha": old_sha,
+        "new_sha": new_sha,
+        "state": "SUCCESSFUL_IDENTITY_REVOKED",
+        "installation_sha256": _digest_json(installation),
+    }, sort_keys=True).encode())
+    check_locks()
+    return installation
+
+
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None, dinner_guard_github_token=None, successful_workspace_sha256=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
@@ -1206,6 +1372,14 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
     if review_release_closure_receipt is not None and (review_advance_receipt is not None
             or recovery_receipt is not None or finalized_production_sha is not None or backend_ci):
         raise BootstrapError("release closure requires exclusive exact candidate authority")
+    if successful_workspace_sha256 is not None:
+        if (any(value is not None for value in (recovery_receipt, finalized_production_sha,
+                review_advance_receipt, review_release_closure_receipt,
+                review_release_github_token, dinner_guard_github_token))
+                or backend_ci
+                or not isinstance(successful_workspace_sha256, str)
+                or re.fullmatch(r"[0-9a-f]{64}", successful_workspace_sha256) is None):
+            raise BootstrapError("successful identity closure requires one exact workspace receipt")
     source, server = reviewed_source(sha)
     review_module = _review_release_closure_module() if review_release_closure_receipt is not None else None
     if review_module is not None:
@@ -1262,7 +1436,8 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         if old_sha in history or any(os.path.lexists(path) for path in (archive_config, archive_library)):
             raise BootstrapError("old retirement already attempted")
         check_locks()
-        installation = _installation_evidence(old_sha, CONFIG, INSTALLED.parent)
+        installation = (None if successful_workspace_sha256 is not None
+                        else _installation_evidence(old_sha, CONFIG, INSTALLED.parent))
         review_advance = None
         review_evidence = None
         if review_advance_receipt is not None or review_release_closure_receipt is not None:
@@ -1309,7 +1484,24 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         reuse_cloud = expiry == 0 and public == (CONFIG / "cloud.pub").read_text().strip()
         if public in loopback_keys or (public in retired_keys and not reuse_cloud):
             raise BootstrapError("only the current cloud identity may be reused for persistent authorization")
-        _installation_inputs(sha, expiry, public)
+        if successful_workspace_sha256 is None:
+            _installation_inputs(sha, expiry, public)
+        else:
+            secure(AUTHORIZED, private=True)
+            authorized = AUTHORIZED.read_text()
+            if public.split()[1] in authorized:
+                if not reuse_cloud:
+                    raise BootstrapError("new cloud identity is already authorized")
+                policy = _read_json(CONFIG / "authorized-release.json")
+                expected_cloud, _expected_loopback = key_lines(
+                    policy["expires_at"], current_keys["cloud.pub"], current_keys["loopback.pub"])
+                matches = [line for line in authorized.splitlines()
+                           if public.split()[1] in line]
+                if matches != [expected_cloud]:
+                    raise BootstrapError("current cloud identity authorization differs before rotation")
+            secure(HOST_PUBLIC)
+            host = " ".join(HOST_PUBLIC.read_text().split()[:2])
+            validate_install(sha, expiry, host, now=int(time.time()))
         if os.path.lexists(STATE / 'frontend-history-seal'):
             sealed = server._frontend_history_seal(STATE)
             observed = server.assert_frontend_publication_history(STATE, backup_memo=backup_memo)
@@ -1331,6 +1523,9 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
                     STATE, active_operation=active, live_digest=live,
                     sealed_by_sha=sha, backup_memo=backup_memo)
         check_idle("history-before-intent")
+        if successful_workspace_sha256 is not None:
+            installation = _close_successful_identity(
+                old_sha, sha, successful_workspace_sha256, check_locks)
         # Intent is durable before discarding the revoked current installation.
         # No backup, rollback, or automatic resume: a partial rotation blocks.
         root = STATE / "retired"
@@ -2262,6 +2457,8 @@ def main():
         rotation.add_argument("--expires-at", default=0, type=int, help="Unix deadline; default 0 permits reuse of the current cloud key")
         rotation.add_argument("--cloud-public-key", required=True)
         rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
+        rotation.add_argument("--successful-workspace-sha256",
+                              help="fixed completed.json digest for one successful-identity closure")
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         rotation.add_argument("--dinner-guard-rotation-stdin", action="store_true")
         rotation.add_argument("--review-maintenance-advance-receipt-stdin", action="store_true")
@@ -2337,6 +2534,7 @@ def main():
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
+                            successful_workspace_sha256=args.successful_workspace_sha256,
                             recovery_receipt=receipt if args.recovery_receipt_stdin or args.dinner_guard_rotation_stdin else None,
                             review_advance_receipt=receipt if args.review_maintenance_advance_receipt_stdin else None,
                             review_release_closure_receipt=receipt if args.review_maintenance_release_closure_receipt_stdin else None,

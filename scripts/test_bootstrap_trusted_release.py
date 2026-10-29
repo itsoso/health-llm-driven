@@ -558,6 +558,8 @@ def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
     def run(args, **kwargs):
         if args[0] == "/usr/bin/ps":
             return SimpleNamespace(stdout=f"{os.getpid()} python bootstrap_trusted_release.py\n1 /sbin/init\n")
+        if args[0] == "/usr/bin/ssh-keygen" and "-y" in args:
+            return SimpleNamespace(stdout=(bootstrap.CONFIG / "loopback.pub").read_text())
         result = real_run(args, **kwargs)
         if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
             (bootstrap.CONFIG / "loopback.key.pub").write_text(NEW_LOOPBACK + "\n")
@@ -565,6 +567,161 @@ def rotation_fixture(monkeypatch, tmp_path, *, succeeded=True):
     monkeypatch.setattr(bootstrap, "_run", run)
     calls.clear()
     return bootstrap, calls
+
+
+def successful_rotation_fixture(monkeypatch, tmp_path, *, old_expiry=0):
+    bootstrap, calls = fixture(monkeypatch, tmp_path)
+    bootstrap.install(SHA, old_expiry, PUBLIC)
+    workspace = bootstrap.STATE / SHA
+    workspace.mkdir(mode=0o700)
+    for name, state in (("started", "STARTED"), ("completed", "SUCCEEDED"),
+                        ("build-started", "STARTED"), ("native-started", "STARTED")):
+        path = workspace / f"{name}.json"
+        path.write_text(json.dumps({"sha": SHA, "state": state}))
+        path.chmod(0o600)
+    source, _server = bootstrap.reviewed_source(NEW_SHA)
+    monkeypatch.setattr(bootstrap, "canonical_source", lambda sha: source, raising=False)
+    monkeypatch.setattr(bootstrap, "BUSINESS_LEASE", tmp_path / "business-lease", raising=False)
+    real_run = bootstrap._run
+    def run(args, **kwargs):
+        if args[0] == "/usr/bin/ps":
+            return SimpleNamespace(stdout=f"{os.getpid()} python bootstrap_trusted_release.py\n1 /sbin/init\n")
+        if args[0] == "/usr/bin/ssh-keygen" and "-y" in args:
+            return SimpleNamespace(stdout=(bootstrap.CONFIG / "loopback.pub").read_text())
+        result = real_run(args, **kwargs)
+        if args[0] == "/usr/bin/ssh-keygen" and "-q" in args:
+            (bootstrap.CONFIG / "loopback.key.pub").write_text(NEW_LOOPBACK + "\n")
+        return result
+    monkeypatch.setattr(bootstrap, "_run", run)
+    calls.clear()
+    receipt = hashlib.sha256((workspace / "completed.json").read_bytes()).hexdigest()
+    return bootstrap, calls, receipt
+
+
+def test_successful_identity_rotation_is_one_locked_canonical_operation(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    old_key_inode = (bootstrap.CONFIG / "loopback.key").stat().st_ino
+    assert bootstrap.rotate(
+        SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt
+    ) == {"sha": NEW_SHA, "state": "INSTALLED", "retired_sha": SHA}
+    record = bootstrap.STATE / "successful-auth-revocations" / SHA
+    completed = json.loads((record / "completed.json").read_text())
+    assert completed["new_sha"] == NEW_SHA
+    assert completed["old_sha"] == SHA
+    assert completed["state"] == "SUCCESSFUL_IDENTITY_REVOKED"
+    assert len(completed["installation_sha256"]) == 64
+    assert (bootstrap.CONFIG / "loopback.key").stat().st_ino != old_key_inode
+    assert bootstrap._successful_auth_revocation_history()[SHA]["new_sha"] == NEW_SHA
+
+
+def test_successful_identity_rotation_pins_receipt_before_mutation(monkeypatch, tmp_path):
+    bootstrap, _calls, _receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    before = lifecycle_snapshot(bootstrap)
+    with pytest.raises(bootstrap.BootstrapError, match="receipt differs"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256="0" * 64)
+    assert lifecycle_snapshot(bootstrap) == before
+    assert not (bootstrap.STATE / "successful-auth-revocations").exists()
+
+
+def test_successful_identity_rotation_accepts_expiring_old_identity(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path, old_expiry=200)
+    assert bootstrap.rotate(
+        SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt
+    )["state"] == "INSTALLED"
+
+
+def test_successful_identity_preflight_failure_writes_no_closure_intent(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.BUSINESS_LEASE.symlink_to(tmp_path / "missing")
+    with pytest.raises(bootstrap.BootstrapError, match="business release lease"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    assert not (bootstrap.STATE / "successful-auth-revocations").exists()
+    assert (bootstrap.CONFIG / "loopback.key").exists()
+    assert PUBLIC in bootstrap.AUTHORIZED.read_text()
+
+
+def test_successful_identity_rejects_nonpersistent_cloud_reuse_before_intent(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    with pytest.raises(bootstrap.BootstrapError, match="current cloud identity"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, PUBLIC, successful_workspace_sha256=receipt)
+    assert not (bootstrap.STATE / "successful-auth-revocations").exists()
+    assert (bootstrap.CONFIG / "loopback.key").exists()
+
+
+@pytest.mark.parametrize("fault", ["extra-library", "extra-config"])
+def test_successful_identity_validates_full_installation_before_intent(monkeypatch, tmp_path, fault):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    if fault == "extra-library":
+        (bootstrap.INSTALLED.parent / "unexpected").write_text("unexpected")
+    else:
+        (bootstrap.CONFIG / "unexpected").write_text("unexpected")
+    with pytest.raises(bootstrap.BootstrapError):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    assert not (bootstrap.STATE / "successful-auth-revocations").exists()
+    assert (bootstrap.CONFIG / "loopback.key").exists()
+    assert PUBLIC in bootstrap.AUTHORIZED.read_text()
+
+
+def test_incomplete_successful_identity_audit_blocks_every_retry(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    original_write = bootstrap._write
+    def fail_completion(path, data):
+        if path.name == "completed.json" and path.parent.parent.name == "successful-auth-revocations":
+            raise OSError("synthetic completion failure")
+        return original_write(path, data)
+    monkeypatch.setattr(bootstrap, "_write", fail_completion)
+    with pytest.raises(OSError, match="synthetic completion"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    monkeypatch.setattr(bootstrap, "_write", original_write)
+    with pytest.raises(bootstrap.BootstrapError, match="successful identity revocation audit"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+
+
+def test_completed_successful_closure_without_canonical_retirement_blocks_new_candidate(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    original_write = bootstrap._write
+    def fail_retirement_intent(path, data):
+        if path.name == "intent.json" and path.parent.parent.name == "retired":
+            raise OSError("synthetic retirement intent failure")
+        return original_write(path, data)
+    monkeypatch.setattr(bootstrap, "_write", fail_retirement_intent)
+    with pytest.raises(OSError, match="synthetic retirement"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    monkeypatch.setattr(bootstrap, "_write", original_write)
+    with pytest.raises(bootstrap.BootstrapError, match="retirement"):
+        bootstrap.rotate(SHA, "c" * 40, 200, HOST)
+
+
+def test_successful_identity_history_revalidates_pinned_workspace_receipt(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    intent = bootstrap.STATE / "successful-auth-revocations" / SHA / "intent.json"
+    payload = json.loads(intent.read_text())
+    payload["workspace_completed_sha256"] = "0" * 64
+    intent.write_text(json.dumps(payload))
+    with pytest.raises(bootstrap.BootstrapError, match="successful identity revocation audit"):
+        bootstrap._successful_auth_revocation_history()
+
+
+def test_successful_identity_rechecks_build_lock_before_revocation(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    build_lock = bootstrap.STATE / SHA / "build.lock"
+    build_lock.write_bytes(b"")
+    build_lock.chmod(0o600)
+    original_write = bootstrap._write
+    def replace_build_lock(path, data):
+        result = original_write(path, data)
+        if path.name == "intent.json" and path.parent.parent.name == "successful-auth-revocations":
+            lock = bootstrap.STATE / SHA / "build.lock"
+            lock.unlink()
+            lock.write_bytes(b"")
+            lock.chmod(0o600)
+        return result
+    monkeypatch.setattr(bootstrap, "_write", replace_build_lock)
+    with pytest.raises(bootstrap.BootstrapError, match="lock"):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    assert (bootstrap.CONFIG / "loopback.key").exists()
+    assert PUBLIC in bootstrap.AUTHORIZED.read_text()
 
 
 def test_same_cloud_key_survives_consecutive_versions_without_rewriting_history(monkeypatch, tmp_path):
