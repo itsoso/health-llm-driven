@@ -2160,6 +2160,7 @@ async def test_agent_stream_emits_record_card_after_fast_diet_record(db, auth_us
         async for event in executor.run_stream(
             user_id=user.id,
             message="早饭吃了两个鸡蛋一杯牛奶",
+            channel="voice",
             user_auth_token="test-token",
         )
     ]
@@ -3496,6 +3497,80 @@ async def test_agent_stream_preserves_structured_peach_nutrition_before_single_d
     assert "这次没有写入" not in rendered
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["write_receipts"][0]["resource_type"] == "diet_record"
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_exact_voice_peach_record_skips_outer_tool_model(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    estimate_calls = []
+
+    async def forbid_model(*_args, **_kwargs):
+        raise AssertionError("exact simple diet goal must not call the outer model")
+
+    async def forbid_model_stream(*_args, **_kwargs):
+        raise AssertionError("exact simple diet goal must not stream from the outer model")
+        yield  # pragma: no cover
+
+    async def fake_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 58,
+            "protein": 1.4,
+            "carbs": 14,
+            "fat": 0.4,
+            "fiber": 2.3,
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            {
+                "id": 112,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", forbid_model)
+    monkeypatch.setattr(executor, "_call_llm_stream", forbid_model_stream)
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录下来，吃了一粒桃子。",
+            channel="voice",
+            user_auth_token="test-token",
+            client_turn_id="turn-exact-voice-peach-preplanned",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert estimate_calls == ["一粒桃子"]
+    assert len(dispatched) == 1
+    assert dispatched[0][0] == "health_record"
+    assert dispatched[0][1]["data"]["food_items"] == "一粒桃子"
+    assert "已记录加餐" in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"][0]["resource_id"] == "112"
+    assert done["data"]["llm_rounds"] == 0
 
 
 @pytest.mark.asyncio

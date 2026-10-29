@@ -9334,6 +9334,25 @@ def _build_deterministic_one_time_reminder_tool_call(
     }
 
 
+_VOICE_SINGLE_DIET_RECORD_RE = re.compile(
+    r"(?:请)?记录(?:下来)?[，,]?(?:我)?吃了"
+    r"(?P<food>[^，,、和与及。！？!?]{1,24})[。！？!?]?"
+)
+_VOICE_SINGLE_DIET_PORTION_RE = re.compile(
+    r"(?:半|[零一二两三四五六七八九十百\d]+)"
+    r"(?:个|粒|颗|枚|杯|碗|份|片|根|块|盒|瓶|克|千克|公斤|g|kg|毫升|ml)"
+)
+
+
+def _is_explicit_single_food_voice_record(message: str) -> bool:
+    """Prove the voice fast path has one explicit food portion and no residue."""
+    candidate = str(message or "").replace(" ", "").replace("\u3000", "")
+    match = _VOICE_SINGLE_DIET_RECORD_RE.fullmatch(candidate)
+    if match is None:
+        return False
+    return len(_VOICE_SINGLE_DIET_PORTION_RE.findall(match.group("food"))) == 1
+
+
 def _build_preplanned_simple_diet_tool_call(
     goal: Optional[GoalSpec],
     *,
@@ -20138,6 +20157,38 @@ class AgentExecutor:
                             )
                             if proposed_calls:
                                 owned_read_preplanned = True
+                            if (
+                                not proposed_calls and round_idx == 0
+                                and channel == "voice"
+                                and _is_explicit_single_food_voice_record(message)
+                                and not health_advice_buffered and not self._read_only_turn
+                                and not deterministic_simple_record_fallback_attempted
+                                and not unverified_write_operations and not failed_write_operations
+                                and not self._agent_kernel_pending_confirmation_tools
+                                and not contains_crisis_language(message)
+                                and any((tool.get("function") or {}).get("name") == "health_record"
+                                        for tool in round_tools)
+                            ):
+                                # A compiled exact diet/create goal already contains
+                                # every current-turn fact needed for this proposal.
+                                # Skip the outer model, while keeping ordinary
+                                # nutrition enrichment, policy, dispatch and receipt
+                                # verification below as the write authority.
+                                diet_call = _build_preplanned_simple_diet_tool_call(
+                                    self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
+                                    write_receipts=write_receipts,
+                                    has_attachment=bool(
+                                        images or file_base64 or self._current_turn_has_attachment
+                                    ),
+                                    runtime_write_blocked=bool(self._runtime_write_block_reason),
+                                    read_only_turn=self._read_only_turn,
+                                )
+                                if diet_call is not None:
+                                    proposed_calls = [diet_call]
+                                    deterministic_simple_record_fallback_attempted = True
+                                    self._record_model_fallback_reason(
+                                        "simple_diet_record_preplanned_before_model"
+                                    )
                             if (not proposed_calls and round_idx == 0
                                     and medical_scope is not None
                                     and self._turn_selected_exam_id is None
@@ -20870,6 +20921,35 @@ class AgentExecutor:
                                 )
                                 if pi_terminal_text is None and self._agent_kernel_pending_confirmation_tools:
                                     pi_terminal_text = _pending_confirmation_reply_from_tool_results(messages) or None
+                                goal = (
+                                    self._agent_kernel_snapshot.goal
+                                    if self._agent_kernel_snapshot is not None else None
+                                )
+                                if (
+                                    pi_terminal_text is None
+                                    and not receipt_goal_evaluated
+                                    and deterministic_simple_record_fallback_attempted
+                                    and goal is not None
+                                    and goal.kind == "simple_health_record"
+                                    and write_receipts
+                                    and not last_recoverable_write_rejection
+                                ):
+                                    postcondition = verify_goal_postconditions(
+                                        goal,
+                                        write_receipts=write_receipts,
+                                        verification_result=None,
+                                    )
+                                    receipt_goal_evaluated = True
+                                    if self._agent_kernel_event_bus is not None:
+                                        self._agent_kernel_event_bus.goal_evaluated(
+                                            satisfied=postcondition.satisfied,
+                                            verified_target_count=len(
+                                                postcondition.verified_resource_ids
+                                            ),
+                                            reason=postcondition.reason,
+                                        )
+                                    if postcondition.satisfied:
+                                        pi_terminal_text = _simple_record_goal_completion_text(goal)
                                 if (
                                     pi_terminal_text is None
                                     and (self._prefer_fast_record_model or deterministic_symptom_fallback_attempted)
@@ -20922,6 +21002,7 @@ class AgentExecutor:
                 from app.services.agent_kernel.postconditions import registered_goal_verifier_kinds
                 if (
                     goal is not None and goal.kind in registered_goal_verifier_kinds()
+                    and not receipt_goal_evaluated
                     and write_receipts and not unverified_write_operations
                     and not failed_write_operations and not runtime_control_terminal
                 ):

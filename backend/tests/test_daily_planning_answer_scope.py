@@ -9,6 +9,7 @@ from tests.test_agent_coherence_pi_trajectories import (
 
 REQUESTS = ['规划今天饮食运动和睡眠', '请帮我规划今天的饮食、运动和睡眠',
             '安排明天饮食和睡眠计划',
+            '安排我明天的运动、饮食和补剂的摄入。',
             '今天如何运动 饮食和 睡眠',
             '今天应该怎么安排饮食、运动和睡眠？',
             '我今天该如何安排运动、饮食与睡眠？',
@@ -39,6 +40,22 @@ def test_daily_draft_instructions_preserve_missing_personal_basis():
     assert '不默认减重或建议主食减半、制造热量缺口' in instructions
     assert '不能仅凭当前钟点断言适合入睡' in instructions
 
+
+def test_supplement_daily_draft_is_local_and_never_invents_an_intake_plan():
+    from app.services.agent_kernel.current_input_advice_scope import (
+        current_input_advice_instructions,
+        local_advice_response,
+    )
+
+    message = '安排我明天的运动、饮食和补剂的摄入。'
+    kind, answer = local_advice_response(message)
+
+    assert kind == 'daily_planning_advice'
+    assert '**运动**' in answer and '**饮食**' in answer and '**补剂**' in answer
+    assert '不能安排具体产品、剂量、频次或时间' in answer
+    assert '未查询个人记录、未保存计划' in answer
+    assert '不读取个人补剂记录' in current_input_advice_instructions(message)
+
 @pytest.mark.parametrize('text', [
     '规划今天饮食运动和睡眠，并查询我的病史', '根据我昨天的睡眠规划今天饮食运动和睡眠',
     '给妈妈规划今天饮食运动和睡眠', '“规划今天饮食运动和睡眠”',
@@ -57,6 +74,12 @@ def test_daily_draft_instructions_preserve_missing_personal_basis():
     '今天运动饮食睡眠怎么样',
     '今天如何服药和睡眠',
     '今天如何运动饮食和睡眠，查询昨天的睡眠',
+    '安排我明天的运动、饮食和补剂的摄入，并查询我的补剂记录',
+    '给妈妈安排明天的运动、饮食和补剂的摄入',
+    '“安排我明天的运动、饮食和补剂的摄入”',
+    '不要安排我明天的运动、饮食和补剂的摄入',
+    '安排我明天的运动、饮食和补剂的摄入并保存计划',
+    '安排我明天的运动、饮食和用药',
 ])
 def test_unknown_owner_basis_or_write_does_not_become_general_advice(text):
     from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice

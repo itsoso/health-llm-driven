@@ -129,7 +129,8 @@ def is_wearable_placement_question(text: str) -> bool:
     return bool(isinstance(text, str) and _WEARABLE_PLACEMENT_QUESTION.fullmatch(text.strip()))
 
 
-_DAILY_DOMAINS = r"(?:饮食|运动|睡眠)(?:(?:和|与|及|、|以及)?(?:饮食|运动|睡眠)){1,2}"
+_DAILY_DOMAIN = r"(?:饮食|运动|睡眠|补剂(?:的?摄入)?)"
+_DAILY_DOMAINS = rf"{_DAILY_DOMAIN}(?:(?:和|与|及|、|以及)?{_DAILY_DOMAIN}){{1,3}}"
 _DAILY_HORIZON = r"(?:今天|明天|本周|这周|下周)"
 _DAILY_PLAN_RE = re.compile(
     r"(?:请你?|麻烦你?)?(?:(?:帮|为|给)我)?(?:规划|安排|制定)(?:一下)?"
@@ -211,13 +212,15 @@ def current_input_advice_instructions(text: str) -> str:
         return _GI_ADVICE_INSTRUCTIONS
     if is_daily_planning_advice(text):
         return (CURRENT_INPUT_CONVERSATIONAL_ADVICE_INSTRUCTIONS
-                + '\n本轮任务是饮食、运动和睡眠的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
+                + '\n本轮任务是用户指定领域的通用安排草稿。直接按用户指定的领域和期限给出有条件、可选择的安排，'
                 '而不是睡前问答；不查询个人记录，不要求查询日期。明确未核验个人数据、未保存计划。'
                 '不使用历史上下文推断当前健康状况，不保证运动安全或给出用药补剂指令。'
                 '\n先说明本轮未查询个人记录、未保存计划，再分别给所问领域的简短选项。'
                 '用户没有提供目标、体能、禁忌或营养需求时，不默认减重或建议主食减半、制造热量缺口；'
                 '不指定训练强度或要求完成固定运动量。运动选项须以无明显不适、符合已有医嘱和自身能力为前提。'
                 '不能仅凭当前钟点断言适合入睡、保证睡眠时长或指定必须就寝时间；参考平时作息、困意和次日起床安排。'
+                '若用户问到补剂，不读取个人补剂记录，也不安排具体产品、剂量、频次或时间；'
+                '不建议开始、继续、停用或调整补剂，只提示向医生或药师核对已经确认的方案。'
                 '若已到晚上，只安排余下时间，不补做白天任务。结尾可询问用户目标或需要考虑的限制。')
     if is_wearable_placement_question(text):
         return _WEARABLE_PLACEMENT_INSTRUCTIONS
@@ -276,6 +279,7 @@ _DAILY_GUIDANCE = {
     "运动": "没有明显不适，且符合已有医嘱和自身能力时，可选一种熟悉的轻松活动，如散步或舒缓拉伸；感觉疲劳时可以休息，不必为完成安排额外加量。出现胸痛、明显呼吸困难或突然加重的不适时，停止活动并及时就医。",
     "饮食": "结合饥饿感和原有进餐节奏安排日常饮食，选择自己能耐受的食物，并遵守已知过敏限制和医生的饮食要求。已经吃过的餐次不用补吃；这里没有设定减重目标或调整摄入量。",
     "睡眠": "结合困意、平时作息和次日起床安排准备休息；可以先减少干扰，做熟悉的放松活动。有明显不适时先处理不适或寻求医疗帮助，不用强迫自己在某个钟点入睡。",
+    "补剂": "当前信息不足以安全安排补剂；本轮不能安排具体产品、剂量、频次或时间，也不建议开始、继续、停用或调整补剂。若已有医生或药师确认的方案，请向其核对明天的执行要求。",
 }
 
 
@@ -285,8 +289,9 @@ def _daily_planning_response(message: str) -> str:
         raise ValueError("Daily planning response requires a complete advice goal")
     candidate = message.replace(" ", "").replace("\u3000", "")
     horizon = re.search(_DAILY_HORIZON, candidate).group()
-    domains = dict.fromkeys(re.findall(r"饮食|运动|睡眠", candidate))
-    lines = [f"{horizon}的通用安排", "本轮未查询个人记录、未保存计划。以下选项需要结合你的实际状态选择，不能据此确认运动或饮食方案适合你。"]
+    raw_domains = re.findall(r"饮食|运动|睡眠|补剂(?:的?摄入)?", candidate)
+    domains = dict.fromkeys("补剂" if domain.startswith("补剂") else domain for domain in raw_domains)
+    lines = [f"{horizon}的通用安排", "本轮未查询个人记录、未保存计划。以下选项需要结合你的实际状态选择，不能据此确认这些安排适合你。"]
     lines.extend(f"**{domain}**：{_DAILY_GUIDANCE[domain]}" for domain in domains)
     lines.extend(["按所问时段里还没过去的时间安排即可，不必补做已经错过的事项。",
                   "你更希望关注恢复、规律作息，还是建立活动习惯？也可以告诉我需要考虑的限制。"])
