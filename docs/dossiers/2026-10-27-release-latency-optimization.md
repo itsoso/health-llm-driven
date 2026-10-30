@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | complete |
-| 当前阶段 | 第十一阶段 G3 PASS；近期六轮 placement 校准待 G4/G5/G6 |
+| 当前阶段 | 第十一阶段 G4 PASS；近期六轮 placement 校准待 G5/G6 |
 
 ## G1 范围
 
@@ -349,4 +349,6 @@ G1/G2 PASS。方案只用最近六轮精确 main、首轮成功、完整后端 C
 
 G3 PASS。先把真实 catalog 的来源和关键路径断言更新为目标近期窗口，旧 catalog 稳定 RED；刷新后 timing refresh、drift 和 release contract 共 75 passed，runner 合同 23 passed，change-scope 30 passed。CI-mode 完整 release invariants 真实退出码 0：5646 passed、67 个平台或条件性 skipped、127 subtests passed；没有缩短、跳过或替换该集合。16 个 worker 恰好覆盖 60 个分片，预测关键路径 443.441 秒。System Map 对 CI runner 路径无索引，按治理要求运行中央 System Map、mobile navigation 和 doc drift 检查并通过；未产生地图变更。Dossier 一致性、JSON、diff 和秘密扫描通过。当前只改变 placement telemetry 及其测试和证据，应用运行时、后端、数据库、Mobile 与原生资产均不变。
 
-G4/G5/G6 pending：固定候选须先经独立安全复核，确认来源、摘要、回放、失败传播和执行策略均未漂移；随后运行精确 PR CI。合入后只接受精确 main 的首轮完整 CI 与后置 timing observer，不重跑挑选好样本。若任何 job 失败或遗漏，或完整 CI 相对 581 秒基线增加超过 10%，停止推广并调查。该阶段仅修改 CI placement，不部署后端，不发布 OTA、TestFlight 或 App Store。
+G4 PASS。独立审查对首个固定候选 `60f07bc1635d48637b1ce87bd3d6457a03756662` 给出 NO-GO：机器证据把拆分回放的次高 worker 412.051 秒误记为最大值。实现安全、拆分 NO-GO 方向和 catalog 均不受影响，但定量证据不可复现，因此没有推送该候选。修正公式与最大值后的精确候选 `202a9be3a2000193343280cb9c560b60f031abe2` 经同一独立审查复算为 GO：六轮 GitHub main push 均 attempt 1、32/32 success；六份日志摘要、60 shard / 64 process / 零 timeout 匹配；非调度策略摘要前后均为 `53c3ead...`，递归差异仅 `timing_source` 和 46 个 `scheduling_seconds`；same-run、留一回放、预测关键路径和拆分投影全部复现。
+
+G5/G6 pending：随后运行精确 PR CI。合入后只接受精确 main 的首轮完整 CI 与后置 timing observer，不重跑挑选好样本。若任何 job 失败或遗漏，或完整 CI 相对 581 秒基线增加超过 10%，停止推广并调查。该阶段仅修改 CI placement，不部署后端，不发布 OTA、TestFlight 或 App Store。

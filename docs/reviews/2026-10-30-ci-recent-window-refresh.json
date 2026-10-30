@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_recent_window_refresh.v1",
-  "status": "G3_LOCAL_PASS",
+  "status": "G4_PASS",
   "release_authority": false,
   "base_main_sha": "c27505a70cdbdada8637b5814ba0fdfc90efa123",
   "change": {
@@ -238,7 +238,6 @@
     }
   },
   "pending_gates": [
-    "independent safety review of exact candidate",
     "exact PR CI",
     "exact main full CI and timing observer"
   ],
@@ -248,5 +247,13 @@
     "hosted improvement remains unverified until exact candidate and main CI"
   ],
   "deployment_required": false,
-  "ota_required": false
+  "ota_required": false,
+  "independent_review": {
+    "initial_candidate_sha": "60f07bc1635d48637b1ce87bd3d6457a03756662",
+    "initial_verdict": "NO-GO",
+    "initial_finding": "split replay recorded the second-highest worker as the maximum; implementation safety and the NO-GO direction were unaffected",
+    "corrected_candidate_sha": "202a9be3a2000193343280cb9c560b60f031abe2",
+    "final_verdict": "GO",
+    "verified": "source provenance, first-attempt success, process coverage, policy digest, recursive diff, same-run replay, leave-one-out replay, split projection and focused contracts"
+  }
 }
