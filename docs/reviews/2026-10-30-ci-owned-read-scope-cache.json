@@ -15,11 +15,19 @@
   },
   "candidate": {
     "code_commit": "fb6841425",
+    "pull_request_head": "11fd244f4c46de4c64a1db50814cbe3f9e3cddd7",
+    "main_merge_sha": "afee20ab1fa38d1ec95d42f08194c776198c0853",
     "source_sha256": {
       "backend/app/services/agent_executor.py": "d70b961110af6a2062c9779a23f8de03c0589abc62c1967b95c592668b0d74e2",
       "backend/tests/test_agent_owned_read_scope_cache.py": "8feeb660ff551c1a7778c4f5a87480372f969fb3de82ee6599e4254382342b8b"
     },
-    "hosted_ci": "pending"
+    "hosted_ci": {
+      "pull_request_run": 41041811504,
+      "status": "success",
+      "wall_seconds": 528,
+      "successful_jobs": 23,
+      "scope_skipped_jobs": 9
+    }
   },
   "change": {
     "cache_scope": "one AgentExecutor and the exact same frozen TurnSnapshot object",
@@ -64,6 +72,32 @@
     "identity_result_sha256": "a4df9280940bb4a4a8c428a214a64b7d816a980a82eea59e4fe855bda63eda83",
     "identity_and_results_equal": true
   },
+  "hosted_exact_shard_comparison": {
+    "baseline_run": 41020241592,
+    "candidate_run": 41041811504,
+    "baseline_process_seconds": 263.418,
+    "candidate_process_seconds": 165.146,
+    "process_reduction_percent": 37.3065,
+    "baseline_testcase_seconds": 233.44,
+    "candidate_testcase_seconds": 142.131,
+    "testcase_reduction_percent": 39.1145,
+    "testcase_count": 1099,
+    "baseline_results": {
+      "passed": 1093,
+      "skipped": 6,
+      "failed": 0,
+      "errored": 0
+    },
+    "candidate_results": {
+      "passed": 1093,
+      "skipped": 6,
+      "failed": 0,
+      "errored": 0
+    },
+    "identity_result_sha256": "a4df9280940bb4a4a8c428a214a64b7d816a980a82eea59e4fe855bda63eda83",
+    "identity_and_results_equal": true,
+    "new_cache_contract_tests": "2 passed in backend-test-balanced-16"
+  },
   "focused_verification": {
     "cache_contract": {
       "passed": 2,
@@ -94,14 +128,30 @@
   "limits": [
     "Local timings are paired single-machine samples, not P50, P95, or P99.",
     "SQLite validates the CI shard behavior but does not replace PostgreSQL semantics in full CI.",
-    "Hosted full-CI impact remains unknown until the exact candidate run completes.",
+    "The pull-request run is change-scoped; exact-main full-CI recovery remains required before deployment.",
     "No backend deployment or OTA is claimed by this record."
   ],
   "gates": {
     "local_correctness": "PASS",
     "local_performance": "PASS",
     "live_llm": "PASS",
-    "full_ci": "PENDING",
+    "pull_request_ci": "PASS",
+    "initial_main_ci": "FAIL_CONFIRMATION_SNAPSHOT",
+    "full_ci": "RECOVERY_PENDING",
     "deployment": "PENDING"
+  },
+  "initial_main_ci_failure": {
+    "run": 41043112706,
+    "sha": "afee20ab1fa38d1ec95d42f08194c776198c0853",
+    "status": "failure",
+    "successful_jobs": 29,
+    "root_job": "backend-quality",
+    "root_reason": "The workflow snapshotted HARNESS_LIVE_LLM_EVAL_CONFIRMED=11fd244f... before the squash main SHA afee20ab... was rebound. The exact-main target comparison failed.",
+    "dependent_failed_jobs": [
+      "backend-tests",
+      "backend-release-ready-v1"
+    ],
+    "rerun": false,
+    "recovery": "Create a documentation-only evidence commit, bind confirmation to that exact SHA before push, then use one explicit workflow_dispatch full-CI recovery run."
   }
 }

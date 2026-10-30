@@ -304,3 +304,7 @@ G3 本地 PASS。新增两项契约测试先分别因入口缺失、失败被错
 安全与质量验证：最终精确 `r-other` 1099 项通过；缓存契约 2 项通过；修正前的相关宽回归 570 项通过，最终异常原子性由契约与完整分片覆盖。真实模型 gate 使用合成用户和内存 SQLite，不访问生产健康数据：invariants 12/12、health-agent-core 50/50、orchestrator 5/5（均分 0.94）、trajectory 12/12、goldens 9/9，无回归。System Map、agent-skill governance、diff 及 compile 检查通过。机器证据见 `docs/reviews/2026-10-30-ci-owned-read-scope-cache.json`。
 
 G4/G5/G6 尚未完成：代码提交为 `fb6841425`，仍需最终证据提交、精确 PR 完整 CI、main CI 和后置 timing observer。由于修改了后端执行路径，合并后需按精确 main SHA 发布后端并验证健康/匿名 401；没有移动端或原生改动，不需要 OTA、TestFlight 或 App Store 发布。CI 绿色不冒充部署完成。
+
+G4/G5 更新：PR #291 的精确 SHA `11fd244f4c46de4c64a1db50814cbe3f9e3cddd7` 在 CI `41041811504` 通过，23 个适用 job 成功、9 个按 PR 变更范围跳过。托管 `r-other` 为 165.146 秒，紧邻完整 main 基线 `41020241592` 为 263.418 秒，减少 37.307%；JUnit 累计 233.44→142.131 秒，1099 项身份/结果摘要完全相同（1093 passed、6 skipped）。新增两项缓存契约在 balanced-16 通过。PR 整轮 528 秒，但它是 change-scoped，不能与 main 全量运行直接等价。
+
+PR squash 合入 main `afee20ab1fa38d1ec95d42f08194c776198c0853` 后，自动 CI `41043112706` 终态 failure：29 个独立 job 成功，根失败仅为 backend-quality 启动时快照的 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 仍是 PR SHA `11fd...`，目标已是 squash SHA `afee...`；backend-tests 与 backend-release-ready-v1 只因依赖失败。两份运行时文件摘要与实模型通过的候选逐字节一致，变量随后绑定 afee，但 workflow 的环境快照不会改变。保留该失败 run，不 rerun 或把 29 个成功 job 拼成绿色。恢复方案是提交本段证据，先将 live 确认绑定到该后续精确 main SHA，再直接 fast-forward 推送，并用一次显式 `workflow_dispatch` 完整 CI；这是 `docs/governance/deploy.md` 允许的失败恢复补验证，不用于挑选性能最好样本。恢复 CI、observer 和后端发布仍 pending。
