@@ -35,9 +35,9 @@ jobs:
           set -euo pipefail
           RUN_ID="${{ github.event.workflow_run.id }}"
           REPOSITORY="${{ github.repository }}"
-          gh api -H 'Accept: application/vnd.github+json' \
-            "repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
-            > _ci-timing-current-jobs.json
+          python scripts/github_actions_read_retry.py \
+            --repository "$REPOSITORY" --run-id "$RUN_ID" \
+            --resource jobs --output _ci-timing-current-jobs.json
           python scripts/check_ci_timing_observation_scope.py \
             --jobs-json _ci-timing-current-jobs.json \
             --workers 16 --github-output "$GITHUB_OUTPUT"
@@ -51,19 +51,17 @@ jobs:
           HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
           REPOSITORY="${{ github.repository }}"
           mkdir -p _ci-timing/jobs
-          gh api -H 'Accept: application/vnd.github+json' \
-            "repos/${REPOSITORY}/actions/runs/${RUN_ID}/logs" \
-            > _ci-timing/current-run-logs.zip
-          gh run list --repo "$REPOSITORY" --workflow CI --branch main \
-            --status success --limit 12 \
-            --json databaseId,headSha,headBranch,workflowName,status,conclusion,attempt \
-            > _ci-timing/recent-runs.json
-          gh run list --repo "$REPOSITORY" --workflow CI --branch main \
-            --status success --limit 12 --json databaseId \
-            --jq '.[].databaseId' | while read -r candidate_run_id; do
-              gh api -H 'Accept: application/vnd.github+json' \
-                "repos/${REPOSITORY}/actions/runs/${candidate_run_id}/jobs?per_page=100" \
-                > "_ci-timing/jobs/${candidate_run_id}.json"
+          python scripts/github_actions_read_retry.py \
+            --repository "$REPOSITORY" --run-id "$RUN_ID" \
+            --resource logs --output _ci-timing/current-run-logs.zip
+          python scripts/github_actions_read_retry.py \
+            --repository "$REPOSITORY" \
+            --resource runs --output _ci-timing/recent-runs.json
+          python -c 'import json,sys; print("\n".join(str(row["databaseId"]) for row in json.load(sys.stdin)))' \
+            < _ci-timing/recent-runs.json | while read -r candidate_run_id; do
+              python scripts/github_actions_read_retry.py \
+                --repository "$REPOSITORY" --run-id "$candidate_run_id" \
+                --resource jobs --output "_ci-timing/jobs/${candidate_run_id}.json"
           done
           python scripts/refresh_ci_pytest_timings.py \
             --catalog .github/ci/backend-pytest-shards.json \
