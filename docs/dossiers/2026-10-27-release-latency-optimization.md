@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | complete |
-| 当前阶段 | 第十二阶段 G3 PASS；CI timing observer 只读重试待 G4/G5/G6 |
+| 当前阶段 | 第十二阶段 G4 PASS；CI timing observer 只读重试待 G5/G6 |
 
 ## G1 范围
 
@@ -363,3 +363,5 @@ G6 placement 验收 PASS：squash 合入 main `1ae708d08dfdb630cd66101a9dd3f34cf
 G1/G2 PASS。新增专用只读 helper，仅允许 Actions `jobs`、`logs` 和固定的 main / CI / success / limit=12 运行列表。每个读取最多三次，退避 1 / 2 秒，全部写入同目录临时文件；只有命令退出 0 且文件非空才原子替换目标。最终失败继续非零，并保留既有目标，不输出远端 stderr 或凭据。工作流 attempt、job timeout、permissions、漂移阈值和发布 Gate 不变；没有 workflow rerun，也没有为部署、OTA、TestFlight 或其他写操作增加重试。两次相同 run-list 查询合并为一次；按当前 limit=12 计算，远端读取由 16 次降为 15 次。
 
 G3 PASS。首个 RED 为 helper 模块不存在；第二个 RED 证明成功 run 列表尚未纳入 helper 且工作流仍有直接 `gh run list`。实现后，helper / timing drift / release contract 聚焦集合 38 passed；change-scope 在 CI 同构 Python 3.12 PATH 下 30 passed。真实只读列表返回 12 条完整结构。CI-mode 完整 release-invariants 真实退出码 0：5655 passed、67 个平台或条件性 skipped、127 subtests passed。使用同一 helper 对精确 main run `41068488731` 及最近成功 run 的 jobs/logs 读取成功，重建报告与上节一致；日志 ZIP、observed catalog、drift report 摘要分别为 `415110f4...50776`、`623387cc...d40b`、`ae170f4...e905`。中央 System Map、mobile nav、doc drift、281 份 Dossier、JSON、compile、diff 和秘密扫描均通过。机器证据见 `docs/reviews/2026-10-30-ci-observer-read-retry.json`。仍需固定提交独立 G4、精确 PR CI，以及合入后一次新的 main CI 与自动 hosted observer 成功，不能用本地重建冒充修复已上线。
+
+G4 PASS。独立审查对精确提交 `ba572757e6655f14fa2c1f998e572a30b8e8af8c` 给出 GO：官方 API 复核主 CI `41068488731` 为 main / attempt=1 / 32/32 success，observer `41069755464` 为 attempt=1 failure，日志明确为 HTTP 502 且 artifact 数为零。审查确认 helper 只允许三类固定只读资源；三次尝试、1 / 2 秒退避、非空校验、`fsync`、原子替换、旧输出保留、远端 stderr 不外泄和 pipeline 失败传播均成立。独立失败探针三次失败后返回非零、旧文件不变、临时文件清零且合成 secret 未泄露；聚焦集合 38/38、change-scope 30/30 fresh pass。单个 `gh` 子进程没有 helper 级 timeout，但工作流保留 10 分钟硬上限，此项为非阻断残余。精确 PR CI、合入后的 main CI 与 hosted observer 仍为 G5/G6 pending。

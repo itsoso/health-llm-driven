@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_observer_read_retry.v1",
-  "status": "G3_LOCAL_PASS",
+  "status": "G4_PASS",
   "release_authority": false,
   "trigger": {
     "main_sha": "1ae708d08dfdb630cd66101a9dd3f34cf783b757",
@@ -83,8 +83,17 @@
     },
     "dossier_consistency": "PASS: 281 dossiers"
   },
+  "independent_review": {
+    "reviewed_sha": "ba572757e6655f14fa2c1f998e572a30b8e8af8c",
+    "verdict": "GO",
+    "blocking_findings": 0,
+    "focused_contracts_passed": 38,
+    "ci_change_scope_passed": 30,
+    "failure_probe": "PASS: final nonzero, existing output preserved, temporary files removed, synthetic secret stderr not emitted",
+    "pipeline_failure_propagation": "PASS",
+    "non_blocking_residual": "Individual gh subprocesses have no helper-level timeout; the observer job retains its 10 minute hard timeout."
+  },
   "pending_gates": [
-    "independent safety review of exact candidate",
     "exact PR CI",
     "exact main CI and successful hosted observer"
   ],
