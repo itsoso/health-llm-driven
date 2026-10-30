@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_observer_read_retry.v1",
-  "status": "G4_PASS",
+  "status": "G6_PASS",
   "release_authority": false,
   "trigger": {
     "main_sha": "1ae708d08dfdb630cd66101a9dd3f34cf783b757",
@@ -93,10 +93,44 @@
     "pipeline_failure_propagation": "PASS",
     "non_blocking_residual": "Individual gh subprocesses have no helper-level timeout; the observer job retains its 10 minute hard timeout."
   },
-  "pending_gates": [
-    "exact PR CI",
-    "exact main CI and successful hosted observer"
-  ],
+  "hosted_validation": {
+    "pull_request": {
+      "number": 295,
+      "head_sha": "cce5c40f65c3f8fafaa166f00f62c5c02f5b6ae1",
+      "ci_run_id": 41072674793,
+      "attempt": 1,
+      "success_jobs": 31,
+      "expected_skipped_jobs": 1,
+      "failed_jobs": 0
+    },
+    "main": {
+      "sha": "cfdd54080155cb27d9dcdb03aeda37829445777f",
+      "ci_run_id": 41074173007,
+      "attempt": 1,
+      "success_jobs": 32,
+      "failed_jobs": 0,
+      "wall_seconds": 506
+    },
+    "observer": {
+      "run_id": 41075456088,
+      "attempt": 1,
+      "conclusion": "success",
+      "artifact_id": 12985969579,
+      "artifact_name": "ci-timing-drift-41074173007",
+      "current_run_id": 41074173007,
+      "current_head_sha": "cfdd54080155cb27d9dcdb03aeda37829445777f",
+      "status": "CURRENT",
+      "predicted_critical_seconds": 443.441,
+      "observed_critical_seconds": 431.989,
+      "slower_ratio": -0.025825,
+      "largest_shard_slower_ratio": 0.034636,
+      "drift_exceeded": false,
+      "catalog_stale": false,
+      "runs_since_source": 2,
+      "release_authority": false
+    }
+  },
+  "pending_gates": [],
   "deployment_required": false,
   "ota_required": false
 }
