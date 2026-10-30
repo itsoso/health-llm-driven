@@ -28,7 +28,22 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Admit only complete backend timing matrices
+        id: scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          REPOSITORY="${{ github.repository }}"
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/actions/runs/${RUN_ID}/jobs?per_page=100" \
+            > _ci-timing-current-jobs.json
+          python scripts/check_ci_timing_observation_scope.py \
+            --jobs-json _ci-timing-current-jobs.json \
+            --workers 16 --github-output "$GITHUB_OUTPUT"
+
       - name: Collect exact successful run timing evidence
+        if: ${{ steps.scope.outputs.eligible == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -57,6 +72,7 @@ jobs:
             --output _ci-timing/observed-catalog.json
 
       - name: Assess placement drift without updating main
+        if: ${{ steps.scope.outputs.eligible == 'true' }}
         run: |
           python scripts/check_ci_pytest_timing_drift.py \
             --catalog .github/ci/backend-pytest-shards.json \
@@ -69,7 +85,7 @@ jobs:
             --output _ci-timing/drift-report.json
 
       - name: Upload bounded timing observation
-        if: ${{ always() }}
+        if: ${{ always() && steps.scope.outputs.eligible == 'true' }}
         uses: actions/upload-artifact@v6
         with:
           name: ci-timing-drift-${{ github.event.workflow_run.id }}

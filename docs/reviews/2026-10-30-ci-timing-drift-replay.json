@@ -176,6 +176,19 @@
     "candidate_pushed": false,
     "hosted_ci_dispatched": false
   },
+  "docs_only_scope_regression": {
+    "main_sha": "7dc9ca389f3a4d0f9c67f7cdaf1f34457f98284a",
+    "ci_run_id": 41018930457,
+    "ci_attempt": 1,
+    "ci_conclusion": "success",
+    "backend_timing_workers": 0,
+    "observer_run_id": 41019007598,
+    "observer_attempt": 1,
+    "observer_conclusion": "failure",
+    "root_cause": "workflow_run admitted a successful docs-only main CI without a complete backend timing matrix",
+    "rerun": false,
+    "fix_policy": "skip zero matching workers; admit exactly 16 unique successful balanced workers; reject every partial or failed matrix"
+  },
   "limitations": [
     "The six-run catalog replay is not a new hosted CI result.",
     "The first hosted candidate was green for correctness but rejected for performance and was not merged.",
