@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from collections import Counter
 from datetime import UTC, date, datetime, timedelta
+from functools import lru_cache
 import hashlib
 import json
 import logging
@@ -3228,7 +3229,7 @@ def _bm25_rank_documents(documents: list[KBDocument], terms: list[str]) -> list[
         ]
 
     tokenized = {
-        document.doc_id: _query_terms(_document_search_text(document))
+        document.doc_id: _system_document_lexical_terms(document)
         for document in documents
     }
     document_lengths = {doc_id: max(1, len(tokens)) for doc_id, tokens in tokenized.items()}
@@ -3298,6 +3299,26 @@ def _query_terms(query: str) -> list[str]:
     (the loud failure is a boot-time ``check_zh_tokenizer_available()`` probe).
     """
 
+    # Primary: jieba word tokens (keeps \u9ad8\u8840\u538b/\u8fd0\u52a8/\u5efa\u8bae and drug names intact).
+    # Skip length-1 Chinese tokens: a single hanzi (\u51cf/\u5242/\u5417) carries almost no
+    # discriminative signal and only adds BM25 noise that dilutes specific hits
+    # (measured: including them regressed contraindication ranks on the eval set);
+    # the char-bigram fallback below already covers 2-grams. English/numeric
+    # single-char tokens are kept (they can be meaningful, e.g. a lab code).
+    try:
+        from app.services.zh_tokenize import seg_text
+
+        segmented = seg_text(query or "")
+    except Exception:  # noqa: BLE001 - boot probe is the loud path; here stay resilient
+        logger.warning("[system_kb] jieba segmentation unavailable in _query_terms; using bigrams only")
+        segmented = ""
+
+    return _query_terms_from_segmented(query, segmented)
+
+
+def _query_terms_from_segmented(query: str, segmented: str) -> list[str]:
+    """Build exact query terms from a caller-provided tokenizer result."""
+
     seen: set[str] = set()
     terms: list[str] = []
 
@@ -3308,21 +3329,10 @@ def _query_terms(query: str) -> list[str]:
         seen.add(value)
         terms.append(value)
 
-    # Primary: jieba word tokens (keeps \u9ad8\u8840\u538b/\u8fd0\u52a8/\u5efa\u8bae and drug names intact).
-    # Skip length-1 Chinese tokens: a single hanzi (\u51cf/\u5242/\u5417) carries almost no
-    # discriminative signal and only adds BM25 noise that dilutes specific hits
-    # (measured: including them regressed contraindication ranks on the eval set);
-    # the char-bigram fallback below already covers 2-grams. English/numeric
-    # single-char tokens are kept (they can be meaningful, e.g. a lab code).
-    try:
-        from app.services.zh_tokenize import seg_text
-
-        for token in seg_text(query or "").split():
-            if len(token) == 1 and "\u4e00" <= token <= "\u9fff":
-                continue
-            add(token)
-    except Exception:  # noqa: BLE001 - boot probe is the loud path; here stay resilient
-        logger.warning("[system_kb] jieba segmentation unavailable in _query_terms; using bigrams only")
+    for token in segmented.split():
+        if len(token) == 1 and "\u4e00" <= token <= "\u9fff":
+            continue
+        add(token)
 
     # Additional (unioned, never replacing): regex words + Chinese char bigrams.
     for token in re.findall(r"[A-Za-z0-9_+.-]+|[\u4e00-\u9fff]+", query or ""):
@@ -3331,6 +3341,39 @@ def _query_terms(query: str) -> list[str]:
             for i in range(len(token) - 1):
                 add(token[i : i + 2])
     return terms
+
+
+@lru_cache(maxsize=4096)
+def _cached_system_document_lexical_terms(searchable_text: str) -> tuple[str, ...]:
+    """Tokenize bounded, non-user System KB text once per exact content value."""
+
+    from app.services.zh_tokenize import seg_text
+
+    return tuple(
+        _query_terms_from_segmented(searchable_text, seg_text(searchable_text))
+    )
+
+
+def _system_document_lexical_terms(document: KBDocument) -> tuple[str, ...]:
+    """Return exact BM25 terms while reusing only immutable System KB text."""
+
+    # Keep the historical lexical corpus exactly. PostgreSQL may expose ``tsv``
+    # as a TSVECTOR lexeme representation rather than the original text.
+    searchable_text = _document_search_text(document)
+    try:
+        return _cached_system_document_lexical_terms(str(searchable_text))
+    except Exception:  # noqa: BLE001 - preserve the existing resilient fallback without caching it
+        logger.warning(
+            "[system_kb] jieba segmentation unavailable for BM25 document; using uncached fallback"
+        )
+        return tuple(_query_terms(str(searchable_text)))
+
+
+def _clear_system_document_lexical_caches() -> None:
+    """Clear bounded derived-text caches for tests and explicit maintenance."""
+
+    _cached_system_document_lexical_terms.cache_clear()
+    _cached_document_search_text.cache_clear()
 
 
 SEMANTIC_QUERY_ALIASES = {
@@ -3809,6 +3852,16 @@ def _fuse_search_rankings(
     return fused
 
 
+@lru_cache(maxsize=4096)
+def _cached_document_search_text(raw: str) -> str:
+    """Append deterministic segmentation to non-user System KB document text."""
+
+    from app.services.zh_tokenize import seg_text
+
+    segmented = seg_text(raw)
+    return raw + "\n" + segmented if segmented else raw
+
+
 def _document_search_text(document: KBDocument) -> str:
     chunks = [
         document.doc_id,
@@ -3831,14 +3884,10 @@ def _document_search_text(document: KBDocument) -> str:
     # doc_ids / numbers are untouched (加层不减层). Reindexing must be re-run
     # after deploy for existing rows to pick up the segmented text.
     try:
-        from app.services.zh_tokenize import seg_text
-
-        segmented = seg_text(raw)
-        if segmented:
-            return raw + "\n" + segmented
+        return _cached_document_search_text(raw)
     except Exception:  # noqa: BLE001 - boot probe is the loud path; indexing stays resilient
         logger.warning("[system_kb] jieba segmentation unavailable in _document_search_text; indexing raw only")
-    return raw
+        return raw
 
 
 def _compact_issue(document: KBDocument) -> dict[str, Any]:

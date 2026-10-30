@@ -10,6 +10,7 @@ from app.services.system_knowledge_pipeline import (
     scan_health_sources,
 )
 from app.services.system_knowledge_service import lookup_for_twin
+from app.services import system_knowledge_service
 from app.services.system_knowledge_service import (
     attach_system_knowledge_evidence,
     evaluate_condition,
@@ -372,6 +373,113 @@ def test_import_system_kb_artifacts_is_idempotent(tmp_path, db):
     assert first == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
     assert second == {"documents": 2, "edges": 1, "skipped_documents": 0, "skipped_edges": 0}
     assert db.query(KBDocument).filter(KBDocument.doc_id == "claim:c_weight_waist_tracking").count() == 1
+
+
+def _lexical_cache_document(*, body: str = "高血压运动建议需要结合恢复情况") -> KBDocument:
+    return KBDocument(
+        doc_id="claim:test:lexical-cache",
+        doc_type="claim",
+        entity_type="condition",
+        entity_id="hypertension",
+        title="高血压运动边界",
+        summary="运动建议需要结合恢复情况。",
+        body=body,
+        confidence=0.9,
+        evidence_level="A",
+        applies_when=["twin.conditions has 'hypertension'"],
+        sources=["system:test"],
+        metadata_json={"review_status": "reviewed"},
+    )
+
+
+def test_system_document_lexical_cache_preserves_exact_terms():
+    document = _lexical_cache_document()
+    expected = tuple(
+        system_knowledge_service._query_terms(
+            system_knowledge_service._document_search_text(document)
+        )
+    )
+    # PostgreSQL TSVECTOR values are a serving index representation, not the
+    # original lexical corpus. Caching must preserve the existing BM25 source.
+    document.tsv = "unrelated-precomputed-index"
+
+    system_knowledge_service._clear_system_document_lexical_caches()
+    observed = system_knowledge_service._system_document_lexical_terms(document)
+
+    assert observed == expected
+
+
+def test_system_document_lexical_cache_reuses_only_unchanged_document_text(monkeypatch):
+    from app.services import zh_tokenize
+
+    system_knowledge_service._clear_system_document_lexical_caches()
+    calls = 0
+    real_seg_text = zh_tokenize.seg_text
+
+    def counted_seg_text(text):
+        nonlocal calls
+        calls += 1
+        return real_seg_text(text)
+
+    monkeypatch.setattr(zh_tokenize, "seg_text", counted_seg_text)
+    document = _lexical_cache_document()
+
+    first = system_knowledge_service._bm25_rank_documents([document], ["高血压"])
+    calls_after_first = calls
+    second = system_knowledge_service._bm25_rank_documents([document], ["高血压"])
+
+    assert [(score, row.doc_id) for score, row in second] == [
+        (score, row.doc_id) for score, row in first
+    ]
+    assert calls_after_first > 0
+    assert calls == calls_after_first
+
+    document.body = "高血压运动建议需要结合新的恢复情况"
+    system_knowledge_service._bm25_rank_documents([document], ["高血压"])
+
+    assert calls > calls_after_first
+
+
+def test_system_document_lexical_cache_never_retains_user_query_text():
+    system_knowledge_service._clear_system_document_lexical_caches()
+    before = system_knowledge_service._cached_system_document_lexical_terms.cache_info()
+
+    system_knowledge_service._query_terms("我的本轮健康问题不应进入文档缓存")
+
+    after = system_knowledge_service._cached_system_document_lexical_terms.cache_info()
+    assert after == before
+
+
+def test_system_document_lexical_cache_does_not_retain_degraded_fallback(monkeypatch):
+    from app.services import zh_tokenize
+
+    system_knowledge_service._clear_system_document_lexical_caches()
+    real_seg_text = zh_tokenize.seg_text
+
+    def unavailable(_text):
+        raise RuntimeError("synthetic tokenizer outage")
+
+    monkeypatch.setattr(zh_tokenize, "seg_text", unavailable)
+    document = _lexical_cache_document(body="缓存失败结果会让检索持续降级")
+
+    degraded = system_knowledge_service._system_document_lexical_terms(document)
+
+    assert degraded
+    assert system_knowledge_service._cached_document_search_text.cache_info().currsize == 0
+    assert (
+        system_knowledge_service._cached_system_document_lexical_terms.cache_info().currsize
+        == 0
+    )
+
+    monkeypatch.setattr(zh_tokenize, "seg_text", real_seg_text)
+    recovered = system_knowledge_service._system_document_lexical_terms(document)
+
+    assert recovered
+    assert system_knowledge_service._cached_document_search_text.cache_info().currsize == 1
+    assert (
+        system_knowledge_service._cached_system_document_lexical_terms.cache_info().currsize
+        == 1
+    )
 
 
 def test_format_system_knowledge_for_prompt_is_bounded(db):

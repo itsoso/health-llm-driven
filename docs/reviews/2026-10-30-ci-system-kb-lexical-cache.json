@@ -1,0 +1,82 @@
+{
+  "schema_version": "ci_system_kb_lexical_cache.v1",
+  "status": "G3_LOCAL_PASS",
+  "release_authority": false,
+  "baseline": {
+    "head_sha": "0b2470da1e16af102d15f9e4dade4a0aae41d87d",
+    "full_ci_run_id": 41044942222,
+    "critical_job": "backend-test-balanced-14",
+    "critical_job_id": 124026703888,
+    "critical_process_seconds": 463.788,
+    "p_process_seconds": 265.327,
+    "observer_run_id": 41046073801,
+    "observer_status": "CURRENT"
+  },
+  "hotspot": {
+    "profile_case": "tests/test_pgx_cyp2c19_knowledge.py::test_system_kb_eval_runner_covers_cyp2c19_cases",
+    "profile_function_calls": 46973926,
+    "profile_total_seconds": 11.297,
+    "seg_text_calls": 5296,
+    "seg_text_cumulative_seconds": 4.141,
+    "finding": "BM25 repeatedly tokenized identical reviewed System KB document text; user query tokenization was not the repeated corpus cost."
+  },
+  "change": {
+    "scope": "bounded derived-text reuse for reviewed System KB documents",
+    "cache_max_entries": 4096,
+    "key": "exact non-user System KB searchable text",
+    "value": "immutable tuple of exact lexical terms",
+    "invalidation": "content-addressed key change plus LRU eviction; explicit maintenance clear is available",
+    "failure_policy": "tokenizer failures retain the existing uncached bigram fallback and are never cached",
+    "privacy_boundary": "user queries never call the document cache",
+    "ranking_boundary": "BM25 continues to use _document_search_text and never substitutes PostgreSQL TSVECTOR representation"
+  },
+  "local_controlled_benchmark": {
+    "runner": "backend/scripts/run_ci_pytest_worker.py --shards p",
+    "baseline_process_wall_seconds": 126.4,
+    "candidate_process_wall_seconds": 111.211,
+    "delta_seconds": -15.189,
+    "reduction_ratio": 0.120166,
+    "baseline_junit_seconds": 110.03,
+    "candidate_junit_seconds": 94.096,
+    "testcase_count": 1052,
+    "passed": 1046,
+    "skipped": 6,
+    "failures": 0,
+    "identity_result_sha256": "8ac2c1bab44ce1ff4cc3a13b2584145477b27daf024ed34b86f53dae71f5b673",
+    "attempts": {
+      "baseline": 1,
+      "candidate": 1
+    }
+  },
+  "verification": {
+    "cache_contract_tests": {
+      "passed": 4,
+      "failed": 0,
+      "coverage": [
+        "exact lexical term preservation",
+        "unchanged-content reuse and changed-content recomputation",
+        "user query exclusion",
+        "degraded tokenizer fallback is not cached"
+      ]
+    },
+    "knowledge_and_agent_regression": {
+      "passed": 443,
+      "failed": 0
+    },
+    "system_map": "PASS",
+    "blocking_ruff": "PASS",
+    "compile": "PASS",
+    "diff_check": "PASS"
+  },
+  "pending_gates": [
+    "fixed-commit independent safety review",
+    "exact candidate PR CI",
+    "exact main full CI and timing observer",
+    "backend deployment and production health/auth verification"
+  ],
+  "limitations": [
+    "one paired local sample is not a stable latency percentile",
+    "hosted runner improvement remains unverified until exact candidate CI",
+    "no test selection, retry, timeout, worker count, or release policy changed"
+  ]
+}
