@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | 第八阶段 P0 G5 代码 PASS：六轮窗口候选待 main 合入及后置观察器 G6 |
+| 状态 | complete |
+| 当前阶段 | 第八阶段 P0 G6 PASS；P1 分片拆分实验证据 NO-GO，未进入代码候选 |
 
 ## G1 范围
 
@@ -280,3 +280,11 @@ G3 PASS：先写 7 项测试，旧实现因脚本和工作流不存在而 6/6 RE
 根因是三轮窗口过早淘汰已知长尾：旧 catalog 已观察到 `s-l-z=433.935` 秒。修复使用最近六次完整、首轮成功 main CI 的逐分片最大值，窗口为 `40438974052 / 40442091206 / 40447632037 / 40885514914 / 40912681271 / 40997603653`；滚动窗口随新完整样本自然淘汰旧值，不建立永久单调 floor。六轮 placement 预测为 464.920～472.651 秒，spread 7.731 秒；七个已有样本（含首个 hosted 反例）的回放最长值上界从旧 catalog 的 530.311 秒降为 467.703 秒，反例本身回放为 462.617 秒。该修复仍是离线回放，最终候选必须新的精确 SHA 完整 CI；不使用 workflow rerun 挑样本。
 
 G5 代码候选 PASS：[精确 CI 41013492648](https://github.com/itsoso/health-llm-driven/actions/runs/41013492648) 绑定 `55ff86d29b0ea4b23ae79637a77003edcb6abd41`，attempt=1、32/32 job success，无 rerun。整轮 587 秒，比 608 秒基线减少 21 秒（3.45%），没有达到早期 8 分钟估计但消除了首版退化。最慢测试步骤 515 秒；按进程计时的实际关键 worker 514.644 秒，比 472.651 秒预测高 8.88%，未触发 20% 漂移阈值。`s-l-z` 实测 420.331 秒，历史 floor 覆盖成功；新热点为 `p=299.524` 秒，后续由观察器积累样本，不在本批继续叠加策略。release-invariants job 399 秒、agent-runtime-postgres job 476 秒，P1 是否拆分待 main 实测和 runner 竞争证据后裁决。当前只证明 PR 代码提交；main push 的完整 CI 与新 `workflow_run` 观察器尚未发生，不声明主干已生效。
+
+G6 PASS：[PR #287](https://github.com/itsoso/health-llm-driven/pull/287) squash 合入 main `2d9e53df280dd40e03fe8e7820d017528a6fb3d5`。精确 main [CI 41015741501](https://github.com/itsoso/health-llm-driven/actions/runs/41015741501) 为 attempt=1、32/32 job success、墙钟 561 秒，无 rerun；比 608 秒基线减少 47 秒（7.73%），但候选和 main 两个样本差异仍大，不能建立稳定 P50/P95 或保证固定提速。main 最慢后端 job 533 秒；PostgreSQL job 491 秒、其中两组语义测试步骤 371 秒；release-invariants job 273 秒。因此 release-invariants 已不在关键路径，PostgreSQL 也在最后后端分片前 42 秒完成，不拆这两条 lane。
+
+后置只读 [CI timing drift 41016674352](https://github.com/itsoso/health-llm-driven/actions/runs/41016674352) 绑定上述 main run 和 SHA，attempt=1、success。报告为 `status=CURRENT`、catalog_stale=false、runs_since_source=1；预测关键路径 472.651 秒、实测 479.279 秒，慢 1.402%，低于 20% 阈值。报告同时明确单轮不是稳定分位数、排除 runner/安装开销且 `release_authority=false`。P0 至此在 main 生效；仅 CI/治理变更，不部署后端、不轮换生产授权、不发布 OTA、TestFlight 或 App Store。
+
+P1 分片拆分实验 **NO-GO**，未提交候选、未触发托管 CI。`s-l-z` 在 main 样本中为单进程 443.441 秒、2116 项。实验将其按 sleep / supplement / system / rest 分成四个互斥选择器；契约先 RED 后 96 passed，文件集合与用例结果多重集合完全一致。补齐与 CI 相同的锁定 Pi runtime 后，同机首轮有效样本：旧组 132.778 秒；新四进程 22.389 / 64.223 / 25.565 / 36.335 秒，顺序合计 148.512 秒，增加 15.734 秒（11.85%）。将新组按同机比例映射回 main 托管进程时长，并用 main 的其他 59 个精确进程耗时回放候选 LPT 分配，关键路径约 482.069 秒，略高于现状 479.279 秒；`r-other` 接替为 482.069 秒瓶颈。故回退全部实验代码，不通过增加进程或重跑挑样本制造提速结论。机器证据与日志摘要记录在 `docs/reviews/2026-10-30-ci-timing-drift-replay.json`。
+
+后续只在观察器达到 5 次完整成功 main run、漂移超过 20%，或出现新的可归因热点时刷新 catalog。下一轮应用级性能工作应先对 `r-other` 与跨样本波动做请求/测试热点剖析；不先加 worker、不削减测试、不延长超时。
