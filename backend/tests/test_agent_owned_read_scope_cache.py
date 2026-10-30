@@ -27,6 +27,12 @@ def test_executor_reuses_scope_only_for_the_same_immutable_snapshot(db, monkeypa
     assert first is executor._owned_read_scope_for(initial)
     assert calls == [initial]
 
+    equivalent_rebind = replace(initial)
+    rebound = executor._owned_read_scope_for(equivalent_rebind)
+    assert rebound == first
+    assert rebound is not first
+    assert calls == [initial, equivalent_rebind]
+
     next_day = replace(
         initial,
         context=replace(
@@ -37,11 +43,11 @@ def test_executor_reuses_scope_only_for_the_same_immutable_snapshot(db, monkeypa
     shifted = executor._owned_read_scope_for(next_day)
     assert shifted is not first
     assert shifted.queries[0]["end_date"] != first.queries[0]["end_date"]
-    assert calls == [initial, next_day]
+    assert calls == [initial, equivalent_rebind, next_day]
 
     foreign = replace(next_day, context=replace(next_day.context, user_id=42))
     assert executor._owned_read_scope_for(foreign) is None
-    assert calls == [initial, next_day, foreign]
+    assert calls == [initial, equivalent_rebind, next_day, foreign]
 
 
 def test_executor_does_not_cache_a_scope_resolution_failure(db, monkeypatch):

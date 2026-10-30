@@ -19,7 +19,7 @@
     "main_merge_sha": "afee20ab1fa38d1ec95d42f08194c776198c0853",
     "source_sha256": {
       "backend/app/services/agent_executor.py": "d70b961110af6a2062c9779a23f8de03c0589abc62c1967b95c592668b0d74e2",
-      "backend/tests/test_agent_owned_read_scope_cache.py": "8feeb660ff551c1a7778c4f5a87480372f969fb3de82ee6599e4254382342b8b"
+      "backend/tests/test_agent_owned_read_scope_cache.py": "51c32f6c7acb91567960c7a3af99c1dd308d3e6ef35ad17c3a1449ba2e4ec0e1"
     },
     "hosted_ci": {
       "pull_request_run": 41041811504,
@@ -96,7 +96,7 @@
     },
     "identity_result_sha256": "a4df9280940bb4a4a8c428a214a64b7d816a980a82eea59e4fe855bda63eda83",
     "identity_and_results_equal": true,
-    "new_cache_contract_tests": "2 passed in backend-test-balanced-16"
+    "new_cache_contract_tests": "2 passed in backend-test-balanced-16; an equal-value new-object boundary regression was added for automatic full-CI recovery"
   },
   "focused_verification": {
     "cache_contract": {
@@ -152,6 +152,6 @@
       "backend-release-ready-v1"
     ],
     "rerun": false,
-    "recovery": "Create a documentation-only evidence commit, bind confirmation to that exact SHA before push, then use one explicit workflow_dispatch full-CI recovery run."
+    "recovery": "The evidence commit was bound before push. One workflow_dispatch command returned success but produced no run ID after repeated exact-SHA queries, so it was not replayed. An equal-value new-object cache-boundary regression is used in a subsequent ordinary main push to trigger automatic full CI."
   }
 }
