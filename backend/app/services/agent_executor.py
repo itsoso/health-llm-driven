@@ -12733,6 +12733,12 @@ class AgentExecutor:
         # XiaoBa Agent Kernel state. A turn snapshots intent, timezone and current
         # time exactly once; every later tool call consumes this immutable state.
         self._agent_kernel_snapshot: Optional[TurnSnapshot] = None
+        # Owned read scope parsing is pure but intentionally thorough. Reuse it
+        # only while the exact immutable snapshot object is unchanged; every
+        # owner/date/source/context rebind creates a new snapshot and therefore
+        # forces a fresh authorization projection.
+        self._owned_read_scope_snapshot: Optional[TurnSnapshot] = None
+        self._owned_read_scope_cache: Any = _TURN_CARD_UNSET
         self._agent_kernel_event_bus: Optional[AgentEventBus] = None
         self._agent_kernel_turn_finished = False
         self._agent_kernel_last_decision: Optional[CapabilityDecision] = None
@@ -12899,6 +12905,16 @@ class AgentExecutor:
                 media=fallback_media,
             )
         return self._refine_agent_kernel_continuation(snapshot)
+
+    def _owned_read_scope_for(self, snapshot: TurnSnapshot):
+        """Resolve one immutable authorization snapshot at most once."""
+        if self._owned_read_scope_snapshot is not snapshot:
+            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
+
+            scope = resolve_owned_read_scope(snapshot)
+            self._owned_read_scope_snapshot = snapshot
+            self._owned_read_scope_cache = scope
+        return self._owned_read_scope_cache
 
     def _refine_agent_kernel_continuation(self, snapshot: TurnSnapshot) -> TurnSnapshot:
         """Turn an explicit follow-up answer into a typed continuation write.
@@ -13169,7 +13185,7 @@ class AgentExecutor:
         Parameter repair and partial reads retain their separate feedback budget.
         """
         from app.services.agent_kernel.read_task_scope import (
-            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+            has_owned_sync_instruction, resolve_sync_status_query,
         )
         from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
@@ -13190,7 +13206,7 @@ class AgentExecutor:
             or self._all_scoped_reads_verified()
         ):
             return
-        scope = resolve_owned_read_scope(snapshot)
+        scope = self._owned_read_scope_for(snapshot)
         queries = decision.normalized_args.get("queries")
         if scope is None or len(scope.queries) < 2 or not isinstance(queries, list):
             return
@@ -13223,11 +13239,10 @@ class AgentExecutor:
         self._read_repair_batch_active = True
 
     def _composed_read_completion(self):
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         from app.services.agent_composed_read_completion import evaluate_composed_read_completion, ComposedReadCompletion
         medical, garmin = self._focused_read_scopes()
         if garmin is not None and garmin.dimension == 'sleep':
-            scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+            scope = self._owned_read_scope_for(self._ensure_agent_kernel_turn())
             return (evaluate_composed_read_completion(scope, self._turn_composed_read_executions)
                     if scope is not None else None)
         if medical is not None or garmin is not None:
@@ -13256,7 +13271,7 @@ class AgentExecutor:
             return ComposedReadCompletion(goals, () if verified else (goal_id,), summary, verified)
         if self._turn_daily_read_plan is not None:
             return None
-        scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        scope = self._owned_read_scope_for(self._ensure_agent_kernel_turn())
         return (evaluate_composed_read_completion(scope, self._turn_composed_read_executions)
                 if scope is not None else None)
 
@@ -13287,7 +13302,7 @@ class AgentExecutor:
         Only exact owned queries after the latest rejected execution count.
         """
         from app.services.agent_kernel.read_task_scope import (
-            has_owned_sync_instruction, resolve_owned_read_scope, resolve_sync_status_query,
+            has_owned_sync_instruction, resolve_sync_status_query,
         )
         from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
 
@@ -13300,7 +13315,7 @@ class AgentExecutor:
                 or classify_clinician_turn(snapshot.envelope.text).kind != "none"
                 or self._agent_kernel_pending_confirmation_tools):
             return False
-        scope = resolve_owned_read_scope(snapshot)
+        scope = self._owned_read_scope_for(snapshot)
         if scope is None or not scope.queries:
             return False
         canonical = lambda query: json.dumps(query, sort_keys=True, ensure_ascii=False)
@@ -13374,11 +13389,9 @@ class AgentExecutor:
         from app.services.agent_kernel.current_input_advice_scope import is_current_input_advice
 
         snapshot = self._agent_kernel_snapshot
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-
         return bool(snapshot is not None and not snapshot.intent.is_write
                     and is_current_input_advice(snapshot.envelope.text)
-                    and resolve_owned_read_scope(snapshot) is None)
+                    and self._owned_read_scope_for(snapshot) is None)
 
     def _has_explicit_unscoped_answer_goal(self) -> bool:
         from app.services.agent_policy_retry import is_general_advice_only_request
@@ -13723,7 +13736,6 @@ class AgentExecutor:
         Failures, medical/attachment boundaries and incomplete reads keep their
         ordinary path; no query or user identity is inferred by this shortcut.
         """
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         from app.services.agent_composed_read_completion import render_owned_cycling_html_report
 
         snapshot = self._agent_kernel_snapshot
@@ -13738,7 +13750,7 @@ class AgentExecutor:
                 or snapshot.context.user_id != self._current_user_id
                 or snapshot.envelope.user_id != self._current_user_id):
             return None
-        scope = resolve_owned_read_scope(snapshot)
+        scope = self._owned_read_scope_for(snapshot)
         if scope is None or 'cycling_html_report_today' not in scope.limitations:
             return None
         completion = self._composed_read_completion()
@@ -13808,13 +13820,11 @@ class AgentExecutor:
             or not any((tool.get("function") or {}).get("name") == "health_query_batch" for tool in tools)
         ):
             return []
-        from app.services.agent_kernel.read_task_scope import (
-            has_owned_sync_instruction, resolve_owned_read_scope,
-        )
+        from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
 
         if has_owned_sync_instruction(snapshot.envelope.text) and not queued_sync:
             return []
-        scope = resolve_owned_read_scope(snapshot)
+        scope = self._owned_read_scope_for(snapshot)
         from app.services.agent_kernel.evidence_advice_scope import resolve_evidence_advice_scope
         exercise_plan = resolve_evidence_advice_scope(snapshot.envelope.text)
         if exercise_plan is not None:
@@ -13867,9 +13877,7 @@ class AgentExecutor:
         diet_messages = self._personal_diet_synthesis_messages()
         if diet_messages is not None:
             return diet_messages
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-
-        clinical_scope = resolve_owned_read_scope(snapshot)
+        clinical_scope = self._owned_read_scope_for(snapshot)
         if clinical_scope is not None and "symptom_analysis_current_input" in clinical_scope.limitations:
             # Symptom clarifications need the original user history and safety
             # reasoning. The compact lifestyle view drops that clinical context.
@@ -13884,10 +13892,9 @@ class AgentExecutor:
         completion = self._composed_read_completion()
         if completion is None or not completion.complete or completion.verified_evidence is None:
             return None
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
         from app.services.agent_composed_read_completion import read_scope_synthesis_instructions
 
-        scope = resolve_owned_read_scope(snapshot)
+        scope = self._owned_read_scope_for(snapshot)
         # Even one bounded oxygen read needs the verified evidence projection;
         # daily summaries/sparse samples cannot authorize free-form diagnoses.
         if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None):
@@ -13971,11 +13978,11 @@ class AgentExecutor:
         ]
 
     def _read_task_metadata(self):
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope, resolve_sync_status_query
+        from app.services.agent_kernel.read_task_scope import resolve_sync_status_query
         from app.services.agent_read_task_continuation import read_task_metadata
         snapshot = self._ensure_agent_kernel_turn()
         status_query = resolve_sync_status_query(snapshot)
-        return read_task_metadata(snapshot, resolve_owned_read_scope(snapshot),
+        return read_task_metadata(snapshot, self._owned_read_scope_for(snapshot),
                                   sync_status=status_query is not None,
                                   sync_window=({key: status_query[key] for key in ('start_date', 'end_date', 'timezone')}
                                                if status_query is not None else None))
@@ -15309,8 +15316,7 @@ class AgentExecutor:
 
         system_content = self._build_system_prompt(user_id, conv.id, user_auth_token)
         from app.services.agent_composed_read_completion import format_owned_read_scope_prompt
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-        panel_read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        panel_read_scope = self._owned_read_scope_for(self._ensure_agent_kernel_turn())
         panel_composite_advice = bool(panel_read_scope and panel_read_scope.composite_advice)
         if panel_read_scope is not None:
             system_content += format_owned_read_scope_prompt(panel_read_scope)
@@ -18930,8 +18936,7 @@ class AgentExecutor:
             format_owned_read_scope_prompt,
             read_scope_notices,
         )
-        from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-        read_scope = resolve_owned_read_scope(self._ensure_agent_kernel_turn())
+        read_scope = self._owned_read_scope_for(self._ensure_agent_kernel_turn())
         composite_advice = bool(read_scope and read_scope.composite_advice)
         from app.services.agent_input_tool_scope import scope_tools_for_owned_read
         tools = scope_tools_for_owned_read(tools, read_scope)
@@ -21349,8 +21354,7 @@ class AgentExecutor:
                 len(message or ""),
             )
         if completion_intent.operation == "sync" and self._turn_sync_queued:
-            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-            if resolve_owned_read_scope(self._ensure_agent_kernel_turn()) is None:
+            if self._owned_read_scope_for(self._ensure_agent_kernel_turn()) is None:
                 full_reply = _garmin_sync_queued_message()
         daily_summary_advice_goal = None
         composed_completion = self._composed_read_completion()
@@ -23937,9 +23941,7 @@ class AgentExecutor:
             and prompt_snapshot.envelope.user_id == user_id
             and prompt_snapshot.context.user_id == user_id
         ):
-            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-
-            prompt_read_scope = resolve_owned_read_scope(prompt_snapshot)
+            prompt_read_scope = self._owned_read_scope_for(prompt_snapshot)
             owned_read_profile = bool(prompt_read_scope and len(prompt_read_scope.queries) > 1)
 
         # Provider-only diet synthesis may reuse all static rules without
@@ -24758,10 +24760,9 @@ class AgentExecutor:
             and snapshot.envelope.user_id == self._current_user_id
             and snapshot.context.user_id == self._current_user_id
         ):
-            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
             from app.services.agent_tool_prompt_projection import project_owned_read_tool_descriptions
 
-            tools = project_owned_read_tool_descriptions(tools, resolve_owned_read_scope(snapshot))
+            tools = project_owned_read_tool_descriptions(tools, self._owned_read_scope_for(snapshot))
         public_task = getattr(self, "_public_task", None)
         if public_task:
             allowed = {"environment_check"} if public_task == "weather" else set()
@@ -28413,10 +28414,9 @@ class AgentExecutor:
                         or snapshot.envelope.user_id != self._current_user_id
                         or snapshot.envelope.text != self._current_turn_user_message):
                     return 'Error: 用药提醒查询范围与当前请求不一致。'
-                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
                 from app.services.agent_query_window import parse_query_window
                 from app.services.medication_review_read import read_medication_reminder_slot
-                scope = resolve_owned_read_scope(snapshot)
+                scope = self._owned_read_scope_for(snapshot)
                 expected = scope.query('medication') if scope is not None else None
                 if (expected is None or supplied_args != expected
                         or self._current_user_id != snapshot.context.user_id
@@ -28458,7 +28458,6 @@ class AgentExecutor:
             from app.services.agent_query_window import parse_query_window
             from app.services.agent_garmin_sync_status import read_garmin_sync_status
             from app.services.agent_kernel.read_task_scope import has_owned_sync_instruction
-            from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
             query = resolve_sync_status_query(self._ensure_agent_kernel_turn())
             if query is not None:
                 if any(key in args and args[key] != query[key] for key in ("start_date", "end_date", "timezone")):
@@ -28468,7 +28467,7 @@ class AgentExecutor:
                     current_job=getattr(self, "_turn_garmin_sync_job", None),
                     allow_history=not has_owned_sync_instruction(self._current_turn_user_message),
                     include_date_availability=bool(
-                        (status_scope := resolve_owned_read_scope(self._ensure_agent_kernel_turn())) is not None
+                        (status_scope := self._owned_read_scope_for(self._ensure_agent_kernel_turn())) is not None
                         and status_scope.query('sleep') is not None))
                 self._turn_sync_status_result = status
                 return json.dumps(status, ensure_ascii=False, default=str)
@@ -28476,10 +28475,9 @@ class AgentExecutor:
             from app.services.agent_kernel.medication_review_scope import symptom_record_review_request
             snapshot = self._ensure_agent_kernel_turn()
             if symptom_record_review_request(snapshot.envelope.text) is not None:
-                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
                 from app.services.agent_query_window import parse_query_window
                 from app.services.medication_review_read import read_medication_history
-                scope = resolve_owned_read_scope(snapshot)
+                scope = self._owned_read_scope_for(snapshot)
                 expected = scope.query('medication') if scope is not None else None
                 if (expected is None or supplied_args != expected
                         or self._current_user_id != snapshot.context.user_id):
@@ -28491,10 +28489,9 @@ class AgentExecutor:
             from app.services.agent_kernel.medication_review_scope import is_medication_review_request
             snapshot = self._ensure_agent_kernel_turn()
             if is_medication_review_request(snapshot.envelope.text):
-                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
                 from app.services.agent_query_window import parse_query_window
                 from app.services.medication_review_read import read_medication_review
-                scope = resolve_owned_read_scope(snapshot)
+                scope = self._owned_read_scope_for(snapshot)
                 expected = scope.query('medication') if scope is not None else None
                 if (expected is None or supplied_args != expected
                         or self._current_user_id != snapshot.context.user_id):
@@ -28516,8 +28513,7 @@ class AgentExecutor:
                 query = next((q for q in daily_plan.queries() if q["dimension"] == dim), None)
                 expected = {key: value for key, value in query.items() if key != "dimension"} if query else None
             else:
-                from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
-                scope = resolve_owned_read_scope(snapshot)
+                scope = self._owned_read_scope_for(snapshot)
                 query = scope.query(dim) if scope is not None else None
                 expected = ({key: value for key, value in query.items() if key not in {"dimension", "days"}}
                             if query else resolve_calendar_query_window(
