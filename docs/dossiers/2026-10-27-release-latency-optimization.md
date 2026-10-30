@@ -345,7 +345,7 @@ G1/G2 PASS。方案只用最近六轮精确 main、首轮成功、完整后端 C
 
 离线回放中，catalog 预测关键路径由 472.651 降至 443.441 秒。使用六轮各自真实耗时回放旧/新 assignment，六轮都改善，降幅为 4.18%～13.02%；更保守的留一法每次只用其余五轮训练，六个 held-out run 仍全部改善，降幅为 2.28%～12.97%。这些结果只覆盖测试进程负载，不包含 runner 排队、依赖安装和收尾，也不建立 P50/P95/P99。机器证据及每轮 SHA、日志摘要见 `docs/reviews/2026-10-30-ci-recent-window-refresh.json`。
 
-同时调查了最大单分片 `s-l-z`。在完全相同的本地 CI 环境中，原单进程为 132.277 秒；按 sleep / supplement / system / rest 拆成四个顺序进程合计 138.151 秒，增加 4.44% 进程开销。两侧均为 2121 项、2096 passed / 25 skipped，身份与结果摘要相同。旧 catalog 下拆分看似能降低关键路径，但完成近期校准后，仅将最新运行回放从 412.124 改为 412.051 秒，收益 0.073 秒，却增加三个 pytest 进程。因此该拆分 NO-GO，未写入 catalog 或 workflow。
+同时调查了最大单分片 `s-l-z`。在完全相同的本地 CI 环境中，原单进程为 132.277 秒；按 sleep / supplement / system / rest 拆成四个顺序进程合计 138.151 秒，增加 4.44% 进程开销。两侧均为 2121 项、2096 passed / 25 skipped，身份与结果摘要相同。旧 catalog 下拆分看似能降低关键路径。为避免把本机绝对时长冒充 hosted 时长，按四组本机耗时比例分配最新 hosted `s-l-z=399.136` 秒，再执行同一 16-worker LPT；拆分后的真实最大 worker 为 421.564 秒，而不是次高 worker 412.051 秒，故相对未拆分回放 412.124 秒恶化 9.44 秒（2.29%），并增加三个 pytest 进程。因此该拆分 NO-GO，未写入 catalog 或 workflow。缩放公式、四组投影值和最大 worker 结果均写入机器证据。
 
 G3 PASS。先把真实 catalog 的来源和关键路径断言更新为目标近期窗口，旧 catalog 稳定 RED；刷新后 timing refresh、drift 和 release contract 共 75 passed，runner 合同 23 passed，change-scope 30 passed。CI-mode 完整 release invariants 真实退出码 0：5646 passed、67 个平台或条件性 skipped、127 subtests passed；没有缩短、跳过或替换该集合。16 个 worker 恰好覆盖 60 个分片，预测关键路径 443.441 秒。System Map 对 CI runner 路径无索引，按治理要求运行中央 System Map、mobile navigation 和 doc drift 检查并通过；未产生地图变更。Dossier 一致性、JSON、diff 和秘密扫描通过。当前只改变 placement telemetry 及其测试和证据，应用运行时、后端、数据库、Mobile 与原生资产均不变。
 

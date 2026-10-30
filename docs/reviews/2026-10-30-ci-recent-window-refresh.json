@@ -193,7 +193,24 @@
     "skipped": 25,
     "identity_result_sha256": "de2ae8bc1622d394875fe31150e800c73c804d7b4f74af3fd8eb31d5189ac907",
     "decision": "NO-GO",
-    "reason": "after recent-window recalibration the split improves the current-run replay by only 0.073 seconds while adding three pytest processes"
+    "reason": "the proportional hosted projection worsens the current-run replay by 9.44 seconds (2.29%) while adding three pytest processes",
+    "hosted_projection": {
+      "source_run_id": 41053734560,
+      "observed_unsplit_s_l_z_seconds": 399.136,
+      "method": "preserve the hosted s-l-z total and allocate it in proportion to the four local split process times before deterministic 16-worker LPT placement",
+      "scale_factor": 2.889128562225391,
+      "projected_split_seconds": {
+        "sleep": 54.959893,
+        "supplement": 170.548148,
+        "system": 68.012975,
+        "rest": 105.614984
+      },
+      "projected_split_total_seconds": 399.136,
+      "unsplit_assignment_critical_seconds": 412.124,
+      "split_assignment_critical_seconds": 421.564,
+      "delta_seconds": 9.44,
+      "regression_ratio": 0.022906
+    }
   },
   "verification": {
     "tdd_red": "real catalog source assertion failed before refresh",
