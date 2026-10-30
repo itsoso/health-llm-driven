@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_system_kb_lexical_cache.v1",
-  "status": "G4_SAFETY_GO",
+  "status": "G6_DEPLOYED",
   "release_authority": false,
   "baseline": {
     "head_sha": "0b2470da1e16af102d15f9e4dade4a0aae41d87d",
@@ -78,15 +78,11 @@
       "purpose": "post-fix result-set confirmation; not substituted into the original paired performance claim"
     }
   },
-  "pending_gates": [
-    "exact candidate PR CI",
-    "exact main full CI and timing observer",
-    "backend deployment and production health/auth verification"
-  ],
+  "pending_gates": [],
   "limitations": [
-    "one paired local sample is not a stable latency percentile",
-    "hosted runner improvement remains unverified until exact candidate CI",
-    "no test selection, retry, timeout, worker count, or release policy changed"
+    "one paired local sample and one hosted PR/main sample are not stable latency percentiles",
+    "the full main CI wall time includes runner scheduling, other shards, and finalization, so it is not wholly attributable to this cache",
+    "no test selection, retry, timeout, worker count, release policy, mobile artifact, or native code changed"
   ],
   "safety_review": {
     "reviewed_commit": "aa2f9000237d69cea3c6074fc5694bead64deefc",
@@ -110,5 +106,81 @@
       "max_entries": 4096
     },
     "privacy_probe": "user query calls left both document caches unchanged"
+  },
+  "hosted_verification": {
+    "pull_request": {
+      "number": 292,
+      "head_sha": "841d76e951c79c51e4fa8a8599e5ad43dd3768d1",
+      "ci_run_id": 41052552075,
+      "attempt": 1,
+      "jobs_success": 32,
+      "jobs_total": 32,
+      "p_process_seconds": 255.334,
+      "baseline_p_process_seconds": 265.327,
+      "p_reduction_ratio": 0.037661
+    },
+    "main": {
+      "sha": "4016634c9cfd768da1e7ee9a2700d274f225469f",
+      "ci_run_id": 41053734560,
+      "attempt": 1,
+      "jobs_success": 32,
+      "jobs_total": 32,
+      "wall_seconds": 581,
+      "baseline_wall_seconds": 538,
+      "wall_increase_ratio": 0.079926,
+      "stop_threshold_ratio": 0.1,
+      "critical_job_seconds": 392,
+      "p_process_seconds": 199.129,
+      "baseline_p_process_seconds": 265.327,
+      "p_reduction_ratio": 0.249497,
+      "e_process_seconds": 109.545,
+      "wearable_reports_process_seconds": 28.531,
+      "timeline_medications_process_seconds": 13.796
+    },
+    "timing_observer": {
+      "run_id": 41054941509,
+      "status": "CURRENT",
+      "predicted_critical_seconds": 472.651,
+      "observed_critical_seconds": 437.788,
+      "slower_ratio": -0.073761,
+      "largest_shard_slower_ratio": 0.112698,
+      "catalog_stale": false,
+      "runs_since_source": 4,
+      "artifact_id": 12977405003
+    }
+  },
+  "deployment": {
+    "validate_run_id": 41055221179,
+    "release_run_id": 41056818134,
+    "release_attempt": 1,
+    "backend_job_seconds": 495,
+    "production_sha": "4016634c9cfd768da1e7ee9a2700d274f225469f",
+    "production_clean": true,
+    "persistent_receipt_state": "SUCCEEDED",
+    "persistent_receipt_sha256": "b5cc39e13f11e56b92dbb3b21c9681364c7120860206d759716c917e70cf9079",
+    "runtime_state": {
+      "phase": "COMMITTED",
+      "mode": "code-only-no-backup",
+      "result": "finalized"
+    },
+    "services": {
+      "health_backend": "active/running, NRestarts=0",
+      "celery_worker": "active/running, NRestarts=0",
+      "celery_beat": "active/running, NRestarts=0"
+    },
+    "public_health_status": 200,
+    "public_health_components": [
+      "api:running",
+      "database:connected",
+      "redis:connected",
+      "celery:connected"
+    ],
+    "anonymous_agent_post_status": 401,
+    "business_lease_exists": false,
+    "authorized_release_matches_production": true,
+    "mobile_jobs": "skipped",
+    "ota_required": false,
+    "real_health_data_accessed": false,
+    "backup_created": false
   }
 }

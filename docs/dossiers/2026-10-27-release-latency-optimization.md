@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | complete |
-| 当前阶段 | 第八阶段 P0/P0.1 G6 PASS；P1 分片拆分 NO-GO，等待新观测样本 |
+| 当前阶段 | 第十阶段 G6 PASS；System KB 词法派生复用已发布并完成生产核验 |
 
 ## G1 范围
 
@@ -325,4 +325,14 @@ G3 本地 PASS。五项缓存契约中，入口缺失、错误采用 `TSVECTOR`�
 
 G4/G5/G6 pending：须先提交固定 diff 并按 `safety-gate` 取得独立 GO，再运行精确 PR 完整 CI；合入后核对 exact main 完整 CI、timing observer 和 `p` 进程。该改动进入后端运行时，最终 main 绿色后需要精确 SHA 后端发布与健康/匿名 401 复核。没有 Mobile 或原生改动，不需要 OTA、TestFlight 或 App Store 发布。
 
-G4 首轮 NO-GO 已关闭代码缺陷。独立审查对提交 `aa2f9000237d69cea3c6074fc5694bead64deefc` 构造“第一次分词成功、第二次失败、第三次恢复”序列，发现候选失败分支会通过 `_query_terms` 发起历史实现不存在的第三次分词，并改变 BM25 词项。新增契约先稳定 RED；修正后的失败分支直接从空分词结果生成原有 regex/bigram 词项，不再重试，5 项缓存契约和上述 444 项宽回归通过。审查同时指出索引重建也会处理非归档草稿，故本节与机器证据已将范围从“reviewed 文档”校正为“非用户 System KB 文档”。修正后的精确 `p` 分片首轮 1052 项完成，1046 passed / 6 skipped / 0 failure，进程墙钟 101.079 秒；该结果只作最终代码结果集复核，不替换原始成对性能样本。G4 PASS：同一独立审查人对精确提交 `a3a0dfc6b818f3ab8a1772ffbfdf3fe6d0b7931e` 复审 GO。四种两次分词成功/失败组合均与父实现词项完全一致且调用数均为 2；持久失败与瞬时第二次失败都不缓存降级词项，恢复后可重算。5 项缓存契约和邻近真实路径 48/48 fresh pass；256 次并发结果一致（1 miss / 255 hits），两个 LRU 均保持 4096 上限；用户查询前后两个文档缓存均未变化；`TSVECTOR` 与 BM25 语料边界未变。G5/G6、合并与部署仍 pending。
+G4 首轮 NO-GO 已关闭代码缺陷。独立审查对提交 `aa2f9000237d69cea3c6074fc5694bead64deefc` 构造“第一次分词成功、第二次失败、第三次恢复”序列，发现候选失败分支会通过 `_query_terms` 发起历史实现不存在的第三次分词，并改变 BM25 词项。新增契约先稳定 RED；修正后的失败分支直接从空分词结果生成原有 regex/bigram 词项，不再重试，5 项缓存契约和上述 444 项宽回归通过。审查同时指出索引重建也会处理非归档草稿，故本节与机器证据已将范围从“reviewed 文档”校正为“非用户 System KB 文档”。修正后的精确 `p` 分片首轮 1052 项完成，1046 passed / 6 skipped / 0 failure，进程墙钟 101.079 秒；该结果只作最终代码结果集复核，不替换原始成对性能样本。G4 PASS：同一独立审查人对精确提交 `a3a0dfc6b818f3ab8a1772ffbfdf3fe6d0b7931e` 复审 GO。四种两次分词成功/失败组合均与父实现词项完全一致且调用数均为 2；持久失败与瞬时第二次失败都不缓存降级词项，恢复后可重算。5 项缓存契约和邻近真实路径 48/48 fresh pass；256 次并发结果一致（1 miss / 255 hits），两个 LRU 均保持 4096 上限；用户查询前后两个文档缓存均未变化；`TSVECTOR` 与 BM25 语料边界未变。
+
+G5 PASS：[PR #292](https://github.com/itsoso/health-llm-driven/pull/292) 的精确提交 `841d76e951c79c51e4fa8a8599e5ad43dd3768d1` 在 [CI 41052552075](https://github.com/itsoso/health-llm-driven/actions/runs/41052552075) attempt=1、32/32 job success。托管 `p` 进程为 255.334 秒，相对紧邻完整 main 基线 265.327 秒减少 3.77%；PR 整体变更范围与 main 全量执行不同，不把该样本单独作为发布结论。
+
+G6 PASS：PR squash 合入 main `4016634c9cfd768da1e7ee9a2700d274f225469f`。精确 main [CI 41053734560](https://github.com/itsoso/health-llm-driven/actions/runs/41053734560) attempt=1、32/32 job success、墙钟 581 秒；比 538 秒基线增加 43 秒（7.99%），低于预声明的 10% 停止阈值。最后完成的 balanced-14 job 为 392 秒，其中 `p=199.129` 秒，相对 265.327 秒减少 24.95%；同一 worker 的 `e=109.545`、`wearable-reports=28.531`、`timeline-medications=13.796` 秒。整轮包含 runner 排队、其他分片及收尾，单轮差异不能全部归因于本实现。
+
+后置只读 [CI timing drift 41054941509](https://github.com/itsoso/health-llm-driven/actions/runs/41054941509) 绑定上述 main run 和 SHA，报告 `CURRENT`：predicted=472.651、observed=437.788 秒，较预测快 7.376%；最大单分片变慢 11.270%，低于 20% 漂移阈值；catalog_stale=false、runs_since_source=4。未刷新 catalog，也未重排分片。
+
+发布闭环 PASS：[validate 41055221179](https://github.com/itsoso/health-llm-driven/actions/runs/41055221179) 仅运行 preflight 并成功；canonical staging、过期只读凭据更新与成功授权轮换各执行一次。随后唯一 [backend release 41056818134](https://github.com/itsoso/health-llm-driven/actions/runs/41056818134) 成功，backend job 8 分 15 秒，iOS/TestFlight job 均 skipped。独立回读生产工作树干净且 SHA 精确为 `4016634c9cfd768da1e7ee9a2700d274f225469f`，持久回执 `SUCCEEDED`（摘要 `b5cc39e1...70cf9079`）；runtime 终态 COMMITTED / code-only-no-backup / finalized。health-backend、celery-worker、celery-beat 均 active/running、NRestarts=0；公网 `/api/v1/health` 为 200 且 API/DB/Redis/Celery 健康，匿名 POST `/api/v1/agent/send` 为 401，业务租约不存在，授权策略绑定该 SHA。未读取或写入真实健康数据，未创建备份。没有 Mobile 或原生文件变化，因此无需 OTA、TestFlight 或 App Store 发布。
+
+本轮托管 PR、main 和生产均只有单次样本，不能建立稳定 P50/P95/P99 或承诺固定降幅。结论限于：`p` 的重复文档词法派生在托管 main 样本中显著下降，完整 CI 未触发退化停止条件，安全边界和生产健康闸均通过。
