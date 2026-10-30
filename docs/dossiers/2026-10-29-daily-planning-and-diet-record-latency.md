@@ -54,19 +54,20 @@
 - 固定提交 `b4e3f37dfe916e4629cbaec3d836d0d82a972de6` 的 fresh 独立 G4 为 GO；本地 CI-mode 发布集成闸退出码为 0，结果为 5638 passed / 67 skipped / 127 subtests。该提交推送后，精确主干 CI `40995174585` 的 32 个作业中只有 `mobile-typecheck` 失败；失败步骤为生产依赖 OSV 审计，新披露的 `GHSA-qr28-fpjm-wq7f` 将锁定的 `decode-uri-component@0.5.0` 判为 HIGH。该失败运行按原结论保留，未重跑，也没有把其他 31 个绿色作业冒充完整 CI 通过。
 - 移动端依赖覆盖已从 `decode-uri-component@0.5.0` 升至上游首个修复版本 `0.5.1`，并同步 lockfile。安装树证明 `query-string@7.1.3` 实际解析到 `0.5.1`；实时 OSV gate、TypeScript、设计 token、签名回补测试、依赖兼容/图片解析 DoS 测试、OSV gate 自测均通过。移动端主 Jest 套件为 377 suites / 3846 passed / 1 skipped，四个隔离状态套件另有 84、80、34、7 项全部通过。该跨域依赖修复需在新的精确提交上重跑独立 G4、本地 CI-mode 与完整主干 CI，之后才能进入可信后端发布。
 - 固定候选 `8d2d2eb82bc0f265436c2bf25772e726a155a6c1` 的 fresh 独立 G4 为 NO-GO：`scripts/test_mobile_fast_feedback_scripts.py` 仍把依赖回退防线固定在旧版 `0.5.0`，新鲜专项测试为 1 failed / 19 passed。该候选未推送；已启动的本地 CI-mode 在确认候选失效后于约 1% 主动终止，不能作为通过证据。最小修复仅把该精确断言同步到 `0.5.1`，保留版本回退防线，后续候选重新接受完整 G4 与发布闸。
+- 固定候选 `1877ae05b264afc6bef1b30d326341d1417f330e` 已关闭依赖断言阻断，专项 20/20 通过，但 fresh 独立 G4 再次为 NO-GO：Dossier 仍声称“只有后端行为变更”，与实际移动端纯 JS 依赖树变化矛盾。该候选未推送；对应 CI-mode 在确认候选失效后主动终止，不能作为通过证据。交付边界现明确为本轮只部署后端行为修复；移动依赖安全修复随代码进入主干，但不在这次后端发布中自动执行 OTA，也不触发原生包或 App Store 发布。
 
 ## Safety boundaries
 
 - 不把补剂安排转成具体摄入指令，不推断用户已有补剂方案或健康状况。
 - 不因快速路径绕过认证用户隔离、写 intent、营养完整性、Gateway、回执或 Goal postcondition。
 - 测试只使用合成用户、内存数据库和固定工具结果；不操作设备或真实健康数据。
-- 本次只有后端行为变更，不触发 OTA、原生包或 App Store 重传。
+- 本候选包含后端行为修复和移动端纯 JS 依赖安全修复。本轮发布范围只部署后端；移动依赖不会在本轮自动 OTA，也不触发原生包或 App Store 重传，后续移动交付须另走精确主干 OTA 边界和对应 Gate。
 
 ## Gate status
 
 - G1: PASS
 - G2: PASS，复用现有闭合 advice scope、GoalSpec、营养补全、Gateway 和 postcondition。
 - G3: PASS, fresh 834-test focused expansion plus compile/diff/governance checks
-- G4: PENDING fresh independent review after dependency-contract remediation; `8d2d2eb` NO-GO and earlier evidence retained above
+- G4: PENDING fresh independent review after delivery-boundary remediation; `8d2d2eb` and `1877ae0` NO-GO evidence retained above
 - G5: PENDING new fixed commit, exact-main CI and trusted backend release
 - G6: PENDING production receipt, revision, health and anonymous-auth probes
