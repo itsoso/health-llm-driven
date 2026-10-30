@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_system_kb_lexical_cache.v1",
-  "status": "G3_LOCAL_PASS_G4_REREVIEW_PENDING",
+  "status": "G4_SAFETY_GO",
   "release_authority": false,
   "baseline": {
     "head_sha": "0b2470da1e16af102d15f9e4dade4a0aae41d87d",
@@ -79,7 +79,6 @@
     }
   },
   "pending_gates": [
-    "fixed-commit independent safety review",
     "exact candidate PR CI",
     "exact main full CI and timing observer",
     "backend deployment and production health/auth verification"
@@ -96,6 +95,20 @@
     "fix": "derive regex and bigram terms directly from an empty segmented result without another tokenizer call",
     "regression": "first call succeeds, second call fails, a potential third call would recover; assert two calls and historical fallback terms",
     "scope_correction": "the cache also serves non-archived System KB drafts during reindexing; no user query or user record is cached",
-    "rereview": "PENDING"
+    "rereview": "GO",
+    "fixed_commit": "a3a0dfc6b818f3ab8a1772ffbfdf3fe6d0b7931e",
+    "independent_matrix": "all four success/failure combinations preserved parent terms and exactly two tokenizer calls",
+    "adjacent_tests": {
+      "passed": 48,
+      "failed": 0
+    },
+    "concurrency_probe": {
+      "calls": 256,
+      "consistent": true,
+      "cache_misses": 1,
+      "cache_hits": 255,
+      "max_entries": 4096
+    },
+    "privacy_probe": "user query calls left both document caches unchanged"
   }
 }
