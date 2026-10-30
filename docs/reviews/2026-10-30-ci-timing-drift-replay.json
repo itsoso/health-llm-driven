@@ -189,6 +189,27 @@
     "rerun": false,
     "fix_policy": "skip zero matching workers; admit exactly 16 unique successful balanced workers; reject every partial or failed matrix"
   },
+  "docs_only_scope_fix": {
+    "merge_sha": "ad49cccfda9a99b7ae9d5383635bccbd7eb8573b",
+    "ci_run_id": 41020241592,
+    "ci_attempt": 1,
+    "ci_conclusion": "success",
+    "successful_jobs": 32,
+    "observer_run_id": 41021168613,
+    "observer_attempt": 1,
+    "observer_conclusion": "success",
+    "full_matrix_eligible": true,
+    "observer_status": "CURRENT",
+    "predicted_critical_seconds": 472.651,
+    "observed_critical_seconds": 472.479,
+    "critical_slower_ratio": -0.000364,
+    "runs_since_source": 2,
+    "catalog_stale": false,
+    "artifact_id": 12960964092,
+    "drift_report_sha256": "3a2ef5ae717c583ad4b6c08e7e3f7c93fa4d0826e8a9258ced4701c12666c6e9",
+    "observed_catalog_sha256": "8bad72fb4fdb9197753dd0d9b7c69fe3c68bf492eba0e3532cbe8bf8ee64d012",
+    "decision": "G6_PASS"
+  },
   "limitations": [
     "The six-run catalog replay is not a new hosted CI result.",
     "The first hosted candidate was green for correctness but rejected for performance and was not merged.",

@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | complete |
-| 当前阶段 | 第八阶段 P0 G6 PASS；P0.1 docs-only 观察范围修复验证中；P1 分片拆分 NO-GO |
+| 当前阶段 | 第八阶段 P0/P0.1 G6 PASS；P1 分片拆分 NO-GO，等待新观测样本 |
 
 ## G1 范围
 
@@ -290,3 +290,5 @@ P1 分片拆分实验 **NO-GO**，未提交候选、未触发托管 CI。`s-l-z`
 后续只在观察器达到 5 次完整成功 main run、漂移超过 20%，或出现新的可归因热点时刷新 catalog。下一轮应用级性能工作应先对 `r-other` 与跨样本波动做请求/测试热点剖析；不先加 worker、不削减测试、不延长超时。
 
 P0.1 边界修复：证据 PR 合入 main `7dc9ca389f3a4d0f9c67f7cdaf1f34457f98284a` 后，docs-only CI `41018930457` 首轮成功且没有后端分片；旧观察器仍启动，并在 run `41019007598` 因缺少分片日志失败。该失败不影响主 CI、代码或发布，但会制造错误告警。新入口先读取触发 run 的确切 jobs：0 个匹配后端分片表示 docs-only，正常输出 `eligible=false`；只有完整且成功的 `balanced-01..16` 才进入日志下载、漂移评估和制品上传；1～15 个、重复、失败或异常矩阵均失败。完整矩阵的评估失败仍以 `always && eligible` 上传诊断制品。测试先因脚本/门缺失 2 项 RED，修复后 timing drift / refresh / release contract 75 passed。待精确 PR 与 main CI 验证后更新 G6；不重跑既有失败 observer，不触发部署或 OTA。
+
+P0.1 G6 PASS：[PR #289](https://github.com/itsoso/health-llm-driven/pull/289) 合入 main `ad49cccfda9a99b7ae9d5383635bccbd7eb8573b`；精确 main [CI 41020241592](https://github.com/itsoso/health-llm-driven/actions/runs/41020241592) attempt=1、32/32 success。后置 [observer 41021168613](https://github.com/itsoso/health-llm-driven/actions/runs/41021168613) 的完整矩阵 scope 成功，随后报告 `CURRENT`：predicted=472.651、observed=472.479 秒、slower_ratio=-0.0364%、runs_since_source=2、catalog_stale=false，并上传 artifact `12960964092`。旧 docs-only 失败 run 保留、未重跑。最终 docs-only 安静跳过路径由本证据提交合入后的 main run 再核验；该路径只影响诊断噪声，不赋予发布权限。
