@@ -1,0 +1,80 @@
+name: CI timing drift
+
+"on":
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  assess:
+    if: >-
+      ${{ github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.head_branch == 'main' &&
+          github.event.workflow_run.run_attempt == 1 }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Collect exact successful run timing evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          RUN_ID="${{ github.event.workflow_run.id }}"
+          HEAD_SHA="${{ github.event.workflow_run.head_sha }}"
+          REPOSITORY="${{ github.repository }}"
+          mkdir -p _ci-timing/jobs
+          gh api -H 'Accept: application/vnd.github+json' \
+            "repos/${REPOSITORY}/actions/runs/${RUN_ID}/logs" \
+            > _ci-timing/current-run-logs.zip
+          gh run list --repo "$REPOSITORY" --workflow CI --branch main \
+            --status success --limit 12 \
+            --json databaseId,headSha,headBranch,workflowName,status,conclusion,attempt \
+            > _ci-timing/recent-runs.json
+          gh run list --repo "$REPOSITORY" --workflow CI --branch main \
+            --status success --limit 12 --json databaseId \
+            --jq '.[].databaseId' | while read -r candidate_run_id; do
+              gh api -H 'Accept: application/vnd.github+json' \
+                "repos/${REPOSITORY}/actions/runs/${candidate_run_id}/jobs?per_page=100" \
+                > "_ci-timing/jobs/${candidate_run_id}.json"
+          done
+          python scripts/refresh_ci_pytest_timings.py \
+            --catalog .github/ci/backend-pytest-shards.json \
+            --logs-zip _ci-timing/current-run-logs.zip \
+            --run-id "$RUN_ID" --head-sha "$HEAD_SHA" \
+            --output _ci-timing/observed-catalog.json
+
+      - name: Assess placement drift without updating main
+        run: |
+          python scripts/check_ci_pytest_timing_drift.py \
+            --catalog .github/ci/backend-pytest-shards.json \
+            --observed _ci-timing/observed-catalog.json \
+            --current-run-id "${{ github.event.workflow_run.id }}" \
+            --recent-runs _ci-timing/recent-runs.json \
+            --jobs-dir _ci-timing/jobs \
+            --workers 16 --max-slower-ratio 0.20 \
+            --max-runs-since-source 5 \
+            --output _ci-timing/drift-report.json
+
+      - name: Upload bounded timing observation
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: ci-timing-drift-${{ github.event.workflow_run.id }}
+          path: |
+            _ci-timing/observed-catalog.json
+            _ci-timing/drift-report.json
+          if-no-files-found: error
+          retention-days: 14

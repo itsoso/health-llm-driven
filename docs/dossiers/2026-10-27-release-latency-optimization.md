@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 第七阶段 G6 已核验：优化随统一版本上线，性能证据待发布者同步到主干 |
+| 当前阶段 | 第八阶段 P0 G5 代码 PASS：六轮窗口候选待 main 合入及后置观察器 G6 |
 
 ## G1 范围
 
@@ -262,3 +262,21 @@ G6 进行中：[发布 validate 40485381866](https://github.com/itsoso/health-ll
 G6 最新状态为等待并发发布归属确认。刷新脚本静态复核及 7 项合成拒绝检查通过后、执行前，只读探针发现另一流程已刷新凭据，并推送新 main `12edbb30e9bf30247dbcb2ac6635e3fee322754a`（Mobile 考试历史，包含本批优化）。该新 main 的完整 CI 尚在运行；旧候选 canonical gate 拒绝 `Main contains runtime or unknown changes`。独立 reviewer 撤销旧前提下的刷新 GO，裁决旧刷新脚本及 bootstrap 重试 NO-GO。本任务未 mint、未刷新凭据、未再次 bootstrap、未 dispatch backend。最新观测仍为原授权、原生产 SHA、无业务 lease、无候选状态或旧授权 retirement 目录；时间点与摘要记录在 production JSON。首次 bootstrap 失败只有明确标注来源的工具输出转录，不能冒充保存过的原生日志。依 AGENTS.md §7 停止外部写入并询问本轮唯一发布者；后续必须重绑最终 main、完整 CI 和安全审查，不能发布旧候选或复用失效刷新脚本。
 
 G6 后续核验 PASS，以上等待为历史断点。用户确认等另一流程完成后由本任务核验。独立读取 `12edbb30e` 的后端 run `40487980897`、OTA run `40489009144` 成功及服务器 SUCCEEDED 回执；当前生产已进一步升级到 `8f7d94696424f92ff57243edb906cd6d2dd14a3a`，其完整 CI `40496844800` 成功，发布 run `40500052228` 的 backend job 成功、服务器 SUCCEEDED。`agent_longitudinal_read.py` 线上摘要与本批 `0633a4d` 完全一致；三个服务 active、业务 lease 不存在、公网 health healthy、匿名 GET `/api/v1/auth/me` 为401。最初误用 POST 得405，未计为鉴权通过。生产独立进程仅以合成文本执行 scope 探针，验证单次 projection、owner/第三方拒绝及日期重算通过，不访问真实健康记录。本任务没有重复部署。最新整体发布中的 TestFlight job 失败独立保留，不把 backend 成功冒充整轮原生发布成功；其后 Apple 实际接收状态由唯一发布者另行核验。本批无需另发 OTA。
+
+## 第八阶段：近期计时校准与只读漂移闸（2026-10-30）
+
+用户确认按既定 CI/CD 优化顺序执行。沿用本 Dossier、implementation / Health Harness 和性能治理；本批只做 P0，先取得可归因的真实 CI，再决定是否拆分 release-invariants 与 PostgreSQL。共享 `main` 有两条本地提交、落后远端 89 条且含其他任务未提交改动，因此按已确认的窄范围 PR 方案，从远端 `a60a42a405c2d889accce7d91cf84591352e4439` 建立独立工作树；不移动、暂存或清理共享工作区。
+
+G1/G2 PASS。最近完整 CI `40997603653` 首轮 32/32 job 成功、墙钟 608 秒；最长后端测试步骤约 530 秒，旧 catalog 仍来自 10 月 27 日三轮运行。首版使用 `40885514914`、`40912681271`、`40997603653` 三轮精确 SHA、attempt=1、完整成功日志，以既有严格刷新器逐分片取最大值。所有非调度策略摘要保持 `53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425`，worker 数、测试选择、进程边界、deadline、重试和超时均未改变。
+
+首版离线回放的最长 worker 实际负载分别从 471.852 / 480.687 / 530.311 秒变为 409.275 / 404.905 / 409.267 秒；三轮 placement 预测 16 个 worker 为 408.048～418.012 秒，spread 9.964 秒。它不含 runner 启动、安装和聚合，不能冒充新 CI 或稳定分位数。脱敏机器证据见 `docs/reviews/2026-10-30-ci-timing-drift-replay.json`。
+
+新增 `CI timing drift` 后置工作流只观察成功、main、attempt=1 的完整 CI，checkout 精确 head SHA，并下载该 run 的确切日志。漂移门按当前 catalog 的 16-worker 分配比较预测与实测关键路径；单个短分片比例仅作诊断。关键路径变慢超过 20%，或 catalog 已经过 5 次完整成功 main CI 未纳入新来源时，独立观察工作流标记 review required。报告和单轮 observed catalog 保存 14 天；权限仅 `contents: read` / `actions: read`，不自动改 catalog、push、dispatch、设置变量或提供发布授权。
+
+G3 PASS：先写 7 项测试，旧实现因脚本和工作流不存在而 6/6 RED；增加精确 run/SHA 与 main 分支绑定反例后，timing drift、timing refresh、release CI contract 合计 74 passed。使用 `40997603653` 的真实日志和最近完整运行清单执行新观察器，结果 predicted=418.012、observed=409.267、drift=-2.092%、runs_since_source=0、status=CURRENT。首个候选提交后，从候选 workflow 原样读取完整 `Run deployment and rollback invariants` 命令，CI=1 新鲜执行 5645 passed、67 skipped、127 subtests passed，611.87 秒，退出码 0；随后只收紧观察器的精确 SHA/main 绑定并由定向反例覆盖，既有 zip duplicate-name warning 保留，不当作失败或新增 skip。G4 最终固定提交审查、精确候选完整 CI 和后置观察工作流真实运行尚未完成；在此之前不声明线上提速。仅 CI/治理范围，不部署后端、不轮换授权、不发布 OTA 或商店包。
+
+首个 hosted 候选 `fe97a63a1dd0f7d1729fa90781ddbe9bd7538bdc` 的精确 CI `41012046528` 为 attempt=1、32/32 job success，但性能裁决 **NO-GO**：整轮 676 秒，比 608 秒基线慢 11.184%；最长测试步骤 548 秒。确切日志显示 `s-l-z` 从三轮窗口预测 311.506 秒回到 435.687 秒，使该 worker 实际进程负载 547.763 秒，比 418.012 秒预测高 31.04%。不重跑同 SHA、不把 correctness green 冒充性能通过，PR 未合并。
+
+根因是三轮窗口过早淘汰已知长尾：旧 catalog 已观察到 `s-l-z=433.935` 秒。修复使用最近六次完整、首轮成功 main CI 的逐分片最大值，窗口为 `40438974052 / 40442091206 / 40447632037 / 40885514914 / 40912681271 / 40997603653`；滚动窗口随新完整样本自然淘汰旧值，不建立永久单调 floor。六轮 placement 预测为 464.920～472.651 秒，spread 7.731 秒；七个已有样本（含首个 hosted 反例）的回放最长值上界从旧 catalog 的 530.311 秒降为 467.703 秒，反例本身回放为 462.617 秒。该修复仍是离线回放，最终候选必须新的精确 SHA 完整 CI；不使用 workflow rerun 挑样本。
+
+G5 代码候选 PASS：[精确 CI 41013492648](https://github.com/itsoso/health-llm-driven/actions/runs/41013492648) 绑定 `55ff86d29b0ea4b23ae79637a77003edcb6abd41`，attempt=1、32/32 job success，无 rerun。整轮 587 秒，比 608 秒基线减少 21 秒（3.45%），没有达到早期 8 分钟估计但消除了首版退化。最慢测试步骤 515 秒；按进程计时的实际关键 worker 514.644 秒，比 472.651 秒预测高 8.88%，未触发 20% 漂移阈值。`s-l-z` 实测 420.331 秒，历史 floor 覆盖成功；新热点为 `p=299.524` 秒，后续由观察器积累样本，不在本批继续叠加策略。release-invariants job 399 秒、agent-runtime-postgres job 476 秒，P1 是否拆分待 main 实测和 runner 竞争证据后裁决。当前只证明 PR 代码提交；main push 的完整 CI 与新 `workflow_run` 观察器尚未发生，不声明主干已生效。
