@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_system_kb_lexical_cache.v1",
-  "status": "G3_LOCAL_PASS",
+  "status": "G3_LOCAL_PASS_G4_REREVIEW_PENDING",
   "release_authority": false,
   "baseline": {
     "head_sha": "0b2470da1e16af102d15f9e4dade4a0aae41d87d",
@@ -18,10 +18,10 @@
     "profile_total_seconds": 11.297,
     "seg_text_calls": 5296,
     "seg_text_cumulative_seconds": 4.141,
-    "finding": "BM25 repeatedly tokenized identical reviewed System KB document text; user query tokenization was not the repeated corpus cost."
+    "finding": "BM25 repeatedly tokenized identical System KB document text; user query tokenization was not the repeated corpus cost."
   },
   "change": {
-    "scope": "bounded derived-text reuse for reviewed System KB documents",
+    "scope": "bounded derived-text reuse for non-user System KB documents, including non-archived drafts reached by reindexing",
     "cache_max_entries": 4096,
     "key": "exact non-user System KB searchable text",
     "value": "immutable tuple of exact lexical terms",
@@ -50,23 +50,33 @@
   },
   "verification": {
     "cache_contract_tests": {
-      "passed": 4,
+      "passed": 5,
       "failed": 0,
       "coverage": [
         "exact lexical term preservation",
         "unchanged-content reuse and changed-content recomputation",
         "user query exclusion",
-        "degraded tokenizer fallback is not cached"
+        "persistent tokenizer outage fallback is not cached",
+        "transient second-call tokenizer failure keeps the historical two-call bigram fallback"
       ]
     },
     "knowledge_and_agent_regression": {
-      "passed": 443,
+      "passed": 444,
       "failed": 0
     },
     "system_map": "PASS",
     "blocking_ruff": "PASS",
     "compile": "PASS",
-    "diff_check": "PASS"
+    "diff_check": "PASS",
+    "fixed_candidate_p_shard": {
+      "testcase_count": 1052,
+      "passed": 1046,
+      "skipped": 6,
+      "failed": 0,
+      "attempt": 1,
+      "process_wall_seconds": 101.079,
+      "purpose": "post-fix result-set confirmation; not substituted into the original paired performance claim"
+    }
   },
   "pending_gates": [
     "fixed-commit independent safety review",
@@ -78,5 +88,14 @@
     "one paired local sample is not a stable latency percentile",
     "hosted runner improvement remains unverified until exact candidate CI",
     "no test selection, retry, timeout, worker count, or release policy changed"
-  ]
+  ],
+  "safety_review": {
+    "reviewed_commit": "aa2f9000237d69cea3c6074fc5694bead64deefc",
+    "initial_decision": "NO-GO",
+    "blocking_finding": "the cached failure branch retried tokenization a third time after a transient second-call failure and could change BM25 terms",
+    "fix": "derive regex and bigram terms directly from an empty segmented result without another tokenizer call",
+    "regression": "first call succeeds, second call fails, a potential third call would recover; assert two calls and historical fallback terms",
+    "scope_correction": "the cache also serves non-archived System KB drafts during reindexing; no user query or user record is cached",
+    "rereview": "PENDING"
+  }
 }

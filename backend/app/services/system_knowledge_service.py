@@ -3366,7 +3366,7 @@ def _system_document_lexical_terms(document: KBDocument) -> tuple[str, ...]:
         logger.warning(
             "[system_kb] jieba segmentation unavailable for BM25 document; using uncached fallback"
         )
-        return tuple(_query_terms(str(searchable_text)))
+        return tuple(_query_terms_from_segmented(str(searchable_text), ""))
 
 
 def _clear_system_document_lexical_caches() -> None:

@@ -482,6 +482,37 @@ def test_system_document_lexical_cache_does_not_retain_degraded_fallback(monkeyp
     )
 
 
+def test_system_document_lexical_cache_preserves_transient_failure_semantics(monkeypatch):
+    from app.services import zh_tokenize
+
+    system_knowledge_service._clear_system_document_lexical_caches()
+    real_seg_text = zh_tokenize.seg_text
+    calls = 0
+
+    def fail_only_second_call(text):
+        nonlocal calls
+        calls += 1
+        if calls == 2:
+            raise RuntimeError("synthetic transient tokenizer outage")
+        return real_seg_text(text)
+
+    monkeypatch.setattr(zh_tokenize, "seg_text", fail_only_second_call)
+    document = _lexical_cache_document(body="瞬时失败必须保持原有 bigram fallback")
+
+    observed = system_knowledge_service._system_document_lexical_terms(document)
+    searchable_text = system_knowledge_service._document_search_text(document)
+    expected = tuple(
+        system_knowledge_service._query_terms_from_segmented(searchable_text, "")
+    )
+
+    assert observed == expected
+    assert calls == 2
+    assert (
+        system_knowledge_service._cached_system_document_lexical_terms.cache_info().currsize
+        == 0
+    )
+
+
 def test_format_system_knowledge_for_prompt_is_bounded(db):
     db.add(
         KBDocument(
