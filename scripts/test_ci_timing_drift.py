@@ -14,11 +14,19 @@ import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "scripts/check_ci_pytest_timing_drift.py"
+SCOPE_SCRIPT = ROOT / "scripts/check_ci_timing_observation_scope.py"
 WORKFLOW = ROOT / ".github/workflows/ci-timing-drift.yml"
 
 
 def _module():
     spec = importlib.util.spec_from_file_location("ci_timing_drift", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _scope_module():
+    spec = importlib.util.spec_from_file_location("ci_timing_scope", SCOPE_SCRIPT)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -187,6 +195,25 @@ def test_full_run_inventory_requires_exact_successful_first_attempt_workers():
         module.successful_full_run_ids([run], jobs)
 
 
+def test_observation_scope_skips_docs_only_and_requires_complete_successful_matrix():
+    module = _scope_module()
+    assert module.is_full_backend_run({"jobs": []}, worker_count=16) is False
+    assert module.is_full_backend_run({
+        "jobs": [{"name": "backend-test-${{ matrix.label }}", "conclusion": "skipped"}]
+    }, worker_count=16) is False
+
+    jobs = _full_jobs(400, f"{400:040x}")
+    assert module.is_full_backend_run(jobs, worker_count=16) is True
+    jobs["jobs"].pop()
+    with pytest.raises(ValueError, match="incomplete backend timing matrix"):
+        module.is_full_backend_run(jobs, worker_count=16)
+
+    jobs = _full_jobs(400, f"{400:040x}")
+    jobs["jobs"][0]["conclusion"] = "failure"
+    with pytest.raises(ValueError, match="successful backend timing matrix"):
+        module.is_full_backend_run(jobs, worker_count=16)
+
+
 def test_cli_writes_report_before_review_required_exit(tmp_path):
     catalog = tmp_path / "catalog.json"
     observed = tmp_path / "observed.json"
@@ -242,7 +269,31 @@ def test_workflow_is_read_only_exact_run_observer():
     assert "github.event.workflow_run.id" in bodies
     assert "github.event.workflow_run.head_sha" in bodies
     assert "actions/runs/${RUN_ID}/logs" in bodies
+    assert "check_ci_timing_observation_scope.py" in bodies
     assert "check_ci_pytest_timing_drift.py" in bodies
     assert not any(token in bodies for token in ("git push", "gh workflow run", "gh variable set"))
-    upload = next(step for step in job["steps"] if str(step.get("uses", "")).startswith("actions/upload-artifact@"))
-    assert upload["if"] == "${{ always() }}"
+    scope = next(step for step in job["steps"] if step.get("id") == "scope")
+    assert "actions/runs/${RUN_ID}/jobs?per_page=100" in scope["run"]
+    gated_steps = {
+        step["name"]: step
+        for step in job["steps"]
+        if step.get("name") in {
+            "Collect exact successful run timing evidence",
+            "Assess placement drift without updating main",
+            "Upload bounded timing observation",
+        }
+    }
+    assert set(gated_steps) == {
+        "Collect exact successful run timing evidence",
+        "Assess placement drift without updating main",
+        "Upload bounded timing observation",
+    }
+    assert gated_steps["Collect exact successful run timing evidence"]["if"] == (
+        "${{ steps.scope.outputs.eligible == 'true' }}"
+    )
+    assert gated_steps["Assess placement drift without updating main"]["if"] == (
+        "${{ steps.scope.outputs.eligible == 'true' }}"
+    )
+    assert gated_steps["Upload bounded timing observation"]["if"] == (
+        "${{ always() && steps.scope.outputs.eligible == 'true' }}"
+    )
