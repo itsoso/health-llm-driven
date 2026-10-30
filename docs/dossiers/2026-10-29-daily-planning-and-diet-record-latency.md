@@ -6,7 +6,7 @@
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | 当前阶段 | G4 fresh safety review |
-| 状态 | G3 passed for black-rice-porridge increment; pending fixed commit and reviewer verdict |
+| 状态 | G3 passed for black-rice-porridge increment; G4 remediation tests passing, pending fresh fixed-commit review |
 
 ## G1 准入
 
@@ -49,6 +49,8 @@
 - 黑米粥新增 RED 在旧实现稳定复现：GoalSpec 为一般 `write` 而非单一可验证目标，执行器未调用营养估算并进入外层模型。最小实现后聚焦正向、药物/补剂、追加查询和第三方归属共 11 项通过。随后 830 项扩大回归首次得到 825 passed / 5 failed；失败证明所有聊天渠道抢跑会覆盖模型完整营养，以及既有语音测试把动态餐次写死。边界收窄到 `typed`/`voice` 后，原 5 项和新增黑米粥路径共 6 项全部通过。完整扩大回归仍需 fresh rerun 后才能更新为 G3 PASS。
 - 收窄后的 fresh 扩大回归为 834 passed；`py_compile`、`git diff --check` 与 agent-skill governance 均通过。该结果只证明本地增量，仍需固定提交上的独立 G4、LLM change gate、CI-mode 集成闸和精确主干 CI。
 - 共享意图分类、能力策略、强制写工具和防假成功扩大回归 fresh 3278 passed。实时 LLM gate 的 invariants 12/12、health agent core 50/50、trajectory 12/12、goldens 9/9 通过；5 个 orchestrator 用例全部被隐私层以 `recipient_not_disclosed` 阻断并记为 errored，未取得评分，不能计为 live PASS。脱敏 JSON 位于 `/tmp/reva-black-rice-live-llm.json`，SHA-256 `3457cadbabc82a5fdea2b117a256b64a76e4fba7b5abeda73e83665b7cb40d4e`。任何豁免都必须在新提交固定后绑定该精确 SHA，不能复用旧候选的一次性变量。
+- 固定提交 `9a9ab26a634542a3707c40b7094b7619d0b42c5f` 的独立 G4 判为 NO-GO。静态复核未发现新增越权路径，正向 typed 写已证明一次营养估算、一次分发、验证回执和零外层模型轮次；阻断点是测试证据没有让新增 typed 执行器入口实际承受药品、补剂、复合读取和第三方归属，也没有覆盖营养补全失败与回执缺失/错型后的防假成功和防重复分发。该候选未推送、未部署。
+- 按复核要求新增真实 typed 执行器测试：布洛芬、钙片、追加昨日饮食查询和“给妈妈”四种输入均使用可成功的 estimator/dispatcher 作为陷阱，实际为零估算、零分发、零回执；营养补全返回空时只估算一次、零分发并显式返回完整营养失败；分发返回缺失身份或错误资源类型时均只分发一次、零验证回执、屏蔽模型“已经记录好了”，并进入 `write_reconciliation_required/missing_receipt`。新增及相邻正反路径 fresh 30 passed，待新的固定提交和 fresh 独立 G4。
 
 ## Safety boundaries
 
@@ -62,6 +64,6 @@
 - G1: PASS
 - G2: PASS，复用现有闭合 advice scope、GoalSpec、营养补全、Gateway 和 postcondition。
 - G3: PASS, fresh 834-test focused expansion plus compile/diff/governance checks
-- G4: PENDING fresh independent review for the new increment; prior GO and NO-GO findings are retained above
+- G4: PENDING fresh independent review after executor-level typed safety remediation; `9a9ab26` NO-GO retained above
 - G5: PENDING new fixed commit, exact-main CI and trusted backend release
 - G6: PENDING production receipt, revision, health and anonymous-auth probes

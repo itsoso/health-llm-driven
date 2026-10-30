@@ -3819,6 +3819,213 @@ async def test_voice_fast_path_never_dispatches_unsafe_food_span(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录一粒布洛芬",
+        "记录一粒钙片",
+        "记录一碗黑米粥然后查看昨天的饮食",
+        "记录一碗黑米粥给妈妈",
+    ),
+)
+async def test_typed_direct_diet_path_never_dispatches_unsafe_food_span(
+    db, auth_user_and_headers, monkeypatch, message,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    model_calls = []
+    estimate_calls = []
+    dispatch_calls = []
+
+    async def safe_model(messages, tools):
+        model_calls.append((messages, tools))
+        return {
+            "content": "请确认要处理的单一记录。",
+            "finish_reason": "stop",
+        }
+
+    async def valid_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 180,
+            "protein": 4.2,
+            "carbs": 38,
+            "fat": 1.1,
+            "fiber": 2.4,
+        }
+
+    async def valid_dispatch(request, user_token):
+        dispatch_calls.append((request, user_token))
+        return json.dumps(
+            {
+                "id": 915,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", safe_model)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(safe_model))
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        valid_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", valid_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message=message,
+            channel="typed",
+            user_auth_token="test-token",
+            client_turn_id=f"turn-unsafe-typed-{abs(hash(message))}",
+        )
+    ]
+
+    assert model_calls
+    assert estimate_calls == []
+    assert dispatch_calls == []
+    done = next(event for event in events if event.get("event") == "done")
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+async def test_typed_direct_diet_path_rejects_incomplete_nutrition_without_dispatch(
+    db, auth_user_and_headers, monkeypatch,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    model_calls = []
+    estimate_calls = []
+    dispatch_calls = []
+
+    async def false_success_model(messages, tools):
+        model_calls.append((messages, tools))
+        return {"content": "已经记录好了。", "finish_reason": "stop"}
+
+    async def incomplete_estimate(food_items):
+        estimate_calls.append(food_items)
+        return None
+
+    async def fail_if_dispatched(request, user_token):
+        dispatch_calls.append((request, user_token))
+        raise AssertionError("incomplete nutrition must not cross dispatch")
+
+    monkeypatch.setattr(executor, "_call_llm", false_success_model)
+    monkeypatch.setattr(
+        executor,
+        "_call_llm_stream",
+        _stream_from(false_success_model),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        incomplete_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fail_if_dispatched)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录一碗黑米粥",
+            channel="typed",
+            user_auth_token="test-token",
+            client_turn_id="turn-direct-black-rice-incomplete-nutrition",
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert estimate_calls == ["一碗黑米粥"]
+    assert dispatch_calls == []
+    assert "已经记录好了" not in rendered
+    assert "完整营养" in rendered
+    assert done["data"]["completion_status"] == "error"
+    assert done["data"]["write_receipts"] == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "dispatch_result",
+    (
+        {"status": "completed", "success": True},
+        {"id": 916, "resource_type": "water_record", "status": "completed"},
+    ),
+)
+async def test_typed_direct_diet_path_never_claims_success_without_matching_receipt(
+    db, auth_user_and_headers, monkeypatch, dispatch_result,
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    model_calls = []
+    dispatch_calls = []
+
+    async def false_success_model(messages, tools):
+        model_calls.append((messages, tools))
+        return {"content": "已经记录好了。", "finish_reason": "stop"}
+
+    async def valid_estimate(_food_items):
+        return {
+            "calories": 180,
+            "protein": 4.2,
+            "carbs": 38,
+            "fat": 1.1,
+            "fiber": 2.4,
+        }
+
+    async def unverified_dispatch(request, user_token):
+        dispatch_calls.append((request, user_token))
+        return json.dumps(dispatch_result, ensure_ascii=False)
+
+    monkeypatch.setattr(executor, "_call_llm", false_success_model)
+    monkeypatch.setattr(
+        executor,
+        "_call_llm_stream",
+        _stream_from(false_success_model),
+    )
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        valid_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", unverified_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录一碗黑米粥",
+            channel="typed",
+            user_auth_token="test-token",
+            client_turn_id=(
+                "turn-direct-black-rice-unverified-"
+                f"{dispatch_result.get('resource_type', 'missing')}"
+            ),
+        )
+    ]
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert len(dispatch_calls) == 1
+    assert "已经记录好了" not in rendered
+    assert "尚未拿到回执" in rendered
+    assert done["data"]["write_receipts"] == []
+    assert done["data"]["turn_outcome"]["category"] == (
+        "write_reconciliation_required"
+    )
+    assert done["data"]["turn_outcome"]["reason_code"] == "missing_receipt"
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("model_delay", (0, 3.05))
 async def test_agent_stream_structured_pi_diet_preserves_progress_and_replay(
     db, auth_user_and_headers, monkeypatch, model_delay
