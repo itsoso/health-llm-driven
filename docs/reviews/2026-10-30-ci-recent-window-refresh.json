@@ -1,0 +1,259 @@
+{
+  "schema_version": "ci_recent_window_refresh.v1",
+  "status": "G4_PASS",
+  "release_authority": false,
+  "base_main_sha": "c27505a70cdbdada8637b5814ba0fdfc90efa123",
+  "change": {
+    "scope": "placement telemetry only",
+    "worker_count": 16,
+    "shard_count": 60,
+    "process_count": 64,
+    "aggregation": "per-shard maximum across six exact first-attempt successful full main runs",
+    "execution_policy_sha256": "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425",
+    "test_selection_changed": false,
+    "deadline_changed": false,
+    "retry_changed": false,
+    "timeout_changed": false,
+    "workflow_changed": false
+  },
+  "source_runs": [
+    {
+      "run_id": 40912681271,
+      "head_sha": "9e10ddde21b5a8ef95a79784dac817468df96218",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "1346ebcd0939891a12d67e4b912441767c0e65a82693c48794700b47f0338b23"
+    },
+    {
+      "run_id": 40997603653,
+      "head_sha": "a60a42a405c2d889accce7d91cf84591352e4439",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "bf1e5bb355092e63a8c8a1658c8d62783022bbdab5002b5f7ebfbbb38493beb4"
+    },
+    {
+      "run_id": 41015741501,
+      "head_sha": "2d9e53df280dd40e03fe8e7820d017528a6fb3d5",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "ab8111735ea1411720990043c629dfa8997613eb32480b03e01d1463d976a6de"
+    },
+    {
+      "run_id": 41020241592,
+      "head_sha": "ad49cccfda9a99b7ae9d5383635bccbd7eb8573b",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "5f748d0d2b8185fcca9ce43b678bab5629d95c84d4be91900110a5ff7cd84920"
+    },
+    {
+      "run_id": 41044942222,
+      "head_sha": "c9567c9a92fbd11cb6d52d0aa819c87e03a0accf",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "b40b95292c341d1eb7660d8a8648e4855f1bded7667e8c11e48ad4ae64bf33f1"
+    },
+    {
+      "run_id": 41053734560,
+      "head_sha": "4016634c9cfd768da1e7ee9a2700d274f225469f",
+      "measurement": "successful_attempt_process_wall_seconds",
+      "sample_count": 60,
+      "process_sample_count": 64,
+      "excluded_timeout_seconds": 0.0,
+      "note": "All shard timings are first-attempt successful process wall times from this run. Test selection, deadlines, attempts and process isolation are unchanged.",
+      "logs_zip_sha256": "0b42fa14b0973e91527d6ee12627b08c07b95d047079a387ab068838c36bb794"
+    }
+  ],
+  "placement": {
+    "old_predicted_critical_seconds": 472.651,
+    "new_predicted_critical_seconds": 443.441,
+    "predicted_reduction_ratio": 0.0618,
+    "same_run_replays": [
+      {
+        "run_id": 40912681271,
+        "head_sha": "9e10ddde21b5a8ef95a79784dac817468df96218",
+        "old_assignment_seconds": 466.126,
+        "new_assignment_seconds": 408.753,
+        "delta_seconds": -57.373,
+        "reduction_ratio": 0.123085
+      },
+      {
+        "run_id": 40997603653,
+        "head_sha": "a60a42a405c2d889accce7d91cf84591352e4439",
+        "old_assignment_seconds": 448.988,
+        "new_assignment_seconds": 430.229,
+        "delta_seconds": -18.759,
+        "reduction_ratio": 0.041781
+      },
+      {
+        "run_id": 41015741501,
+        "head_sha": "2d9e53df280dd40e03fe8e7820d017528a6fb3d5",
+        "old_assignment_seconds": 479.279,
+        "new_assignment_seconds": 443.441,
+        "delta_seconds": -35.838,
+        "reduction_ratio": 0.074775
+      },
+      {
+        "run_id": 41020241592,
+        "head_sha": "ad49cccfda9a99b7ae9d5383635bccbd7eb8573b",
+        "old_assignment_seconds": 472.479,
+        "new_assignment_seconds": 425.173,
+        "delta_seconds": -47.306,
+        "reduction_ratio": 0.100123
+      },
+      {
+        "run_id": 41044942222,
+        "head_sha": "c9567c9a92fbd11cb6d52d0aa819c87e03a0accf",
+        "old_assignment_seconds": 463.788,
+        "new_assignment_seconds": 403.39,
+        "delta_seconds": -60.398,
+        "reduction_ratio": 0.130228
+      },
+      {
+        "run_id": 41053734560,
+        "head_sha": "4016634c9cfd768da1e7ee9a2700d274f225469f",
+        "old_assignment_seconds": 437.788,
+        "new_assignment_seconds": 412.124,
+        "delta_seconds": -25.664,
+        "reduction_ratio": 0.058622
+      }
+    ],
+    "leave_one_out_replays": [
+      {
+        "held_out_run_id": 40912681271,
+        "old_assignment_seconds": 466.126,
+        "five_run_assignment_seconds": 433.568,
+        "delta_seconds": -32.558,
+        "reduction_ratio": 0.069848
+      },
+      {
+        "held_out_run_id": 40997603653,
+        "old_assignment_seconds": 448.988,
+        "five_run_assignment_seconds": 438.739,
+        "delta_seconds": -10.249,
+        "reduction_ratio": 0.022827
+      },
+      {
+        "held_out_run_id": 41015741501,
+        "old_assignment_seconds": 479.279,
+        "five_run_assignment_seconds": 455.917,
+        "delta_seconds": -23.362,
+        "reduction_ratio": 0.048744
+      },
+      {
+        "held_out_run_id": 41020241592,
+        "old_assignment_seconds": 472.479,
+        "five_run_assignment_seconds": 421.109,
+        "delta_seconds": -51.37,
+        "reduction_ratio": 0.108724
+      },
+      {
+        "held_out_run_id": 41044942222,
+        "old_assignment_seconds": 463.788,
+        "five_run_assignment_seconds": 403.636,
+        "delta_seconds": -60.152,
+        "reduction_ratio": 0.129697
+      },
+      {
+        "held_out_run_id": 41053734560,
+        "old_assignment_seconds": 437.788,
+        "five_run_assignment_seconds": 412.124,
+        "delta_seconds": -25.664,
+        "reduction_ratio": 0.058622
+      }
+    ]
+  },
+  "rejected_split_experiment": {
+    "target": "s-l-z",
+    "baseline_process_seconds": 132.277,
+    "split_process_seconds": {
+      "sleep": 19.023,
+      "supplement": 59.031,
+      "system": 23.541,
+      "rest": 36.556
+    },
+    "split_total_seconds": 138.151,
+    "process_overhead_ratio": 0.044407,
+    "testcases": 2121,
+    "passed": 2096,
+    "skipped": 25,
+    "identity_result_sha256": "de2ae8bc1622d394875fe31150e800c73c804d7b4f74af3fd8eb31d5189ac907",
+    "decision": "NO-GO",
+    "reason": "the proportional hosted projection worsens the current-run replay by 9.44 seconds (2.29%) while adding three pytest processes",
+    "hosted_projection": {
+      "source_run_id": 41053734560,
+      "observed_unsplit_s_l_z_seconds": 399.136,
+      "method": "preserve the hosted s-l-z total and allocate it in proportion to the four local split process times before deterministic 16-worker LPT placement",
+      "scale_factor": 2.889128562225391,
+      "projected_split_seconds": {
+        "sleep": 54.959893,
+        "supplement": 170.548148,
+        "system": 68.012975,
+        "rest": 105.614984
+      },
+      "projected_split_total_seconds": 399.136,
+      "unsplit_assignment_critical_seconds": 412.124,
+      "split_assignment_critical_seconds": 421.564,
+      "delta_seconds": 9.44,
+      "regression_ratio": 0.022906
+    }
+  },
+  "verification": {
+    "tdd_red": "real catalog source assertion failed before refresh",
+    "timing_drift_release_contract_tests": {
+      "passed": 75,
+      "failed": 0
+    },
+    "system_map_check": "PASS",
+    "dossier_consistency": "PASS: 281 dossiers",
+    "ci_mode_release_invariants": {
+      "passed": 5646,
+      "skipped": 67,
+      "subtests_passed": 127,
+      "failed": 0,
+      "duration_seconds": 591.69,
+      "exit_code": 0
+    },
+    "ci_change_scope_tests": {
+      "passed": 30,
+      "failed": 0
+    },
+    "ci_pytest_shard_runner_tests": {
+      "passed": 23,
+      "failed": 0
+    }
+  },
+  "pending_gates": [
+    "exact PR CI",
+    "exact main full CI and timing observer"
+  ],
+  "limitations": [
+    "historical replay and leave-one-out estimates exclude runner setup and dependency installation",
+    "six runs do not establish stable P50/P95/P99",
+    "hosted improvement remains unverified until exact candidate and main CI"
+  ],
+  "deployment_required": false,
+  "ota_required": false,
+  "independent_review": {
+    "initial_candidate_sha": "60f07bc1635d48637b1ce87bd3d6457a03756662",
+    "initial_verdict": "NO-GO",
+    "initial_finding": "split replay recorded the second-highest worker as the maximum; implementation safety and the NO-GO direction were unaffected",
+    "corrected_candidate_sha": "202a9be3a2000193343280cb9c560b60f031abe2",
+    "final_verdict": "GO",
+    "verified": "source provenance, first-attempt success, process coverage, policy digest, recursive diff, same-run replay, leave-one-out replay, split projection and focused contracts"
+  }
+}
