@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | 第八阶段 P0 G3 已完成：近期计时校准与只读漂移闸待固定提交审查和真实 CI |
+| 当前阶段 | 第八阶段 P0 G3 修复：首个真实 CI 性能 NO-GO，六轮窗口候选待精确 CI |
 
 ## G1 范围
 
@@ -267,10 +267,14 @@ G6 后续核验 PASS，以上等待为历史断点。用户确认等另一流程
 
 用户确认按既定 CI/CD 优化顺序执行。沿用本 Dossier、implementation / Health Harness 和性能治理；本批只做 P0，先取得可归因的真实 CI，再决定是否拆分 release-invariants 与 PostgreSQL。共享 `main` 有两条本地提交、落后远端 89 条且含其他任务未提交改动，因此按已确认的窄范围 PR 方案，从远端 `a60a42a405c2d889accce7d91cf84591352e4439` 建立独立工作树；不移动、暂存或清理共享工作区。
 
-G1/G2 PASS。最近完整 CI `40997603653` 首轮 32/32 job 成功、墙钟 608 秒；最长后端测试步骤约 530 秒，旧 catalog 仍来自 10 月 27 日三轮运行。使用 `40885514914`、`40912681271`、`40997603653` 三轮精确 SHA、attempt=1、完整成功日志，以既有严格刷新器逐分片取最大值。所有非调度策略摘要保持 `53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425`，worker 数、测试选择、进程边界、deadline、重试和超时均未改变。
+G1/G2 PASS。最近完整 CI `40997603653` 首轮 32/32 job 成功、墙钟 608 秒；最长后端测试步骤约 530 秒，旧 catalog 仍来自 10 月 27 日三轮运行。首版使用 `40885514914`、`40912681271`、`40997603653` 三轮精确 SHA、attempt=1、完整成功日志，以既有严格刷新器逐分片取最大值。所有非调度策略摘要保持 `53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425`，worker 数、测试选择、进程边界、deadline、重试和超时均未改变。
 
-离线回放的最长 worker 实际负载分别从 471.852 / 480.687 / 530.311 秒变为 409.275 / 404.905 / 409.267 秒；新 placement 预测 16 个 worker 为 408.048～418.012 秒，spread 9.964 秒。它不含 runner 启动、安装和聚合，不能冒充新 CI 或稳定分位数。脱敏机器证据见 `docs/reviews/2026-10-30-ci-timing-drift-replay.json`。
+首版离线回放的最长 worker 实际负载分别从 471.852 / 480.687 / 530.311 秒变为 409.275 / 404.905 / 409.267 秒；三轮 placement 预测 16 个 worker 为 408.048～418.012 秒，spread 9.964 秒。它不含 runner 启动、安装和聚合，不能冒充新 CI 或稳定分位数。脱敏机器证据见 `docs/reviews/2026-10-30-ci-timing-drift-replay.json`。
 
 新增 `CI timing drift` 后置工作流只观察成功、main、attempt=1 的完整 CI，checkout 精确 head SHA，并下载该 run 的确切日志。漂移门按当前 catalog 的 16-worker 分配比较预测与实测关键路径；单个短分片比例仅作诊断。关键路径变慢超过 20%，或 catalog 已经过 5 次完整成功 main CI 未纳入新来源时，独立观察工作流标记 review required。报告和单轮 observed catalog 保存 14 天；权限仅 `contents: read` / `actions: read`，不自动改 catalog、push、dispatch、设置变量或提供发布授权。
 
 G3 PASS：先写 7 项测试，旧实现因脚本和工作流不存在而 6/6 RED；增加精确 run/SHA 与 main 分支绑定反例后，timing drift、timing refresh、release CI contract 合计 74 passed。使用 `40997603653` 的真实日志和最近完整运行清单执行新观察器，结果 predicted=418.012、observed=409.267、drift=-2.092%、runs_since_source=0、status=CURRENT。首个候选提交后，从候选 workflow 原样读取完整 `Run deployment and rollback invariants` 命令，CI=1 新鲜执行 5645 passed、67 skipped、127 subtests passed，611.87 秒，退出码 0；随后只收紧观察器的精确 SHA/main 绑定并由定向反例覆盖，既有 zip duplicate-name warning 保留，不当作失败或新增 skip。G4 最终固定提交审查、精确候选完整 CI 和后置观察工作流真实运行尚未完成；在此之前不声明线上提速。仅 CI/治理范围，不部署后端、不轮换授权、不发布 OTA 或商店包。
+
+首个 hosted 候选 `fe97a63a1dd0f7d1729fa90781ddbe9bd7538bdc` 的精确 CI `41012046528` 为 attempt=1、32/32 job success，但性能裁决 **NO-GO**：整轮 676 秒，比 608 秒基线慢 11.184%；最长测试步骤 548 秒。确切日志显示 `s-l-z` 从三轮窗口预测 311.506 秒回到 435.687 秒，使该 worker 实际进程负载 547.763 秒，比 418.012 秒预测高 31.04%。不重跑同 SHA、不把 correctness green 冒充性能通过，PR 未合并。
+
+根因是三轮窗口过早淘汰已知长尾：旧 catalog 已观察到 `s-l-z=433.935` 秒。修复使用最近六次完整、首轮成功 main CI 的逐分片最大值，窗口为 `40438974052 / 40442091206 / 40447632037 / 40885514914 / 40912681271 / 40997603653`；滚动窗口随新完整样本自然淘汰旧值，不建立永久单调 floor。六轮 placement 预测为 464.920～472.651 秒，spread 7.731 秒；七个已有样本（含首个 hosted 反例）的回放最长值上界从旧 catalog 的 530.311 秒降为 467.703 秒，反例本身回放为 462.617 秒。该修复仍是离线回放，最终候选必须新的精确 SHA 完整 CI；不使用 workflow rerun 挑样本。

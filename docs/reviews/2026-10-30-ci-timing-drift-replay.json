@@ -7,13 +7,40 @@
   "aggregation": "per_shard_maximum",
   "source_runs": [
     {
+      "run_id": 40438974052,
+      "head_sha": "4f8fffed375006b783cb8ccc586552f1114d8fd5",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "63121d40a585b7f6f2088b2582756abb717c3109d1fb24db653d0f249f22094d",
+      "previous_assignment_critical_seconds": 455.467,
+      "candidate_assignment_critical_seconds": 467.703
+    },
+    {
+      "run_id": 40442091206,
+      "head_sha": "2ce44daedc3bb80386fea7dd54bbdddf74a27ed6",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "8a1781b16560778e4fa45a84b240f24f810578387c3448e974048e847c46ef43",
+      "previous_assignment_critical_seconds": 451.798,
+      "candidate_assignment_critical_seconds": 462.075
+    },
+    {
+      "run_id": 40447632037,
+      "head_sha": "a3492a05af00f50a96ab552ac2403eb7d2e0658b",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "a06d1cebc66e201130f6ccd3d9af539c0c0bb2e2b29deee57e6374e620597596",
+      "previous_assignment_critical_seconds": 449.668,
+      "candidate_assignment_critical_seconds": 457.816
+    },
+    {
       "run_id": 40885514914,
       "head_sha": "feb5d55a917e1f3281e0d6777fa421b568a85e58",
       "attempt": 1,
       "conclusion": "success",
       "logs_zip_sha256": "6e6b7478f3c0b0491c7cc1d69efde24f3d756c2043d3928d4c3f23c685c4c874",
       "previous_assignment_critical_seconds": 471.852,
-      "candidate_assignment_critical_seconds": 409.275
+      "candidate_assignment_critical_seconds": 443.998
     },
     {
       "run_id": 40912681271,
@@ -22,7 +49,7 @@
       "conclusion": "success",
       "logs_zip_sha256": "5038ee2c6f56f5701789a59c5e2139a384f5d742a56c04cdfe06cefa35fe2896",
       "previous_assignment_critical_seconds": 480.687,
-      "candidate_assignment_critical_seconds": 404.905
+      "candidate_assignment_critical_seconds": 466.126
     },
     {
       "run_id": 40997603653,
@@ -31,13 +58,13 @@
       "conclusion": "success",
       "logs_zip_sha256": "1696fdf6be892a1211a82e9edeb6ad172244abfc9d3fd3dfebaa90d30fb88097",
       "previous_assignment_critical_seconds": 530.311,
-      "candidate_assignment_critical_seconds": 409.267
+      "candidate_assignment_critical_seconds": 448.988
     }
   ],
   "previous_predicted_critical_seconds": 457.037,
-  "candidate_predicted_critical_seconds": 418.012,
-  "candidate_predicted_min_seconds": 408.048,
-  "candidate_predicted_spread_seconds": 9.964,
+  "candidate_predicted_critical_seconds": 472.651,
+  "candidate_predicted_min_seconds": 464.92,
+  "candidate_predicted_spread_seconds": 7.731,
   "drift_policy": {
     "critical_path_slower_ratio": 0.2,
     "successful_full_main_runs_since_source": 5,
@@ -47,9 +74,9 @@
   },
   "exact_run_observation": {
     "run_id": 40997603653,
-    "predicted_critical_seconds": 418.012,
-    "observed_critical_seconds": 409.267,
-    "slower_ratio": -0.02092,
+    "predicted_critical_seconds": 472.651,
+    "observed_critical_seconds": 448.988,
+    "slower_ratio": -0.050064,
     "runs_since_source": 0,
     "status": "CURRENT"
   },
@@ -60,8 +87,32 @@
     "release_invariants_seconds": 611.87,
     "exit_code": 0
   },
+  "rejected_three_run_candidate": {
+    "head_sha": "fe97a63a1dd0f7d1729fa90781ddbe9bd7538bdc",
+    "run_id": 41012046528,
+    "attempt": 1,
+    "conclusion": "success",
+    "successful_jobs": 32,
+    "wall_seconds": 676,
+    "baseline_wall_seconds": 608,
+    "wall_slower_ratio": 0.111842,
+    "predicted_critical_seconds": 418.012,
+    "observed_critical_seconds": 547.763,
+    "critical_slower_ratio": 0.3104,
+    "slowest_shard": "s-l-z",
+    "slowest_shard_predicted_seconds": 311.506,
+    "slowest_shard_observed_seconds": 435.687,
+    "logs_zip_sha256": "0eda9e1963879583901f298ab9966d646a551f8b523d1ff6d17f4ecaacde6442",
+    "decision": "PERFORMANCE_NO_GO"
+  },
+  "six_run_holdout_replay": {
+    "run_id": 41012046528,
+    "observed_critical_seconds": 462.617,
+    "previous_catalog_observed_critical_seconds": 446.871
+  },
   "limitations": [
-    "Replay uses three complete first-attempt successful CI logs and is not a new hosted CI result.",
+    "The six-run catalog replay is not a new hosted CI result.",
+    "The first hosted candidate was green for correctness but rejected for performance and was not merged.",
     "Predictions exclude runner start delay, dependency installation and workflow aggregation.",
     "A single observation cannot establish P50, P95 or P99.",
     "The observer only uploads bounded diagnostic artifacts and cannot push, deploy or authorize release."

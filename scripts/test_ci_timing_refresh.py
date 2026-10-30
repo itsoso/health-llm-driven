@@ -87,12 +87,13 @@ def test_real_catalog_retains_all_shards_and_process_policies():
     assert payload["timing_source"]["run_id"] == 40997603653
     assert payload['timing_source']['aggregation'] == 'maximum'
     assert [r['run_id'] for r in payload['timing_source']['runs']] == [
+        40438974052, 40442091206, 40447632037,
         40885514914, 40912681271, 40997603653,
     ]
     assignments = matrix.balance_shards(shards, worker_count=16)
     assigned = [label for worker in assignments for label in worker["shards"].split(",")]
     assert sorted(assigned) == sorted(shard["label"] for shard in shards)
-    assert max(worker["estimated_seconds"] for worker in assignments) == 418.012
+    assert max(worker["estimated_seconds"] for worker in assignments) == 472.651
     assert next(shard for shard in shards if shard["label"] == "a-agenda")["estimated_seconds"] == 20.336
     # Freeze every execution-policy field, including nested process groups and
     # calibrated deadlines; only scheduling telemetry may change in this refresh.
