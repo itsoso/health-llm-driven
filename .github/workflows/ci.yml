@@ -382,6 +382,7 @@ jobs:
           scripts/test_exam_forward_publication.py
           scripts/test_release_timing.py
           scripts/test_release_performance_report.py
+          scripts/test_ci_timing_drift.py
           scripts/test_trusted_ota_startup.py
           scripts/test_generate_api_types.py
           scripts/test_health_evidence_activation_runner.py

@@ -1,0 +1,69 @@
+{
+  "schema_version": "ci_timing_drift_replay.v1",
+  "release_authority": false,
+  "base_sha": "a60a42a405c2d889accce7d91cf84591352e4439",
+  "catalog_policy_sha256": "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425",
+  "worker_count": 16,
+  "aggregation": "per_shard_maximum",
+  "source_runs": [
+    {
+      "run_id": 40885514914,
+      "head_sha": "feb5d55a917e1f3281e0d6777fa421b568a85e58",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "6e6b7478f3c0b0491c7cc1d69efde24f3d756c2043d3928d4c3f23c685c4c874",
+      "previous_assignment_critical_seconds": 471.852,
+      "candidate_assignment_critical_seconds": 409.275
+    },
+    {
+      "run_id": 40912681271,
+      "head_sha": "9e10ddde21b5a8ef95a79784dac817468df96218",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "5038ee2c6f56f5701789a59c5e2139a384f5d742a56c04cdfe06cefa35fe2896",
+      "previous_assignment_critical_seconds": 480.687,
+      "candidate_assignment_critical_seconds": 404.905
+    },
+    {
+      "run_id": 40997603653,
+      "head_sha": "a60a42a405c2d889accce7d91cf84591352e4439",
+      "attempt": 1,
+      "conclusion": "success",
+      "logs_zip_sha256": "1696fdf6be892a1211a82e9edeb6ad172244abfc9d3fd3dfebaa90d30fb88097",
+      "previous_assignment_critical_seconds": 530.311,
+      "candidate_assignment_critical_seconds": 409.267
+    }
+  ],
+  "previous_predicted_critical_seconds": 457.037,
+  "candidate_predicted_critical_seconds": 418.012,
+  "candidate_predicted_min_seconds": 408.048,
+  "candidate_predicted_spread_seconds": 9.964,
+  "drift_policy": {
+    "critical_path_slower_ratio": 0.2,
+    "successful_full_main_runs_since_source": 5,
+    "short_shard_ratio_is_diagnostic_only": true,
+    "automatic_catalog_write": false,
+    "release_authority": false
+  },
+  "exact_run_observation": {
+    "run_id": 40997603653,
+    "predicted_critical_seconds": 418.012,
+    "observed_critical_seconds": 409.267,
+    "slower_ratio": -0.02092,
+    "runs_since_source": 0,
+    "status": "CURRENT"
+  },
+  "local_candidate_verification": {
+    "release_invariants_passed": 5645,
+    "release_invariants_skipped": 67,
+    "release_invariants_subtests_passed": 127,
+    "release_invariants_seconds": 611.87,
+    "exit_code": 0
+  },
+  "limitations": [
+    "Replay uses three complete first-attempt successful CI logs and is not a new hosted CI result.",
+    "Predictions exclude runner start delay, dependency installation and workflow aggregation.",
+    "A single observation cannot establish P50, P95 or P99.",
+    "The observer only uploads bounded diagnostic artifacts and cannot push, deploy or authorize release."
+  ]
+}
