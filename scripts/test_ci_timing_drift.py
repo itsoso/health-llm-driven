@@ -268,12 +268,16 @@ def test_workflow_is_read_only_exact_run_observer():
     bodies = "\n".join(str(step.get("run", "")) for step in job["steps"])
     assert "github.event.workflow_run.id" in bodies
     assert "github.event.workflow_run.head_sha" in bodies
-    assert "actions/runs/${RUN_ID}/logs" in bodies
+    assert "--resource logs" in bodies
     assert "check_ci_timing_observation_scope.py" in bodies
     assert "check_ci_pytest_timing_drift.py" in bodies
+    assert bodies.count("github_actions_read_retry.py") == 4
+    assert "gh api" not in bodies
+    assert "gh run list" not in bodies
     assert not any(token in bodies for token in ("git push", "gh workflow run", "gh variable set"))
     scope = next(step for step in job["steps"] if step.get("id") == "scope")
-    assert "actions/runs/${RUN_ID}/jobs?per_page=100" in scope["run"]
+    assert '--run-id "$RUN_ID"' in scope["run"]
+    assert "--resource jobs" in scope["run"]
     gated_steps = {
         step["name"]: step
         for step in job["steps"]

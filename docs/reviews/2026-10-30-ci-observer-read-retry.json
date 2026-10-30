@@ -1,0 +1,102 @@
+{
+  "schema_version": "ci_observer_read_retry.v1",
+  "status": "G4_PASS",
+  "release_authority": false,
+  "trigger": {
+    "main_sha": "1ae708d08dfdb630cd66101a9dd3f34cf783b757",
+    "ci_run_id": 41068488731,
+    "ci_attempt": 1,
+    "ci_jobs_success": 32,
+    "ci_jobs_total": 32,
+    "ci_wall_seconds": 507,
+    "prior_baseline_wall_seconds": 581,
+    "regression_stop_seconds": 639.1,
+    "observer_run_id": 41069755464,
+    "observer_attempt": 1,
+    "observer_conclusion": "failure",
+    "failure_step": "Collect exact successful run timing evidence",
+    "failure": "GitHub Actions jobs API returned HTTP 502; the single read aborted before observed-catalog.json existed"
+  },
+  "exact_read_only_reconstruction": {
+    "current_run_id": 41068488731,
+    "current_head_sha": "1ae708d08dfdb630cd66101a9dd3f34cf783b757",
+    "status": "CURRENT",
+    "predicted_critical_seconds": 443.441,
+    "observed_critical_seconds": 420.804,
+    "slower_ratio": -0.051049,
+    "largest_shard_slower_ratio": 0.063839,
+    "drift_exceeded": false,
+    "catalog_stale": false,
+    "runs_since_source": 1,
+    "logs_zip_sha256": "415110f425e728c5622f7930db901366f0d8e8420b898fd6cd6755aa38750776",
+    "observed_catalog_sha256": "623387cc16362107b87827f52a0ec4adbfe83ed9708af21a3c0470ad1574d40b",
+    "drift_report_sha256": "ae170f4a6c7e21a58166736515556cca6fdc44bcd3f8f2fe3eebc8b35600e905",
+    "note": "Local reconstruction used only exact GitHub read APIs and the unchanged observer calculators; it does not replace hosted workflow validation of the retry fix."
+  },
+  "change": {
+    "scope": "read-only CI timing observer transport",
+    "allowed_resources": [
+      "jobs",
+      "logs",
+      "successful main CI run list"
+    ],
+    "attempts": 3,
+    "backoff_seconds": [
+      1.0,
+      2.0
+    ],
+    "atomic_output": true,
+    "preserves_existing_output_on_failure": true,
+    "remote_reads_before": 16,
+    "remote_reads_after": 15,
+    "permissions_changed": false,
+    "release_write_retry_added": false,
+    "workflow_rerun_added": false,
+    "timeout_changed": false
+  },
+  "verification": {
+    "tdd_red": [
+      "retry module import failed before implementation",
+      "successful-run-list contract failed before list support and workflow consolidation"
+    ],
+    "focused_contracts": {
+      "passed": 38,
+      "failed": 0
+    },
+    "ci_change_scope": {
+      "passed": 30,
+      "failed": 0
+    },
+    "real_successful_run_list": {
+      "records": 12,
+      "schema_valid": true,
+      "first_run_id": 41068488731
+    },
+    "system_map": "PASS: canonical map, mobile navigation and doc drift",
+    "release_invariants": {
+      "passed": 5655,
+      "skipped": 67,
+      "subtests_passed": 127,
+      "failed": 0,
+      "duration_seconds": 595.75,
+      "exit_code": 0
+    },
+    "dossier_consistency": "PASS: 281 dossiers"
+  },
+  "independent_review": {
+    "reviewed_sha": "ba572757e6655f14fa2c1f998e572a30b8e8af8c",
+    "verdict": "GO",
+    "blocking_findings": 0,
+    "focused_contracts_passed": 38,
+    "ci_change_scope_passed": 30,
+    "failure_probe": "PASS: final nonzero, existing output preserved, temporary files removed, synthetic secret stderr not emitted",
+    "pipeline_failure_propagation": "PASS",
+    "non_blocking_residual": "Individual gh subprocesses have no helper-level timeout; the observer job retains its 10 minute hard timeout."
+  },
+  "pending_gates": [
+    "exact PR CI",
+    "exact main CI and successful hosted observer"
+  ],
+  "deployment_required": false,
+  "ota_required": false
+}
