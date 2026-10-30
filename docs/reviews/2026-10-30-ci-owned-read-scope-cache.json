@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "recorded_at": "2026-10-30T16:10:00+08:00",
+  "recorded_at": "2026-10-30T19:31:00+08:00",
   "scope": "turn-local owned read scope parsing",
   "baseline": {
     "sha": "f169d6f35114d530fdd98d1d603368798fb34276",
@@ -26,8 +26,12 @@
       "status": "success",
       "wall_seconds": 528,
       "successful_jobs": 23,
-      "scope_skipped_jobs": 9
-    }
+      "scope_skipped_jobs": 9,
+      "main_run": 41044942222,
+      "main_status": "success_32_of_32",
+      "main_wall_seconds": 538
+    },
+    "final_main_sha": "c9567c9a92fbd11cb6d52d0aa819c87e03a0accf"
   },
   "change": {
     "cache_scope": "one AgentExecutor and the exact same frozen TurnSnapshot object",
@@ -96,7 +100,12 @@
     },
     "identity_result_sha256": "a4df9280940bb4a4a8c428a214a64b7d816a980a82eea59e4fe855bda63eda83",
     "identity_and_results_equal": true,
-    "new_cache_contract_tests": "2 passed in backend-test-balanced-16; an equal-value new-object boundary regression was added for automatic full-CI recovery"
+    "new_cache_contract_tests": "2 passed in backend-test-balanced-16; an equal-value new-object boundary regression was added for automatic full-CI recovery",
+    "final_main_run": 41044942222,
+    "final_main_process_seconds": 123.541,
+    "final_main_pytest_seconds": 110.72,
+    "baseline_to_final_main_process_reduction_percent": 53.1008,
+    "baseline_to_final_main_pytest_reduction_percent": 52.5703
   },
   "focused_verification": {
     "cache_contract": {
@@ -128,8 +137,8 @@
   "limits": [
     "Local timings are paired single-machine samples, not P50, P95, or P99.",
     "SQLite validates the CI shard behavior but does not replace PostgreSQL semantics in full CI.",
-    "The pull-request run is change-scoped; exact-main full-CI recovery remains required before deployment.",
-    "No backend deployment or OTA is claimed by this record."
+    "The final-main timings are one hosted run, not P50, P95, or P99.",
+    "The production probes validate exact revision, process health, public health, and anonymous authentication; no signed-in device or real health-data acceptance was performed."
   ],
   "gates": {
     "local_correctness": "PASS",
@@ -137,8 +146,9 @@
     "live_llm": "PASS",
     "pull_request_ci": "PASS",
     "initial_main_ci": "FAIL_CONFIRMATION_SNAPSHOT",
-    "full_ci": "RECOVERY_PENDING",
-    "deployment": "PENDING"
+    "full_ci": "PASS",
+    "deployment": "PASS",
+    "timing_observer": "PASS"
   },
   "initial_main_ci_failure": {
     "run": 41043112706,
@@ -153,5 +163,44 @@
     ],
     "rerun": false,
     "recovery": "The evidence commit was bound before push. One workflow_dispatch command returned success but produced no run ID after repeated exact-SHA queries, so it was not replayed. An equal-value new-object cache-boundary regression is used in a subsequent ordinary main push to trigger automatic full CI."
+  },
+  "timing_observer": {
+    "run": 41046073801,
+    "status": "CURRENT",
+    "predicted_critical_seconds": 472.651,
+    "observed_critical_seconds": 463.788,
+    "slower_ratio": -0.018752,
+    "largest_shard_slower_ratio": 0.053504,
+    "catalog_stale": false,
+    "runs_since_source": 3,
+    "artifact_id": 12971329624
+  },
+  "release": {
+    "validate_run": 41046550833,
+    "backend_run": 41047898581,
+    "candidate_sha": "c9567c9a92fbd11cb6d52d0aa819c87e03a0accf",
+    "workflow_status": "success",
+    "production_receipt_state": "SUCCEEDED",
+    "production_receipt_sha256": "a1212ec8419336f47dd9de6e025653f8dac2c114c51fb93e06d75e97e720e49a",
+    "production_clean": true,
+    "services": {
+      "health-backend": "active",
+      "celery-worker": "active",
+      "celery-beat": "active"
+    },
+    "service_restarts": 0,
+    "public_health_status": 200,
+    "public_health": "healthy",
+    "components": {
+      "api": "running",
+      "database": "connected",
+      "redis": "connected",
+      "celery": "connected"
+    },
+    "anonymous_agent_post_status": 401,
+    "business_lease_present": false,
+    "ota_required": false,
+    "ota_reason": "No mobile or native files changed.",
+    "backups_created": false
   }
 }
