@@ -110,6 +110,26 @@
     "observed_critical_seconds": 462.617,
     "previous_catalog_observed_critical_seconds": 446.871
   },
+  "accepted_six_run_candidate": {
+    "head_sha": "55ff86d29b0ea4b23ae79637a77003edcb6abd41",
+    "run_id": 41013492648,
+    "attempt": 1,
+    "conclusion": "success",
+    "successful_jobs": 32,
+    "wall_seconds": 587,
+    "baseline_wall_seconds": 608,
+    "wall_slower_ratio": -0.034539,
+    "predicted_critical_seconds": 472.651,
+    "observed_critical_seconds": 514.644,
+    "critical_slower_ratio": 0.088846,
+    "slowest_test_step_seconds": 515,
+    "s_l_z_observed_seconds": 420.331,
+    "p_observed_seconds": 299.524,
+    "release_invariants_job_seconds": 399,
+    "agent_runtime_postgres_job_seconds": 476,
+    "logs_zip_sha256": "a0490cd9496079ced8d2c65acdc48f26fbee223699c2ada0ae3b5822afd009d0",
+    "decision": "G5_CODE_PASS"
+  },
   "limitations": [
     "The six-run catalog replay is not a new hosted CI result.",
     "The first hosted candidate was green for correctness but rejected for performance and was not merged.",
