@@ -9338,6 +9338,10 @@ _VOICE_SINGLE_DIET_RECORD_RE = re.compile(
     r"(?:请)?记录(?:下来)?[，,]?(?:我)?吃了"
     r"(?P<food>[^，,、和与及。！？!?]{1,24})[。！？!?]?"
 )
+_DIRECT_SINGLE_DIET_RECORD_RE = re.compile(
+    r"(?:请)?(?:帮我)?(?:记录(?:一下)?|记下|打卡)"
+    r"(?P<food>[^，,、和与及。！？!?；;]{1,24})[。！？!?]?"
+)
 _VOICE_SINGLE_DIET_PORTION_RE = re.compile(
     r"(?:半|[零一二两三四五六七八九十百\d]+)"
     r"(?:千克|公斤|毫升|kg|ml|个|粒|颗|枚|杯|碗|份|片|根|块|盒|瓶|克|g)"
@@ -9393,6 +9397,8 @@ def _is_explicit_single_food_voice_record(
     """Prove one closed food span, with no second action or non-food intake."""
     candidate = str(message or "").replace(" ", "").replace("\u3000", "")
     match = _VOICE_SINGLE_DIET_RECORD_RE.fullmatch(candidate)
+    if match is None:
+        match = _DIRECT_SINGLE_DIET_RECORD_RE.fullmatch(candidate)
     if match is None:
         return False
     food = match.group("food")
@@ -20291,7 +20297,7 @@ class AgentExecutor:
                                 owned_read_preplanned = True
                             if (
                                 not proposed_calls and round_idx == 0
-                                and channel == "voice"
+                                and channel in {"typed", "voice"}
                                 and _is_explicit_single_food_voice_record(
                                     message,
                                     goal=(

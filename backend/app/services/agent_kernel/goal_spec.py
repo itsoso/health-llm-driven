@@ -165,7 +165,7 @@ SIMPLE_ILLNESS_NAME_RE = re.compile(
     re.IGNORECASE,
 )
 SIMPLE_ILLNESS_ACRONYMS = frozenset({"sle"})
-GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v46"
+GOAL_SPEC_CONTRACT_VERSION = "goal-spec-v47"
 _ACTIONABLE_DIET_CARD_TYPES = {
     "diet_daily_summary",
     "diet",
@@ -938,7 +938,21 @@ def _simple_diet_target(
         _, meal_end, meal_type = min(meal_matches, key=lambda item: item[0])
         foods = raw[meal_end:]
     else:
-        match = re.search(
+        direct_match = re.fullmatch(
+            r"(?:请)?(?:帮我)?(?:记录(?:一下)?|记下|打卡)\s*"
+            r"(?P<foods>[^。！？!?；;]{1,40})[。！？!?]?",
+            raw,
+        )
+        direct_foods = (
+            direct_match.group("foods").strip()
+            if direct_match is not None
+            else ""
+        )
+        if direct_foods and not write_intent_scope_module.is_quantified_meal_observation(
+            f"加餐{direct_foods}"
+        ):
+            direct_match = None
+        match = direct_match or re.search(
             r"(?:记录(?:一下)?|记下|打卡|帮我记录)?\s*"
             r"(?:我)?\s*(?:(?:刚才|刚刚|已经|今天)\s*)?"
             r"(?:吃了|吃的是|吃|点了)\s*(?P<foods>.+)",

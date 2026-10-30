@@ -5,8 +5,8 @@
 | slug | daily-planning-and-diet-record-latency |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
-| 当前阶段 | G5 exact-SHA CI |
-| 状态 | independent G4 GO; pending exact-SHA CI and backend release |
+| 当前阶段 | G4 fresh safety review |
+| 状态 | G3 passed for black-rice-porridge increment; pending fixed commit and reviewer verdict |
 
 ## G1 准入
 
@@ -17,6 +17,7 @@
 - 生产脱敏日志证明，日程请求被分类为低置信度未知补剂请求，路由模型超时后又提出个人读取、补剂指南和知识检索；本人查询被 owner scope 拒绝，最终以错误状态结束。根因是本地通用日程闭合语法只覆盖饮食、运动和睡眠，未覆盖补剂。
 - 明确桃子记录被编译为 `write/diet/create`，写工具取得可验证回执并完成；截图中的等待不是未写入。该回合仍经过写前外层模型、营养估算和写后外层模型，总耗时约 22 秒，反馈体验不合格。
 - 生产调查只读取脱敏运行元数据、工具决策、耗时和部署 revision；没有输出或修改真实健康载荷。
+- 2026-10-30 新截图对应生产 SHA `feb5d55a917e1f3281e0d6777fa421b568a85e58`。09:57 与 10:11 两次“记录一碗黑米粥”类请求都被识别为当前认证用户的 `write/diet/create`，但 `nutrition_estimate_ms` 和 `nutrition_model` 均为空，说明没有进入服务端营养补全。09:57 外层模型连续 8 轮产生不完整营养，反复缺少纤维或宏量营养；10:11 首轮同样被完整营养守门拒绝后停止。两次都没有写回执，现有安全守门正确阻止了不完整餐食数据落库。调查只读取脱敏日志元数据；未读取、修改或补写真实饮食记录。
 
 ## Implementation
 
@@ -30,6 +31,9 @@
 - 第二次修复把 source message、当前日期和完整 GoalSpec 闭合校验下沉到 `_build_preplanned_simple_diet_tool_call`；两个入口及未来调用者缺任一证明都只能得到 `None`。负测改用有效营养和有效写回执，并分别覆盖空、非空的模型 stop/no-tools；测试直接断言 estimator 与 dispatcher 调用次数均为零，不再依赖异常传播。
 - 精确主干 CI `40910140319` 暴露了该次下沉的真实兼容性回归：`backend-test-balanced-14` 中 5 项失败，明确晚餐多食物、明确晚餐干枣及营养补全失败边界都被单食语音资格误拦截；其余已完成作业保持原始结果，整次运行按失败保留且不重跑。修复把“首轮跳过外层模型”的单食语音资格与“模型无工具后”的闭合餐次兜底分开；后者仍完整绑定当前 GoalSpec 的 owner 侧目标、日期、餐次和食物文本，并拒绝追加查询/写入、药品和补剂，不扩大到一般自由文本。
 - 该兼容修复的首次独立 G4 仍为 NO-GO：宽泛 food 捕获加残余词黑名单会把“给妈妈”“和妈妈吃的苹果”“并查血脂”“多少卡”与食物一起吞入 GoalSpec，并可在模型 stop/no-tools 后写入当前认证用户，造成第三方归属污染和复合查询误写。最终修复删除该黑名单授权方式；闭合餐次兜底只接受受限食物名、明确份量和受限分隔符构成的正向餐食项序列，其他自由文本继续留在模型及共享安全策略路径。
+- 新的直接份量语法覆盖 `记录一碗黑米粥`：GoalSpec 只在整句为明确记录动作、一个受限份量和受限食物名时编译当前用户、当天、单餐 `diet/create`；餐次继续按已有本地时间规则推断。受限食物集合增加黑米粥、小米粥、燕麦粥和白粥。
+- 首轮服务端预规划只扩展到截图实际的 `typed` 与既有 `voice` 渠道。普通 `chat` 继续允许模型先提供完整结构化营养，避免覆盖已有高质量营养结果。所有渠道仍必须通过原有营养完整性、Tool Gateway、真实分发和回执 postcondition。
+- 直接短句资格继续完整绑定 GoalSpec 食物、日期、当前用户和单次创建；布洛芬、钙片、追加昨日饮食查询、追加第三方归属均不能编译成该目标或进入营养估算/写分发。首个过宽实现导致 5 项邻近回归，已收窄渠道边界并修复一个依赖运行时钟的既有测试断言；失败证据保留，不作为通过。
 
 ## Verification evidence
 
@@ -42,6 +46,9 @@
 - 实时 LLM Gate 的 5 个 orchestrator 用例全部被隐私层以 `recipient_not_disclosed` 阻断，未取得评分，不能计为通过；脱敏 JSON SHA-256 为 `357fc74b78ed69809a5ad614e68286dd1a44d9cf4421356cd78d0f31cf5be1c5`。用户此前已明确授权一次性豁免和部署，豁免须在固定提交后绑定精确 SHA。
 - 修复后离线 LLM Gate 再次通过：invariants 12/12、health agent core 50/50、trajectory contract 12/12、goldens 9/9。`py_compile` 与 `git diff --check` 通过；Dossier、System Map、skill governance 和精确 SHA CI 等证据在下游 Gate 完成后追加。
 - 最终正向餐食序列修复后，原失败文件及全部相关日程、当前输入、执行器、症状、共享写意图回归共 844 passed；聚焦 48 项通过。执行器级负测向 estimator 和 dispatcher 提供可成功的合成实现，直接确认追加饮食查询、追加心率写、给妈妈、妈妈所吃食物、血脂查询、热量查询、否定、引用、布洛芬、钙片及未知实体均为零营养估算、零分发。离线 LLM Gate 仍为 12/12、50/50、12/12、9/9；System Map、Dossier 一致性、skill governance、`py_compile` 和 `git diff --check` 通过。该工作树增量仍待新的固定提交独立 G4 和新的精确 SHA 完整 CI，不能用失败运行的其他绿色作业替代。
+- 黑米粥新增 RED 在旧实现稳定复现：GoalSpec 为一般 `write` 而非单一可验证目标，执行器未调用营养估算并进入外层模型。最小实现后聚焦正向、药物/补剂、追加查询和第三方归属共 11 项通过。随后 830 项扩大回归首次得到 825 passed / 5 failed；失败证明所有聊天渠道抢跑会覆盖模型完整营养，以及既有语音测试把动态餐次写死。边界收窄到 `typed`/`voice` 后，原 5 项和新增黑米粥路径共 6 项全部通过。完整扩大回归仍需 fresh rerun 后才能更新为 G3 PASS。
+- 收窄后的 fresh 扩大回归为 834 passed；`py_compile`、`git diff --check` 与 agent-skill governance 均通过。该结果只证明本地增量，仍需固定提交上的独立 G4、LLM change gate、CI-mode 集成闸和精确主干 CI。
+- 共享意图分类、能力策略、强制写工具和防假成功扩大回归 fresh 3278 passed。实时 LLM gate 的 invariants 12/12、health agent core 50/50、trajectory 12/12、goldens 9/9 通过；5 个 orchestrator 用例全部被隐私层以 `recipient_not_disclosed` 阻断并记为 errored，未取得评分，不能计为 live PASS。脱敏 JSON 位于 `/tmp/reva-black-rice-live-llm.json`，SHA-256 `3457cadbabc82a5fdea2b117a256b64a76e4fba7b5abeda73e83665b7cb40d4e`。任何豁免都必须在新提交固定后绑定该精确 SHA，不能复用旧候选的一次性变量。
 
 ## Safety boundaries
 
@@ -54,7 +61,7 @@
 
 - G1: PASS
 - G2: PASS，复用现有闭合 advice scope、GoalSpec、营养补全、Gateway 和 postcondition。
-- G3: PASS
-- G4: GO on the final positive food-sequence remediation; prior `2edface1`, `d74b33c` and the first compatibility remediation NO-GO findings are retained above
-- G5: PENDING exact-main CI and trusted backend release
+- G3: PASS, fresh 834-test focused expansion plus compile/diff/governance checks
+- G4: PENDING fresh independent review for the new increment; prior GO and NO-GO findings are retained above
+- G5: PENDING new fixed commit, exact-main CI and trusted backend release
 - G6: PENDING production receipt, revision, health and anonymous-auth probes

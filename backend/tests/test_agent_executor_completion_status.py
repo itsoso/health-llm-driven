@@ -3570,9 +3570,90 @@ async def test_agent_stream_exact_voice_peach_record_skips_outer_tool_model(
     assert len(dispatched) == 1
     assert dispatched[0][0] == "health_record"
     assert dispatched[0][1]["data"]["food_items"] == "一粒桃子"
-    assert "已记录加餐" in rendered
+    expected_label = {
+        "breakfast": "早餐",
+        "lunch": "午餐",
+        "dinner": "晚餐",
+        "snack": "加餐",
+    }[dispatched[0][1]["data"]["meal_type"]]
+    assert f"已记录{expected_label}" in rendered
     assert done["data"]["completion_status"] == "complete"
     assert done["data"]["write_receipts"][0]["resource_id"] == "112"
+    assert done["data"]["llm_rounds"] == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_stream_direct_black_rice_porridge_record_skips_outer_tool_model(
+    db, auth_user_and_headers, monkeypatch
+):
+    user, _headers = auth_user_and_headers
+    executor = AgentExecutor(db)
+    dispatched = []
+    estimate_calls = []
+
+    async def forbid_model(*_args, **_kwargs):
+        raise AssertionError("direct quantified diet goal must not call the outer model")
+
+    async def forbid_model_stream(*_args, **_kwargs):
+        raise AssertionError("direct quantified diet goal must not stream from the outer model")
+        yield  # pragma: no cover
+
+    async def fake_estimate(food_items):
+        estimate_calls.append(food_items)
+        return {
+            "calories": 180,
+            "protein": 4.2,
+            "carbs": 38,
+            "fat": 1.1,
+            "fiber": 2.4,
+        }
+
+    async def fake_dispatch(request, user_token):
+        dispatched.append((request.tool_name, request.arguments, user_token))
+        return json.dumps(
+            {
+                "id": 114,
+                "meal_type": request.arguments["data"]["meal_type"],
+                "food_items": request.arguments["data"]["food_items"],
+                "calories": request.arguments["data"]["calories"],
+            },
+            ensure_ascii=False,
+        )
+
+    monkeypatch.setattr(executor, "_call_llm", forbid_model)
+    monkeypatch.setattr(executor, "_call_llm_stream", forbid_model_stream)
+    monkeypatch.setattr(
+        "app.services.agent_executor._estimate_simple_diet_nutrition",
+        fake_estimate,
+    )
+    monkeypatch.setattr(executor, "_dispatch_tool_request", fake_dispatch)
+
+    events = [
+        event
+        async for event in executor.run_stream(
+            user_id=user.id,
+            message="记录一碗黑米粥",
+            channel="typed",
+            user_auth_token="test-token",
+            client_turn_id="turn-direct-black-rice-porridge-preplanned",
+        )
+    ]
+
+    rendered = "".join(
+        event["data"].get("content", "")
+        for event in events
+        if event.get("event") == "token"
+    )
+    done = next(event for event in events if event.get("event") == "done")
+
+    assert estimate_calls == ["一碗黑米粥"]
+    assert len(dispatched) == 1
+    assert dispatched[0][0] == "health_record"
+    assert dispatched[0][1]["data"]["food_items"] == "一碗黑米粥"
+    assert "已记录" in rendered
+    assert "这次没有写入" not in rendered
+    assert done["data"]["completion_status"] == "complete"
+    assert done["data"]["write_receipts"][0]["resource_id"] == "114"
     assert done["data"]["llm_rounds"] == 0
 
 
@@ -3584,6 +3665,10 @@ async def test_agent_stream_exact_voice_peach_record_skips_outer_tool_model(
         "记录下来，吃了一粒布洛芬",
         "记录下来，吃了一粒钙片",
         "记录下来，吃了一粒合成未知名称",
+        "记录一粒布洛芬",
+        "记录一粒钙片",
+        "记录一碗黑米粥然后查看昨天的饮食",
+        "记录一碗黑米粥给妈妈",
     ),
 )
 def test_voice_single_food_fast_path_rejects_residual_actions_and_non_food_intake(

@@ -683,6 +683,62 @@ def test_simple_diet_goal_infers_local_meal_for_anchor_peach_phrases(message):
     }
 
 
+def test_simple_diet_goal_accepts_direct_quantified_black_rice_porridge_record():
+    context = replace(
+        ExecutionContext.for_test(user_id=1, channel="mobile"),
+        current_time=ExecutionContext.for_test(
+            user_id=1,
+            channel="mobile",
+        ).current_time.replace(hour=10, minute=11),
+    )
+    envelope = AgentEnvelope(
+        user_id=1,
+        channel="mobile",
+        text="记录一碗黑米粥",
+    )
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind == "simple_health_record"
+    assert goal.domain == "diet"
+    assert goal.operation == "create"
+    assert goal.target_record_type == "diet"
+    assert goal.target_meal_types == ("lunch",)
+    assert dict(goal.target_values) == {
+        "meal_type": "lunch",
+        "food_items": "一碗黑米粥",
+    }
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录一粒布洛芬",
+        "记录一粒钙片",
+        "记录一碗黑米粥然后查看昨天的饮食",
+        "记录一碗黑米粥给妈妈",
+    ),
+)
+def test_direct_quantified_diet_goal_rejects_non_food_and_residual_scope(message):
+    context = ExecutionContext.for_test(user_id=1, channel="mobile")
+    envelope = AgentEnvelope(user_id=1, channel="mobile", text=message)
+    intent = build_intent_frame(envelope, context)
+
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=intent,
+    )
+
+    assert goal.kind != "simple_health_record"
+    assert goal.target_record_type is None
+
+
 def test_simple_diet_goal_uses_user_owned_relative_date():
     context = ExecutionContext.for_test(user_id=1, channel="mobile")
     envelope = AgentEnvelope(
