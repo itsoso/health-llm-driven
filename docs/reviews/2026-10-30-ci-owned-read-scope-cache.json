@@ -1,0 +1,107 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-10-30T16:10:00+08:00",
+  "scope": "turn-local owned read scope parsing",
+  "baseline": {
+    "sha": "f169d6f35114d530fdd98d1d603368798fb34276",
+    "full_ci_runs": [
+      41015741501,
+      41020241592
+    ],
+    "hosted_r_other_process_seconds": [
+      261.777,
+      263.418
+    ]
+  },
+  "candidate": {
+    "code_commit": "fb6841425",
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "d70b961110af6a2062c9779a23f8de03c0589abc62c1967b95c592668b0d74e2",
+      "backend/tests/test_agent_owned_read_scope_cache.py": "8feeb660ff551c1a7778c4f5a87480372f969fb3de82ee6599e4254382342b8b"
+    },
+    "hosted_ci": "pending"
+  },
+  "change": {
+    "cache_scope": "one AgentExecutor and the exact same frozen TurnSnapshot object",
+    "invalidates_on": [
+      "owner change",
+      "date or current-time change",
+      "source-message rebind",
+      "actionable-context rebind",
+      "intent or goal rebind"
+    ],
+    "failure_semantics": "resolution exceptions propagate and are not cached",
+    "global_cache": false,
+    "authorization_decision_cache": false
+  },
+  "local_exact_shard_comparison": {
+    "runner": "scripts/run_ci_pytest_worker.py --shards r-other",
+    "environment": {
+      "DATABASE_URL": "sqlite:///:memory:",
+      "TZ": "Asia/Shanghai"
+    },
+    "baseline": {
+      "process_seconds": 103.609,
+      "pytest_seconds": 97.46,
+      "testcase_seconds": 93.672,
+      "passed": 1093,
+      "skipped": 6,
+      "failed": 0,
+      "errored": 0
+    },
+    "candidate": {
+      "process_seconds": 88.395,
+      "pytest_seconds": 83.21,
+      "testcase_seconds": 79.266,
+      "passed": 1093,
+      "skipped": 6,
+      "failed": 0,
+      "errored": 0
+    },
+    "process_reduction_percent": 14.6841,
+    "pytest_reduction_percent": 14.6214,
+    "testcase_count": 1099,
+    "identity_result_sha256": "a4df9280940bb4a4a8c428a214a64b7d816a980a82eea59e4fe855bda63eda83",
+    "identity_and_results_equal": true
+  },
+  "focused_verification": {
+    "cache_contract": {
+      "passed": 2,
+      "failed": 0
+    },
+    "pre_final_broad_regression": {
+      "passed": 570,
+      "warnings": 6,
+      "note": "The final atomic failure-cache fix was then covered by the focused contract and exact r-other shard."
+    },
+    "system_map": "passed",
+    "agent_skill_governance": "passed",
+    "diff_check": "passed",
+    "compile": "passed"
+  },
+  "live_llm_gate": {
+    "status": "passed",
+    "synthetic_in_memory_database": true,
+    "production_health_data_accessed": false,
+    "invariants": "12/12",
+    "health_agent_core": "50/50",
+    "orchestrator": "5/5",
+    "orchestrator_average_score": 0.94,
+    "trajectory_contract": "12/12",
+    "trajectory_goldens": "9/9",
+    "raw_local_report_sha256": "f200291c0641d243e0b4175b51c40b150a6ac4aef3ab392dacea78bb5dffdef7"
+  },
+  "limits": [
+    "Local timings are paired single-machine samples, not P50, P95, or P99.",
+    "SQLite validates the CI shard behavior but does not replace PostgreSQL semantics in full CI.",
+    "Hosted full-CI impact remains unknown until the exact candidate run completes.",
+    "No backend deployment or OTA is claimed by this record."
+  ],
+  "gates": {
+    "local_correctness": "PASS",
+    "local_performance": "PASS",
+    "live_llm": "PASS",
+    "full_ci": "PENDING",
+    "deployment": "PENDING"
+  }
+}

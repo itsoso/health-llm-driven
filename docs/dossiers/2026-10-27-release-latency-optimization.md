@@ -292,3 +292,15 @@ P1 分片拆分实验 **NO-GO**，未提交候选、未触发托管 CI。`s-l-z`
 P0.1 边界修复：证据 PR 合入 main `7dc9ca389f3a4d0f9c67f7cdaf1f34457f98284a` 后，docs-only CI `41018930457` 首轮成功且没有后端分片；旧观察器仍启动，并在 run `41019007598` 因缺少分片日志失败。该失败不影响主 CI、代码或发布，但会制造错误告警。新入口先读取触发 run 的确切 jobs：0 个匹配后端分片表示 docs-only，正常输出 `eligible=false`；只有完整且成功的 `balanced-01..16` 才进入日志下载、漂移评估和制品上传；1～15 个、重复、失败或异常矩阵均失败。完整矩阵的评估失败仍以 `always && eligible` 上传诊断制品。测试先因脚本/门缺失 2 项 RED，修复后 timing drift / refresh / release contract 75 passed。待精确 PR 与 main CI 验证后更新 G6；不重跑既有失败 observer，不触发部署或 OTA。
 
 P0.1 G6 PASS：[PR #289](https://github.com/itsoso/health-llm-driven/pull/289) 合入 main `ad49cccfda9a99b7ae9d5383635bccbd7eb8573b`；精确 main [CI 41020241592](https://github.com/itsoso/health-llm-driven/actions/runs/41020241592) attempt=1、32/32 success。后置 [observer 41021168613](https://github.com/itsoso/health-llm-driven/actions/runs/41021168613) 的完整矩阵 scope 成功，随后报告 `CURRENT`：predicted=472.651、observed=472.479 秒、slower_ratio=-0.0364%、runs_since_source=2、catalog_stale=false，并上传 artifact `12960964092`。旧 docs-only 失败 run 保留、未重跑。最终 docs-only 安静跳过路径由本证据提交合入后的 main run 再核验；该路径只影响诊断噪声，不赋予发布权限。
+
+## 第九阶段：同一不可变回合内复用读取范围（2026-10-30）
+
+用户继续授权优化 CI/CD。沿用 Health Harness、性能治理和同一 Dossier；从精确 `origin/main` `f169d6f35114d530fdd98d1d603368798fb34276` 创建独立工作树，保留共享根目录的分叉和未提交改动。最近两轮完整 main CI `41015741501 / 41020241592` 均为 32/32 成功；其中 `r-other` 进程分别为 261.777 / 263.418 秒，74 项 `test_running_analysis_runtime.py` 稳定占约 94 秒。cProfile 显示同一 frozen `TurnSnapshot` 的纯范围解析被重复调用，单个代表用例中 `resolve_owned_read_scope` 56 次、累计约 1.156 秒。
+
+G1/G2 PASS。方案只在一个 `AgentExecutor` 内、且输入仍是同一 `TurnSnapshot` 对象时复用 `OwnedReadScope`。任何 owner、日期、来源消息、actionable context、intent 或 goal 重绑定都会创建新 snapshot 并重新解析；异常在写入缓存前继续上抛，不缓存失败；不建立全局缓存，也不缓存最终授权裁决。生产消费者静态核验只读 scope 或复制 query 字典，没有共享可变写入。停止条件为 owner/date/第三方拒绝或异常传播发生差异、用例集合变化、同机无收益，或托管完整 CI 退化超过紧邻 main 10%。
+
+G3 本地 PASS。新增两项契约测试先分别因入口缺失、失败被错误缓存而 RED；最小修正后通过。同机按真实 `r-other` runner 对照：基线 103.609 秒，候选 88.395 秒，减少 14.684%；pytest 时间 97.46→83.21 秒。两侧均为 1093 passed、6 skipped、0 failure/error，1099 项 testcase 身份与结果多重集合摘要同为 `a4df9280...da63eda83`。此前同一 74 项热点的配对样本为 42.89→32.74 秒；只把这些结果视为单机样本，不推断稳定 P50/P95/P99。
+
+安全与质量验证：最终精确 `r-other` 1099 项通过；缓存契约 2 项通过；修正前的相关宽回归 570 项通过，最终异常原子性由契约与完整分片覆盖。真实模型 gate 使用合成用户和内存 SQLite，不访问生产健康数据：invariants 12/12、health-agent-core 50/50、orchestrator 5/5（均分 0.94）、trajectory 12/12、goldens 9/9，无回归。System Map、agent-skill governance、diff 及 compile 检查通过。机器证据见 `docs/reviews/2026-10-30-ci-owned-read-scope-cache.json`。
+
+G4/G5/G6 尚未完成：代码提交为 `fb6841425`，仍需最终证据提交、精确 PR 完整 CI、main CI 和后置 timing observer。由于修改了后端执行路径，合并后需按精确 main SHA 发布后端并验证健康/匿名 401；没有移动端或原生改动，不需要 OTA、TestFlight 或 App Store 发布。CI 绿色不冒充部署完成。
