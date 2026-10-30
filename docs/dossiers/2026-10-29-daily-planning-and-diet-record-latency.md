@@ -5,8 +5,8 @@
 | slug | daily-planning-and-diet-record-latency |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
-| 当前阶段 | G4 fresh safety review |
-| 状态 | G3 passed for black-rice-porridge increment; G4 remediation tests passing, pending fresh fixed-commit review |
+| 当前阶段 | G4 fresh safety review after dependency remediation |
+| 状态 | backend behavior and typed safety review passed; exact-main CI exposed a new mobile dependency advisory, remediated locally and pending fresh fixed-commit review |
 
 ## G1 准入
 
@@ -51,6 +51,8 @@
 - 共享意图分类、能力策略、强制写工具和防假成功扩大回归 fresh 3278 passed。实时 LLM gate 的 invariants 12/12、health agent core 50/50、trajectory 12/12、goldens 9/9 通过；5 个 orchestrator 用例全部被隐私层以 `recipient_not_disclosed` 阻断并记为 errored，未取得评分，不能计为 live PASS。脱敏 JSON 位于 `/tmp/reva-black-rice-live-llm.json`，SHA-256 `3457cadbabc82a5fdea2b117a256b64a76e4fba7b5abeda73e83665b7cb40d4e`。任何豁免都必须在新提交固定后绑定该精确 SHA，不能复用旧候选的一次性变量。
 - 固定提交 `9a9ab26a634542a3707c40b7094b7619d0b42c5f` 的独立 G4 判为 NO-GO。静态复核未发现新增越权路径，正向 typed 写已证明一次营养估算、一次分发、验证回执和零外层模型轮次；阻断点是测试证据没有让新增 typed 执行器入口实际承受药品、补剂、复合读取和第三方归属，也没有覆盖营养补全失败与回执缺失/错型后的防假成功和防重复分发。该候选未推送、未部署。
 - 按复核要求新增真实 typed 执行器测试：布洛芬、钙片、追加昨日饮食查询和“给妈妈”四种输入均使用可成功的 estimator/dispatcher 作为陷阱，实际为零估算、零分发、零回执；营养补全返回空时只估算一次、零分发并显式返回完整营养失败；分发返回缺失身份或错误资源类型时均只分发一次、零验证回执、屏蔽模型“已经记录好了”，并进入 `write_reconciliation_required/missing_receipt`。新增及相邻正反路径 fresh 30 passed，待新的固定提交和 fresh 独立 G4。
+- 固定提交 `b4e3f37dfe916e4629cbaec3d836d0d82a972de6` 的 fresh 独立 G4 为 GO；本地 CI-mode 发布集成闸退出码为 0，结果为 5638 passed / 67 skipped / 127 subtests。该提交推送后，精确主干 CI `40995174585` 的 32 个作业中只有 `mobile-typecheck` 失败；失败步骤为生产依赖 OSV 审计，新披露的 `GHSA-qr28-fpjm-wq7f` 将锁定的 `decode-uri-component@0.5.0` 判为 HIGH。该失败运行按原结论保留，未重跑，也没有把其他 31 个绿色作业冒充完整 CI 通过。
+- 移动端依赖覆盖已从 `decode-uri-component@0.5.0` 升至上游首个修复版本 `0.5.1`，并同步 lockfile。安装树证明 `query-string@7.1.3` 实际解析到 `0.5.1`；实时 OSV gate、TypeScript、设计 token、签名回补测试、依赖兼容/图片解析 DoS 测试、OSV gate 自测均通过。移动端主 Jest 套件为 377 suites / 3846 passed / 1 skipped，四个隔离状态套件另有 84、80、34、7 项全部通过。该跨域依赖修复需在新的精确提交上重跑独立 G4、本地 CI-mode 与完整主干 CI，之后才能进入可信后端发布。
 
 ## Safety boundaries
 
@@ -64,6 +66,6 @@
 - G1: PASS
 - G2: PASS，复用现有闭合 advice scope、GoalSpec、营养补全、Gateway 和 postcondition。
 - G3: PASS, fresh 834-test focused expansion plus compile/diff/governance checks
-- G4: PENDING fresh independent review after executor-level typed safety remediation; `9a9ab26` NO-GO retained above
+- G4: PENDING fresh independent review of the final backend plus dependency-remediation commit; `b4e3f37` backend behavior review GO and earlier NO-GO evidence retained above
 - G5: PENDING new fixed commit, exact-main CI and trusted backend release
 - G6: PENDING production receipt, revision, health and anonymous-auth probes
