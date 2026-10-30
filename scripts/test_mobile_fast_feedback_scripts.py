@@ -41,7 +41,7 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["js-yaml@>=4.0.0 <5.0.0"] == "4.3.2"
     assert overrides["@xmldom/xmldom"] == "0.8.15"
     assert overrides["xmldom"] == "npm:@xmldom/xmldom@0.8.15"
-    assert overrides["decode-uri-component"] == "0.5.0"
+    assert overrides["decode-uri-component"] == "0.5.1"
     assert overrides["joi"] == "17.13.8"
     assert overrides["nanoid"] == "3.3.18"
     assert overrides["postcss"] == "8.5.26"
