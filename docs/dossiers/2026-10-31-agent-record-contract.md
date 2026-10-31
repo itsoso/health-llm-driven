@@ -2,9 +2,9 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | implementation |
-| 当前阶段 | G4 committed-diff review and release validation |
-| Controller | backend-deploy, safety-gate overlay |
+| 状态 | released |
+| 当前阶段 | G6 Web, Mobile and native baseline verified |
+| Controller | mobile-testflight-release, safety-gate overlay |
 
 ## G1 admission
 
@@ -148,3 +148,35 @@ reported errSecMissingEntitlement (-34018). Rebuilding with Xcode simulator sign
 application identifier in the Mach-O simulator entitlement section. After reinstall and restart,
 the candidate opens its login screen. Authenticated acceptance still awaits a fresh user login;
 no plaintext fallback, injected token, or test health writes to the personal account were used.
+
+## Final Mobile release verification
+
+- Release policy / backend / OTA source: `82230e97d697d60623a30d6dc44bf173752016eb`,
+  independently reviewed GO; 576 release/baseline regression tests passed. Full exact CI
+  `41199072362` passed, including PostgreSQL integration. System Map checks passed.
+- Trusted preflight `41199812389`, backend `41200800100`, OTA validation `41201430253`
+  and OTA publication `41201691468` all succeeded. Production revision matches the
+  release source; backend/Web active and API/database/Redis/Celery health verified.
+- Production OTA group `84f737e4-1844-4351-9218-9eccb4bf7103`, iOS update
+  `01a191f9-c266-7c98-b34a-d846d7396ded`, runtime 1.3.6. Server completed receipt is
+  SUCCEEDED, verified receipt binds the same SHA; business lease is released.
+- Native Store build 287 is VALID / IN_BETA_TESTING. The new baseline preserves
+  every reviewed prior 1.3.6 host and all source/cohort checks. No second native
+  build/upload was triggered for the policy-only commit.
+- The user successfully logged in to the corrected signed simulator candidate.
+  Today, chat history and AI data-sharing privacy page loaded. A whole simulator
+  restart restored the authenticated chat without another login. Web Agenda and
+  AI assistant also loaded after deployment. No synthetic health records were
+  written to the personal account.
+- Simulator evidence uses a same-source Release simulator artifact (local build
+  number 1); it is explicitly distinct from the signed Store IPA (build 287).
+  Physical installation, hardware-only integrations and simulator OTA uptake are
+  not claimed. TestFlight availability is not public App Store publication.
+- The first canonical activation invocation used system Python 3.10 and failed
+  on a Python 3.12 audit dependency before any intent or policy mutation. After
+  read-only proof of unchanged state, canonical Python 3.12 verified history and
+  live native terminal evidence and completed the locked rotation. No claim,
+  audit or authorization check was deleted or bypassed.
+
+This final section supersedes earlier in-progress acceptance notes. The final
+documentation-only commit does not change deployed runtime or publisher code.
