@@ -1808,3 +1808,23 @@ and uses the original launcher lock and business lease. All three services must
 read back the new policy. Failure retains the journal/lease; only explicit
 `--resume --apply` for the original binding may continue. This is not a general
 env editor or a replacement for real browser/native login acceptance.
+
+
+#### Pending activation on the next authorized release (2026-10-31)
+
+The user requested that the Edu viewer change remain on main and ship with the
+next release; do not retry deployment solely for this association. The application
+and activation operator are already merged in `ed757e26d5ca07659101568b6b3f21c434b516ed`.
+Edu has deployed its read-only support and saved the association; Health issuer
+activation and real viewer login acceptance are still pending.
+
+After resolving the pre-existing incomplete authorization rotation through its
+own governed recovery flow, release the next exact-green current main normally.
+Then run the canonical `edu_viewer_activation.py` preflight and apply for the
+verified identities, preserving the existing owner. Code deployment alone does
+not enable the viewer allowlist. Verify the viewer's real Edu login, bound learning
+data, denied writes and continued owner access. No Health data sharing is intended.
+Use the protected Edu `/var/lib/edu-viewer-release/link.json` and fresh account
+checks to recover the intended mapping; never recreate its already-completed
+parent association. The prior Health authorization attempt and its pending audit
+must not be deleted or replayed.
