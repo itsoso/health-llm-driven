@@ -202,3 +202,28 @@ def test_activation_uses_real_health_decoder_for_personal_session(case):
     assert result.returncode == (0 if case == 'personal' else 1)
     assert token.encode() not in result.stdout + result.stderr
     assert result.stdout == b''
+
+@pytest.mark.parametrize('native', [False, True])
+def test_explicit_viewer_gets_only_own_identity_proof(configured, native):
+    sso.settings.edu_sso_viewer_ids = '8'
+    configured.id = 8
+    issue = sso.issue_native_ticket if native else sso.issue_ticket
+    proof = issue(configured, STATE, 8)['ticket']
+    payload = proof.split('.')[0]
+    assert json.loads(base64.urlsafe_b64decode(payload + '=' * (-len(payload) % 4)))['sub'] == '8'
+    with pytest.raises(HTTPException): issue(configured, STATE, 7)
+    configured.id = 9
+    with pytest.raises(HTTPException): issue(configured, STATE, 9)
+
+@pytest.mark.parametrize('field,value', [('is_active',False),('is_approved',False),('is_managed',True)])
+def test_viewer_status_restrictions(configured, field, value):
+    sso.settings.edu_sso_viewer_ids = '8'
+    configured.id = 8
+    setattr(configured, field, value)
+    with pytest.raises(HTTPException): sso.issue_ticket(configured, STATE, 8)
+
+@pytest.mark.parametrize('value', ['0','-1','8,','true','7','8,8'])
+def test_invalid_viewer_allowlist_fails_closed(configured, value):
+    sso.settings.edu_sso_viewer_ids = value
+    with pytest.raises(HTTPException) as error: sso.issue_ticket(configured, STATE, 7)
+    assert error.value.status_code == 503

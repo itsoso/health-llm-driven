@@ -39,7 +39,13 @@ def _issue_identity_ticket(user, state: str, expected_user_id: int, *, purpose: 
             or settings.edu_sso_owner_id <= 0 or not _origin(settings.edu_sso_origin)
             or not _origin(settings.edu_sso_issuer)):
         raise HTTPException(503, 'Edu统一登录尚未配置')
-    if (not user or user.id != settings.edu_sso_owner_id or user.id != expected_user_id
+    raw_viewers = getattr(settings, 'edu_sso_viewer_ids', '')
+    parts = raw_viewers.split(',') if raw_viewers else []
+    if (any(not re.fullmatch(r'[1-9][0-9]*', part) for part in parts)
+            or len(set(parts)) != len(parts) or str(settings.edu_sso_owner_id) in parts):
+        raise HTTPException(503, 'Edu统一登录查看账户配置无效')
+    allowed = {settings.edu_sso_owner_id, *(int(part) for part in parts)}
+    if (not user or user.id not in allowed or user.id != expected_user_id
             or not user.is_active or not user.is_approved or user.is_managed):
         raise HTTPException(403, '当前账号未关联此Edu，请重新确认登录账号')
     if not isinstance(state, str) or not re.fullmatch(r'[A-Za-z0-9_-]{43}', state):

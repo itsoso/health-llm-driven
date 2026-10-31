@@ -433,6 +433,7 @@ jobs:
           scripts/test_trusted_kbase_login.py
           scripts/test_trusted_edu_login.py
           scripts/test_public_registration_activation.py
+          scripts/test_edu_viewer_activation.py
           scripts/test_trusted_neo_wechat.py
           scripts/test_neo_wechat_linux_isolation.py
           scripts/test_neo_wechat_provisioning.py

@@ -683,6 +683,7 @@ class Settings(BaseSettings):
     edu_sso_enabled: bool = False
     edu_sso_secret: str = Field(default="", repr=False)
     edu_sso_owner_id: int = 0
+    edu_sso_viewer_ids: str = ""
     edu_sso_origin: str = ""
     edu_sso_issuer: str = ""
 

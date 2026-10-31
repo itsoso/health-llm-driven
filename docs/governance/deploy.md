@@ -1791,3 +1791,20 @@ celery-beat，确认三者为新策略及后端健康才记 `CONFIGURATION_SUCCE
 未知目录、配置漂移、不完整租约和失败的前置证明仍阻断，不自动回退或新建操作覆盖。
 该终态仅证明注册配置生效，不发送短信、不创建账号；真实手机号注册、管理员创建、
 Web 和 OTA 用户路径分别验收。
+
+
+### Edu independent viewer activation
+
+`scripts/edu_viewer_activation.py` provides a one-way no-backup addition of one
+explicit Health identity to `EDU_SSO_VIEWER_IDS`. Run only from the exact green
+current-main canonical staging after that same backend has a SUCCEEDED receipt
+and installed authorization. Pass the verified existing owner and distinct viewer
+IDs; both must be active, approved, non-managed accounts. No Health data sharing
+is enabled. Edu independently binds the viewer to a read-only parent.
+
+Default is read-only preflight. `--apply` journals the bounded config addition under
+`/var/lib/reva-edu-viewer`, retains the existing owner and all unrelated env bytes,
+and uses the original launcher lock and business lease. All three services must
+read back the new policy. Failure retains the journal/lease; only explicit
+`--resume --apply` for the original binding may continue. This is not a general
+env editor or a replacement for real browser/native login acceptance.
