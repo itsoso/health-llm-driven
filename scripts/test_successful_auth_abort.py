@@ -19,8 +19,10 @@ def module():
     return result
 
 
-def interrupted(monkeypatch, tmp_path):
+def interrupted(monkeypatch, tmp_path, *, build_lock=False):
     b, calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    if build_lock:
+        (b.STATE / SHA / "build.lock").touch(mode=0o600)
     original_idle = b._assert_idle
     def competing_publisher(**kwargs):
         if (b.STATE / 'successful-auth-revocations' / SHA / 'intent.json').exists():
@@ -219,3 +221,28 @@ def test_failed_production_sha_permanently_consumed(monkeypatch, tmp_path):
     b, _calls, _receipt = successful_rotation_fixture(monkeypatch, tmp_path)
     with pytest.raises(b.BootstrapError, match='aborted release SHA'):
         b._assert_fresh_sha('a030c61539c388e78a79fa6c6e01392310044d12', {})
+
+
+def test_abort_inspect_apply_original_launcher_inode_bound(monkeypatch, tmp_path):
+    b, m, record, _ = interrupted(monkeypatch, tmp_path)
+    inspected = m.abort(b, 'c' * 40)
+    lock = b.STATE / 'launcher.lock'
+    prior = lock.with_name('test-retained-lock')
+    lock.rename(prior)
+    lock.touch(mode=0o600)
+    with pytest.raises(b.BootstrapError, match='changed since inspection'):
+        m.abort(b, 'c' * 40, evidence_sha256=inspected['evidence_sha256'])
+    assert not (record / 'abort-intent.json').exists()
+
+
+@pytest.mark.parametrize('existing', [False, True])
+def test_abort_inspect_apply_build_lock_identity_bound(monkeypatch, tmp_path, existing):
+    b, m, record, _ = interrupted(monkeypatch, tmp_path, build_lock=existing)
+    inspected = m.abort(b, 'c' * 40)
+    lock = b.STATE / SHA / 'build.lock'
+    if existing:
+        lock.rename(tmp_path / 'test-retained-build-lock')
+    lock.touch(mode=0o600)
+    with pytest.raises(b.BootstrapError):
+        m.abort(b, 'c' * 40, evidence_sha256=inspected['evidence_sha256'])
+    assert not (record / 'abort-intent.json').exists()

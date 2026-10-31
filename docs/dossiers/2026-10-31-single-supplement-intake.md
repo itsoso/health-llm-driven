@@ -360,3 +360,10 @@ test-only correction. No production operation has started.
   candidate. Initial recovery regression RED: 23 failed because the canonical
   recovery entry did not exist. Fresh implementation review and all final-SHA
   release gates remain required. Production recovery/deployment is pending.
+
+- Recovery review found inspect/apply only checked original lock identity within
+  each invocation. A new RED reproduced launcher replacement between calls;
+  the inspected evidence now binds launcher and existing/absent build-lock
+  identities. The recovery and bootstrap suites pass 289 tests, including
+  appeared/replaced build locks. Prior candidate-wide checks are superseded;
+  final-source review and release evidence will be recorded separately.

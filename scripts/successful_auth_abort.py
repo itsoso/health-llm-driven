@@ -65,7 +65,7 @@ def history(b, record):
     evidence = proof['evidence']
     if (not isinstance(evidence, dict) or set(evidence) != {
             'original_intent_sha256', 'config', 'library', 'authorized', 'workspace',
-            'workspace_completed_sha256', 'key_identity', 'production_sha'}
+            'workspace_completed_sha256', 'key_identity', 'production_sha', 'locks'}
             or evidence['original_intent_sha256'] != ORIGINAL_INTENT
             or evidence['production_sha'] != OLD
             or evidence['workspace'] != intent['workspace']
@@ -143,7 +143,10 @@ def snapshot(b, source, *, applying=False):
     return {'original_intent_sha256': ORIGINAL_INTENT, 'config': config, 'library': library,
             'authorized': authorized, 'workspace': workspace, 'workspace_completed_sha256': completed,
             'key_identity': {**{x: getattr(after, x) for x in attrs},
-                             'public_sha256': intent['loopback_public_sha256']}, 'production_sha': OLD}
+                             'public_sha256': intent['loopback_public_sha256']}, 'production_sha': OLD,
+            'locks': {'launcher': b._recovery_file_identity(b.STATE / 'launcher.lock'),
+                      'build': (b._recovery_file_identity(b.STATE / OLD / 'build.lock')
+                                if os.path.lexists(b.STATE / OLD / 'build.lock') else None)}}
 
 
 def successor(b, old_sha, new_sha, receipt):
