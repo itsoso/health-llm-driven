@@ -48,7 +48,9 @@ CLASSIFICATION="$({ printf '%s\n' "${CHANGED_FILES}"; } | "${PREFLIGHT_PYTHON}" 
   --event-name "${EVENT_NAME}" --format shell)"
 
 DOCS_ONLY=0
+TOOLING_ONLY=0
 RUN_DOCS=0
+RUN_TOOLING=0
 RUN_BACKEND=0
 RUN_FRONTEND=0
 RUN_MOBILE=0
@@ -60,7 +62,9 @@ FULL=0
 while IFS='=' read -r key value; do
   case "${key}" in
     DOCS_ONLY) DOCS_ONLY="${value}" ;;
+    TOOLING_ONLY) TOOLING_ONLY="${value}" ;;
     RUN_DOCS) RUN_DOCS="${value}" ;;
+    RUN_TOOLING) RUN_TOOLING="${value}" ;;
     RUN_BACKEND) RUN_BACKEND="${value}" ;;
     RUN_FRONTEND) RUN_FRONTEND="${value}" ;;
     RUN_MOBILE) RUN_MOBILE="${value}" ;;
@@ -73,8 +77,8 @@ while IFS='=' read -r key value; do
   esac
 done <<< "${CLASSIFICATION}"
 
-printf 'preflight scope: docs_only=%s backend=%s frontend=%s mobile=%s mac=%s type_drift=%s release=%s release_only=%s full=%s\n' \
-  "${DOCS_ONLY}" "${RUN_BACKEND}" "${RUN_FRONTEND}" "${RUN_MOBILE}" \
+printf 'preflight scope: docs_only=%s tooling_only=%s tooling=%s backend=%s frontend=%s mobile=%s mac=%s type_drift=%s release=%s release_only=%s full=%s\n' \
+  "${DOCS_ONLY}" "${TOOLING_ONLY}" "${RUN_TOOLING}" "${RUN_BACKEND}" "${RUN_FRONTEND}" "${RUN_MOBILE}" \
   "${RUN_MAC}" "${RUN_TYPE_DRIFT}" "${RUN_RELEASE}" "${RELEASE_ONLY}" "${FULL}"
 
 if [[ "${DRY_RUN}" == "1" ]]; then
@@ -109,6 +113,10 @@ if [[ "${RUN_DOCS}" == "1" ]]; then
   run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_secret_leaks.py"
   run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/check_system_map.py"
   run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/backend/scripts/check_dossier_consistency.py"
+fi
+
+if [[ "${RUN_TOOLING}" == "1" ]]; then
+  run "${PREFLIGHT_PYTHON}" "${REPO_ROOT}/scripts/run_tooling_pytests.py"
 fi
 
 if [[ "${RUN_TYPE_DRIFT}" == "1" ]]; then

@@ -18,6 +18,32 @@ RUNTIME_KEYS = (
     "run_release",
 )
 
+TOOLING_ONLY_FILES = {
+    "scripts/check_agent_skill_governance.py",
+    "scripts/run_tooling_pytests.py",
+    "scripts/tooling_pytest_guard.py",
+    "backend/tests/test_agent_skill_governance.py",
+    "backend/tests/test_agent_skill_manifests.py",
+    "backend/tests/test_doc_drift_narrative_counts.py",
+    "backend/tests/test_doc_drift_skill_contract.py",
+    "backend/tests/test_dossier_consistency.py",
+    "backend/tests/test_reva_health_harness_plugin_package.py",
+    "backend/tests/test_system_map_agent_context.py",
+    "backend/tests/test_system_map_generator.py",
+    "plugins/reva-health-harness/.codex-plugin/plugin.json",
+    "plugins/reva-health-harness/README.md",
+}
+
+TOOLING_ONLY_PREFIXES = (
+    ".claude/skills/health-harness-orchestrator/",
+    ".claude/skills/product-pipeline/",
+    ".claude/skills/reva-workflow-router/",
+    "docs/governance/agent-skill-",
+    "plugins/reva-health-harness/skills/health-harness-orchestrator/",
+    "plugins/reva-health-harness/skills/product-pipeline/",
+    "plugins/reva-health-harness/skills/reva-workflow-router/",
+)
+
 DOC_ROOT_FILES = {
     "AGENTS.md",
     "CLAUDE.md",
@@ -49,7 +75,9 @@ RELEASE_ONLY_FILES = {
 def _full_result() -> dict[str, bool]:
     return {
         "docs_only": False,
+        "tooling_only": False,
         "run_docs": True,
+        "run_tooling": True,
         **{key: True for key in RUNTIME_KEYS},
         "release_only": False,
         "full": True,
@@ -64,10 +92,18 @@ def _is_documentation(path: str) -> bool:
     )
 
 
+def _is_tooling_only(path: str) -> bool:
+    return path in TOOLING_ONLY_FILES or path.startswith(TOOLING_ONLY_PREFIXES)
+
+
 def _requires_full(path: str) -> bool:
     return (
         path.startswith(".github/")
-        or (path.startswith("scripts/") and path not in RELEASE_ONLY_FILES)
+        or (
+            path.startswith("scripts/")
+            and path not in RELEASE_ONLY_FILES
+            and not _is_tooling_only(path)
+        )
         or path.startswith("packages/shared/")
         or path in {"docker-compose.yml", "docker-compose.prod.yml"}
         or path.endswith(
@@ -89,7 +125,13 @@ def classify_changes(
 ) -> dict[str, bool]:
     """Return fail-closed CI scopes for a normalized changed-file list."""
 
-    normalized = sorted({path.strip().lstrip("./") for path in paths if path.strip()})
+    normalized = sorted(
+        {
+            path.strip().removeprefix("./")
+            for path in paths
+            if path.strip()
+        }
+    )
     if event_name not in {"push", "pull_request", "local"} or not normalized:
         return _full_result()
     if any(_requires_full(path) for path in normalized):
@@ -97,12 +139,18 @@ def classify_changes(
 
     result = {
         "docs_only": True,
+        "tooling_only": False,
         "run_docs": True,
+        "run_tooling": False,
         **{key: False for key in RUNTIME_KEYS},
         "release_only": False,
         "full": False,
     }
     for path in normalized:
+        if _is_tooling_only(path):
+            result["docs_only"] = False
+            result["run_tooling"] = True
+            continue
         if _is_documentation(path):
             continue
         if path in RELEASE_ONLY_FILES:
@@ -127,12 +175,6 @@ def classify_changes(
         else:
             return _full_result()
 
-    # Main is the release candidate: select full coverage on its first run,
-    # instead of duplicating scoped push CI with a manual full workflow.
-    # Local preflight and PR feedback retain their conservative scope lanes.
-    if event_name == "push" and not result["docs_only"]:
-        return _full_result()
-
     result["release_only"] = result["run_release"] and not any(
         result[key]
         for key in (
@@ -143,6 +185,22 @@ def classify_changes(
             "run_type_drift",
         )
     )
+    result["tooling_only"] = result["run_tooling"] and not any(
+        result[key] for key in RUNTIME_KEYS
+    )
+
+    # Main is the release candidate: select full coverage on its first run,
+    # instead of duplicating scoped push CI with a manual full workflow.
+    # Agent-governance-only changes are runtime-independent and use their
+    # isolated tooling gate on both PR and main. Classifier/workflow changes
+    # are deliberately outside that allowlist and therefore still run full.
+    if (
+        event_name == "push"
+        and not result["docs_only"]
+        and not result["tooling_only"]
+    ):
+        return _full_result()
+
     return result
 
 

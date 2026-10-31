@@ -1116,7 +1116,14 @@ def recommend(
     _require(mode in routes, "unknown_mode", mode)
 
     overlay_map = registry["routing"]["overlays"]
-    unknown_overlays = sorted(set(overlay_triggers) - set(overlay_map))
+    canonical_overlay_ids = {
+        skill_id for skill_ids in overlay_map.values() for skill_id in skill_ids
+    }
+    unknown_overlays = sorted(
+        value
+        for value in set(overlay_triggers)
+        if value not in overlay_map and value not in canonical_overlay_ids
+    )
     _require(not unknown_overlays, "unknown_overlay", ", ".join(unknown_overlays))
 
     capability_map = registry["routing"]["capability_triggers"]
@@ -1154,7 +1161,13 @@ def recommend(
     )
     capabilities = list(dict.fromkeys([*capabilities, *triggered_capabilities]))
     overlays = sorted(
-        {skill_id for trigger in overlay_triggers for skill_id in overlay_map[trigger]}
+        {
+            skill_id
+            for value in overlay_triggers
+            for skill_id in (
+                overlay_map[value] if value in overlay_map else [value]
+            )
+        }
     )
     controller_count = int(controller is not None)
     _require(controller_count <= 1, "controller_conflict", mode)

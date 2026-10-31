@@ -12,7 +12,9 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       docs_only: ${{ steps.scope.outputs.docs_only }}
+      tooling_only: ${{ steps.scope.outputs.tooling_only }}
       run_docs: ${{ steps.scope.outputs.run_docs }}
+      run_tooling: ${{ steps.scope.outputs.run_tooling }}
       run_backend: ${{ steps.scope.outputs.run_backend }}
       run_frontend: ${{ steps.scope.outputs.run_frontend }}
       run_mobile: ${{ steps.scope.outputs.run_mobile }}
@@ -106,6 +108,10 @@ jobs:
 
       - name: Check Agent Skill governance
         run: python scripts/check_agent_skill_governance.py check
+
+      - name: Run isolated Agent and Harness tooling tests
+        if: ${{ needs.classify-changes.outputs.run_tooling == 'true' }}
+        run: python scripts/run_tooling_pytests.py
 
   backend-test-shards:
     name: backend-test-${{ matrix.label }}

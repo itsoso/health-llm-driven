@@ -221,7 +221,9 @@ def test_ci_classifies_changes_before_selecting_expensive_jobs():
 
     for output in (
         "docs_only",
+        "tooling_only",
         "run_docs",
+        "run_tooling",
         "run_backend",
         "run_frontend",
         "run_mobile",
@@ -253,6 +255,21 @@ def test_docs_quality_is_mandatory_and_owns_lightweight_doc_gates():
     assert "check_secret_leaks.py" not in backend_runs
     assert "check_system_map.py" not in backend_runs
     assert "check_dossier_consistency.py" not in backend_runs
+
+
+def test_docs_quality_runs_bounded_tooling_suite_only_when_selected():
+    workflow = yaml.safe_load(CI_WORKFLOW.read_text(encoding="utf-8"))
+    steps = workflow["jobs"]["docs-quality"]["steps"]
+    tooling_step = next(
+        step
+        for step in steps
+        if "scripts/run_tooling_pytests.py" in str(step.get("run") or "")
+    )
+
+    assert tooling_step["if"] == (
+        "${{ needs.classify-changes.outputs.run_tooling == 'true' }}"
+    )
+    assert tooling_step["run"] == "python scripts/run_tooling_pytests.py"
 
 
 def test_short_ci_jobs_wait_for_docs_without_delaying_long_backend_work():

@@ -44,7 +44,7 @@ def test_plugin_release_tracks_router_v2_semantic_contract():
     )
 
     assert manifest["version"] == "0.3.1"
-    assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.1"
+    assert registry["adapter_contracts"]["reva-workflow-router"]["version"] == "2.0.2"
     assert (
         registry["adapter_contracts"]["health-harness-orchestrator"]["version"]
         == "1.0.4"

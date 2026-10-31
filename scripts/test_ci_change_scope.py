@@ -47,6 +47,8 @@ def test_docs_only_changes_select_lightweight_checks() -> None:
     )
 
     assert result["docs_only"] is True
+    assert result["tooling_only"] is False
+    assert result["run_tooling"] is False
     assert result["run_docs"] is True
     _assert_only_runtime_scopes(result)
 
@@ -110,6 +112,8 @@ def test_release_and_dependency_changes_fail_closed_to_full() -> None:
     ):
         result = classifier.classify_changes([path])
         assert result["full"] is True, path
+        assert result["tooling_only"] is False, path
+        assert result["run_tooling"] is True, path
         _assert_only_runtime_scopes(
             result,
             "run_backend",
@@ -165,6 +169,7 @@ def _dry_run_preflight(changed_files: str) -> subprocess.CompletedProcess[str]:
     env = os.environ.copy()
     env.update(
         {
+            "REVA_PREFLIGHT_PYTHON": sys.executable,
             "REVA_PREFLIGHT_DRY_RUN": "1",
             "REVA_PREFLIGHT_CHANGED_FILES": changed_files,
         }
@@ -257,6 +262,101 @@ def test_pr_and_local_keep_scoped_feedback_while_docs_push_stays_light():
 
 def test_unknown_event_fails_closed_even_for_documentation():
     assert _load_classifier().classify_changes(["README.md"], event_name="unknown")["full"]
+
+
+@pytest.mark.parametrize(
+    "path",
+    (
+        "scripts/check_agent_skill_governance.py",
+        "scripts/run_tooling_pytests.py",
+        "scripts/tooling_pytest_guard.py",
+        "backend/tests/test_agent_skill_governance.py",
+        "backend/tests/test_reva_health_harness_plugin_package.py",
+        "docs/governance/agent-skill-registry.json",
+        ".claude/skills/reva-workflow-router/SKILL.md",
+        "plugins/reva-health-harness/skills/reva-workflow-router/SKILL.md",
+    ),
+)
+def test_agent_governance_changes_use_bounded_tooling_lane_on_pr_and_main(path):
+    classifier = _load_classifier()
+    for event_name in ("pull_request", "push"):
+        result = classifier.classify_changes(
+            [path, "docs/dossiers/2026-10-27-release-latency-optimization.md"],
+            event_name=event_name,
+        )
+        assert result["docs_only"] is False
+        assert result["tooling_only"] is True
+        assert result["run_tooling"] is True
+        assert result["full"] is False
+        _assert_only_runtime_scopes(result)
+
+
+@pytest.mark.parametrize(
+    "unknown_path",
+    (
+        ".claude/skills/unregistered-skill/SKILL.md",
+        "plugins/reva-health-harness/skills/unregistered-skill/SKILL.md",
+    ),
+)
+def test_unknown_skill_change_cannot_use_tooling_only_lane(unknown_path):
+    classifier = _load_classifier()
+    unknown = classifier.classify_changes(
+        [unknown_path],
+        event_name="push",
+    )
+    assert unknown["full"] is True
+    assert unknown["tooling_only"] is False
+
+
+@pytest.mark.parametrize(
+    ("event_name", "runtime_path", "expected_runtime_scopes"),
+    (
+        ("pull_request", "backend/app/api/today.py", ("run_backend", "run_type_drift")),
+        ("local", "mobile/app/(tabs)/chat.tsx", ("run_mobile",)),
+    ),
+)
+def test_tooling_and_runtime_change_runs_affected_pr_or_local_scopes(
+    event_name,
+    runtime_path,
+    expected_runtime_scopes,
+):
+    mixed = _load_classifier().classify_changes(
+        [
+            "scripts/check_agent_skill_governance.py",
+            runtime_path,
+        ],
+        event_name=event_name,
+    )
+    assert mixed["full"] is False
+    assert mixed["tooling_only"] is False
+    assert mixed["run_tooling"] is True
+    _assert_only_runtime_scopes(mixed, *expected_runtime_scopes)
+
+
+def test_tooling_and_runtime_change_forces_full_on_main_push():
+    mixed = _load_classifier().classify_changes(
+        [
+            "scripts/check_agent_skill_governance.py",
+            "backend/app/api/today.py",
+        ],
+        event_name="push",
+    )
+    assert mixed["full"] is True
+    assert mixed["tooling_only"] is False
+
+
+def test_tooling_preflight_runs_isolated_tooling_tests_without_runtime_matrix(monkeypatch):
+    monkeypatch.setenv("REVA_PREFLIGHT_PYTHON", sys.executable)
+    result = _dry_run_preflight(
+        "scripts/check_agent_skill_governance.py\n"
+        "docs/governance/agent-skill-registry.json\n"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "tooling=1" in result.stdout
+    assert "tooling_only=1" in result.stdout
+    assert "scripts/run_tooling_pytests.py" in result.stdout
+    assert "test_release_ci_contract.py" not in result.stdout
 
 
 def feedback_module():
