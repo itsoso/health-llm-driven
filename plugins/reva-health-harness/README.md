@@ -34,3 +34,13 @@ Start a new Codex thread after reinstalling so newly packaged skills are loaded.
 The Router is the only plugin Skill eligible for implicit invocation; invoke the
 two controller adapters only when the Router selects them or when explicitly
 requested for an already-classified task.
+
+When calling the repository Router CLI directly, `--overlay` accepts either a
+routing trigger such as `safety` or the canonical registered Skill ID such as
+`safety-gate`. Prefer the canonical ID in durable automation and governance
+examples. Supplying both equivalent forms still selects one overlay:
+
+```bash
+python3.12 scripts/check_agent_skill_governance.py recommend \
+  --mode implementation --overlay safety-gate
+```
