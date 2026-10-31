@@ -237,6 +237,17 @@ def _classify(raw: str, *, speech_act_guards: bool) -> IntakeIntent:
         if not_taken:
             return IntakeIntent("unknown", 0.3, not_taken, raw)
 
+    # Route the same fully consumed current-turn fact used by authorization and
+    # execution. A second keyword vocabulary must not turn a known supplement
+    # into a meal merely because the user omitted the optional category label.
+    from app.services.intake_plan import parse_intake_plan
+
+    intake = parse_intake_plan(raw)
+    if intake.status == "complete" and len(intake.items) == 1:
+        item = intake.items[0]
+        if item.record_type == "supplement":
+            return IntakeIntent("supplement", 0.96, "explicit_typed_intake", item.name)
+
     water_amount = _extract_water_amount(normalized)
     if _looks_like_water(normalized):
         slots: dict[str, Any] = {}

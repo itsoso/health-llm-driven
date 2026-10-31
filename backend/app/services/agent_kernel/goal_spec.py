@@ -410,9 +410,12 @@ def _compile_simple_health_record_goal(
     from app.services.intake_plan import parse_intake_plan
 
     intake = parse_intake_plan(envelope.text)
-    if intake.status == "needs_clarification" or len(intake.items) > 1:
+    if (intake.status == "needs_clarification" or len(intake.items) > 1
+            or (intake.status == "complete" and intake.items[0].record_type == "supplement")):
         # A single-target goal rewrites every proposed call to that target.
         # Mixed facts must retain separate authorization and receipt identities.
+        # A typed supplement also cannot be recompiled as a meal by a stale or
+        # conflicting routing frame. Its existing adapter owns the write.
         return None
     text = _normalize(envelope.text)
     illness_target = simple_illness_target(envelope.text)

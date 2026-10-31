@@ -2,15 +2,15 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | shipped |
-| 当前阶段 | G6 后端回执核验；登录态重试未观察 |
+| 状态 | implementation |
+| 当前阶段 | G3 复发修复验证；上一轮用户验收失败 |
 | Controller | health-harness-orchestrator (incident), safety-gate overlay |
 | Run | `docs/_generated/harness-runs/09731e372ccf.jsonl` (local) |
 
-Current outcome: backend revision `8d4d6c5c627ec50b27e67b6282946ec4ccb664c7`
-is deployed and independently verified. Earlier sections retain the failures and
-boundaries observed at each stage; the final closure below supersedes their
-then-pending release status. Physical-device/user-data acceptance is not claimed.
+Current outcome: the user's 13:47 screenshot disproves complete user-path
+acceptance of deployed revision `8d4d6c5c627ec50b27e67b6282946ec4ccb664c7`.
+The follow-up below reopens G3–G6. Earlier deployment receipts remain valid
+historical evidence, not proof that the newly reported sentence forms work.
 
 ## G1 admission
 
@@ -245,3 +245,30 @@ test-only correction. No production operation has started.
   signed-in retry was not observed. Both screenshot sentence shapes passed real
   API/Pi/gateway tests against isolated databases. The bounded grammar and daily
   upsert limitations above remain. No Mobile OTA or website artifact was published.
+
+## Reopened: unlabeled intake and explicit vitamin subtype
+
+裁决: FAIL
+
+- New user evidence: an explicit intake without the optional supplement label
+  reaches meal nutrition failure; a compound vitamin name with a VB suffix is
+  rejected. Current production HEAD was independently read as `8d4d6c5c6`,
+  backend active and business lease absent. Sanitized journal metadata at 13:46
+  shows diet/missing_nutrition and nearby write_tool_without_write_intent.
+  No request ID was supplied, so timestamp proximity does not prove exact
+  per-message attribution. No production health payload or record was copied.
+- Local RED after correcting a test-only model import: 20 failed / 19 passed,
+  including real Pi/gateway/authenticated API scenarios. The complete intake
+  parser recognizes creatine but the independent routing vocabulary does not;
+  a diet goal then overwrites the grounded supplement proposal. The vitamin
+  subtype remains unconsumed and fails the closed grammar.
+- Follow-up implementation makes the intake classifier consume the complete
+  typed fact, and prevents a stale diet frame from compiling a typed supplement
+  into a meal goal. Explicit vitamin subtypes retain their literal normalized
+  name; VB is not silently treated as equivalent to another product, and dose,
+  owner, date and receipt checks are unchanged.
+- First corrected focused suite: 110 passed. Expanded regression, PostgreSQL,
+  live provider-to-isolated-API evaluation, independent G4, exact CI and a new
+  production receipt remain required. Test-only import failures are not RED
+  behavioral evidence. New live cases require explicit opt-in and synthetic
+  AI consent; no real user's health record is used for validation.

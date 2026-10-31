@@ -51,6 +51,12 @@ Backend owns authorization, idempotency, outcome and recovery binding. Mobile pr
 
 The first grammar retains the established name vocabulary, rejects unconsumed text, negation, other people, duplicate names and more than eight items. No batching, quantity inference or unit/strength conversion is authorized. Recovery must revalidate source ownership and original time context; missing evidence is not proof of no write. Logs and recovery metadata contain identifiers and hashes, not duplicated health text.
 
+A complete single supplement fact also controls routing before meal-goal
+compilation: the optional category label cannot change the record type. Explicit
+vitamin subtypes remain part of the product identity, without inferred alias
+equivalence or dosage conversion. Authorization, repair and persistence consume
+that same identity; model-selected diet tools cannot override it.
+
 ## Acceptance and delivery
 
 Tests cover changed word order, oral connectors, multiple items, exact quantities, unknown residue, malicious extra arguments, other owners, partial and uncertain writes, replay and historical UI. PostgreSQL verifies persistence semantics. Independent safety review, full CI, applicable live synthetic model validation, production receipt and compatible OTA are separate gates. Infrastructure optimization follows this behavioral repair in a separate reviewed change.
