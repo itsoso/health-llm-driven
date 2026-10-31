@@ -336,3 +336,27 @@ test-only correction. No production operation has started.
   name/dose/timing forms retain their complete source coverage. The superseded
   CI-mode run was stopped with exit -15; its live checks passed but do not
   substitute for final-source evidence.
+
+
+### Sole-publisher handoff and interrupted authorization recovery
+
+- The final supplement correction `a030c61539c388e78a79fa6c6e01392310044d12`
+  passed independent G4, authenticated/API regressions, PostgreSQL quantity
+  concurrency, all three screenshot phrases against the real provider, local
+  CI-mode invariants, full remote CI `41175793688` and trusted validate
+  `41176456346`. These prove the candidate, not deployment.
+- Production remains `8d4d6c5c627ec50b27e67b6282946ec4ccb664c7`. Canonical staging
+  and the separately reviewed read credential refresh succeeded. The one-shot
+  successful-identity rotation stopped after its original intent and before
+  revocation: another publisher's canonical Git staging process appeared.
+  Both original authorization lines, key identity, policy and successful
+  workspace remain unchanged. No deployment was started for the failed target.
+- User explicitly confirmed the other publisher stopped and this session is
+  the sole publisher. Current main includes the separately integrated Edu
+  change; its activation remains a separate operation, not part of this repair.
+- Implement the fixed, inspect/apply `ABORTED_BEFORE_REVOCATION` protocol with
+  immutable original intent, protected receipt returned only after durability,
+  a separately bound successor audit, and permanent rejection of the failed
+  candidate. Initial recovery regression RED: 23 failed because the canonical
+  recovery entry did not exist. Fresh implementation review and all final-SHA
+  release gates remain required. Production recovery/deployment is pending.

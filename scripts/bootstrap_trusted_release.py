@@ -823,7 +823,23 @@ def _legacy_successful_auth_revocation(entry, intent):
             'workspace': workspace, 'installation_sha256': installation_digest}
 
 
-def _successful_auth_revocation_history():
+def _successful_abort_module():
+    path = Path(__file__).with_name('successful_auth_abort.py')
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached successful abort code forbidden')
+    spec = importlib.util.spec_from_file_location('successful_auth_abort', path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(path.read_bytes(), str(path), 'exec', dont_inherit=True), module.__dict__)
+    return module
+
+
+def _bootstrap_context():
+    # Tests load this module without registering it in sys.modules.
+    return SimpleNamespace(**globals())
+
+
+def _successful_auth_revocation_history(*, _pending_successful_abort=None):
     root = STATE / "successful-auth-revocations"
     if not os.path.lexists(root):
         return {}
@@ -835,9 +851,25 @@ def _successful_auth_revocation_history():
         try:
             if re.fullmatch(r"[0-9a-f]{40}", entry.name) is None:
                 raise BootstrapError("invalid successful identity SHA")
-            _inventory(entry, {"intent.json", "completed.json"})
-            intent = _read_json(entry / "intent.json")
+            record = entry
+            prior_abort = None
+            if _pending_successful_abort is not None or any(
+                    p.name.startswith('abort-') or p.name == 'successor' for p in entry.iterdir()):
+                abort_module = _successful_abort_module()
+                if entry.name == abort_module.OLD:
+                    if _pending_successful_abort is not None:
+                        if _pending_successful_abort != abort_module.ORIGINAL_INTENT:
+                            raise BootstrapError('unknown pending successful abort')
+                        abort_module.original(_bootstrap_context(), entry)
+                        continue
+                    record, prior_abort = abort_module.history(_bootstrap_context(), entry)
+                    if record is None:
+                        continue
+            _inventory(record, {"intent.json", "completed.json"})
+            intent = _read_json(record / "intent.json")
             if isinstance(intent, dict) and 'state' in intent:
+                if prior_abort is not None:
+                    raise BootstrapError('legacy successor format forbidden')
                 history[entry.name] = _legacy_successful_auth_revocation(entry, intent)
                 continue
             expected = {
@@ -845,7 +877,10 @@ def _successful_auth_revocation_history():
                 "old_executor_sha256", "old_authorized_sha256",
                 "loopback_public_sha256", "backend_succeeded",
             }
+            if prior_abort is not None:
+                expected.add('prior_abort_sha256')
             if (not isinstance(intent, dict) or set(intent) != expected
+                    or (prior_abort is not None and intent.get('prior_abort_sha256') != prior_abort)
                     or intent["old_sha"] != entry.name
                     or not isinstance(intent["new_sha"], str)
                     or re.fullmatch(r"[0-9a-f]{40}", intent["new_sha"]) is None
@@ -861,7 +896,7 @@ def _successful_auth_revocation_history():
             ).hexdigest()
             if intent["old_executor_sha256"] != expected_executor:
                 raise BootstrapError("successful identity executor differs from canonical source")
-            completed = _read_json(entry / "completed.json")
+            completed = _read_json(record / "completed.json")
             workspace = _workspace_evidence(entry.name, historical=True)
             workspace_completed = STATE / entry.name / "completed.json"
             if (not isinstance(completed, dict)
@@ -881,9 +916,9 @@ def _successful_auth_revocation_history():
     return history
 
 
-def _retired_history():
+def _retired_history(*, _pending_successful_abort=None):
     _native_rotation_recovery()
-    successful = _successful_auth_revocation_history()
+    successful = _successful_auth_revocation_history(_pending_successful_abort=_pending_successful_abort)
     root = STATE / "retired"
     if not os.path.lexists(root):
         if LEGACY_RETIREMENTS or successful:
@@ -987,6 +1022,8 @@ def _retired_config(sha, evidence):
 
 
 def _assert_fresh_sha(sha, history):
+    if sha == 'a030c61539c388e78a79fa6c6e01392310044d12':
+        raise BootstrapError('aborted release SHA already used; retry forbidden')
     recovery = _native_rotation_recovery()
     successful = _successful_auth_revocation_history()
     if (os.path.lexists(STATE / sha) or sha in history
@@ -1319,7 +1356,7 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
-def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, check_locks):
+def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, check_locks, *, abort_receipt=None):
     workspace = _workspace_evidence(old_sha)
     completed_path = STATE / old_sha / "completed.json"
     if (workspace.get("state") != "SUCCEEDED"
@@ -1380,6 +1417,11 @@ def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, che
         _sync_parent(root)
     secure(root)
     record = root / old_sha
+    if os.path.lexists(record) or abort_receipt is not None:
+        record, prior_abort = _successful_abort_module().successor(
+            _bootstrap_context(), old_sha, new_sha, abort_receipt)
+        if prior_abort is not None:
+            proof['prior_abort_sha256'] = prior_abort
     record.mkdir(mode=0o700)
     _sync_parent(record)
     _write(record / "intent.json", json.dumps(proof, sort_keys=True).encode())
@@ -1420,7 +1462,7 @@ def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, che
     return installation
 
 
-def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None, dinner_guard_github_token=None, successful_workspace_sha256=None):
+def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_production_sha=None, backend_ci=False, review_advance_receipt=None, review_release_closure_receipt=None, review_release_github_token=None, dinner_guard_github_token=None, successful_workspace_sha256=None, successful_abort_receipt=None):
     validate_install(sha, expiry, public, now=int(time.time()))
     if not isinstance(old_sha, str) or re.fullmatch(r"[0-9a-f]{40}", old_sha) is None or old_sha == sha:
         raise BootstrapError("distinct exact old and new reviewed SHAs required")
@@ -1439,6 +1481,10 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
     if review_release_closure_receipt is not None and (review_advance_receipt is not None
             or recovery_receipt is not None or finalized_production_sha is not None or backend_ci):
         raise BootstrapError("release closure requires exclusive exact candidate authority")
+    if successful_abort_receipt is not None and (successful_workspace_sha256 is None
+            or not isinstance(successful_abort_receipt, str)
+            or re.fullmatch('[0-9a-f]{64}', successful_abort_receipt) is None):
+        raise BootstrapError('abort receipt requires explicit successful workspace closure')
     if successful_workspace_sha256 is not None:
         if (any(value is not None for value in (recovery_receipt, finalized_production_sha,
                 review_advance_receipt, review_release_closure_receipt,
@@ -1593,7 +1639,7 @@ def rotate(old_sha, sha, expiry, public, *, recovery_receipt=None, finalized_pro
         check_idle("history-before-intent")
         if successful_workspace_sha256 is not None:
             installation = _close_successful_identity(
-                old_sha, sha, successful_workspace_sha256, check_locks)
+                old_sha, sha, successful_workspace_sha256, check_locks, abort_receipt=successful_abort_receipt)
         # Intent is durable before discarding the revoked current installation.
         # No backup, rollback, or automatic resume: a partial rotation blocks.
         root = STATE / "retired"
@@ -2511,6 +2557,9 @@ def main():
         use_system_timezone()
         parser = argparse.ArgumentParser(description=__doc__, allow_abbrev=False)
         commands = parser.add_subparsers(dest="action", required=True)
+        successful_abort = commands.add_parser('abort-successful-authorization', allow_abbrev=False)
+        successful_abort.add_argument('--sha', required=True)
+        successful_abort.add_argument('--evidence-sha256')
         native_finalizer = commands.add_parser('finalize-native-rotation', allow_abbrev=False)
         native_finalizer.add_argument('--sha', required=True)
         native_finalizer.add_argument('--evidence-sha256')
@@ -2527,6 +2576,7 @@ def main():
         rotation.add_argument("--backend-ci", action="store_true", help="derive narrow backend admission from actual production evidence")
         rotation.add_argument("--successful-workspace-sha256",
                               help="fixed completed.json digest for one successful-identity closure")
+        rotation.add_argument('--successful-abort-receipt-stdin', action='store_true')
         rotation.add_argument("--recovery-receipt-stdin", action="store_true")
         rotation.add_argument("--dinner-guard-rotation-stdin", action="store_true")
         rotation.add_argument("--review-maintenance-advance-receipt-stdin", action="store_true")
@@ -2562,7 +2612,9 @@ def main():
         sealing.add_argument('--inspect', action='store_true')
         sealing.add_argument('--checkpoint-sha256')
         args = parser.parse_args()
-        if args.action == 'finalize-native-rotation':
+        if args.action == 'abort-successful-authorization':
+            result = _successful_abort_module().abort(_bootstrap_context(), args.sha, evidence_sha256=args.evidence_sha256)
+        elif args.action == 'finalize-native-rotation':
             result = finalize_native_rotation(args.sha, evidence_sha256=args.evidence_sha256)
         elif args.action == 'seal-frontend-history':
             if args.inspect and (args.checkpoint_sha256 is not None or args.active_operation is not None):
@@ -2588,7 +2640,7 @@ def main():
         elif args.action == "rotate":
             receipt = None
             github_token = None
-            if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin, args.dinner_guard_rotation_stdin)) > 1:
+            if sum((args.recovery_receipt_stdin, args.review_maintenance_advance_receipt_stdin, args.review_maintenance_release_closure_receipt_stdin, args.dinner_guard_rotation_stdin, args.successful_abort_receipt_stdin)) > 1:
                 raise BootstrapError("exclusive protected receipt required")
             if args.dinner_guard_rotation_stdin:
                 protected = _dinner_guard_module().rotation_input(sys.stdin.buffer.read(8193))
@@ -2596,13 +2648,14 @@ def main():
             elif args.review_maintenance_release_closure_receipt_stdin:
                 protected = _review_release_rotation_input()
                 receipt, github_token = protected['receipt'], protected['github_token']
-            elif args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin:
+            elif args.recovery_receipt_stdin or args.review_maintenance_advance_receipt_stdin or args.successful_abort_receipt_stdin:
                 raw = sys.stdin.buffer.read(66)
                 if re.fullmatch(rb"[0-9a-f]{64}\n?", raw) is None:
                     raise BootstrapError("exact protected recovery receipt required")
                 receipt = raw.rstrip(b"\n").decode("ascii")
             result = rotate(args.retire_sha, args.sha, args.expires_at, args.cloud_public_key,
                             successful_workspace_sha256=args.successful_workspace_sha256,
+                            successful_abort_receipt=receipt if args.successful_abort_receipt_stdin else None,
                             recovery_receipt=receipt if args.recovery_receipt_stdin or args.dinner_guard_rotation_stdin else None,
                             review_advance_receipt=receipt if args.review_maintenance_advance_receipt_stdin else None,
                             review_release_closure_receipt=receipt if args.review_maintenance_release_closure_receipt_stdin else None,

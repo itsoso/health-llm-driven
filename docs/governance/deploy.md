@@ -649,6 +649,22 @@ SHA256。发布器先持久化 `successful-auth-revocations/<old>/intent.json`�
 写完成证明；随后才进入普通 retirement intent。该成功关闭记录由所有后续轮换重读，
 缺少完成证明、与 canonical retirement 不匹配或目标 SHA 漂移都必须阻断，禁止改用
 另一候选或重放来绕过部分关闭。
+2026-10-31 的 `8d4d6c5c… → a030c615…` 尝试在 intent 后、撤权前因竞争发布进程
+中断。仅对此固定原 intent 摘要，canonical `abort-successful-authorization --sha <green-main>`
+提供 inspect（无 evidence 参数）和 apply（原 `--evidence-sha256`）两阶段收尾。
+必须已完成唯一发布者交接，持原 launcher/build 锁，校验旧生产 revision、原成功工作区、
+完整授权文件与两条精确授权行、canonical 执行器、固定 policy、公私钥身份和无发布活动。
+原 intent 未保存私钥的历史字节/元数据，因此只证明同一密码学身份；inspect/apply 之间
+另绑定私钥 inode、时间戳及配置摘要，不宣称还原历史私钥字节。
+收尾仅追加 `abort-intent.json` 和 `abort-completed.json`，状态为
+`ABORTED_BEFORE_REVOCATION`，不撤权、不生成新身份、不写健康数据、不建备份。
+所有 fsync、回读及锁验证成功后才返回一次性 receipt，须通过受保护 stdin 交给新
+`rotate --successful-abort-receipt-stdin --successful-workspace-sha256 <original>`。
+原目录保持不变，新撤权尝试写入其唯一 `successor/` 并绑定 abort intent 摘要，后继与
+普通 retirement 必须匹配；原失败目标永久禁止复用。未知、部分收尾/后继、丢失 receipt、
+任意部分撤权或 inspect/apply 漂移仍阻断，不删 intent、不重试失败动作、不伪造撤权成功。
+收尾证明不是部署授权；新候选仍必须满足当前主干精确 CI、validate、独立审查和全部发布闸。
+
 已完成的历史成功撤权审计允许四种精确旧格式只读兼容：回执/工作区摘要格式，以及
 携带 backend、OTA 或 credential 审计字段的完整工作区格式。读取必须重新核验成功
 工作区、canonical 旧执行器和匹配的完整退休记录；有原后端回执摘要时校验原始字节。
