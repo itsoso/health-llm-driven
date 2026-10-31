@@ -122,3 +122,24 @@ unsupported natural-language record failure.
   live synthetic model evidence and production verification. No OTA is needed
   for these backend-only changes. No production success claim is authorized by
   this dossier.
+
+## Authorized production continuation
+
+The user explicitly requested full repair and production release on 2026-10-31.
+The existing clean release checkout was reused at current main `14564dfc7`, and
+only this task's three commits were applied. The original dirty main checkout
+was preserved. The two older local mobile commits were patch-equivalent to
+changes already on remote main and were not republished.
+
+The first integrated synthetic run exposed missing official Pi dependencies in
+this reused checkout: all 24 stream scenarios failed before a model/tool round,
+with `ERR_MODULE_NOT_FOUND` for `@earendil-works/pi-agent-core`. This is an explicit
+failed environment check, not accepted evidence. Install the unchanged lockfile
+and repeat the affected suite, final independent G4, PostgreSQL, CI-mode and live
+synthetic gate. Production release remains pending those fresh results and exact
+main CI. Backend-only scope does not require Mobile OTA.
+
+The existing storage contract is one supplement row per day (upsert), not a
+cumulative multi-event diary. This change preserves actual quantity for that
+contract; same client-turn replay is tested, and universal cross-turn exactly-once
+or arbitrary unsupported natural-language interpretation is not claimed.
