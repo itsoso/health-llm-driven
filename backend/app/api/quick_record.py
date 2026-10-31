@@ -246,6 +246,20 @@ def _parse_quick_record(text: str):
         amount = int(water_match.group(1))
         return "water", {"amount": amount}
 
+    # Preserve the same complete fact used by chat routing and authorization.
+    # The generic classifier's display text is a name, not the intake quantity.
+    from app.services.intake_plan import parse_intake_plan
+
+    plan = parse_intake_plan(text)
+    if plan.status == "needs_clarification" or len(plan.items) > 1:
+        # Never fall back to name stripping after a recognized intake leaves
+        # another subject, negation or a sibling fact unconsumed.
+        return None, None
+    if plan.status == "complete" and len(plan.items) == 1:
+        item = plan.items[0]
+        if item.record_type == "supplement":
+            return "supplement", {"name": item.name, "actual_dosage": item.amount_text}
+
     # 分类/否定过滤都看完整原文(同改动前,用药守卫不被绕过);Mac 表单只另取干净名称。
     form = text.startswith("补剂")
     form_name = _checked_supplement_name(text) if form else None
@@ -451,7 +465,7 @@ def quick_record(
                 supp = SupplementDefinition(
                     user_id=current_user.id,
                     name=data["name"],
-                    timing="morning",
+                    timing=None if "actual_dosage" in data else "morning",
                     category="其他",
                 )
                 db.add(supp)
@@ -461,17 +475,29 @@ def quick_record(
                 SupplementRecord.user_id == current_user.id,
                 SupplementRecord.supplement_id == supp.id,
                 SupplementRecord.record_date == today,
-            ).first()
+            ).with_for_update().first()
             if not existing:
                 record = SupplementRecord(
                     user_id=current_user.id,
                     supplement_id=supp.id,
                     record_date=today,
                     taken=True,
+                    actual_dosage=data.get("actual_dosage"),
                 )
                 db.add(record)
             elif existing.taken:
                 record = existing  # 幂等:今天已打过卡
+                if "actual_dosage" in data:
+                    from app.services.agent_kernel.capability_policy import normalize_supplement_dosage
+
+                    if (record.actual_dosage is not None
+                            and normalize_supplement_dosage(record.actual_dosage)
+                            != normalize_supplement_dosage(data["actual_dosage"])):
+                        raise HTTPException(
+                            status_code=409,
+                            detail="今天已记录的服用数量与本次不同，本次未改动；请在补剂页核对后修改。",
+                        )
+                    record.actual_dosage = data["actual_dosage"]
             else:
                 # 当天已被取消勾选:自由文本不能把它翻回已服(误解析会虚高依从),也不假报已打卡。
                 raise HTTPException(
@@ -479,6 +505,8 @@ def quick_record(
                     detail=f"今天的「{supp.name}」已被标记为未服,本次未改动;如确已服用,请在补剂页勾选。",
                 )
             message = f"已新建补剂「{supp.name}」并打卡" if created else f"已打卡补剂：{supp.name}"  # 点名实际落到的定义
+            if "actual_dosage" in data:
+                message += f"，本次服用量：{data['actual_dosage']}"
             db.commit()
             db.refresh(record)
             _invalidate_twin(current_user.id)

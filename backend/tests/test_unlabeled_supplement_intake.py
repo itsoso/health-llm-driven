@@ -20,7 +20,10 @@ def _isolate_twin_cache(request, monkeypatch):
     from datetime import datetime
     from app.twin.schema import HealthTwin, TwinMeta
     from app.utils import redis_cache
-    if request.node.originalname != 'test_live_provider_to_isolated_authenticated_intake':
+    if request.node.originalname not in {
+        'test_live_provider_to_isolated_authenticated_intake',
+        'test_quick_conflicting_quantities_serialize_on_postgres',
+    }:
         request.getfixturevalue('isolated_agent_protocol_transport')
     monkeypatch.setattr(redis_cache, 'get_redis_client', lambda: None)
     monkeypatch.setattr(
@@ -135,6 +138,127 @@ def test_stale_diet_frame_cannot_compile_a_supplement_as_a_meal():
     assert _compile_simple_health_record_goal(
         envelope=envelope, context=context, intent=stale, actionable_references=(),
     ) is None
+
+
+@pytest.mark.parametrize('text,name,dose', CASES[:3])
+@pytest.mark.parametrize('prior', ['new', 'definition', 'unknown_dose', 'same_dose', 'different_dose', 'not_taken'])
+def test_quick_record_preserves_typed_intake_without_regimen_inference(
+    db, client, auth_user_and_headers, text, name, dose, prior,
+):
+    from datetime import date
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+    from app.models.daily_health import DietRecord
+    user, headers = auth_user_and_headers
+    definition = None
+    if prior != 'new':
+        definition = SupplementDefinition(user_id=user.id, name=name, dosage='9粒', timing='bedtime')
+        db.add(definition)
+        db.flush()
+        if prior != 'definition':
+            db.add(SupplementRecord(user_id=user.id, supplement_id=definition.id,
+                record_date=date.today(), taken=prior != 'not_taken',
+                actual_dosage=None if prior == 'unknown_dose' else dose if prior == 'same_dose' else '9粒'))
+        db.commit()
+    before_diet = db.query(DietRecord).count()
+    response = client.post('/api/v1/quick-record', headers=headers, json={'text': text})
+    if prior in {'different_dose', 'not_taken'}:
+        assert response.status_code == 409
+        db.expire_all()
+        record = db.query(SupplementRecord).filter_by(supplement_id=definition.id).one()
+        assert record.actual_dosage == '9粒'
+        assert record.taken is (prior != 'not_taken')
+        return
+    assert response.status_code == 200, response.text
+    assert response.json()['success'] is True and response.json()['type'] == 'supplement'
+    record_id = response.json()['record_id']
+    db.expire_all()
+    record = db.get(SupplementRecord, record_id)
+    assert record.user_id == user.id and record.record_date == date.today()
+    assert record.actual_dosage == dose and record.taken is True
+    definition = db.get(SupplementDefinition, record.supplement_id)
+    assert definition.name == name
+    assert definition.dosage == (None if prior == 'new' else '9粒')
+    assert definition.timing == (None if prior == 'new' else 'bedtime')
+    assert dose in response.json()['message']
+    repeated = client.post('/api/v1/quick-record', headers=headers, json={'text': text})
+    assert repeated.status_code == 200 and repeated.json()['record_id'] == record_id
+    assert db.query(DietRecord).count() == before_diet
+    assert db.query(SupplementRecord).filter_by(user_id=user.id, supplement_id=definition.id).count() == 1
+
+
+def test_quick_typed_intake_is_authenticated_and_owner_bound(db, client, auth_user_and_headers):
+    from app.models.user import User
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+    user, headers = auth_user_and_headers
+    other = User(name='Synthetic other owner', email='intake-other@example.test')
+    db.add(other)
+    db.flush()
+    other_definition = SupplementDefinition(user_id=other.id, name='肌酸', dosage='9粒')
+    db.add(other_definition)
+    db.commit()
+    body = {'text': CASES[0][0]}
+    assert client.post('/api/v1/quick-record', json=body).status_code == 401
+    response = client.post('/api/v1/quick-record', headers=headers, json=body)
+    assert response.status_code == 200
+    record = db.get(SupplementRecord, response.json()['record_id'])
+    assert record.user_id == user.id and record.supplement_id != other_definition.id
+    assert not db.query(SupplementRecord).filter_by(user_id=other.id).all()
+
+
+def test_quick_conflicting_quantities_serialize_on_postgres(db, auth_user_and_headers):
+    from concurrent.futures import ThreadPoolExecutor
+    from datetime import date
+    from threading import Barrier
+    from fastapi import HTTPException
+    from sqlalchemy.orm import sessionmaker
+    from app.api.quick_record import quick_record, QuickRecordRequest
+    from app.models.user import User
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+    if db.get_bind().dialect.name != 'postgresql':
+        pytest.skip('PostgreSQL row lock semantics')
+    user, _ = auth_user_and_headers
+    owner = user.id
+    definition = SupplementDefinition(user_id=owner, name='肌酸')
+    db.add(definition)
+    db.flush()
+    record = SupplementRecord(user_id=owner, supplement_id=definition.id, record_date=date.today(), taken=True)
+    db.add(record)
+    db.commit()
+    record_id = record.id
+    db.commit()
+    sessions = sessionmaker(bind=db.get_bind())
+    start = Barrier(2)
+    def write(amount):
+        with sessions() as session:
+            actor = session.get(User, owner)
+            start.wait(timeout=10)
+            try:
+                result = quick_record(QuickRecordRequest(text=f'记录吃了{amount}粒肌酸。'), actor, session)
+                return 200, str(amount) + '粒', result.record_id
+            except HTTPException as exc:
+                return exc.status_code, str(amount) + '粒', None
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(write, [2, 3]))
+    assert sorted(r[0] for r in results) == [200, 409]
+    winner = next(r for r in results if r[0] == 200)
+    db.expire_all()
+    assert winner[2] == record_id
+    assert db.get(SupplementRecord, record_id).actual_dosage == winner[1]
+
+
+@pytest.mark.parametrize('text', [
+    '记录妈妈吃了两粒肌酸。', '记录明天吃两粒肌酸。', '记录没吃两粒肌酸。',
+    '记录吃了一粒复合维生素 VB，这是妈妈的。',
+    '记录吃了一粒复合维生素 VB，不要保存。', '记录吃了两粒肌酸激酶。',
+])
+def test_quick_typed_intake_rejects_unsupported_context(db, client, auth_user_and_headers, text):
+    from app.models.supplement import SupplementDefinition, SupplementRecord
+    from app.models.daily_health import DietRecord
+    user, headers = auth_user_and_headers
+    response = client.post('/api/v1/quick-record', headers=headers, json={'text': text})
+    assert response.status_code == 400
+    for model in (SupplementDefinition, SupplementRecord, DietRecord):
+        assert not db.query(model).filter_by(user_id=user.id).all()
 
 
 @pytest.mark.parametrize('dose', ['一粒', '两粒'])

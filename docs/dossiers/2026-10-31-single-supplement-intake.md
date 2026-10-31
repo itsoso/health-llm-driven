@@ -290,3 +290,26 @@ test-only correction. No production operation has started.
   local CI-mode run was intentionally stopped (SIGTERM, exit -15) and is not a
   pass. Integrate current main, then rerun frozen final-source CI-mode, live and
   PostgreSQL checks before push/release. No new production operation has begun.
+
+### Independent G4: shared quick-record consumer
+
+- G4 **NO-GO** on `a128128b3`: the shared classifier also enables the quick-record
+  endpoint. Its legacy check-in adapter discarded the typed quantity and inferred
+  a morning regimen. Independent offline review passed 187 tests but correctly
+  treated this untested consumer as blocking. No push or deployment occurred.
+- New authenticated quick-record RED: 15 failed / 3 passed. The correction
+  consumes the same complete plan, persists `actual_dosage`, and leaves new
+  definition timing/dosage unset. Existing regimen remains unchanged; an
+  existing unknown actual quantity may be filled, an equal quantity replays,
+  but conflicting quantity or an explicit not-taken record returns 409 unchanged.
+- Reopened verification also covers unauthenticated denial, another owner's
+  same-named definition, and unsupported negated/other-person/residual context.
+  The prior final-candidate CI-mode run was stopped after NO-GO and is not a pass.
+
+- The quick-record follow-up also exposed a real residual-subject bug: a VB
+  intake followed by another-person attribution fell back to legacy name
+  stripping and wrote successfully. A recognized incomplete or multi-item plan
+  now fails closed in this single-record endpoint; its negative API test must
+  observe 400 and no health rows. Existing quantity conflict checks take a
+  PostgreSQL row lock, with a concurrent fill test requiring one success and
+  one unchanged 409, never last-writer-wins loss of a quantity.
