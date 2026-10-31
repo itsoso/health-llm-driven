@@ -1,7 +1,7 @@
 /* eslint-disable import/first, @typescript-eslint/no-require-imports */
 import React from 'react';
-import { Alert, Share } from 'react-native';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { Alert, Share, Modal } from 'react-native';
+import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import * as ImagePicker from 'expo-image-picker';
 
 const mockRouteParams: Record<string, string> = { capture: 'photo' };
@@ -217,6 +217,148 @@ describe('DietScreen capture deeplink', () => {
     jest.clearAllMocks();
     mockMeals.splice(0);
     Object.keys(mockRouteParams).forEach((key) => { delete mockRouteParams[key]; });
+  });
+
+  const detailRecord = (id = 88) => ({
+    id, user_id: 1, record_date: '2026-08-01', meal_type: 'lunch',
+    food_items: `合成测试午餐 ${id}：完整食物与份量描述`, calories: 520,
+    protein: 24, carbs: 60, fat: 18, fiber: 5, alcohol_units: null,
+    notes: '测试备注', health_tips: null, image_url: null,
+  });
+
+  it('opens the selected meal details and edits that record without writing on open', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord(), detailRecord(89));
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getAllByRole('button', { name: '查看午餐饮食详情' })[1]);
+    const detail = within(view.getByTestId('diet-record-detail'));
+    expect(detail.getByText(detailRecord(89).food_items)).toBeTruthy();
+    expect(require('../../services/diet').createDietRecord).not.toHaveBeenCalled();
+    expect(require('../../services/diet').updateDietRecord).not.toHaveBeenCalled();
+    fireEvent.press(detail.getByRole('button', { name: '修改食物或份量' }));
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+    expect(mockMealForm.mock.lastCall?.[0].initialRecord.id).toBe(89);
+  });
+
+  it('reviews the selected historical record through the existing database-bound daily review', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    fireEvent.press(within(view.getByTestId('diet-record-detail')).getByRole('button', { name: '复盘当天饮食' }));
+    const review = mockReturnToChatWithContext.mock.lastCall?.[1];
+    expect(review.prompt).toBe('帮我复盘这一天的饮食，给出下一餐的调整建议。');
+    expect(review.context.database_verification).toMatchObject({ verify_record_id: 88, date: '2026-08-01', required: true });
+    expect(review.badge).toBe('2026-08-01 饮食复盘');
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+  });
+
+  it('updates an open detail from the query and closes it when the record disappears', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    mockMeals[0] = { ...detailRecord(), food_items: '已修正的合成午餐' };
+    view.rerender(<DietScreen />);
+    expect(within(view.getByTestId('diet-record-detail')).getByText('已修正的合成午餐')).toBeTruthy();
+    mockMeals.splice(0);
+    view.rerender(<DietScreen />);
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+  });
+
+  it.each(['owner', 'token', 'logout', 'consent', 'date'])('closes meal details on %s changes', async (change) => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    act(() => {
+      if (change === 'owner') mockAuth = { ...mockAuth, user: { id: 2 } };
+      if (change === 'token') mockAuth = { ...mockAuth, token: 'different-session' };
+      if (change === 'logout') mockAuth = { ...mockAuth, token: '' };
+      if (change === 'consent') require('../../services/aiConsentState').invalidateAIConsent();
+      if (change === 'date') mockRouteParams.date = '2026-08-02';
+      view.rerender(<DietScreen />);
+    });
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+  });
+
+  it('requires delete confirmation and dismisses details only after deletion succeeds', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const alert = jest.spyOn(Alert, 'alert');
+    const deleteRecord = require('../../services/diet').deleteDietRecord;
+    deleteRecord.mockResolvedValue(undefined);
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    fireEvent.press(within(view.getByTestId('diet-record-detail')).getByRole('button', { name: '删除这条记录' }));
+    expect(deleteRecord).not.toHaveBeenCalled();
+    expect(view.getByTestId('diet-record-detail')).toBeTruthy();
+    const confirm = alert.mock.lastCall?.[2]?.find(button => button.text === '删除');
+    await act(async () => { await confirm?.onPress?.(); });
+    expect(deleteRecord).toHaveBeenCalledWith(88);
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+    alert.mockRestore();
+  });
+
+  it('does not delete a record when the account changes while confirmation is open', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const alert = jest.spyOn(Alert, 'alert');
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    fireEvent.press(within(view.getByTestId('diet-record-detail')).getByRole('button', { name: '删除这条记录' }));
+    const confirm = alert.mock.lastCall?.[2]?.find(button => button.text === '删除');
+    mockAuth = { ...mockAuth, user: { id: 2 }, token: 'different-session' };
+    view.rerender(<DietScreen />);
+    await act(async () => { await confirm?.onPress?.(); });
+    expect(require('../../services/diet').deleteDietRecord).not.toHaveBeenCalled();
+    alert.mockRestore();
+  });
+
+  it('keeps the row share action separate from opening details', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push({ ...detailRecord(), image_url: '/api/v1/upload/files/diet/example.jpg' });
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '分享午餐饮食' }));
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+    expect(mockDietShareComposer.mock.lastCall?.[0].record.id).toBe(88);
+  });
+
+  it('waits for the iOS detail sheet to dismiss before presenting the selected record for sharing', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push({ ...detailRecord(), image_url: '/api/v1/upload/files/diet/example.jpg' });
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    fireEvent.press(within(view.getByTestId('diet-record-detail')).getByRole('button', { name: '分享这餐' }));
+    expect(mockDietShareComposer).not.toHaveBeenCalled();
+    expect(view.UNSAFE_getByType(Modal).props.visible).toBe(false);
+    fireEvent(view.UNSAFE_getByType(Modal), 'dismiss');
+    expect(mockDietShareComposer.mock.lastCall?.[0].record.id).toBe(88);
+    expect(view.queryByTestId('diet-record-detail')).toBeNull();
+  });
+
+  it('keeps the details and reports an error if deletion fails', async () => {
+    mockRouteParams.date = '2026-08-01';
+    mockMeals.push(detailRecord());
+    const alert = jest.spyOn(Alert, 'alert');
+    require('../../services/diet').deleteDietRecord.mockRejectedValueOnce(new Error('offline'));
+    const view = render(<DietScreen />);
+    await act(async () => {});
+    fireEvent.press(view.getByRole('button', { name: '查看午餐饮食详情' }));
+    fireEvent.press(within(view.getByTestId('diet-record-detail')).getByRole('button', { name: '删除这条记录' }));
+    const confirm = alert.mock.lastCall?.[2]?.find(button => button.text === '删除');
+    await act(async () => { await confirm?.onPress?.(); });
+    expect(alert).toHaveBeenLastCalledWith('删除失败', '请稍后再试');
+    expect(view.getByTestId('diet-record-detail')).toBeTruthy();
+    alert.mockRestore();
   });
 
   it('opens the same authenticated photo composer and shares the canonical diet caption', async () => {

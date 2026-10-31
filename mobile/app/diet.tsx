@@ -1,6 +1,6 @@
 import { backOrChat } from '../utils/backOrChat';
-import React, { useState, useCallback, useMemo, useEffect, useRef } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator, Share, Modal } from 'react-native';
+import React, { useState, useCallback, useMemo, useEffect, useRef, useSyncExternalStore } from 'react';
+import { View, Text, ScrollView, StyleSheet, TouchableOpacity, RefreshControl, TextStyle, Alert, ActivityIndicator, Share, Modal, Platform } from 'react-native';
 import { Image } from 'expo-image';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
@@ -17,6 +17,7 @@ import { assertDietEditActive, DietEditCancelledError, DietEditTimeoutError, run
 import * as ImagePicker from 'expo-image-picker';
 import type { ImagePickerAsset } from 'expo-image-picker';
 import MealForm from '../components/diet/MealForm';
+import DietRecordDetail from '../components/diet/DietRecordDetail';
 import { DietPortionPicker } from '../components/diet/DietPortionPicker';
 import DietFAB from '../components/diet/DietFAB';
 import FrequentFoodsRow from '../components/diet/FrequentFoodsRow';
@@ -481,6 +482,7 @@ export default function DietScreen() {
   const router = useRouter();
   const { token: authToken, user: authUser, isLoading: authLoading } = useAuth();
   const authUserId = authUser?.id;
+  const consentRevision = useSyncExternalStore(subscribeAIConsentInvalidation, aiConsentRevision, aiConsentRevision);
   const params = useLocalSearchParams<DietRouteParams>();
   const returnToChatAfterConfirm = firstParam(params.return_to) === 'chat';
   const captureConsumedRef = useRef(false);
@@ -497,6 +499,11 @@ export default function DietScreen() {
   const [showForm, setShowForm] = useState(false);
   const [formDefaults, setFormDefaults] = useState<Partial<DietRecordCreate>>({});
   const [editingRecord, setEditingRecord] = useState<DietRecord | null>(null);
+  const [detailSelection, setDetailSelection] = useState<{
+    id: number; owner: number; token: string; revision: number; date: string;
+  } | null>(null);
+  const [detailSharePending, setDetailSharePending] = useState(false);
+  const listRef = useRef<ScrollView>(null);
   const [editFoodItems, setEditFoodItems] = useState('');
   const [editPortionValue, setEditPortionValue] = useState('1');
   const [editSaving, setEditSaving] = useState(false);
@@ -514,6 +521,8 @@ export default function DietScreen() {
       setEditSaving(false);
       setShowForm(false);
       setEditingRecord(null);
+      setDetailSelection(null);
+      setDetailSharePending(false);
     };
     invalidate();
     const unsubscribe = subscribeAIConsentInvalidation(invalidate);
@@ -1052,9 +1061,11 @@ export default function DietScreen() {
     setQuickDraft(null);
     setDraftEstimateSource(null);
     setShowForm(true);
+    listRef.current?.scrollTo({ y: 0, animated: true });
   }, []);
 
   const handleDelete = useCallback((r: DietRecord) => {
+    const session = { owner: authUserId, token: authToken, revision: aiConsentRevision() };
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const preview = (r.food_items || '').slice(0, 30);
     Alert.alert(
@@ -1066,10 +1077,18 @@ export default function DietScreen() {
           text: '删除',
           style: 'destructive',
           onPress: async () => {
+            if (!session.token || session.owner !== r.user_id
+              || editIdentityRef.current.owner !== session.owner
+              || editIdentityRef.current.token !== session.token
+              || aiConsentRevision() !== session.revision) {
+              Alert.alert('会话已变化', '请重新打开这条饮食记录后操作');
+              return;
+            }
             try {
               await deleteDietRecord(r.id);
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
               qc.invalidateQueries({ queryKey: ['diet'] });
+              setDetailSelection(current => current?.id === r.id && current.owner === r.user_id ? null : current);
             } catch {
               Alert.alert('删除失败', '请稍后再试');
             }
@@ -1077,7 +1096,7 @@ export default function DietScreen() {
         },
       ],
     );
-  }, [qc]);
+  }, [authToken, authUserId, qc]);
 
   const handleText = useCallback(() => {
     Alert.prompt('文字记录', '描述你吃的食物（如：鸡胸肉200g + 糙米饭一碗）', (text) => {
@@ -1349,6 +1368,33 @@ export default function DietScreen() {
   }, [daily?.meals, date, estimate, pendingIds, failedIds]);
 
   const meals = daily?.meals ?? EMPTY_MEALS;
+  // Keep only a scoped selector. Refreshes replace the displayed record, and
+  // identity/date changes hide it synchronously, before cleanup effects run.
+  const detailRecord = detailSelection && !authLoading && authToken
+    && detailSelection.owner === authUserId
+    && detailSelection.token === authToken
+    && detailSelection.revision === consentRevision
+    && detailSelection.date === date
+    ? meals.find(record => record.id === detailSelection.id
+      && record.user_id === authUserId && record.record_date === date)
+    : undefined;
+  useEffect(() => {
+    if (detailSelection && !detailRecord) setDetailSelection(null);
+  }, [detailSelection, detailRecord]);
+
+  const openRecordDetail = (record: DietRecord) => {
+    if (authLoading || !authToken || !authUserId || record.user_id !== authUserId
+      || record.record_date !== date) return;
+    setDetailSharePending(false);
+    setDetailSelection({ id: record.id, owner: authUserId, token: authToken, revision: consentRevision, date });
+  };
+  const shareDetailRecord = () => {
+    if (!detailRecord) return;
+    setDetailSelection(null);
+    setDetailSharePending(false);
+    setShareImageUriOverride(null);
+    setShareRecord(detailRecord);
+  };
 
   useEffect(() => {
     const targetId = readRoutePositiveInt(params.share_record_id);
@@ -1431,7 +1477,7 @@ export default function DietScreen() {
         </TouchableOpacity>
       </View>
 
-      <ScrollView contentContainerStyle={styles.content}
+      <ScrollView ref={listRef} contentContainerStyle={styles.content}
         refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={C.green500} />}
         showsVerticalScrollIndicator={false}>
 
@@ -1569,6 +1615,14 @@ export default function DietScreen() {
                 )}
               >
                 <View style={styles.mealRow}>
+                  <TouchableOpacity
+                    style={styles.mealDetailButton}
+                    activeOpacity={0.72}
+                    accessibilityRole="button"
+                    accessibilityLabel={`查看${MEAL_LABEL[r.meal_type] ?? '这餐'}饮食详情`}
+                    accessibilityHint="查看完整食物、照片和营养，可修改、分享或继续复盘"
+                    onPress={() => openRecordDetail(r)}
+                  >
                   <View style={styles.mealDot} />
                   {primaryImageUrl ? (
                     <View style={styles.mealPhotoWrap} accessibilityLabel={`本餐包含 ${imageUrls.length} 张照片`}>
@@ -1590,6 +1644,8 @@ export default function DietScreen() {
                     <Text style={txt.mealType}>{MEAL_LABEL[r.meal_type] || r.meal_type}</Text>
                     <Text style={txt.mealFood} numberOfLines={2}>{r.food_items}</Text>
                   </View>
+                  <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+                  </TouchableOpacity>
                   {pending ? (
                     failed && !isEstimating ? (
                       <TouchableOpacity
@@ -1635,6 +1691,37 @@ export default function DietScreen() {
 
         <View style={{ height: 140 }} />
       </ScrollView>
+
+      {detailRecord && authToken ? (
+        <DietRecordDetail
+          record={detailRecord}
+          authToken={authToken}
+          visible={!detailSharePending}
+          onDismiss={() => {
+            if (detailSharePending) shareDetailRecord();
+          }}
+          onClose={() => setDetailSelection(null)}
+          onEdit={() => {
+            setDetailSelection(null);
+            handleEdit(detailRecord);
+          }}
+          onDelete={() => handleDelete(detailRecord)}
+          onShare={() => {
+            // iOS cannot present the share sheet until the detail sheet has
+            // finished dismissing. Keep it mounted to receive onDismiss.
+            if (Platform.OS === 'ios') setDetailSharePending(true);
+            else shareDetailRecord();
+          }}
+          onReview={() => {
+            setDetailSelection(null);
+            returnToChatWithContext(router, {
+              prompt: POST_CONFIRM_DIET_REVIEW_PROMPT,
+              context: buildPostConfirmDietReviewContext(detailRecord),
+              badge: `${detailRecord.record_date} 饮食复盘`,
+            });
+          }}
+        />
+      ) : null}
 
       {showDietFab ? (
         <DietFAB onPhoto={handlePhoto} onLibrary={handlePhotoLibrary} onText={handleText} onVoice={handleVoiceText} />
@@ -2175,6 +2262,7 @@ const styles = StyleSheet.create({
     backgroundColor: C.surface, borderRadius: revaRadii.md,
     padding: revaSpacing.s4, marginBottom: revaSpacing.s2, ...revaShadows.sm,
   },
+  mealDetailButton: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 10, minHeight: 54 },
   mealDot: { width: 4, height: 4, borderRadius: 2, backgroundColor: C.green500 },
   mealPhotoWrap: { width: 54, height: 54, position: 'relative' },
   mealPhoto: { width: 54, height: 54, borderRadius: revaRadii.sm, backgroundColor: C.paper2 },
