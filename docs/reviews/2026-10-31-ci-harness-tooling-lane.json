@@ -1,6 +1,6 @@
 {
   "schema_version": "ci_harness_tooling_lane.v1",
-  "status": "G4_PASS",
+  "status": "G6_PASS",
   "release_authority": false,
   "baseline": {
     "main_sha": "cfdd54080155cb27d9dcdb03aeda37829445777f",
@@ -73,20 +73,68 @@
     "review_status": "resolved"
   },
   "independent_review": {
-    "reviewed_sha": "fbf98bac3b64ba139f373d79c283db438f50786d",
+    "reviewed_sha": "1ea03ae23a26f3aaa77dd29f672ba6f418b45b50",
     "verdict": "GO",
     "blocking_findings": 0,
     "tooling_tests_passed": 179,
     "ci_contracts_passed": 66,
     "unknown_skill_fail_closed": true,
     "workflow_and_classifier_self_changes_full": true,
-    "mixed_event_matrix_reproduced": true
+    "mixed_event_matrix_reproduced": true,
+    "range_diff_preserved_reviewed_tooling_patch": true,
+    "main_security_implementation_overlap": false
   },
-  "pending_gates": [
-    "exact pull-request full CI",
-    "exact main full CI",
-    "hosted tooling-only lane acceptance"
-  ],
+  "implementation_delivery": {
+    "pull_request": 297,
+    "pull_request_head_sha": "1ea03ae23a26f3aaa77dd29f672ba6f418b45b50",
+    "pull_request_ci_run_id": 41172882668,
+    "pull_request_ci_attempt": 1,
+    "pull_request_ci_wall_seconds": 505,
+    "pull_request_ci_success_jobs": 31,
+    "pull_request_ci_skipped_jobs": 1,
+    "pull_request_ci_failures": 0,
+    "merged_main_sha": "75896038644f58d2a6808a731118a80fc4a9275f",
+    "main_ci_run_id": 41173481942,
+    "main_ci_attempt": 1,
+    "main_ci_wall_seconds": 525,
+    "main_ci_success_jobs": 32,
+    "main_ci_total_jobs": 32,
+    "main_ci_failures": 0,
+    "baseline_delta_seconds": 19,
+    "baseline_delta_percent": 3.75,
+    "comparison_note": "The 506-second baseline and 525-second implementation run are single samples; this is not a stable latency claim."
+  },
+  "hosted_tooling_lane_acceptance": {
+    "pull_request": 298,
+    "change_path": "plugins/reva-health-harness/README.md",
+    "pull_request_head_sha": "7aa3618249a35cf394325b406407b4c5afb3a8c6",
+    "pull_request_ci_run_id": 41174116257,
+    "pull_request_ci_attempt": 1,
+    "pull_request_ci_wall_seconds": 46,
+    "pull_request_ci_success_jobs": [
+      "classify-changes",
+      "docs-quality",
+      "backend-tests",
+      "release-tests"
+    ],
+    "pull_request_ci_skipped_jobs": 13,
+    "merged_main_sha": "ca740f1bb61dff6b77b3750a11949887d44e9e1d",
+    "main_ci_run_id": 41174205375,
+    "main_ci_attempt": 1,
+    "main_ci_wall_seconds": 64,
+    "main_ci_success_jobs": [
+      "classify-changes",
+      "docs-quality",
+      "backend-tests",
+      "release-tests"
+    ],
+    "main_ci_skipped_jobs": 13,
+    "runtime_lanes_started": false,
+    "release_lanes_started": false,
+    "aggregate_gates_succeeded": true,
+    "note": "The 46-second pull-request run and 64-second main run are single hosted samples; they prove selection behavior but do not establish P50, P95 or a fixed speedup."
+  },
+  "pending_gates": [],
   "deployment_required": false,
   "ota_required": false
 }
