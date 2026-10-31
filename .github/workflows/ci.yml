@@ -416,6 +416,7 @@ jobs:
           scripts/test_trusted_release_server.py
           scripts/test_trusted_release_runtime.py
           scripts/test_native_release_retirement.py
+          scripts/test_successful_native_continuation.py
           scripts/test_native_finalized_advance.py
           scripts/test_business_lease_sync.py
           scripts/test_frontend_verified_finalization.py

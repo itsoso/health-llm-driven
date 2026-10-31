@@ -126,6 +126,25 @@ PROFILES = {
                           'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
                           'scripts/trusted_release_server.py': 'e044933bc130589bde49d6b2294683ec6f424a1c3b6de2d133a0c8d5370a762a'},
      'skipped_jobs': ['backend', 'retained-testflight']},
+    '1612c75ffc47af5ed470e57335e6c593c6af5817': {'workspace_kind': 'successful-backend',
+ 'run_id': 41195692896,
+ 'run_attempt': 1,
+ 'log_host': 'productionresultssa14.blob.core.windows.net',
+ 'job_ids': {'preflight': 124521284943,
+             'build-permission': 124521320215,
+             'retained-testflight': 124521320857,
+             'ios-build': 124522231552,
+             'backend': 124522232756,
+             'testflight': 124524563793,
+             'release-result': 124525526269},
+ 'build_id': '039c87d2-3bbb-4a20-915b-9c61fc584e71',
+ 'submission_id': '2b3a512b-44cc-4509-b3ed-0bb3c0be0bbd',
+ 'log_sha256': 'ba63056b606cf40045b22f76584a26a20202fec373e552ada6a896b9fcfd70ea',
+ 'jobs_sha256': 'a15340138ca6edaf8c279cdc47c386446e16a8926654011436a640143dd49388',
+ 'canonical_hashes': {'.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
+                      'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
+                      'scripts/trusted_release_server.py': '9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638'},
+ 'skipped_jobs': ['backend', 'retained-testflight']},
 }
 
 
@@ -364,7 +383,8 @@ def vendor_evidence(token, native_sha=OLD_SHA):
 
 
 def workspace_evidence(b, native_sha=OLD_SHA):
-    profile_for(native_sha)
+    if profile_for(native_sha).get('workspace_kind') == 'successful-backend':
+        raise RetirementError('successful backend requires its native continuation proof')
     workspace = b.STATE / native_sha
     inventory = b._inventory(
         workspace,

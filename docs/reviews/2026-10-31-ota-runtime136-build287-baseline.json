@@ -1,0 +1,166 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "1612c75ffc47af5ed470e57335e6c593c6af5817",
+  "native_build": "039c87d2-3bbb-4a20-915b-9c61fc584e71",
+  "build_number": "287",
+  "builds": [
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70",
+      "build": "279"
+    },
+    {
+      "id": "1faa3a05-2385-44fd-bf84-296cc68e84c2",
+      "git_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+      "fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0",
+      "build": "280"
+    },
+    {
+      "id": "a40a61f3-02db-4a88-a308-56884c53500b",
+      "git_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "281"
+    },
+    {
+      "id": "267aad01-a185-4343-b0fb-13ee7e8fabc7",
+      "git_sha": "83876750fcbb404255b7439482688fee82a490d4",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "282"
+    },
+    {
+      "id": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+      "git_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+      "fingerprint": "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4",
+      "build": "283"
+    },
+    {
+      "id": "bd388c63-4a28-491c-acea-f57bebb54fd1",
+      "git_sha": "a4ffb0b3567ab8e248fe86fc4af72c4322f673d2",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "284"
+    },
+    {
+      "id": "d1d281f4-8e4b-4cac-8106-0f93fb67778e",
+      "git_sha": "35bb63e155e6349596ff29455b4aa97066b9b73b",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "285"
+    },
+    {
+      "id": "cc90f439-f400-4059-9a60-c1b400ff298a",
+      "git_sha": "e6f26f6230e429a29113e4322ff5d7be22764787",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "286"
+    },
+    {
+      "id": "039c87d2-3bbb-4a20-915b-9c61fc584e71",
+      "git_sha": "1612c75ffc47af5ed470e57335e6c593c6af5817",
+      "fingerprint": "f06866fba3b5676c60fbbd016774cac6cba7fc1d",
+      "build": "287"
+    }
+  ],
+  "build_287": {
+    "status": "FINISHED",
+    "platform": "IOS",
+    "distribution": "STORE",
+    "build_profile": "production",
+    "channel": "production",
+    "bundle_identifier": "life.executor.health",
+    "app_version": "1.3.6",
+    "runtime_version": "1.3.6",
+    "simulator": false,
+    "fingerprint": "f06866fba3b5676c60fbbd016774cac6cba7fc1d",
+    "artifact": {
+      "kind": "IOS_STORE",
+      "source_sha": "1612c75ffc47af5ed470e57335e6c593c6af5817",
+      "build": "287",
+      "eas_build_id": "039c87d2-3bbb-4a20-915b-9c61fc584e71",
+      "version": "1.3.6",
+      "ipa_sha256": "fd59483f16741e3da0fb39a05b1d30e8dd2d13f7f8d625dc05197b10651b7a32",
+      "dtxcode": "2660",
+      "dtplatform_version": "26.5",
+      "signing_team_id": "QA2U724DAN",
+      "entitlements_verified": true,
+      "background_location_absent": true
+    },
+    "apple_build_id": "5a29c9e3-3248-42c5-a073-7b92984afb25",
+    "apple_processing_state": "VALID",
+    "testflight_internal_state": "IN_BETA_TESTING"
+  },
+  "native_continuation": {
+    "state": "VENDOR_UPLOAD_SUCCEEDED",
+    "run_id": 41195692896,
+    "run_attempt": 1,
+    "workflow_id": 352404554,
+    "build_id": "039c87d2-3bbb-4a20-915b-9c61fc584e71",
+    "submission_id": "2b3a512b-44cc-4509-b3ed-0bb3c0be0bbd",
+    "log_sha256": "ba63056b606cf40045b22f76584a26a20202fec373e552ada6a896b9fcfd70ea",
+    "jobs_sha256": "a15340138ca6edaf8c279cdc47c386446e16a8926654011436a640143dd49388",
+    "prior_jobs_sha256": null,
+    "canonical_hashes": {
+      ".github/workflows/trusted-release.yml": "ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62",
+      "scripts/trusted_eas_build.py": "c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a",
+      "scripts/trusted_release_server.py": "9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638"
+    }
+  },
+  "compatibility": {
+    "previous_baseline": "e6f26f6230e429a29113e4322ff5d7be22764787",
+    "fingerprint_source_delta": [
+      {
+        "source": [
+          "dir",
+          "patches"
+        ],
+        "before_hash": "af4f619f48361071b9780d61f2e1333f3ba92fa9",
+        "after_hash": "908d4f387bdd76d1be363cf112bfedf294ad7b35",
+        "reason": [
+          "patchPackage"
+        ]
+      }
+    ],
+    "native_modules_plugins_and_config_delta": false,
+    "reviewed_dependency_changes": [
+      "decode-uri-component 0.5.0 -> 0.5.1",
+      "follow-redirects 1.16.1 -> 1.16.2",
+      "joi 17.13.8 -> 17.13.9",
+      "node-forge 1.4.0 -> 1.4.1; removes obsolete patch"
+    ]
+  },
+  "source_admission": {
+    "baseline_behavior": "Exact Store 287 source is the native boundary; future native or unknown changes remain blocked.",
+    "pinned_native_paths": [
+      "mobile/package-lock.json",
+      "mobile/package.json",
+      "mobile/patches/README.md",
+      "mobile/patches/expo++@expo+cli+55.0.33.patch",
+      "mobile/patches/zod+4.6.6.patch",
+      "mobile/scripts/security-dependency-compat.node.cjs",
+      "mobile/app.json",
+      "mobile/app.config.ts",
+      "mobile/assets/images/icon.png",
+      "mobile/assets/images/splash-icon.png",
+      "mobile/assets/images/adaptive-icon.png",
+      "mobile/assets/images/favicon.png",
+      "mobile/assets/images/guardian-icon.png",
+      "mobile/plugins/withWatchApp.js",
+      "mobile/plugins/withIntentsExtension.js",
+      "mobile/plugins/__tests__/withWatchApp.test.js",
+      "mobile/modules/rokid-bridge/__tests__/rokidBridge.test.ts",
+      "mobile/scripts/__tests__/parser-security.test.js",
+      "mobile/strings/zh.ts",
+      "mobile/PRODUCT_MAP.md"
+    ]
+  },
+  "raw_evidence_sha256": {
+    "reva-record-native-287.json": "93877b0642199c89d96c2d23a2857d9dad23f6109788dd37dca963747658e831",
+    "reva-record-native-cohort.json": "80e7dee25cfb48aa645d6abb5055a30726b4c848243caf755d70df95c47692fd",
+    "reva-record-native-287-beta.json": "1205408c6d08b385e88644e9d5ee7f5cb80bc8987ffbd2c83e8318f8abdb8d66",
+    "reva-record-native-artifact-receipt.json": "e2a69c61306ea09fa79e9da694a35b493659739b154cdc626016602f7ab4af2c",
+    "reva-record-fingerprint-286-287.json": "29fd124f65f367eec93ed52e68050e0a15958d41ab3f28735cb833d43f322319"
+  },
+  "limitations": [
+    "TestFlight availability does not prove physical-device installation or App Store publication.",
+    "Simulator authenticated UI acceptance is pending; this evidence does not waive that failure.",
+    "Live closed-cohort checks remain required before every trusted OTA publication."
+  ]
+}

@@ -576,8 +576,7 @@ def successful_rotation_fixture(monkeypatch, tmp_path, *, old_expiry=0):
     bootstrap.install(SHA, old_expiry, PUBLIC)
     workspace = bootstrap.STATE / SHA
     workspace.mkdir(mode=0o700)
-    for name, state in (("started", "STARTED"), ("completed", "SUCCEEDED"),
-                        ("build-started", "STARTED"), ("native-started", "STARTED")):
+    for name, state in (("started", "STARTED"), ("completed", "SUCCEEDED")):
         path = workspace / f"{name}.json"
         path.write_text(json.dumps({"sha": SHA, "state": state}))
         path.chmod(0o600)
@@ -1677,3 +1676,54 @@ def test_native_finalization_history_survives_following_rotation(monkeypatch, tm
     assert b.rotate(candidate, future, 0, PUBLIC)['state'] == 'INSTALLED'
     b._persistent_cloud_successor(SHA, PUBLIC)
     assert set(b._retired_history()) == {SHA, candidate}
+
+
+@pytest.mark.parametrize('claims', [('build-started.json',), ('build-started.json', 'native-started.json')])
+def test_successful_backend_cannot_retire_unproven_native_continuation(monkeypatch, tmp_path, claims):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    workspace = bootstrap.STATE / SHA
+    for name in ('build-started.json', 'native-started.json'):
+        (workspace / name).unlink(missing_ok=True)
+    for name in claims:
+        path = workspace / name
+        path.write_text(json.dumps({'sha': SHA, 'state': 'STARTED'}))
+        path.chmod(0o600)
+    before = lifecycle_snapshot(bootstrap)
+    with pytest.raises(bootstrap.BootstrapError, match='native continuation'):
+        bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)
+    assert lifecycle_snapshot(bootstrap) == before
+    assert not (bootstrap.STATE / 'successful-auth-revocations').exists()
+
+
+def test_successful_native_completion_rotation_preserves_claims_and_requires_historical_proof(monkeypatch, tmp_path):
+    bootstrap, _calls, receipt = successful_rotation_fixture(monkeypatch, tmp_path)
+    workspace = bootstrap.STATE / SHA
+    for name in ('build-started.json', 'native-started.json'):
+        path = workspace / name
+        path.write_text(json.dumps({'sha': SHA, 'state': 'STARTED'}))
+        path.chmod(0o600)
+    original = {p.name: p.read_bytes() for p in workspace.iterdir() if p.is_file()}
+    proof = {'kind': 'successful-backend-native-continuation', 'native_sha': SHA,
+             'vendor': {'state': 'VENDOR_UPLOAD_SUCCEEDED', 'build_id': 'synthetic-reviewed-build'}}
+    calls = []
+    def inspect(_b, sha, evidence):
+        assert sha == SHA and evidence['state'] == 'SUCCEEDED'
+        calls.append(sha)
+        return proof
+    def validate(_b, sha, saved):
+        if sha != SHA or saved != proof:
+            raise bootstrap.BootstrapError('native proof differs')
+    helper = SimpleNamespace(inspect=inspect, validate_saved=validate, requires_proof=lambda *_: True)
+    monkeypatch.setattr(bootstrap, '_successful_native_continuation_module', lambda: helper)
+    assert bootstrap.rotate(SHA, NEW_SHA, 200, HOST, successful_workspace_sha256=receipt)['state'] == 'INSTALLED'
+    assert len(calls) == 2
+    for name, content in original.items():
+        assert (workspace / name).read_bytes() == content
+    assert bootstrap._successful_auth_revocation_history()[SHA]['new_sha'] == NEW_SHA
+    path = bootstrap.STATE / 'successful-auth-revocations' / SHA / 'intent.json'
+    intent = json.loads(path.read_text())
+    assert intent['native_continuation'] == proof
+    del intent['native_continuation']
+    path.write_text(json.dumps(intent))
+    with pytest.raises(bootstrap.BootstrapError, match='successful identity revocation audit is incomplete or invalid'):
+        bootstrap._successful_auth_revocation_history()

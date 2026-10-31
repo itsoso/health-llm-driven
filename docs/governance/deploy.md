@@ -1844,3 +1844,14 @@ Use the protected Edu `/var/lib/edu-viewer-release/link.json` and fresh account
 checks to recover the intended mapping; never recreate its already-completed
 parent association. The prior Health authorization attempt and its pending audit
 must not be deleted or replayed.
+
+#### 已成功后端的原生续发完成证明
+
+已存在 SUCCEEDED 后端回执、随后消费原生 build/upload claim 的运行树，轮换前必须由
+`successful_native_continuation.py` 验证源码内受审的精确 vendor profile。
+校验固定 canonical producer 字节、GitHub workflow/attempt/job 终态、实际上传日志摘要及
+EAS build/submission 身份；凭据仅从既有只读凭据文件读取。两类 claim 缺一、远端未知、
+未完成或内容不符均阻断，不能用本地进程退出替代远端完成。
+证明随 successful-auth-revocations 原有 intent 持久化，撤权前再次读取远端核验；
+后续历史校验继续绑定原 claim、后端 completed 和原生证明，不重写原始成功回执。
+该分支不能进入 native-only 收尾；没有受审 profile 的续发不得自动关闭。

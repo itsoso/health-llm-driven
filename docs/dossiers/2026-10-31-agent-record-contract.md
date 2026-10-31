@@ -103,3 +103,48 @@ nasal event endpoint and neighboring rhinitis suites. An initially failing
 selection assertion proves this closes a real CI omission; all legacy selectors
 remain. Historical timing assertions are scoped to their measured original
 selectors, with no invented timing evidence for the added suites.
+
+## Mobile native continuation (2026-10-31, in progress)
+
+User explicitly requested completing Mobile delivery with a new native baseline,
+retaining compatibility gates and simulator/online acceptance. Exact source remains
+1612c75ffc47af5ed470e57335e6c593c6af5817; backend and Web are already deployed.
+Fresh validate run 41195589830 succeeded; native continuation run 41195692896
+uses target=testflight, preserving the existing backend SUCCEEDED receipt.
+Independent safety review: GO; 59 native continuation and vendor-binding tests passed.
+
+ASC readback before the build: latest processed build 286 is VALID; app version
+1.3.6 is REJECTED, not under active review. This continuation does not cancel or
+submit App Review. No new build identity, fingerprint or OTA baseline is asserted
+until actual vendor evidence is available. Simulator candidate has built and
+launched, but signed-in UI acceptance remains pending.
+
+The failed prior OTA validation 41194724524 consumed no OTA claim. Dependency
+inputs differ from the Store 286 baseline, so no keyword/allowlist bypass is used.
+
+Native build 287 (`039c87d2-3bbb-4a20-915b-9c61fc584e71`) finished from the exact
+1612c75 source. Downloaded IPA identity, signed entitlements, team and absent
+background-location capability passed static verification; Apple upload/processing
+was still pending at this checkpoint. Fingerprint comparison against 286 shows
+only the patch-package directory changed, matching removal of the superseded
+node-forge patch; native module/plugin/config source fingerprints are unchanged.
+
+Simulator login acceptance exposed a local build configuration error: the prior
+CODE_SIGNING_ALLOWED=NO package was linker-signed, lacked application-identifier
+entitlements, and securityd reported errSecMissingEntitlement (-34018). It must not
+count as login acceptance. A properly signed Release simulator rebuild is running;
+no production auth weakening or plaintext token fallback is introduced.
+
+Native continuation terminal: trusted run 41195692896 completed successfully. EAS Store build
+287 (`039c87d2-3bbb-4a20-915b-9c61fc584e71`) binds source `1612c75ffc47af5ed470e57335e6c593c6af5817`;
+ASC readback is VALID / IN_BETA_TESTING. Exact IPA signature/capability receipt and closed cohort
+are recorded in `docs/reviews/2026-10-31-ota-runtime136-build287-baseline.json`. Fingerprint source
+comparison against 286 changes only patch-package input; native module/plugin/config sources are
+unchanged. Future native or unknown input remains blocked, and every older runtime host remains
+required in live cohort checks. This is TestFlight availability, not App Store publication.
+
+Simulator packaging correction: the first local candidate used disabled signing and Keychain
+reported errSecMissingEntitlement (-34018). Rebuilding with Xcode simulator signing embeds the
+application identifier in the Mach-O simulator entitlement section. After reinstall and restart,
+the candidate opens its login screen. Authenticated acceptance still awaits a fresh user login;
+no plaintext fallback, injected token, or test health writes to the personal account were used.

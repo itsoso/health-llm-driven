@@ -18,6 +18,7 @@ REVIEWED_BUILD_NUMBERS = {
     'bd388c63-4a28-491c-acea-f57bebb54fd1': '284',
     'd1d281f4-8e4b-4cac-8106-0f93fb67778e': '285',
     'cc90f439-f400-4059-9a60-c1b400ff298a': '286',
+    '039c87d2-3bbb-4a20-915b-9c61fc584e71': '287',
 }
 
 
@@ -40,12 +41,12 @@ def build(m, *, identifier=None, sha=None):
         "buildProfile": "production",
         "gitCommitHash": sha or m.NATIVE_SHA,
         "appVersion": m.RUNTIME,
-        "appBuildVersion": REVIEWED_BUILD_NUMBERS.get(identity, "286"),
+        "appBuildVersion": REVIEWED_BUILD_NUMBERS.get(identity, "287"),
         "appIdentifier": m.BUNDLE,
         "app": {"id": m.PROJECT},
         "updateChannel": {"name": "production"},
         "runtime": {"version": m.RUNTIME},
-        "fingerprint": {"hash": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a"},
+        "fingerprint": {"hash": "f06866fba3b5676c60fbbd016774cac6cba7fc1d"},
         "isForIosSimulator": False,
     }
 
@@ -656,7 +657,7 @@ def test_preflight_uses_real_native_contract_and_still_blocks_changed_package(mo
     assert m.cli() == 1
     assert json.loads(capsys.readouterr().err)['reason'] == 'native_source_incompatible'
     assert ('merge-base', '--is-ancestor', m.NATIVE_SHA, 'c'*40) in calls
-    assert contract.NATIVE_SHA == m.NATIVE_SHA == 'e6f26f6230e429a29113e4322ff5d7be22764787'
+    assert contract.NATIVE_SHA == m.NATIVE_SHA == '1612c75ffc47af5ed470e57335e6c593c6af5817'
 
 
 def test_preflight_failure_blocks_publish_before_credential_lookup(monkeypatch):
@@ -1245,7 +1246,7 @@ def test_old_runtime_build_is_not_in_new_279_cohort():
 
 def test_fixed_cohort_evidence_matches_implementation():
     m=load()
-    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-29-ota-runtime136-build286-baseline.json').read_text())
+    evidence=json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-31-ota-runtime136-build287-baseline.json').read_text())
     assert {b['id']:(b['git_sha'],b['fingerprint'],b['build']) for b in evidence['builds']}==m.REVIEWED_NATIVE_COHORT
 
 
@@ -1468,7 +1469,7 @@ def test_actual_280_build_is_required_with_279_and_exact_fingerprint():
     with pytest.raises(m.PublishError): m.validate_builds(base, [base, newer])
 
 
-def test_279_through_286_require_exact_identity_and_all_older_hosts():
+def test_279_through_287_require_exact_identity_and_all_older_hosts():
     m=load();base=build(m)
     expected=[('399eb452-402e-47cd-a0e3-18dff2d1ca51','1ba724dcb62ac389a72e41eecf40fea7aaca27e3','cfb1606da3744f6df32d89364535e307d3f2ed70'),
       ('1faa3a05-2385-44fd-bf84-296cc68e84c2','c28050786c1e9aa70cca33d7e3d5c093652aeb26','2c29cc641498ac6653d89d54f986dc12fe22e9e0'),
@@ -1477,12 +1478,13 @@ def test_279_through_286_require_exact_identity_and_all_older_hosts():
       ('ea1dda2a-86b3-4e46-adf8-b2b024465154','ae7a5972921ee9d51eec2c90c7893e6941d2d7ff','0f13707a06be8ea69d9a8f083e4c38edfa08cbe4'),
       ('bd388c63-4a28-491c-acea-f57bebb54fd1','a4ffb0b3567ab8e248fe86fc4af72c4322f673d2','0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a'),
       ('d1d281f4-8e4b-4cac-8106-0f93fb67778e','35bb63e155e6349596ff29455b4aa97066b9b73b','0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a'),
-      ('cc90f439-f400-4059-9a60-c1b400ff298a','e6f26f6230e429a29113e4322ff5d7be22764787','0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a')]
+      ('cc90f439-f400-4059-9a60-c1b400ff298a','e6f26f6230e429a29113e4322ff5d7be22764787','0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a'),
+      ('039c87d2-3bbb-4a20-915b-9c61fc584e71','1612c75ffc47af5ed470e57335e6c593c6af5817','f06866fba3b5676c60fbbd016774cac6cba7fc1d')]
     cohort=[]
     for identity,sha,fingerprint in expected:
         item=build(m,identifier=identity,sha=sha);item['fingerprint']={'hash':fingerprint};cohort.append(item)
     assert m.validate_builds(base,cohort)==base['fingerprint']['hash']
-    for index in range(8):
+    for index in range(len(expected)):
         with pytest.raises(m.PublishError):m.validate_builds(base,cohort[:index]+cohort[index+1:])
     import copy
     for field,value in [('gitCommitHash','b'*40),('id','55555555-5555-4555-8555-555555555555'),('fingerprint',{'hash':'a'*40})]:

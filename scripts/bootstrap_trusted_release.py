@@ -879,6 +879,10 @@ def _successful_auth_revocation_history(*, _pending_successful_abort=None):
             }
             if prior_abort is not None:
                 expected.add('prior_abort_sha256')
+            if isinstance(intent, dict) and 'native_continuation' in intent:
+                expected.add('native_continuation')
+                _successful_native_continuation_module().validate_saved(
+                    _bootstrap_context(), entry.name, intent['native_continuation'])
             if (not isinstance(intent, dict) or set(intent) != expected
                     or (prior_abort is not None and intent.get('prior_abort_sha256') != prior_abort)
                     or intent["old_sha"] != entry.name
@@ -898,6 +902,15 @@ def _successful_auth_revocation_history(*, _pending_successful_abort=None):
                 raise BootstrapError("successful identity executor differs from canonical source")
             completed = _read_json(record / "completed.json")
             workspace = _workspace_evidence(entry.name, historical=True)
+            native_claims = {'build-started.json', 'native-started.json'}
+            present_native = native_claims & set(workspace.get('inventory') or [])
+            if present_native:
+                continuation = _successful_native_continuation_module()
+                if continuation.requires_proof(_bootstrap_context(), entry.name):
+                    if present_native != native_claims or 'native_continuation' not in intent:
+                        raise BootstrapError('native continuation history proof missing')
+            elif 'native_continuation' in intent:
+                raise BootstrapError('native continuation history lacks original claims')
             workspace_completed = STATE / entry.name / "completed.json"
             if (not isinstance(completed, dict)
                     or set(completed) != {"old_sha", "new_sha", "state", "installation_sha256"}
@@ -1356,12 +1369,33 @@ def frontend_history_seal(sha, *, active_operation=None, inspect=False, checkpoi
         os.close(fd)
 
 
+def _successful_native_continuation_module():
+    path = Path(__file__).with_name('successful_native_continuation.py')
+    secure(path)
+    if os.path.lexists(path.parent / '__pycache__'):
+        raise BootstrapError('cached native continuation code forbidden')
+    spec = importlib.util.spec_from_file_location('successful_native_continuation', path)
+    module = importlib.util.module_from_spec(spec)
+    exec(compile(path.read_bytes(), str(path), 'exec', dont_inherit=True), module.__dict__)
+    return module
+
+
+def _successful_native_continuation(sha, workspace):
+    if not {'build-started.json', 'native-started.json'} & set(workspace.get('inventory') or []):
+        return None
+    try:
+        return _successful_native_continuation_module().inspect(_bootstrap_context(), sha, workspace)
+    except Exception:
+        raise BootstrapError('native continuation terminal unproven; retirement forbidden') from None
+
+
 def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, check_locks, *, abort_receipt=None):
     workspace = _workspace_evidence(old_sha)
     completed_path = STATE / old_sha / "completed.json"
     if (workspace.get("state") != "SUCCEEDED"
             or hashlib.sha256(completed_path.read_bytes()).hexdigest() != workspace_completed_sha256):
         raise BootstrapError("successful workspace receipt differs from fixed release evidence")
+    native_continuation = _successful_native_continuation(old_sha, workspace)
     policy = _read_json(CONFIG / "authorized-release.json")
     old_source = canonical_source(old_sha)
     executor_digest = hashlib.sha256(
@@ -1411,6 +1445,8 @@ def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, che
         "loopback_public_sha256": hashlib.sha256(public.encode()).hexdigest(),
         "backend_succeeded": True,
     }
+    if native_continuation is not None:
+        proof['native_continuation'] = native_continuation
     root = STATE / "successful-auth-revocations"
     if not root.exists():
         root.mkdir(mode=0o700)
@@ -1436,6 +1472,8 @@ def _close_successful_identity(old_sha, new_sha, workspace_completed_sha256, che
         raise BootstrapError("successful identity evidence changed before revocation")
     _assert_idle()
     check_locks()
+    if _successful_native_continuation(old_sha, workspace) != native_continuation:
+        raise BootstrapError('native continuation changed before revocation')
     if _revoke_locked(old_sha) != {"sha": old_sha, "state": "REVOKED"}:
         raise BootstrapError("successful identity revocation did not complete")
     check_locks()

@@ -25,8 +25,8 @@ EAS = SOURCE / "scripts/release-tools/node_modules/eas-cli/bin/run"
 EXPO = SOURCE / "mobile/node_modules/expo/bin/cli"
 PROJECT = "911ea84f-bc7e-4a12-90cf-33966b6f7398"
 RUNTIME = "1.3.6"
-NATIVE_SHA = "e6f26f6230e429a29113e4322ff5d7be22764787"
-NATIVE_BUILD = "cc90f439-f400-4059-9a60-c1b400ff298a"
+NATIVE_SHA = "1612c75ffc47af5ed470e57335e6c593c6af5817"
+NATIVE_BUILD = "039c87d2-3bbb-4a20-915b-9c61fc584e71"
 BUNDLE = "life.executor.health"
 API_URL = "https://health.executor.life/api"
 UUID = r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
@@ -162,6 +162,8 @@ REVIEWED_NATIVE_COHORT = {
         "35bb63e155e6349596ff29455b4aa97066b9b73b", "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a", "285"),
     "cc90f439-f400-4059-9a60-c1b400ff298a": (
         "e6f26f6230e429a29113e4322ff5d7be22764787", "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a", "286"),
+    "039c87d2-3bbb-4a20-915b-9c61fc584e71": (
+        "1612c75ffc47af5ed470e57335e6c593c6af5817", "f06866fba3b5676c60fbbd016774cac6cba7fc1d", "287"),
 }
 
 
