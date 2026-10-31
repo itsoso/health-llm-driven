@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3 locally verified; independent review and release pending |
+| 当前阶段 | G3/G4 locally verified; G5 blocked by existing divergence and release gates |
 | Controller | health-harness-orchestrator (incident), safety-gate overlay |
 | Run | `docs/_generated/harness-runs/09731e372ccf.jsonl` (local) |
 
@@ -100,3 +100,25 @@ unsupported natural-language record failure.
   established failure helper returns string IDs); comparison now normalizes it.
 - Initial broad capability suite before this narrow correction: 2259 passed.
   Final combined regression, final PostgreSQL and fixed-commit re-review pending.
+
+## Final local verification and handoff
+
+- Corrected implementation commit: `5b5ea9ed2` (with `e2a3a143a`). Independent
+  safety reviewer returned **GO** after inspecting the fixed commits and
+  independently executing all 71 focused synthetic tests. Both prior blockers
+  are closed; this is implementation review, not release approval.
+- Fresh combined focused/autocreate/capability suite: **2452 passed**
+  (`/tmp/reva-single-intake-reviewed-final.log`).
+- Final dedicated PostgreSQL 17 UTF8 suite: **71 passed**
+  (`/tmp/reva-single-intake-postgres-final.log`), including real authenticated
+  persistence, definition-only partial failure, quantity conservation, owner/date
+  binding and idempotent client-turn replay. Initial final-cluster startup hit
+  macOS Unix-socket path length; a shorter isolated `/tmp` path fixed the test
+  environment without application changes. The temporary server was stopped.
+- System Map and whitespace checks pass. Only this task's four files were
+  committed locally. All unrelated work remains preserved; no external writes.
+- **G5 remains BLOCKED** under AGENTS §7. Integrate with current main while
+  preserving existing local work, then obtain exact candidate CI-mode/remote CI,
+  live synthetic model evidence and production verification. No OTA is needed
+  for these backend-only changes. No production success claim is authorized by
+  this dossier.
