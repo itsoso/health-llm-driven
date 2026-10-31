@@ -2577,6 +2577,27 @@ def test_unknown_overlay_fails_closed():
     assert "unknown_overlay" in result.stderr
 
 
+def test_recommender_accepts_canonical_overlay_skill_id_and_deduplicates_trigger():
+    direct = _recommend(
+        "--mode",
+        "implementation",
+        "--overlay",
+        "safety-gate",
+    )
+    mixed = _recommend(
+        "--mode",
+        "implementation",
+        "--overlay",
+        "safety",
+        "--overlay",
+        "safety-gate",
+    )
+
+    assert direct["overlays"] == ["safety-gate"]
+    assert mixed["overlays"] == ["safety-gate"]
+    assert direct["immediate_skills"] == mixed["immediate_skills"]
+
+
 def test_run_event_schema_is_closed_and_cannot_store_raw_health_or_prompt_text():
     assert EVENT_SCHEMA.is_file()
     schema = json.loads(EVENT_SCHEMA.read_text(encoding="utf-8"))

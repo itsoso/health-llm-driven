@@ -1,0 +1,92 @@
+{
+  "schema_version": "ci_harness_tooling_lane.v1",
+  "status": "G4_PASS",
+  "release_authority": false,
+  "baseline": {
+    "main_sha": "cfdd54080155cb27d9dcdb03aeda37829445777f",
+    "ci_run_id": 41074173007,
+    "ci_attempt": 1,
+    "ci_jobs_success": 32,
+    "ci_jobs_total": 32,
+    "ci_wall_seconds": 506,
+    "note": "Latest complete main runtime matrix before this change; later main documentation-only commits are not comparable full-CI baselines."
+  },
+  "change": {
+    "router_accepts_overlay_trigger": true,
+    "router_accepts_canonical_overlay_skill_id": true,
+    "equivalent_overlay_inputs_deduplicated": true,
+    "tooling_only_allowlist": true,
+    "tooling_only_on_pull_request": true,
+    "tooling_only_on_main_push": true,
+    "classifier_and_workflow_self_changes_force_full": true,
+    "unknown_skill_paths_force_full": true,
+    "mixed_runtime_main_push_forces_full": true,
+    "mixed_runtime_pull_request_and_local_run_tooling_and_affected_scopes": true,
+    "full_ci_runs_tooling_suite": true,
+    "runtime_test_selection_changed": false,
+    "timeouts_changed": false,
+    "permissions_changed": false
+  },
+  "local_verification": {
+    "tdd_red": [
+      "Router rejected canonical overlay Skill ID safety-gate with unknown_overlay",
+      "CI workflow, classifier and preflight tooling-lane contracts failed before implementation"
+    ],
+    "tooling_suite": {
+      "passed": 179,
+      "failed": 0,
+      "wall_seconds": 11.67
+    },
+    "ci_contracts": {
+      "passed": 66,
+      "failed": 0
+    },
+    "release_invariants": {
+      "implementation_sha": "fbf98bac3b64ba139f373d79c283db438f50786d",
+      "passed": 5670,
+      "skipped": 67,
+      "subtests_passed": 127,
+      "failed": 0,
+      "wall_seconds": 593.2,
+      "exit_code": 0
+    },
+    "system_map": "PASS: canonical map, mobile navigation and doc drift",
+    "dossier_consistency": "PASS: 281 dossiers",
+    "secret_scan": "PASS: tracked files, high-confidence rules",
+    "runtime_import_guard_preserved": true,
+    "database_fixture_guard_preserved": true
+  },
+  "initial_independent_review": {
+    "verdict": "NO-GO",
+    "blocking_finding": "The first plugin skills prefix admitted an unregistered future Skill into tooling-only.",
+    "tdd_red": "An unregistered plugin Skill classified as tooling-only before the fix.",
+    "resolution": "Allow only the three currently registered and isolated-test-covered plugin adapter prefixes; unknown plugin Skills now fail closed to full CI.",
+    "focused_contracts_after_fix": 63,
+    "tooling_tests_after_fix": 179
+  },
+  "second_independent_review": {
+    "verdict": "NO-GO",
+    "blocking_finding": "Evidence claimed every mixed runtime change was full, while PR/local correctly used tooling plus affected scoped lanes and main push used full.",
+    "implementation_leak_observed": false,
+    "resolution": "State the event-specific contract and cover PR tooling plus backend, local tooling plus mobile, and main tooling plus backend.",
+    "focused_contracts_after_fix": 66,
+    "review_status": "resolved"
+  },
+  "independent_review": {
+    "reviewed_sha": "fbf98bac3b64ba139f373d79c283db438f50786d",
+    "verdict": "GO",
+    "blocking_findings": 0,
+    "tooling_tests_passed": 179,
+    "ci_contracts_passed": 66,
+    "unknown_skill_fail_closed": true,
+    "workflow_and_classifier_self_changes_full": true,
+    "mixed_event_matrix_reproduced": true
+  },
+  "pending_gates": [
+    "exact pull-request full CI",
+    "exact main full CI",
+    "hosted tooling-only lane acceptance"
+  ],
+  "deployment_required": false,
+  "ota_required": false
+}

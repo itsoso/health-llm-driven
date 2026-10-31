@@ -18,8 +18,9 @@ Canonical policy:
 1. Classify the task as exactly one mode:
    `analysis`, `quick_fix`, `feature`, `implementation`, `incident`, or `release`.
    `planning` and `verification` are workflow phases, not mode values.
-2. Add only overlays actually triggered by the changed surface. Use canonical
-   overlay IDs from the registry; do not invent aliases.
+2. Add only overlays actually triggered by the changed surface. `--overlay`
+   accepts a routing trigger such as `safety` or its canonical overlay Skill ID
+   such as `safety-gate`; do not invent aliases.
 3. Add a canonical `capability-trigger` only when the task actually authors a
    Skill or Codex plugin. Capabilities never become controllers.
 4. For release mode, identify exactly one release target.
@@ -28,7 +29,7 @@ Canonical policy:
 ```bash
 python3.12 scripts/check_agent_skill_governance.py recommend \
   --mode <mode> \
-  [--overlay <canonical-id>] \
+  [--overlay <trigger-or-canonical-skill-id>] \
   [--capability-trigger <canonical-id>] \
   [--release-target <target>]
 ```

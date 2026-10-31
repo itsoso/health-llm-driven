@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | complete |
-| 当前阶段 | 第十二阶段 G6 PASS；CI timing observer 有界只读重试已上线验证 |
+| 状态 | in_progress |
+| 当前阶段 | 第十三阶段 G4 PASS；Agent / Harness tooling lane 待精确 PR、main 与托管快速 lane 验证 |
 
 ## G1 范围
 
@@ -371,3 +371,21 @@ G5 PASS：[PR #295](https://github.com/itsoso/health-llm-driven/pull/295) 的精
 G6 PASS：PR squash 合入 main `cfdd54080155cb27d9dcdb03aeda37829445777f`。精确 [main CI 41074173007](https://github.com/itsoso/health-llm-driven/actions/runs/41074173007) 为 push / attempt=1、32/32 success、墙钟 506 秒。后置 [CI timing drift 41075456088](https://github.com/itsoso/health-llm-driven/actions/runs/41075456088) 为 workflow_run / attempt=1 success，并生成绑定 main run `41074173007` 的 artifact `12985969579`。托管报告为 `CURRENT`：predicted=443.441、observed=431.989 秒，实际快 2.5825%；最大单分片变慢 3.4636%，低于 20% 阈值；catalog_stale=false、runs_since_source=2。该结果证明有界只读重试已在 hosted workflow 生效；单次成功不建立稳定分位数或保证外部 API 永不失败。
 
 本阶段只修改 CI timing observer、合约测试及审计证据；不改变应用运行时、数据库、Mobile、原生资产或生产发布器。无需后端部署、OTA、TestFlight 或 App Store 发布，也未执行这些动作。
+
+## 第十三阶段：Agent / Harness tooling 有界 CI lane（2026-10-31）
+
+用户继续授权优化 CI/CD 与 Harness。Router 选择 implementation / `health-harness-orchestrator`，并因 CI 选择和发布准入语义加载 `safety-gate`。从精确 `origin/main` `14564dfc7b4f02665a2717f2519e67ee183d38a8` 的既有干净工作树继续，共享根目录及无关 PR 均未触碰。最近一轮完整 main CI 为 `41074173007`，32/32 success、墙钟 506 秒；现有隔离 Tooling/Harness suite 为 179 项，本机墙钟 11.67 秒。单次本机样本不建立 P50/P95/P99。
+
+G1/G2 PASS。现状有两个可复现问题：AGENTS / Router 文档要求 `--overlay safety-gate` 这类 canonical Skill ID，但 recommender 只接受 `safety` 这类 routing trigger；另外纯 Agent/Harness 治理改动在 PR 后合入 main 时被统一升级成完整 16 分片后端、PostgreSQL、前端、Mobile 与 release matrix。方案为：Router 同时接受 trigger 与 registry 中已有 canonical overlay Skill ID，并去重两种等价输入；CI classifier 为严格 allowlist 的 Agent/Harness 文件增加 `tooling_only` / `run_tooling`，在 PR 和 main 都运行 docs-quality 内的隔离 tooling suite，跳过与应用运行时无关的 matrix。workflow/classifier 自身改动和未知 Skill 路径继续 fail closed 到完整 CI；PR/local 的 tooling+runtime 混合改动同时运行 tooling 与所有受影响的 scoped runtime lanes，且不能标记为 tooling-only；同类 main push 仍升级为完整 CI。完整 CI 也执行 tooling suite。路径规范化同时从字符集合式 `lstrip("./")` 改成只删除一个精确 `./` 前缀，避免 `.claude` 被误分类。
+
+停止条件：tooling lane 导入 `backend/app`、使用 DB/client/auth fixture、遗漏 registry/adapter/package/System Map/Dossier 契约、PR/local 混合变更遗漏任一受影响 runtime lane、main 混合 push 未进入 full、main 未验证精确 SHA，或聚合闸把 skipped 当 success，均为 NO-GO。变更不修改测试超时、失败传播、发布权限、应用运行时、数据库、Mobile 或生产发布器。
+
+G3 本地 PASS。Router canonical overlay 契约先 RED：`unknown_overlay: safety-gate`；实现后直接 ID 及 trigger+ID 均返回唯一 `safety-gate`，未知值仍 fail closed。CI workflow/classifier/preflight 契约先有 16 项 RED；实现后 66/66 pass。隔离 Tooling/Harness suite 179/179 pass、首轮墙钟 11.67 秒；guard 保留禁止应用模块与 DB/client/auth fixture 的既有语义。最终实现提交 `fbf98bac3b64ba139f373d79c283db438f50786d` 的 CI-mode 完整 release invariants 真实退出码 0：5670 passed、67 个平台或条件性 skipped、127 subtests passed、墙钟 593.20 秒。Router 双 adapter 摘要、registry 版本和插件包契约同步。中央 System Map 在 CI/Router 路径无索引，按治理要求运行完整 `system-map-check.sh` 作为验证闸；秘密扫描、281 份 Dossier、JSON 和 diff 检查通过。机器证据见 `docs/reviews/2026-10-31-ci-harness-tooling-lane.json`。
+
+G4 首轮 NO-GO 已关闭实现缺陷。独立审查发现 plugin 侧首版前缀覆盖整个 `plugins/reva-health-harness/skills/`，使一个未注册的未来 Skill 也会进入 tooling-only，违反未知 Skill fail closed 声明。插件侧未知 Skill 反例稳定 RED 后，allowlist 收紧为当前三个已注册且受隔离套件覆盖的 adapter 精确前缀：Router、Health Harness orchestrator、product pipeline；`.claude` 侧原本已是相同粒度。修复后 plugin 未注册 Skill 在 PR/main 均进入 full，已注册 adapter 保持 tooling-only，63 项契约与 179 项隔离套件通过。修正候选仍需同一独立审查复核。
+
+G4 第二轮 NO-GO 已关闭证据缺陷。实现一直将 PR/local 的 tooling+runtime 混合变更分配到 tooling 与受影响 runtime scopes，并在 main push 升级 full；但 Dossier 和机器证据误写成所有事件都 full，测试也只覆盖 push。没有发生漏跑，但证据不可按声明复现。现在契约明确区分事件，并新增 PR tooling+backend、local tooling+mobile、main tooling+backend 三类回归；PR/local 必须 `tooling_only=false` 且同时选择全部受影响 lanes，main 必须 full。修正候选仍需独立复审。
+
+G4 PASS。独立复审对精确实现提交 `fbf98bac3b64ba139f373d79c283db438f50786d` 给出 GO：PR tooling+backend 同时选择 tooling/backend/type-drift；local tooling+mobile 同时选择 tooling/mobile；main tooling+backend 为 full。未知 `.claude` 与 plugin Skill 在 PR/push 均 full，classifier/workflow self-change 均 full。隔离 tooling 179/179、CI contracts 66/66、diff check 均新鲜通过；前两轮 NO-GO 被保留且没有其他阻断。
+
+G5/G6 pending：由于本候选修改 classifier/workflow，它自身必须跑精确 PR 完整 CI；合入后的精确 main 也必须完整 CI。之后用一笔真实、合法的 plugin README/治理说明变更验证 hosted tooling-only lane，记录实际 job 集合和墙钟；不得用本地 11.67 秒冒充 GitHub 托管结果。本阶段无需后端部署、OTA、TestFlight 或 App Store 发布。
