@@ -2,6 +2,7 @@ import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react'
 import {
   View, Text, TouchableOpacity, FlatList, StyleSheet,
   Platform, TextStyle, AppState, type AppStateStatus,
+  type NativeScrollEvent, type NativeSyntheticEvent,
   ActivityIndicator, Alert, Keyboard, Modal, Pressable, ScrollView, useWindowDimensions,
 } from 'react-native';
 import { Image } from 'expo-image';
@@ -191,6 +192,8 @@ export default function ChatScreen() {
   const flatListRef = useRef<FlatList>(null);
   const isNearBottom = useRef(true);
   const forceScrollPending = useRef(false);
+  const userScrollInProgress = useRef(false);
+  const userMomentumPending = useRef(false);
   const previousMessageCountRef = useRef(messages.length);
   const scrollTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
@@ -463,10 +466,13 @@ export default function ChatScreen() {
     if (force) {
       forceScrollPending.current = true;
       isNearBottom.current = true;
+      userScrollInProgress.current = false;
+      userMomentumPending.current = false;
+      setShowScrollToBottom(false);
     } else if (!shouldScrollChatToEnd({
       forcePending: forceScrollPending.current,
       isNearBottom: isNearBottom.current,
-    })) {
+    }) || userScrollInProgress.current) {
       return;
     }
 
@@ -476,8 +482,9 @@ export default function ChatScreen() {
       if (!shouldScrollChatToEnd({
         forcePending: forceScrollPending.current,
         isNearBottom: isNearBottom.current,
-      })) return;
-      try { flatListRef.current?.scrollToEnd({ animated }); } catch {}
+      }) || userScrollInProgress.current) return;
+      userMomentumPending.current = false;
+      flatListRef.current?.scrollToEnd({ animated });
       if (index === delays.length - 1) forceScrollPending.current = false;
     }, delay));
   }, [clearChatScrollTimers]);
@@ -491,13 +498,33 @@ export default function ChatScreen() {
   }, [messages.length, scheduleScrollToEnd]);
 
   const cancelForcedScrollOnUserDrag = useCallback(() => {
+    clearChatScrollTimers();
+    userScrollInProgress.current = true;
+    userMomentumPending.current = true;
     const state = {
       forcePending: forceScrollPending.current,
       isNearBottom: isNearBottom.current,
     };
     cancelChatScrollOnUserDrag(state);
     forceScrollPending.current = state.forcePending;
-  }, []);
+    isNearBottom.current = state.isNearBottom;
+    setShowScrollToBottom(messages.length > 0);
+  }, [clearChatScrollTimers, messages.length]);
+
+  const updateUserScrollPosition = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (forceScrollPending.current) return;
+    const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
+    const nearBottom = isChatNearBottom({
+      layoutHeight: layoutMeasurement.height,
+      offsetY: contentOffset.y,
+      contentHeight: contentSize.height,
+    });
+    isNearBottom.current = nearBottom;
+    setShowScrollToBottom(messages.length > 0 && shouldShowScrollToBottom({
+      forcePending: false,
+      isNearBottom: nearBottom,
+    }));
+  }, [messages.length]);
 
   useEffect(() => () => {
     clearChatScrollTimers();
@@ -1050,7 +1077,7 @@ export default function ChatScreen() {
   );
   const handleScrollToBottom = useCallback(() => {
     setShowScrollToBottom(false);
-    try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+    flatListRef.current?.scrollToEnd({ animated: true });
     scheduleScrollToEnd({ force: true, animated: true });
   }, [scheduleScrollToEnd]);
   const activeLlmLabel = llmModelId
@@ -1190,7 +1217,7 @@ export default function ChatScreen() {
             contentContainerStyle={messageListContentStyle}
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="always"
-            maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+            maintainVisibleContentPosition={showScrollToBottom ? { minIndexForVisible: 0 } : undefined}
             ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
               <TouchableOpacity
                 accessibilityRole="button"
@@ -1214,29 +1241,33 @@ export default function ChatScreen() {
               if (shouldScrollChatToEnd({
                 forcePending: forceScrollPending.current,
                 isNearBottom: isNearBottom.current,
-              })) {
+              }) && !userScrollInProgress.current) {
                 setShowScrollToBottom(false);
-                try { flatListRef.current?.scrollToEnd({ animated: true }); } catch {}
+                userMomentumPending.current = false;
+                // Card/image layout may grow in several passes. Follow it without
+                // competing animations or preserving the older visible bubble.
+                flatListRef.current?.scrollToEnd({ animated: false });
               } else if (messageListItems.length > 0) {
                 setShowScrollToBottom(true);
               }
             }}
             onScrollBeginDrag={cancelForcedScrollOnUserDrag}
+            onScrollEndDrag={(e) => {
+              updateUserScrollPosition(e);
+              userScrollInProgress.current = false;
+            }}
+            onMomentumScrollBegin={() => {
+              userScrollInProgress.current = userMomentumPending.current;
+              userMomentumPending.current = false;
+            }}
+            onMomentumScrollEnd={(e) => {
+              if (userScrollInProgress.current) updateUserScrollPosition(e);
+              userScrollInProgress.current = false;
+            }}
             onScroll={(e) => {
-              // The first layout can emit an offset=0 scroll event before the forced
-              // opening scroll runs. It is not user intent and must not cancel it.
-              if (forceScrollPending.current) return;
-              const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
-              const nearBottom = isChatNearBottom({
-                layoutHeight: layoutMeasurement.height,
-                offsetY: contentOffset.y,
-                contentHeight: contentSize.height,
-              });
-              isNearBottom.current = nearBottom;
-              setShowScrollToBottom(messageListItems.length > 0 && shouldShowScrollToBottom({
-                forcePending: forceScrollPending.current,
-                isNearBottom: nearBottom,
-              }));
+              // Native layout/scrollToEnd callbacks are not a request to leave
+              // the latest reply, even after the opening retries have finished.
+              if (userScrollInProgress.current) updateUserScrollPosition(e);
             }}
             scrollEventThrottle={100}
             ListEmptyComponent={

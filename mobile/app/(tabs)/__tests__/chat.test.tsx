@@ -47,7 +47,7 @@ jest.mock('expo-router', () => ({
     canGoBack: () => mockCanGoBack,
   },
   useLocalSearchParams: () => mockRouteParams,
-  useFocusEffect: (cb: any) => cb(),
+  useFocusEffect: (cb: any) => require('react').useEffect(cb, [cb]),
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -1639,6 +1639,133 @@ describe('ChatScreen', () => {
       expect(scrollToEnd).toHaveBeenCalledWith({ animated: true });
       expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
     } finally {
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['scroll-first', 'layout-first'])('keeps following the first food card after recognition (%s)', async (eventOrder) => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐' },
+      { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
+    ];
+    mockIsStreaming = true;
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+
+    try {
+      await act(async () => {});
+      // Food recognition finishes after the initial 900 ms scroll retries.
+      act(() => { jest.advanceTimersByTime(1500); });
+      scrollToEnd.mockClear();
+      const list = view.getByTestId('chat-message-list');
+      const nativeRelayout = () => fireEvent.scroll(list, {
+        nativeEvent: {
+          layoutMeasurement: { height: 500 },
+          contentOffset: { y: 300 },
+          contentSize: { height: 1450 },
+        },
+      });
+      act(() => {
+        if (eventOrder === 'scroll-first') nativeRelayout();
+        list.props.onContentSizeChange(390, 1450);
+        if (eventOrder === 'layout-first') nativeRelayout();
+        // The photo and nutrition section settle in another layout pass.
+        list.props.onContentSizeChange(390, 1600);
+      });
+
+      expect(scrollToEnd).toHaveBeenCalledTimes(2);
+      expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: false });
+      expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+      expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toBeUndefined();
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('cancels pending follow retries immediately when the user drags to read history', async () => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐' },
+      { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+
+    try {
+      await act(async () => {});
+      scrollToEnd.mockClear();
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        list.props.onScrollBeginDrag();
+        // A card can mount before the next throttled onScroll event.
+        list.props.onContentSizeChange(390, 1600);
+        jest.advanceTimersByTime(1500);
+      });
+
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each([false, true])('resumes following only after the user returns to the latest card (momentum=%s)', async (momentum) => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐' },
+      { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+    const scrollEvent = (y: number) => ({ nativeEvent: {
+      layoutMeasurement: { height: 500 }, contentOffset: { y }, contentSize: { height: 1600 },
+    } });
+
+    try {
+      await act(async () => {});
+      act(() => { jest.advanceTimersByTime(1500); });
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        list.props.onScrollBeginDrag();
+        fireEvent.scroll(list, scrollEvent(300));
+        list.props.onScrollEndDrag(scrollEvent(300));
+      });
+      scrollToEnd.mockClear();
+      act(() => { list.props.onContentSizeChange(390, 1600); });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy();
+
+      act(() => {
+        list.props.onScrollBeginDrag();
+        if (momentum) {
+          list.props.onScrollEndDrag(scrollEvent(600));
+          list.props.onMomentumScrollBegin();
+          fireEvent.scroll(list, scrollEvent(1100));
+          list.props.onMomentumScrollEnd(scrollEvent(1100));
+        } else {
+          list.props.onScrollEndDrag(scrollEvent(1100));
+        }
+      });
+      expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+      act(() => {
+        // Later native relayout must not detach the user a second time.
+        fireEvent.scroll(list, scrollEvent(300));
+        list.props.onContentSizeChange(390, 1700);
+        list.props.onMomentumScrollBegin();
+        fireEvent.scroll(list, scrollEvent(300));
+        list.props.onMomentumScrollEnd(scrollEvent(300));
+        list.props.onContentSizeChange(390, 1800);
+      });
+      expect(scrollToEnd).toHaveBeenCalledTimes(2);
+      expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+    } finally {
+      view.unmount();
       scrollToEnd.mockRestore();
       jest.useRealTimers();
     }
