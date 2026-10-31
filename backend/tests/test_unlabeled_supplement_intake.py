@@ -11,9 +11,23 @@ from app.services.intake_intent_classifier import classify_intake_intent, classi
 from app.services.utterance_intent_classifier import classify_agent_utterance
 from tests.test_mixed_supplement_intake_scope import decision
 from tests.test_agent_coherence_pi_trajectories import (
-    _isolate_twin_cache as _isolate_twin_cache,
     clock as clock, owned_data as owned_data, script_executor,
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_twin_cache(request, monkeypatch):
+    from datetime import datetime
+    from app.twin.schema import HealthTwin, TwinMeta
+    from app.utils import redis_cache
+    if request.node.originalname != 'test_live_provider_to_isolated_authenticated_intake':
+        request.getfixturevalue('isolated_agent_protocol_transport')
+    monkeypatch.setattr(redis_cache, 'get_redis_client', lambda: None)
+    monkeypatch.setattr(
+        'app.twin.builder.build_twin',
+        lambda _db, user_id, **kwargs: HealthTwin(
+            meta=TwinMeta(user_id=user_id, generated_at=datetime.now().astimezone())),
+    )
 
 CASES = [
     ('记录吃了两粒肌酸。', '肌酸', '两粒'),
