@@ -263,6 +263,15 @@ def compile_goal_spec(
     actionable_references: Sequence[ActionableReference] = (),
 ) -> GoalSpec:
     """Create the executor contract without granting authority to visible data."""
+    from app.services.record_capabilities import resolve_record_capability
+    bound_record = None if envelope.media else resolve_record_capability(envelope.text, context.current_time)
+    if bound_record is not None:
+        return GoalSpec(kind="simple_health_record", domain=bound_record.capability.record_type,
+                        operation="create", target_record_type=bound_record.capability.record_type,
+                        target_date=bound_record.arguments()["data"]["record_date"],
+                        target_values=(("capability_payload", bound_record.payload_json),),
+                        requires_verification=True, prohibited_operations=("update", "delete"),
+                        postconditions=("bound_event_readback",), evidence=("current_user_turn",))
     authorization_text = normalize_health_authorization_text(envelope.text)
     text = _normalize(authorization_text)
     if intent.is_write and _explicit_target_date_is_invalid(
@@ -285,9 +294,29 @@ def compile_goal_spec(
         intent=intent,
         actionable_references=actionable_references,
     )
-    if specialized is not None:
+    from app.services.agent_record_obligation import record_obligation_parts, record_obligation_requested
+    record_parts = record_obligation_parts(envelope.text)
+    multiple_records = len(record_parts) > 1
+    if specialized is not None and not (multiple_records and specialized.kind == "simple_health_record"):
         return specialized
-
+    # A single target cannot silently absorb coordinated record obligations.
+    # Existing complete intake plans retain their own multi-item verifier.
+    from app.services.intake_plan import parse_intake_plan
+    intake = parse_intake_plan(envelope.text) if multiple_records else None
+    covered_intake = intake is not None and intake.status == "complete" and len(intake.items) > 1
+    if multiple_records and not covered_intake:
+        covered_targets = _covered_record_parts(record_parts, envelope, context)
+        if covered_targets:
+            return GoalSpec(kind="multi_health_record", domain="health", operation="create",
+                            target_values=(("record_types", json.dumps([target["record_type"] for target in covered_targets])),
+                                           ("record_targets", json.dumps(covered_targets, sort_keys=True, default=str))),
+                            requires_verification=True, prohibited_operations=(),
+                            postconditions=("each_record_receipt",), evidence=("explicit_record_obligations",))
+    if ((multiple_records and not covered_intake)
+            or (not intent.is_write and record_obligation_requested(envelope.text))):
+        return GoalSpec(kind="record_unresolved", domain="unknown", operation="create",
+                        requires_verification=True, prohibited_operations=("create", "update", "delete"),
+                        postconditions=("capability_resolution_required",), evidence=("explicit_record_obligation",))
     target_meals = _target_meal_types(text, actionable_references)
     target_date = _target_date(text, context, actionable_references)
     return GoalSpec(
@@ -302,6 +331,38 @@ def compile_goal_spec(
             else ()
         ),
     )
+
+
+def _covered_record_parts(
+    parts: tuple[str, ...], envelope: AgentEnvelope, context: ExecutionContext,
+) -> tuple[dict, ...]:
+    """Reuse policy's concrete target binding, never classifier labels alone.
+
+    Imports are local because policy also compiles individual clause goals.
+    This helper calls only its non-recursive target extractors.
+    """
+    from app.services.agent_kernel.capability_policy import (
+        _authorized_record_types, _authorization_target_complete, _deterministic_target_values,
+    )
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+
+    covered = []
+    for part in parts:
+        part_intent = build_intent_frame(replace(envelope, text=part), context)
+        if not part_intent.is_write or part_intent.operation != "create":
+            return ()
+        candidates = _authorized_record_types(part, part_intent.domain, "")
+        complete = [kind for kind in candidates if _authorization_target_complete(
+            kind, _deterministic_target_values(part, kind),
+        )]
+        if len(complete) != 1:
+            return ()
+        kind = complete[0]
+        values = _deterministic_target_values(part, kind)
+        values["target_date"] = _target_date(part, context, ()) or context.current_time.date().isoformat()
+        values["default_date"] = context.current_time.date().isoformat()
+        covered.append({"record_type": kind, "values": values, "owner_id": context.user_id})
+    return tuple(covered)
 
 
 def _compile_diet_recalculation_goal(
@@ -736,7 +797,9 @@ def _format_diet_recalculation_prompt(goal: GoalSpec) -> str:
 def _format_simple_health_record_prompt(goal: GoalSpec) -> str:
     values = dict(goal.target_values)
     diet_estimation = ""
-    if goal.target_record_type == "water" and values.get("amount_ml"):
+    if values.get("capability_payload"):
+        payload = f"，data={values['capability_payload']}"
+    elif goal.target_record_type == "water" and values.get("amount_ml"):
         payload = f"，amount={values['amount_ml']}ml"
     elif goal.target_record_type == "symptom" and values.get("description"):
         payload = f"，description={values['description']}"

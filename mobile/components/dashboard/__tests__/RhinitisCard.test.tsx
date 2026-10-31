@@ -6,11 +6,14 @@ import { fireEvent, render, waitFor } from '@testing-library/react-native';
 jest.mock('../../../services/records', () => ({
   __esModule: true,
   updateCheckin: jest.fn(),
+  createNasalWashRequest: jest.fn(() => ({ event_id: 'event-test', count: 1, record_date: '2026-10-31' })),
+  recordNasalWash: jest.fn(),
 }));
 
-import { updateCheckin } from '../../../services/records';
+import { updateCheckin, recordNasalWash } from '../../../services/records';
 import RhinitisCard from '../RhinitisCard';
 
+const mockRecordNasalWash = recordNasalWash as jest.Mock;
 const mockUpdateCheckin = updateCheckin as jest.Mock;
 
 beforeEach(() => {
@@ -43,7 +46,7 @@ describe('RhinitisCard', () => {
   });
 
   it('updates the nasal wash count and refreshes after success', async () => {
-    mockUpdateCheckin.mockResolvedValueOnce({});
+    mockRecordNasalWash.mockResolvedValueOnce({});
     const onUpdate = jest.fn();
     const { getByText } = render(
       <RhinitisCard checkin={{ nasal_wash_count: 2 }} onUpdate={onUpdate} />,
@@ -52,7 +55,8 @@ describe('RhinitisCard', () => {
     fireEvent.press(getByText('洗鼻'));
 
     await waitFor(() => {
-      expect(mockUpdateCheckin).toHaveBeenCalledWith('nasal_wash_count', 3);
+      expect(mockRecordNasalWash).toHaveBeenCalledWith({ event_id: 'event-test', count: 1, record_date: '2026-10-31' });
+      expect(mockUpdateCheckin).not.toHaveBeenCalled();
       expect(onUpdate).toHaveBeenCalledTimes(1);
     });
   });
@@ -71,4 +75,15 @@ describe('RhinitisCard', () => {
     });
     expect(onUpdate).not.toHaveBeenCalled();
   });
+});
+
+it('reuses the same wash request after an uncertain failure', async () => {
+  mockRecordNasalWash.mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce({});
+  const onUpdate = jest.fn();
+  const { getByText } = render(<RhinitisCard checkin={{ nasal_wash_count: 9 }} onUpdate={onUpdate} />);
+  fireEvent.press(getByText('洗鼻'));
+  await waitFor(() => expect(Alert.alert).toHaveBeenCalled());
+  fireEvent.press(getByText('洗鼻'));
+  await waitFor(() => expect(onUpdate).toHaveBeenCalledTimes(1));
+  expect(mockRecordNasalWash.mock.calls[1][0]).toBe(mockRecordNasalWash.mock.calls[0][0]);
 });

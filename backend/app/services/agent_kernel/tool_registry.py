@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from typing import Any, Literal, Mapping
 
 from app.services.specialist_tools import SPECIALIST_TOOLS
+from app.services.record_capabilities import RECORD_CAPABILITIES
 
 
 ToolEffect = Literal["read", "write", "mixed"]
@@ -132,6 +133,7 @@ HEALTH_RECORD_RECEIPT_RESOURCE_TYPE_BY_RECORD_TYPE: Mapping[str, str] = {
     "reminder": "smart_reminder",
     "remember": "memory_fact",
     "rhinitis": "health_checkin",
+    **{item.record_type: item.resource_type for item in RECORD_CAPABILITIES},
     "sleep": "sleep_record",
     "supplement": "supplement_log",
     "supplement_group": "supplement_log",

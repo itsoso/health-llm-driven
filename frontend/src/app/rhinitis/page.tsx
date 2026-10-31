@@ -1,11 +1,12 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 import { useAuth } from '@/contexts/AuthContext';
 import ProtectedRoute from '@/components/ProtectedRoute';
+import { createNasalWashRequest, recordNasalWash, type NasalWashRequest, type NasalWashEvent } from '@/services/api/nasalWash';
 import {
   LineChart,
   Line,
@@ -27,7 +28,7 @@ interface RhinitisRecord {
   sneeze_count: number | null;
   sneeze_times: Array<{ time: string; count: number }> | null;
   nasal_wash_count: number | null;
-  nasal_wash_times: Array<{ time: string; type: string }> | null;
+  nasal_wash_times: NasalWashEvent[] | null;
   notes: string | null;
 }
 
@@ -39,12 +40,14 @@ function RhinitisContent() {
   // 表单状态
   const [sneezeCount, setSneezeCount] = useState<number>(1);
   const [sneezeTime, setSneezeTime] = useState<string>(format(new Date(), 'HH:mm'));
-  const [nasalWashCount, setNasalWashCount] = useState<number>(0);
   const [nasalWashTime, setNasalWashTime] = useState<string>(format(new Date(), 'HH:mm'));
   const [nasalWashType, setNasalWashType] = useState<'wash' | 'soak'>('wash');
   const [notes, setNotes] = useState<string>('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [days, setDays] = useState<number>(30);
+  const pendingWash = useRef<NasalWashRequest | null>(null);
+  const washInFlight = useRef(false);
+  const [washPending, setWashPending] = useState(false);
 
   // 获取今日记录
   const { data: todayRecord, isLoading } = useQuery({
@@ -81,7 +84,6 @@ function RhinitisContent() {
   useEffect(() => {
     if (todayRecord) {
       setSneezeCount(todayRecord.sneeze_count || 0);
-      setNasalWashCount(todayRecord.nasal_wash_count || 0);
       setNotes(todayRecord.notes || '');
     }
   }, [todayRecord]);
@@ -151,15 +153,28 @@ function RhinitisContent() {
     });
   };
 
-  // 添加洗鼻/泡鼻记录
-  const addNasalWashRecord = () => {
-    const currentTimes = todayRecord?.nasal_wash_times || [];
-    const newTimes = [...currentTimes, { time: nasalWashTime, type: nasalWashType }];
-
-    saveMutation.mutate({
-      nasal_wash_count: newTimes.length,
-      nasal_wash_times: newTimes,
-    });
+  // Keep an uncertain append's identity and facts stable until its retry settles.
+  const addNasalWashRecord = async () => {
+    if (washInFlight.current) return;
+    washInFlight.current = true;
+    setWashPending(true);
+    try {
+      const request = pendingWash.current ?? createNasalWashRequest(today, {
+        type: nasalWashType, time: nasalWashTime,
+      });
+      pendingWash.current = request;
+      const saved = await recordNasalWash(request);
+      pendingWash.current = null;
+      queryClient.setQueryData(['rhinitis-today'], saved);
+      queryClient.invalidateQueries({ queryKey: ['rhinitis-stats'] });
+      setMessage({ type: 'success', text: '✓ 记录保存成功' });
+    } catch (error) {
+      if (error instanceof Error && error.name === 'NasalWashValidationError') pendingWash.current = null;
+      setMessage({ type: 'error', text: error instanceof Error ? error.message : '记录未确认，请重试这条记录。' });
+    } finally {
+      washInFlight.current = false;
+      setWashPending(false);
+    }
   };
 
   // 保存备注
@@ -289,6 +304,7 @@ function RhinitisContent() {
                       <input
                         type="radio"
                         checked={nasalWashType === 'wash'}
+                        disabled={washPending || pendingWash.current !== null}
                         onChange={() => setNasalWashType('wash')}
                         className="text-blue-500 focus:ring-blue-500"
                       />
@@ -298,6 +314,7 @@ function RhinitisContent() {
                       <input
                         type="radio"
                         checked={nasalWashType === 'soak'}
+                        disabled={washPending || pendingWash.current !== null}
                         onChange={() => setNasalWashType('soak')}
                         className="text-blue-500 focus:ring-blue-500"
                       />
@@ -310,6 +327,7 @@ function RhinitisContent() {
                   <input
                     type="time"
                     value={nasalWashTime}
+                    disabled={washPending || pendingWash.current !== null}
                     onChange={(e) => setNasalWashTime(e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-gray-900"
                   />
@@ -317,10 +335,10 @@ function RhinitisContent() {
                 <div className="flex items-end">
                   <button
                     onClick={addNasalWashRecord}
-                    disabled={saveMutation.isPending}
+                    disabled={washPending}
                     className="w-full px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
-                    {saveMutation.isPending ? '保存中...' : '➕ 添加记录'}
+                    {washPending ? '保存中...' : pendingWash.current ? '重试记录' : '➕ 添加记录'}
                   </button>
                 </div>
               </div>
@@ -330,13 +348,13 @@ function RhinitisContent() {
                 <div className="mt-4 border-t pt-4">
                   <h3 className="text-sm font-medium text-gray-600 mb-2">今日记录</h3>
                   <div className="flex flex-wrap gap-2">
-                    {nasalWashTimes.map((record: { time: string; type: string }, index: number) => (
-                      <span key={index} className={`px-3 py-1 rounded-full text-sm ${
-                        record.type === 'wash'
+                    {nasalWashTimes.map((record: NasalWashEvent, index: number) => (
+                      <span key={record.event_id ?? index} className={`px-3 py-1 rounded-full text-sm ${
+                        record.type !== 'soak'
                           ? 'bg-blue-100 text-blue-800'
                           : 'bg-purple-100 text-purple-800'
                       }`}>
-                        {record.time} - {record.type === 'wash' ? '💧洗鼻' : '🫧泡鼻'}
+                        {record.time} - {record.type === 'soak' ? '🫧泡鼻' : '💧洗鼻'} {record.count ?? 1}次
                       </span>
                     ))}
                   </div>

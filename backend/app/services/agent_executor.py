@@ -4553,6 +4553,8 @@ def _write_receipt_from_tool_result(
     tool_name: str,
     receipt_context: Any,
     result: Any,
+    *,
+    obligation_goal: Any = None,
 ) -> Optional[Dict[str, Any]]:
     """Build a persistence receipt from structured tool output only."""
     if tool_name not in _WRITE_RECEIPT_TOOL_NAMES:
@@ -4593,6 +4595,19 @@ def _write_receipt_from_tool_result(
     )
     if payload is None:
         return None
+    from app.services.record_capabilities import record_capability
+    capability = record_capability(normalized_record_type) if tool_name == "health_record" else None
+    if capability is not None:
+        if not has_structured_args:
+            return None
+        try:
+            canonical = capability.schema.model_validate(args.get("data")).model_dump_json()
+        except ValueError:
+            return None
+        expected_proof = {"record_type": normalized_record_type,
+                          "payload_sha256": hashlib.sha256(canonical.encode()).hexdigest()}
+        if payload.get("record_capability_proof") != expected_proof:
+            return None
     # "准备开始睡觉" uses health_record(sleep) as the conversational
     # capability but persists a life-event anchor, not a completed sleep row.
     # The endpoint response shape is deterministic even when legacy responses
@@ -4650,6 +4665,8 @@ def _write_receipt_from_tool_result(
         "completed_at": str(completed_at),
         "verified": True,
     }
+    if isinstance(payload.get("record_capability_proof"), dict):
+        receipt["record_capability_proof"] = dict(payload["record_capability_proof"])
     receipt_action: Optional[str] = None
     if has_structured_args and tool_name == "health_record":
         receipt_action = "create"
@@ -4660,6 +4677,23 @@ def _write_receipt_from_tool_result(
         receipt["action"] = receipt_action
     if target_date:
         receipt["date"] = target_date
+    if (tool_name == "health_record" and obligation_goal is not None
+            and "each_record_receipt" in obligation_goal.postconditions):
+        from copy import deepcopy
+        from app.services.agent_kernel.capability_policy import _target_values_mismatch
+        targets = json.loads(dict(obligation_goal.target_values)["record_targets"])
+        persisted_date, persisted_date_conflict = _receipt_target_date(payload, {})
+        receipt["record_obligation_proofs"] = [
+            hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+            for target in targets
+            if target["record_type"] == normalized_record_type
+            and type(payload.get("user_id")) is int and payload["user_id"] == target["owner_id"]
+            and not persisted_date_conflict and persisted_date == target["values"]["target_date"]
+            # Policy's matcher also projects arguments. Work on copies and
+            # require actual response identity before it can apply defaults.
+            and not _target_values_mismatch(normalized_record_type, target["values"], deepcopy(args))
+            and not _target_values_mismatch(normalized_record_type, target["values"], {"data": deepcopy(payload)})
+        ]
     return receipt
 
 
@@ -9905,6 +9939,14 @@ def _simple_record_goal_arguments(
     if goal is None or goal.kind != "simple_health_record":
         return None
     values = dict(goal.target_values)
+    from app.services.record_capabilities import record_capability
+    capability = record_capability(str(goal.target_record_type or ""))
+    if capability is not None:
+        try:
+            data = capability.schema.model_validate_json(values.get("capability_payload", ""))
+        except ValueError:
+            return None
+        return {"record_type": capability.record_type, "data": data.model_dump(mode="json")}
     if goal.target_record_type == "water":
         try:
             amount_ml = int(values["amount_ml"])
@@ -12849,6 +12891,54 @@ class AgentExecutor:
         self._agent_kernel_event_bus.intent_decided()
         return self._refine_agent_kernel_continuation(self._agent_kernel_snapshot)
 
+    def _record_contract_outcomes(self, receipts: Sequence[dict]) -> list[dict]:
+        snapshot = self._agent_kernel_snapshot
+        goal = snapshot.goal if snapshot else None
+        if goal is None:
+            return []
+        if goal.kind == "record_unresolved":
+            return [{"goal_id": "record_obligation", "kind": "record", "status": "failed",
+                     "reason_code": "record_capability_unavailable"}]
+        if "each_record_receipt" in goal.postconditions:
+            targets = json.loads(dict(goal.target_values)["record_targets"])
+            remaining = list(receipts)
+            used = set()
+            outcomes = []
+            for index, target in enumerate(targets):
+                record_type = target["record_type"]
+                target_proof = hashlib.sha256(json.dumps(target, sort_keys=True).encode()).hexdigest()
+                resource_type = expected_receipt_resource_type("health_record", {"record_type": record_type})
+                matched = next((r for r in remaining if r.get("verified") is True
+                                and r.get("resource_type") == resource_type and r.get("resource_id")
+                                and target_proof in r.get("record_obligation_proofs", [])
+                                and (resource_type, str(r["resource_id"])) not in used), None)
+                if matched is not None:
+                    used.add((resource_type, str(matched["resource_id"])))
+                    remaining.remove(matched)
+                outcomes.append({"goal_id": f"record_obligation:{index}", "kind": "record",
+                                 "status": "verified" if matched else "failed",
+                                 "reason_code": "verified" if matched else "record_receipt_missing"})
+            return outcomes
+        if "bound_event_readback" not in goal.postconditions:
+            return []
+        proof = verify_goal_postconditions(goal, write_receipts=receipts, verification_result=None)
+        return [{"goal_id": "record_obligation", "kind": "record",
+                 "status": "verified" if proof.satisfied else "failed", "reason_code": proof.reason}]
+
+    def _record_contract_failure_text(
+        self, receipts: Sequence[dict], *, failure_detail: str = "",
+    ) -> str | None:
+        goals = self._record_contract_outcomes(receipts)
+        if goals and goals[0]["reason_code"] == "record_capability_unavailable":
+            return "我理解你要保存这项记录，但目前还没有能可靠处理它的记录能力。本轮未完成保存，重复发送同一句话无法解决；需要补齐对应能力。"
+        snapshot = self._agent_kernel_snapshot
+        if (snapshot and snapshot.goal and "each_record_receipt" in snapshot.goal.postconditions
+                and any(goal["status"] != "verified" for goal in goals)):
+            verified = sum(goal["status"] == "verified" for goal in goals)
+            notice = f"本次共 {len(goals)} 项记录，已完成并核验 {verified} 项，其余尚未完成核验。已保存的记录会保留，不会重复提交。"
+            return notice + ("\n\n" + failure_detail if failure_detail else "")
+        return None
+
     def _attach_runtime_identity(self, event: Dict[str, Any]) -> Dict[str, Any]:
         """Add canonical control-plane IDs without changing event semantics."""
         if event.get("event") not in {"request_persisted", "done"}:
@@ -13122,6 +13212,7 @@ class AgentExecutor:
                 tool_name,
                 parsed_args,
                 result,
+                obligation_goal=self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
             )
         explicit_failure = (
             receipt is None and result_declares_explicit_failure(result)
@@ -15661,6 +15752,7 @@ class AgentExecutor:
                             fn,
                             parsed_args,
                             result,
+                            obligation_goal=self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                         )
                         if receipt:
                             tool_event_data["receipt"] = receipt
@@ -16437,6 +16529,12 @@ class AgentExecutor:
             if not advice_answer_supported:
                 completion_status = "error"
                 self._record_model_fallback_reason("unverified_current_input_answer")
+        record_contract_failure = self._record_contract_failure_text(
+            write_receipts, failure_detail=full_reply if completion_status == "error" else "",
+        )
+        if record_contract_failure:
+            full_reply = record_contract_failure
+            completion_status = "error"
         plan_goals = self._exercise_plan_goal_outcomes()
         if any(goal['status'] != 'verified' for goal in plan_goals):
             from app.services.agent_kernel.evidence_advice_scope import incomplete_evidence_advice_notice
@@ -16449,7 +16547,7 @@ class AgentExecutor:
             final_text=full_reply,
             capability_block_reasons=[reason for reason in self._agent_kernel_capability_block_reasons
                                       if reason not in self._agent_kernel_recovered_capability_block_reasons],
-            goal_outcomes=(list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes() + plan_goals + self._personal_diet_answer_goals(full_reply),
+            goal_outcomes=self._record_contract_outcomes(write_receipts) + (list(panel_completion.goals) if panel_completion else []) + self._sync_goal_outcomes() + plan_goals + self._personal_diet_answer_goals(full_reply),
             tool_failure_tools=self._agent_kernel_tool_failure_tools,
             pending_confirmation_tools=self._agent_kernel_pending_confirmation_tools,
             write_receipts=write_receipts,
@@ -16482,7 +16580,7 @@ class AgentExecutor:
         # P1 数字锚定核验(shadow, additive; fail-soft 见 helper)。
         citation_anchor = (None if self._has_current_input_recovery_advice_goal()
                            else _citation_anchor_shadow_meta(self.db, user_id, full_reply))
-        kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
+        kernel_trace = self._agent_kernel_trace_summary(status=("complete" if turn_outcome["status"] == "complete" else turn_outcome["status"]))
         try:
             ai_msg.meta = {
                 "elapsed_ms": elapsed_ms,
@@ -19699,6 +19797,7 @@ class AgentExecutor:
                         func_name,
                         parsed_tool_args,
                         result_for_record_card,
+                        obligation_goal=self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                     )
                     if receipt:
                         tool_event_data["receipt"] = receipt
@@ -20819,6 +20918,17 @@ class AgentExecutor:
                                 self._agent_kernel_snapshot.goal
                                 if self._agent_kernel_snapshot is not None else None
                             )
+                            if (not proposed_calls and round_tools and not runtime_control_terminal
+                                    and not self._read_only_turn and current_goal is not None
+                                    and "bound_event_readback" in current_goal.postconditions
+                                    and not deterministic_simple_record_fallback_attempted
+                                    and not unverified_write_operations and not failed_write_operations):
+                                deterministic_simple_record_fallback_attempted = True
+                                planned_record = _build_deterministic_simple_record_tool_call(
+                                    current_goal, write_receipts=write_receipts,
+                                    has_attachment=bool(images or file_base64))
+                                if planned_record is not None:
+                                    proposed_calls, candidate, finish_reason = [planned_record], "", "tool_calls"
                             if (
                                 not proposed_calls
                                 and not goal_lookup_completed
@@ -21328,6 +21438,12 @@ class AgentExecutor:
         if clinician_reply is not None:
             full_reply = clinician_reply
             final_finish_reason = "stop"
+        record_contract_failure = self._record_contract_failure_text(
+            write_receipts, failure_detail=full_reply if final_finish_reason == "error" else "",
+        )
+        if record_contract_failure and not unverified_write_operations:
+            full_reply = record_contract_failure
+            final_finish_reason = "error"
         record_intent_no_tool = bool(
             health_evidence_turn is None
             and record_write_requested
@@ -21335,6 +21451,7 @@ class AgentExecutor:
             and not unverified_write_operations
             and not self._agent_kernel_pending_confirmation_tools
             and not last_recoverable_write_rejection
+            and not record_contract_failure
             and not runtime_control_terminal
             and not known_supplement_rejection
             and not deterministic_diet_correction_terminal
@@ -21993,7 +22110,7 @@ class AgentExecutor:
         turn_outcome = classify_agent_turn_outcome(
             completion_status=completion_status,
             final_text=full_reply,
-            goal_outcomes=intake_goal_outcomes + daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
+            goal_outcomes=self._record_contract_outcomes(write_receipts) + intake_goal_outcomes + daily_goal_outcomes(self._turn_daily_read_plan, self._turn_daily_read_results)
             + ([daily_summary_advice_goal] if daily_summary_advice_goal else [])
             + (list(composed_completion.goals) if composed_completion else [])
             + plan_goals + self._personal_diet_answer_goals(full_reply)
@@ -22186,7 +22303,7 @@ class AgentExecutor:
                 or self._has_isolated_report_scope() or self._public_task is not None)
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
-        kernel_trace = self._agent_kernel_trace_summary(status=completion_status)
+        kernel_trace = self._agent_kernel_trace_summary(status=("complete" if turn_outcome["status"] == "complete" else turn_outcome["status"]))
         recovery_data_guard_meta = self._recovery_data_guard_meta()
         answer_evidence = (
             early_answer_evidence
@@ -23649,6 +23766,7 @@ class AgentExecutor:
                         tool,
                         args,
                         result,
+                        obligation_goal=self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                     )
                     if receipt and not any(
                         item.get("operation_id") == receipt.get("operation_id")
@@ -28125,6 +28243,7 @@ class AgentExecutor:
                     request.tool_name,
                     args,
                     result,
+                    obligation_goal=self._agent_kernel_snapshot.goal if self._agent_kernel_snapshot else None,
                 )
                 outcome = classify_write_execution(result, receipt=receipt)
                 if is_legacy_local_write_rejection(result):
@@ -29154,6 +29273,36 @@ class AgentExecutor:
             except (json.JSONDecodeError, ValueError):
                 data = {}
         today = self._agent_kernel_reference_now().strftime("%Y-%m-%d")
+        from app.services.record_capabilities import record_capability, resolve_record_capability
+        capability = record_capability(rtype)
+        if capability is not None:
+            bound = (resolve_record_capability(snapshot.envelope.text, snapshot.context.current_time)
+                     if snapshot is not None and not snapshot.envelope.media else None)
+            source = str(snapshot.envelope.source_message_id or snapshot.envelope.client_turn_id or "") if snapshot else ""
+            if (bound is None or not source or snapshot.context.user_id != self._current_user_id
+                    or snapshot.context.channel not in capability.auto_record_channels
+                    or not bound.accepts({"record_type": rtype, "data": data})):
+                return local_write_rejection("record_capability_mismatch", message="记录参数未能与本次请求对应，未执行。")
+            event_id = bound.event_id(source)
+            payload = {**bound.arguments()["data"], "event_id": event_id}
+            created = await self._api_post(f"{base}{capability.endpoint}", headers, payload)
+            result = _write_result_payload(created)
+            if not isinstance(result, dict) or type(result.get("id")) is not int or result["id"] <= 0:
+                outcome = classify_write_execution(created)
+                if outcome.dispatch_started is False:
+                    return created
+                return json.dumps({"status": "reconciliation_required", "dispatch_started": True,
+                                   "error_code": "record_capability_identity_missing"})
+            readback, error = await self._api_get_json(
+                f"{base}{capability.readback_endpoint.format(record_id=result['id'], event_id=event_id)}", headers)
+            if (error or not isinstance(readback, dict) or readback.get("id") != result["id"]
+                    or not bound.verifies(readback, owner_id=self._current_user_id, event_id=event_id)):
+                return json.dumps({"status": "reconciliation_required", "dispatch_started": True,
+                                   "error_code": "record_capability_readback_failed"})
+            return json.dumps({"id": result["id"], "resource_type": capability.resource_type,
+                               "checkin_date": payload["record_date"], "operation_id": event_id,
+                               "record_capability_proof": {"record_type": rtype,
+                                   "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()}}, ensure_ascii=False)
         if rtype == "diet":
             data = _normalize_diet_create_data(
                 args,
@@ -29408,6 +29557,8 @@ class AgentExecutor:
                     "id": record.id,
                     "record_id": record.id,
                     "resource_type": "water_record",
+                    "amount": record.amount_ml,
+                    "user_id": record.user_id,
                     "record_date": record.record_date.isoformat(),
                     "status": "verified",
                     "success": True,

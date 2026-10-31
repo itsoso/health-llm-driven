@@ -487,6 +487,14 @@ def validate_health_record(
         'error': Optional[str] — 必填缺失等不可恢复错误, agent_executor 应返回给 LLM
     }
     """
+    from app.services.record_capabilities import record_capability
+    capability = record_capability(rtype)
+    if capability is not None:
+        try:
+            validated = capability.schema.model_validate(data)
+        except ValidationError:
+            return {"data": data, "warnings": [], "error": "Error: record capability payload invalid"}
+        return {"data": validated.model_dump(mode="json"), "warnings": [], "error": None}
     warnings: list = []
     if reference_now is None:
         today = datetime.now(BEIJING_TZ).date()

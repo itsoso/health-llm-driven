@@ -1,4 +1,5 @@
 import api from './api';
+import { uuid } from 'expo-modules-core';
 
 function today(): string {
   const d = new Date();
@@ -66,4 +67,28 @@ export async function updateCheckin(
     [field]: value,
   });
   return data;
+}
+
+export interface NasalWashRequest {
+  event_id: string;
+  record_date: string;
+  count: number;
+}
+
+export function createNasalWashRequest(): NasalWashRequest {
+  return { event_id: uuid.v4(), record_date: today(), count: 1 };
+}
+
+export async function recordNasalWash(request: NasalWashRequest): Promise<void> {
+  const { data } = await api.post<{ nasal_wash_times: Array<{ event_id?: string }> | null }>('/checkin/nasal-wash', request).catch((error: unknown) => {
+    if ((error as { response?: { status?: number } })?.response?.status === 422) {
+      const rejection = new Error('记录内容未通过校验，请检查设备日期后重新提交。');
+      rejection.name = 'NasalWashValidationError';
+      throw rejection;
+    }
+    throw error;
+  });
+  if (!data.nasal_wash_times?.some(event => event.event_id === request.event_id)) {
+    throw new Error('记录未确认，请重试这条记录。');
+  }
 }

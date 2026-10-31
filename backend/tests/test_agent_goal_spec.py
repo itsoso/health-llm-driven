@@ -20,6 +20,73 @@ from app.services.agent_kernel.types import (
 from app.services.agent_kernel.intent_frame import build_intent_frame
 
 
+@pytest.mark.parametrize("message, expected_types", [
+    ("记录喝水300ml，记录喝水500ml。", ["water", "water"]),
+    ("记录喝水500ml，记录昨晚23点入睡今天7点起床睡眠质量5分。", ["water", "sleep"]),
+])
+def test_supported_compound_records_retain_all_completion_obligations(message, expected_types):
+    import json
+    context = ExecutionContext.for_test(user_id=1, channel="typed")
+    envelope = AgentEnvelope(user_id=1, channel="typed", text=message)
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    assert goal.kind == "multi_health_record"
+    assert json.loads(dict(goal.target_values)["record_types"]) == expected_types
+    assert goal.requires_verification and not goal.prohibited_operations
+
+
+@pytest.mark.parametrize("amounts, resource_ids, complete", [
+    ([300, 500], [1, 2], True),
+    ([300, 300], [1, 2], False),
+    ([300, 500], [1, 1], False),
+    ([300], [1], False),
+])
+def test_compound_record_completion_matches_each_value_once(amounts, resource_ids, complete):
+    from types import SimpleNamespace
+    from app.services.agent_executor import AgentExecutor, _write_receipt_from_tool_result
+    context = ExecutionContext.for_test(user_id=1, channel="typed")
+    envelope = AgentEnvelope(user_id=1, channel="typed", text="记录喝水300ml，记录喝水500ml。")
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    receipts = [_write_receipt_from_tool_result(
+        "health_record", {"record_type": "water", "data": {"amount": amount}},
+        {"id": resource_id, "amount": amount, "user_id": 1,
+         "record_date": context.current_time.date().isoformat()}, obligation_goal=goal,
+    ) for amount, resource_id in zip(amounts, resource_ids)]
+    executor = AgentExecutor.__new__(AgentExecutor)
+    executor._agent_kernel_snapshot = SimpleNamespace(goal=goal)
+    outcomes = executor._record_contract_outcomes(receipts)
+    assert all(item["status"] == "verified" for item in outcomes) is complete
+
+
+@pytest.mark.parametrize("result", [{"id": 1}, {"id": 1, "amount": 500},
+                                   {"id": 1, "amount": 300, "user_id": 2}])
+def test_compound_record_proof_requires_matching_persisted_values(result):
+    from app.services.agent_executor import _write_receipt_from_tool_result
+    context = ExecutionContext.for_test(user_id=1, channel="typed")
+    envelope = AgentEnvelope(user_id=1, channel="typed", text="记录喝水300ml，记录喝水500ml。")
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    receipt = _write_receipt_from_tool_result(
+        "health_record", {"record_type": "water", "data": {"amount": 300}}, result,
+        obligation_goal=goal,
+    )
+    assert receipt["record_obligation_proofs"] == []
+
+
+@pytest.mark.parametrize("missing_field", ["user_id", "record_date"])
+def test_compound_record_proof_requires_explicit_persisted_owner_and_date(missing_field):
+    from app.services.agent_executor import _write_receipt_from_tool_result
+    context = ExecutionContext.for_test(user_id=1, channel="typed")
+    envelope = AgentEnvelope(user_id=1, channel="typed", text="记录喝水300ml，记录喝水500ml。")
+    goal = compile_goal_spec(envelope=envelope, context=context, intent=build_intent_frame(envelope, context))
+    result = {"id": 1, "amount": 300, "user_id": 1,
+              "record_date": context.current_time.date().isoformat()}
+    result.pop(missing_field)
+    receipt = _write_receipt_from_tool_result(
+        "health_record", {"record_type": "water", "data": {"amount": 300}}, result,
+        obligation_goal=goal,
+    )
+    assert receipt["record_obligation_proofs"] == []
+
+
 CASES = yaml.safe_load(
     (
         Path(__file__).parents[1] / "eval" / "datasets" / "agent_trajectories.yaml"

@@ -1,5 +1,5 @@
 """健康打卡Schema"""
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_serializer
 from datetime import date
 from typing import Optional, Dict, Any, List
 
@@ -47,5 +47,11 @@ class HealthCheckinResponse(BaseModel):
     goals_completed: Optional[Dict[str, Any]]
     notes: Optional[str]
     personalized_advice: Optional[str]
+
+    @field_serializer("nasal_wash_times")
+    def visible_nasal_wash_events(self, entries):
+        if entries is None:
+            return None
+        return [entry for entry in entries if entry.get("undone") is not True]
 
     model_config = ConfigDict(from_attributes=True)

@@ -2,6 +2,7 @@
 import { useRef } from 'react';
 import { api } from '@/services/api/client';
 import { useToast } from '@/contexts/ToastContext';
+import { createNasalWashRequest, recordNasalWash, undoNasalWash, type NasalWashRequest } from '@/services/api/nasalWash';
 import { getLocalDateStr } from '@/utils/timezone';
 
 interface QuickRecordBarProps {
@@ -16,6 +17,7 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
   const { showToast } = useToast();
   const lockRef = useRef<Set<ActionKey>>(new Set());
   const today = getLocalDateStr();
+  const pendingWash = useRef<NasalWashRequest | null>(null);
 
   // --- helpers ------------------------------------------------------------
   const withLock = async (key: ActionKey, fn: () => Promise<void>) => {
@@ -24,6 +26,7 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
     try {
       await fn();
     } catch (e: any) {
+      if (key === 'nasal_wash' && e?.name === 'NasalWashValidationError') pendingWash.current = null;
       console.error(`[QuickRecord] ${key} 失败`, e);
       const msg = e?.response?.data?.detail || e?.message || '操作失败';
       showToast(`${key} 失败：${msg}`, 'error');
@@ -74,7 +77,22 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
       });
     });
 
-  const bumpRhinitis = (field: 'nasal_wash_count' | 'sneeze_count', label: string) =>
+  const recordWash = () => withLock('nasal_wash', async () => {
+    const request = pendingWash.current ?? createNasalWashRequest(today);
+    pendingWash.current = request;
+    const saved = await recordNasalWash(request);
+    pendingWash.current = null;
+    onRhinitisUpdate(() => saved);
+    showToast(`已记录洗鼻，今日 ${saved.nasal_wash_count ?? 0} 次`, {
+      type: 'success',
+      onUndo: async () => {
+        const current = await undoNasalWash(saved.id, request.event_id);
+        onRhinitisUpdate(() => current);
+      },
+    });
+  });
+
+  const bumpRhinitis = (field: 'sneeze_count', label: string) =>
     withLock(`${field}`, async () => {
       const prevVal = rhinitisToday?.[field] || 0;
       const nextVal = prevVal + 1;
@@ -128,7 +146,7 @@ export default function QuickRecordBar({ rhinitisToday, onWaterRecord, onRhiniti
   const quickActions = [
     { icon: '💧', label: '300ml', onClick: () => drinkWater(300) },
     { icon: '💧', label: '500ml', onClick: () => drinkWater(500) },
-    { icon: '👃', label: '洗鼻+1', onClick: () => bumpRhinitis('nasal_wash_count', '洗鼻') },
+    { icon: '👃', label: '洗鼻+1', onClick: recordWash },
     { icon: '🤧', label: '喷嚏+1', onClick: () => bumpRhinitis('sneeze_count', '喷嚏') },
     {
       icon: '🌿',

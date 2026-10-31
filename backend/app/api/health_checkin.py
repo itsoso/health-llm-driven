@@ -1,15 +1,142 @@
 """健康打卡API"""
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import or_
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import date, datetime
 from app.database import get_db
 from app.schemas.health_checkin import HealthCheckinCreate, HealthCheckinResponse
+from app.schemas.record_capability import NasalWashCreate, NasalWashEventResponse
+from app.utils.timezone import get_user_now
 from app.models.health_checkin import HealthCheckin
 from app.models.user import User
 from app.api.deps import get_current_user_required
 
 router = APIRouter()
+
+
+def _lock_checkin_owner(db: Session, user_id: int) -> None:
+    # Lock the durable parent even when this day's child does not exist yet.
+    # All create paths share it; locking an absent checkin row cannot serialize.
+    owner = db.query(User.id).filter(User.id == user_id).with_for_update().one_or_none()
+    if owner is None:
+        raise HTTPException(status_code=404, detail="用户不存在")
+
+
+@router.post("/nasal-wash", response_model=HealthCheckinResponse)
+def create_nasal_wash(
+    record: NasalWashCreate,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Append one owner-scoped event; an event ID may never change its payload."""
+    user_id = current_user.id
+    _lock_checkin_owner(db, user_id)
+    rows = db.query(HealthCheckin).filter(
+        HealthCheckin.user_id == user_id,
+        or_(HealthCheckin.checkin_date == record.record_date,
+            HealthCheckin.nasal_wash_times.isnot(None)),
+    ).populate_existing().all()
+    expected = {"count": record.count, "volume_ml": record.volume_ml, "solution": record.solution, "type": record.type}
+    matches = [(row, event) for row in rows for event in (row.nasal_wash_times or [])
+               if isinstance(event, dict) and event.get("event_id") == record.event_id]
+    if matches:
+        row, event = matches[0]
+        if (len(matches) != 1 or row.checkin_date != record.record_date
+                or event.get("undone") is True
+                or (record.time is not None and event.get("time") != record.time)
+                or any(event.get(key) != value for key, value in expected.items())):
+            raise HTTPException(status_code=409, detail="事件标识已绑定到不同记录")
+        db.commit()
+        db.refresh(row)
+        return row
+    day_rows = [row for row in rows if row.checkin_date == record.record_date]
+    if len(day_rows) > 1:
+        raise HTTPException(status_code=409, detail="当日打卡记录不唯一，需先核对")
+    row = day_rows[0] if day_rows else HealthCheckin(user_id=user_id, checkin_date=record.record_date)
+    event = {"event_id": record.event_id, "time": record.time or get_user_now(db, user_id).strftime("%H:%M:%S"), **expected}
+    row.nasal_wash_times = [*(row.nasal_wash_times or []), event]
+    row.nasal_wash_count = (row.nasal_wash_count or 0) + record.count
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+@router.get("/{checkin_id}/nasal-wash/{event_id}", response_model=NasalWashEventResponse)
+def get_nasal_wash_event(
+    checkin_id: int,
+    event_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Return only the requested owner's exact event for receipt verification."""
+    row = db.query(HealthCheckin).filter(
+        HealthCheckin.id == checkin_id, HealthCheckin.user_id == current_user.id,
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="洗鼻记录不存在")
+    matches = [event for event in (row.nasal_wash_times or [])
+               if isinstance(event, dict) and event.get("event_id") == event_id]
+    if not matches or matches[0].get("undone") is True:
+        raise HTTPException(status_code=404, detail="洗鼻记录不存在")
+    if len(matches) != 1:
+        raise HTTPException(status_code=409, detail="事件标识不唯一，需先核对")
+    return {"id": row.id, "user_id": row.user_id, "checkin_date": row.checkin_date,
+            "event": matches[0]}
+
+
+@router.delete("/{checkin_id}/nasal-wash/{event_id}", response_model=HealthCheckinResponse)
+def undo_nasal_wash_event(
+    checkin_id: int,
+    event_id: str,
+    current_user: User = Depends(get_current_user_required),
+    db: Session = Depends(get_db),
+):
+    """Undo exactly one event; keep its identity so a late replay cannot revive it."""
+    _lock_checkin_owner(db, current_user.id)
+    row = db.query(HealthCheckin).filter(
+        HealthCheckin.id == checkin_id, HealthCheckin.user_id == current_user.id,
+    ).populate_existing().first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="洗鼻记录不存在")
+    entries = list(row.nasal_wash_times or [])
+    indices = [index for index, event in enumerate(entries)
+               if isinstance(event, dict) and event.get("event_id") == event_id]
+    if not indices:
+        raise HTTPException(status_code=404, detail="洗鼻记录不存在")
+    if len(indices) != 1:
+        raise HTTPException(status_code=409, detail="事件标识不唯一，需先核对")
+    index = indices[0]
+    event = entries[index]
+    if event.get("undone") is not True:
+        count = event.get("count")
+        if (type(count) is not int or count <= 0
+                or (row.nasal_wash_count or 0) < count):
+            raise HTTPException(status_code=409, detail="洗鼻次数与事件不一致，需先核对")
+        entries[index] = {**event, "undone": True}
+        row.nasal_wash_times = entries
+        row.nasal_wash_count -= count
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def _guard_legacy_nasal_fields(checkin: HealthCheckinCreate, existing: Optional[HealthCheckin]) -> bool:
+    """Old aggregate writes cannot overwrite events, including hidden tombstones."""
+    stored = existing.nasal_wash_times or [] if existing is not None else []
+    has_canonical = any(isinstance(item, dict) and "event_id" in item for item in stored)
+    incoming = checkin.nasal_wash_times
+    if has_canonical:
+        visible = [item for item in stored if not isinstance(item, dict) or item.get("undone") is not True]
+        if ((incoming is not None and incoming != visible)
+                or (checkin.nasal_wash_count is not None
+                    and checkin.nasal_wash_count != existing.nasal_wash_count)):
+            raise HTTPException(status_code=409, detail="洗鼻记录已使用事件模式，请刷新后按事件新增或撤销")
+        return True
+    if any(isinstance(item, dict) and "event_id" in item for item in (incoming or [])):
+        raise HTTPException(status_code=409, detail="洗鼻事件必须通过事件接口保存")
+    return False
 
 
 @router.post("/", response_model=HealthCheckinResponse)
@@ -24,13 +151,16 @@ def create_health_checkin(
 
     # 强制使用当前用户ID
     user_id = current_user.id
-    logger.info(f"用户 {user_id} 保存打卡记录: {checkin.checkin_date}, notes={checkin.notes}")
+    _lock_checkin_owner(db, user_id)
+    logger.info("保存健康打卡 user_id=%s", user_id)
 
     # 检查是否已存在该日期的打卡
     existing = db.query(HealthCheckin).filter(
         HealthCheckin.user_id == user_id,
         HealthCheckin.checkin_date == checkin.checkin_date
     ).first()
+
+    preserve_nasal_events = _guard_legacy_nasal_fields(checkin, existing)
 
     if existing:
         # 更新现有记录
@@ -39,6 +169,8 @@ def create_health_checkin(
 
         # 特殊处理数组字段：如果提供了新值，则合并或替换
         for key, value in checkin_dict.items():
+            if preserve_nasal_events and key in {"nasal_wash_count", "nasal_wash_times"}:
+                continue
             if value is not None:
                 # 对于数组字段（sneeze_times, nasal_wash_times），如果提供了新值，则合并
                 if key in ['sneeze_times', 'nasal_wash_times'] and isinstance(value, list):
@@ -80,7 +212,7 @@ def create_health_checkin(
     # 同步 LLM 调用曾导致 POST /checkin/ 耗时 20-35 秒
     checkin_data["personalized_advice"] = None
 
-    logger.info(f"创建新记录: {checkin_data}")
+    logger.info("创建健康打卡 user_id=%s", user_id)
     db_checkin = HealthCheckin(**checkin_data)
     db.add(db_checkin)
     db.commit()

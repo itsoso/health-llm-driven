@@ -132,6 +132,18 @@ def _verify_simple_health_record(
     verification_result: Any,
 ) -> PostconditionResult:
     del verification_result
+    from app.services.record_capabilities import record_capability
+    import hashlib
+    capability = record_capability(str(goal.target_record_type or ""))
+    if capability is not None:
+        payload = dict(goal.target_values).get("capability_payload", "")
+        expected = {"record_type": capability.record_type,
+                    "payload_sha256": hashlib.sha256(payload.encode()).hexdigest()}
+        matched = [r for r in write_receipts if isinstance(r, dict) and r.get("verified") is True
+                   and r.get("resource_type") == capability.resource_type
+                   and r.get("record_capability_proof") == expected and r.get("resource_id")]
+        return PostconditionResult(bool(matched), "verified" if matched else "record_capability_proof_missing",
+                                   verified_resource_ids=tuple(str(r["resource_id"]) for r in matched))
     expected_resource_type = {
         "water": "water_record",
         "symptom": "symptom_record",

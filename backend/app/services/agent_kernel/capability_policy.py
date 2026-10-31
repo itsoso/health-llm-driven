@@ -2662,6 +2662,7 @@ def _owner_scoped_manage_list_records(
 
 def capability_policy_contract_payload() -> dict[str, Any]:
     """Return static, content-free metadata that governs tool authorization."""
+    from app.services.record_capabilities import capability_contract_payload
     from app.services.agent_kernel.read_task_scope import read_task_scope_contract_payload
     from app.services.agent_read_task_continuation import read_task_continuation_contract_payload
     from app.services.agent_diet_continuation import diet_continuation_contract_payload
@@ -2704,6 +2705,7 @@ def capability_policy_contract_payload() -> dict[str, Any]:
         "intervention_write_actions": sorted(INTERVENTION_WRITE_ACTIONS),
         "intervention_read_actions": sorted(INTERVENTION_READ_ACTIONS),
         "manage_plan_actions": sorted(MANAGE_PLAN_ACTIONS),
+        "record_capabilities": capability_contract_payload(),
         "health_record_target_binding": {
             "version": _HEALTH_RECORD_TARGET_BINDING_VERSION,
             "domain_types": dict(sorted(_HEALTH_RECORD_DOMAIN_TYPES.items())),
@@ -2888,6 +2890,22 @@ def decide_tool_capability(
                 args,
                 receipt_required=True,
             )
+    from app.services.record_capabilities import record_capability, resolve_record_capability
+    bound_record = None if snapshot.envelope.media else resolve_record_capability(snapshot.envelope.text, snapshot.context.current_time)
+    registered_request = tool_name == "health_record" and record_capability(str(args.get("record_type") or "")) is not None
+    if bound_record is not None or registered_request:
+        owned = (type(snapshot.context.user_id) is int and snapshot.context.user_id > 0
+                 and type(snapshot.envelope.user_id) is int
+                 and snapshot.envelope.user_id == snapshot.context.user_id)
+        if (owned and bound_record is not None
+                and snapshot.context.channel in bound_record.capability.auto_record_channels
+                and tool_name == "health_record"
+                and bound_record.accepts(args)
+                and request.source not in {"procedure_recipe_replay", "telegram_directive"}):
+            return _decision("allow", "bound_record_capability", tool_name,
+                             bound_record.arguments(), receipt_required=True)
+        return _decision("block", "record_capability_mismatch", tool_name, args,
+                         receipt_required=mutating_request)
     if tool_name == "health_record" and snapshot.intent.domain == "aigc_media":
         return _decision(
             "block",

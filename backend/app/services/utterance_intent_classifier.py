@@ -299,6 +299,14 @@ def classify_agent_utterance(
 
     raw = "" if message is None else str(message).strip()
     instruction_text = active_health_instruction_text(raw)
+    from app.services.record_capabilities import (
+        resolve_record_capability,
+    )
+    bound_record = resolve_record_capability(raw, reference_now or datetime.now(BJ))
+    if bound_record is not None:
+        return _intent(raw, _normalize(raw), "write", bound_record.capability.record_type,
+                       "create", 1.0, "bound_record_capability", is_write=True,
+                       requires_reliable_tool_model=True)
     clinician_decision = classify_clinician_turn(instruction_text)
     if clinician_decision.kind != "none":
         return _clinician_intent(

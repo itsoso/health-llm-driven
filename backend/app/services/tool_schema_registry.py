@@ -4,6 +4,7 @@
 """
 
 import logging
+import json
 from typing import List, Dict, Any, Optional
 
 from app.services.health_query_prompt_registry import render_health_query_description
@@ -984,3 +985,17 @@ def get_health_tools(subset: Optional[List[str]] = None) -> List[Dict[str, Any]]
 def get_tool_names() -> List[str]:
     """获取所有工具名称"""
     return [t["function"]["name"] for t in HEALTH_TOOLS]
+
+
+def _install_record_capability_schemas() -> None:
+    from app.services.record_capabilities import RECORD_CAPABILITIES
+    for tool in HEALTH_TOOLS:
+        if tool["function"]["name"] != "health_record":
+            continue
+        parameters = tool["function"]["parameters"]
+        parameters["properties"]["record_type"]["enum"].extend(item.record_type for item in RECORD_CAPABILITIES)
+        parameters["properties"]["data"]["description"] += "\n" + "\n".join(
+            f"{item.record_type}: {item.description} schema={json.dumps(item.schema.model_json_schema(), ensure_ascii=False)}"
+            for item in RECORD_CAPABILITIES)
+
+_install_record_capability_schemas()
