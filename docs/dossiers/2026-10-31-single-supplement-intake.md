@@ -84,3 +84,19 @@ unconfirmed. Exact integrated main CI, project CI-mode, live synthetic evaluatio
 final G4 and production receipt/user-path verification are not satisfied by local
 tests. This task must not be represented as released or as eliminating every
 unsupported natural-language record failure.
+
+## Independent review correction
+
+- Fixed initial commit `e2a3a143a`: independent reviewer NO-GO. New definition
+  creation still copied the one-off dose into the regimen; successful definition
+  creation followed by intake auth/transport failure lost the partial side effect.
+- Additional RED: 6 failed / 4 passed. New definitions now omit regimen dosage
+  for complete single intakes; intake failure preserves the created definition
+  ID/message and cannot mark the whole operation as never dispatched. Transport
+  uncertainty remains unverified with no blind retry.
+- Expanded real Pi/gateway/API scenarios cover new/existing definitions and
+  definite auth versus uncertain transport failures as well as successful writes.
+  Initial correction runs found only a test ID-type assertion mismatch (the
+  established failure helper returns string IDs); comparison now normalizes it.
+- Initial broad capability suite before this narrow correction: 2259 passed.
+  Final combined regression, final PostgreSQL and fixed-commit re-review pending.

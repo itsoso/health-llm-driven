@@ -68,9 +68,10 @@ def test_unresolved_target_does_not_invent_create_update_ambiguity():
 @pytest.mark.parametrize('separator', ['', '，'])
 @pytest.mark.parametrize('model_proposes_write', [False, True])
 @pytest.mark.parametrize('existing_definition', [False, True])
+@pytest.mark.parametrize('record_error', [None, 'API 返回 401', 'timeout'])
 async def test_single_intake_real_api_persists_once_even_when_model_omits_tool(
     db, monkeypatch, owned_data, clock, client, auth_user_and_headers,
-    separator, model_proposes_write, existing_definition,
+    separator, model_proposes_write, existing_definition, record_error,
 ):
     from datetime import datetime
     from app.models.supplement import SupplementDefinition, SupplementRecord
@@ -94,6 +95,8 @@ async def test_single_intake_real_api_persists_once_even_when_model_omits_tool(
         response = client.get(urlsplit(url).path, headers=headers)
         return response.json(), None if response.status_code == 200 else f'API 返回 {response.status_code}'
     async def post_json(url, _headers, payload, **kwargs):
+        if url.endswith('/supplements/records') and record_error:
+            return None, record_error
         response = client.post(urlsplit(url).path, headers=headers, json=payload)
         return response.json(), None if response.status_code == 200 else f'API 返回 {response.status_code}'
     monkeypatch.setattr(trace.executor, '_api_get_json', get_json)
@@ -109,7 +112,22 @@ async def test_single_intake_real_api_persists_once_even_when_model_omits_tool(
     definition = db.query(SupplementDefinition).filter_by(user_id=owned_data.id, name='肌酸').one()
     if existing_definition:
         assert definition.dosage == '1粒'  # Actual intake must not rewrite the regimen.
+    else:
+        assert definition.dosage is None  # One intake does not establish a regimen.
     records = db.query(SupplementRecord).filter_by(user_id=owned_data.id, supplement_id=definition.id).all()
+    if record_error:
+        assert not records
+        assert not done.get('write_receipts')
+        assert done['completion_status'] != 'complete'
+        payload = json.loads(trace.results[-1][1])
+        if not existing_definition:
+            assert int(payload['supplement_definition_id']) == definition.id
+            assert 'dispatch_started' not in payload
+            assert '加入补剂库' in payload['message']
+        if record_error == 'timeout':
+            assert payload['status'] == 'unverified'
+            assert done['turn_outcome']['retryable'] is False
+        return
     assert len(records) == 1, (done.get('turn_outcome'), [result for _, result in trace.results])
     assert records[0].taken is True
     assert records[0].actual_dosage in ('2粒', '两粒')
@@ -180,3 +198,30 @@ async def test_explicit_intake_failed_response_never_claims_saved(
     assert 'record_id' not in result
     if status == 'rejected':
         assert result['dispatch_started'] is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('error,status', [('API 返回 401', 'failed'), ('timeout', 'unverified')])
+async def test_created_definition_survives_failed_intake_in_outcome(
+    db, monkeypatch, clock, error, status,
+):
+    from app.services.agent_executor import AgentExecutor
+    executor = AgentExecutor(db)
+    executor._current_user_id = 1
+    executor._current_turn_user_message = '记录补剂，吃了两粒肌酸。'
+    monkeypatch.setattr(executor, '_agent_kernel_reference_now', lambda: clock[0])
+    async def get(*args, **kwargs):
+        return [], None
+    async def post(url, headers, payload, **kwargs):
+        if url.endswith('/definitions'):
+            return {'id': 7, 'name': '肌酸', 'user_id': 1, 'is_active': True}, None
+        return None, error
+    monkeypatch.setattr(executor, '_api_get_json', get)
+    monkeypatch.setattr(executor, '_api_post_json', post)
+    result = json.loads(await executor._exec_health_record('http://testserver', {}, {
+        'record_type': 'supplement', 'data': {'supplement_name': '肌酸', 'dosage': '两粒'}}))
+    assert result['status'] == status
+    assert int(result['supplement_definition_id']) == 7
+    assert '加入补剂库' in result['message']
+    assert 'record_id' not in result
+    assert 'dispatch_started' not in result  # Definition creation already committed.

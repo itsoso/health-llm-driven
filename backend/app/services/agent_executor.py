@@ -30080,6 +30080,9 @@ class AgentExecutor:
                 # 且新条目进入 DSI 安全规则覆盖面(加层不减层,只增覆盖)。
                 create_payload = {"name": name}
                 for k in ("dosage", "timing", "category", "description"):
+                    if k == "dosage" and _is_complete_single_supplement_intake(current_message):
+                        # A completed intake is not a standing regimen.
+                        continue
                     if data.get(k):
                         create_payload[k] = data[k]
                 created, cerr = await self._api_post_json(
@@ -30099,9 +30102,20 @@ class AgentExecutor:
                     return "补剂记录暂时没成功（自动建档失败），你可以稍后再试一次。"
                 _created_payload, created_id = validated_created
                 if _is_complete_single_supplement_intake(current_message):
-                    return await self._record_explicit_supplement_intake(
+                    intake_result = await self._record_explicit_supplement_intake(
                         base, headers, definition_id=int(created_id), name=str(name),
                     )
+                    intake_payload = json.loads(intake_result)
+                    if intake_payload.get("status") != "recorded":
+                        # Definition creation is already a committed side effect.
+                        # An intake auth rejection cannot erase that evidence or
+                        # settle the composite operation as never dispatched.
+                        return _supplement_autocreate_tap_failure(
+                            str(name), created_id,
+                            known_failure=intake_payload.get("dispatch_started") is False,
+                        )
+                    intake_payload["supplement_definition_id"] = int(created_id)
+                    return json.dumps(intake_payload, ensure_ascii=False)
                 tap_result = await self._api_post(
                     f"{base}/nfc/tap", headers,
                     {"action": "supplement", "supplement_id": int(created_id)}
