@@ -214,3 +214,29 @@ conversation silhouette with plus/clock details, drawn with the already-installe
 SVG module; it introduces no native input. The first candidate authorization rotation completed normally without deploying or publishing its UI. Final icon candidate passed 382 Mobile suites (4055 tests, one existing skip),
 typecheck and signed Release simulator visual/new/history interaction checks.
 Final production publication remains pending at this checkpoint.
+
+
+## Final header publication
+
+- Final source: `1b31ba5bf1f60f6a49518525942246bf148a4fd3`; independent safety review GO.
+- Full current-main CI `41208207280`, trusted validate `41209022596`, backend
+  deployment `41209808726`, OTA validate `41210213412` and OTA publish
+  `41210357801` all succeeded. Production revision matches the final source;
+  backend and Web services are active, and authenticated Web chat reload passed.
+- Production iOS OTA group `030701a9-1cb6-4ea4-b692-8eba5e71bd41`, update
+  `01a19263-08c0-7249-b6a6-613c5f8e2957`, runtime 1.3.6. Server verified/completed
+  receipts bind the same SHA, state SUCCEEDED, and business lease is released.
+- Both intermediate and final UI candidates were built as signed Release simulator
+  artifacts. Final rounded conversation-plus and conversation-clock icons were
+  visually inspected and new/history entry points operated successfully using the
+  isolated test account. Personal device OTA uptake is not asserted.
+- Intermediate `28c2c357a` was authorized but never deployed/published. Its unused
+  authorization required canonical revoke and retirement of only its revoked
+  loopback private key before ordinary rotation to the final source. Initial
+  malformed public-key argument and wrong-source revoke calls failed before
+  mutation; the direct rotation also failed before any retirement intent. Policy,
+  absent workspace/lease and audit inventories were read back before proceeding.
+  No publisher code was changed and no permission, compatibility or audit gate was
+  bypassed. Existing authorized cloud identity and scope were retained.
+
+This final section supersedes the pending UI publication checkpoint above.
