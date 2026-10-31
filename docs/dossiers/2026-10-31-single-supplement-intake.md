@@ -2,10 +2,15 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | G3/G4 verified on integrated candidate; G5 release validation |
+| 状态 | shipped |
+| 当前阶段 | G6 后端回执核验；登录态重试未观察 |
 | Controller | health-harness-orchestrator (incident), safety-gate overlay |
 | Run | `docs/_generated/harness-runs/09731e372ccf.jsonl` (local) |
+
+Current outcome: backend revision `8d4d6c5c627ec50b27e67b6282946ec4ccb664c7`
+is deployed and independently verified. Earlier sections retain the failures and
+boundaries observed at each stage; the final closure below supersedes their
+then-pending release status. Physical-device/user-data acceptance is not claimed.
 
 ## G1 admission
 
@@ -185,3 +190,58 @@ audited 0.6.5 pin; do not weaken or skip the contract. The partial local CI-mode
 run for that superseded SHA was stopped and is not accepted as a pass. Final
 candidate CI-mode, exact remote CI and live gate must be rebound after this
 test-only correction. No production operation has started.
+
+## Final G3/G4 verification
+
+裁决: PASS
+
+- Frozen backend candidate: `8d4d6c5c627ec50b27e67b6282946ec4ccb664c7`.
+  Independent implementation and one-shot operational reviews returned GO bound
+  to this SHA and the exact reviewed wrapper bytes.
+- Fresh project CI-mode: 5782 passed, 67 platform/inapplicable skips, zero errors
+  or failures; dossier checker and its 18 tests passed. Dedicated PostgreSQL 17
+  regression: 71 passed. Live synthetic model gate passed on this exact SHA.
+  System Map and whitespace checks passed. No real user health records were used.
+- [Exact full CI](https://github.com/itsoso/health-llm-driven/actions/runs/41169833378):
+  32 jobs successful. [Trusted preflight](https://github.com/itsoso/health-llm-driven/actions/runs/41170638363)
+  completed successfully; preflight success and six inapplicable jobs skipped.
+
+## Final G5 deployment
+
+裁决: PASS
+
+- Canonical staging, scoped read-credential refresh and authorization rotation
+  completed once, with independent byte-bound approvals and durable receipts.
+  No backup, rollback copy, historical backup-body verification or repeated
+  deployment was performed.
+- [Backend dispatch](https://github.com/itsoso/health-llm-driven/actions/runs/41171468676)
+  reports **failure** because its runner SSH connection timed out. The original
+  server launcher and deployment child continued; they were observed, not
+  restarted or replayed. The original operation subsequently wrote
+  `/var/lib/reva-release/8d4d6c5c627ec50b27e67b6282946ec4ccb664c7/completed.json`
+  with exact SHA and `state=SUCCEEDED`.
+- Independent readback confirmed the matching `COMMITTED` terminal marker with
+  `mode=code-only-no-backup`, no business lease, exact clean production HEAD,
+  and matching hashes for the changed intake/executor code and dependency lock.
+  This is server-side completion evidence, not a claim that the failed cloud
+  dispatch became green.
+
+## Post-release acceptance and remaining limits
+
+- Backend, Celery worker and beat are active. Internal and public health requests
+  return HTTP 200; unauthenticated auth/me and supplement-record reads return
+  HTTP 401. The deployment's guard and final health checks passed 60/60, along
+  with revision, serving-contract and manifest checks.
+- Evidence: `/tmp/reva-intake-8d4-production-proof.json`; local CI-mode result
+  `/tmp/reva-intake-8d4-ci-result.json`; live result
+  `/tmp/reva-intake-8d4-live-result.json`; PostgreSQL log
+  `/tmp/reva-intake-8d4-pg.log`.
+- The independent readback also observed the GitHub release relay repeatedly
+  reconnecting to its base host. A later canonical GitHub transport probe failed
+  with connection refused. This remains a release-transport fault; it is not
+  counted as healthy or silently removed from the evidence. Core application
+  verification was recorded separately. No relay configuration was changed.
+- No production supplement record was created by verification; the user's
+  signed-in retry was not observed. Both screenshot sentence shapes passed real
+  API/Pi/gateway tests against isolated databases. The bounded grammar and daily
+  upsert limitations above remain. No Mobile OTA or website artifact was published.
