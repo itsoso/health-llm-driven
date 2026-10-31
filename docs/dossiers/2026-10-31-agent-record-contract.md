@@ -85,3 +85,15 @@ verification on 2026-10-31. Fresh fetch confirms the original baseline remains
 current main. Production backend has since reached that same baseline; previously
 pending release recovery is not assumed to remain blocked. Exact candidate CI,
 independent committed-diff review and current release receipts govern release.
+
+### Full CI compatibility corrections
+
+The first exact-main CI (41190853038) rejected clinician-guard response
+compatibility, a medication confirmation card hidden by the generic completion
+notice, the frozen tool-schema snapshot, and missing generated API clients.
+The follow-up preserves stronger clinician/confirmation terminal messages without
+changing authorization or persistence checks, explicitly admits only the reviewed
+nasal enum into the historical schema freeze, and regenerates both clients.
+Original failed CI is retained; no production deployment consumed that candidate.
+Targeted failed-file suites, both client typechecks, type-drift regeneration and
+fresh live LLM regression passed. Independent correction review GO.

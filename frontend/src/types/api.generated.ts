@@ -4984,6 +4984,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/checkin/nasal-wash": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Nasal Wash
+         * @description Append one owner-scoped event; an event ID may never change its payload.
+         */
+        post: operations["create_nasal_wash_api_v1_checkin_nasal_wash_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/checkin/{checkin_id}/nasal-wash/{event_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Nasal Wash Event
+         * @description Return only the requested owner's exact event for receipt verification.
+         */
+        get: operations["get_nasal_wash_event_api_v1_checkin__checkin_id__nasal_wash__event_id__get"];
+        put?: never;
+        post?: never;
+        /**
+         * Undo Nasal Wash Event
+         * @description Undo exactly one event; keep its identity so a late replay cannot revive it.
+         */
+        delete: operations["undo_nasal_wash_event_api_v1_checkin__checkin_id__nasal_wash__event_id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/checkin/": {
         parameters: {
             query?: never;
@@ -30087,6 +30131,61 @@ export interface components {
             /** Next Offset */
             next_offset: number | null;
         };
+        /** NasalWashCreate */
+        NasalWashCreate: {
+            /** Count */
+            count: number;
+            /** Volume Ml */
+            volume_ml?: number | null;
+            /** Solution */
+            solution?: string | null;
+            /**
+             * Record Date
+             * Format: date
+             */
+            record_date: string;
+            /** Event Id */
+            event_id: string;
+            /**
+             * Type
+             * @default wash
+             * @enum {string}
+             */
+            type: "wash" | "soak";
+            /** Time */
+            time?: string | null;
+        };
+        /** NasalWashEvent */
+        NasalWashEvent: {
+            /** Count */
+            count: number;
+            /** Volume Ml */
+            volume_ml?: number | null;
+            /** Solution */
+            solution?: string | null;
+            /** Event Id */
+            event_id: string;
+            /** Time */
+            time: string;
+            /**
+             * Type
+             * @enum {string}
+             */
+            type: "wash" | "soak";
+        };
+        /** NasalWashEventResponse */
+        NasalWashEventResponse: {
+            /** Id */
+            id: number;
+            /** User Id */
+            user_id: number;
+            /**
+             * Checkin Date
+             * Format: date
+             */
+            checkin_date: string;
+            event: components["schemas"]["NasalWashEvent"];
+        };
         /** NavigationAction */
         NavigationAction: {
             /** Action Ref */
@@ -44796,6 +44895,103 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_nasal_wash_api_v1_checkin_nasal_wash_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NasalWashCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthCheckinResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_nasal_wash_event_api_v1_checkin__checkin_id__nasal_wash__event_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checkin_id: number;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NasalWashEventResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    undo_nasal_wash_event_api_v1_checkin__checkin_id__nasal_wash__event_id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                checkin_id: number;
+                event_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthCheckinResponse"];
                 };
             };
             /** @description Validation Error */

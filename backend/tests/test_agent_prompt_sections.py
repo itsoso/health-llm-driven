@@ -189,5 +189,11 @@ def test_prompt_corrections_do_not_change_tool_schema_structure():
     waist_index = dimensions.index('waist')
     assert dimensions[waist_index - 1:waist_index + 2] == ['weight', 'waist', 'bmi']
     dimensions.remove('waist')
+    # The reviewed record capability adds one enum; preserve the freeze for
+    # every legacy field instead of accepting arbitrary schema drift.
+    record = next(t['function'] for t in structure if t['function']['name'] == 'health_record')
+    record_types = record['parameters']['properties']['record_type']['enum']
+    assert record_types.count('nasal_wash') == 1
+    record_types.remove('nasal_wash')
     serialized = json.dumps(structure, sort_keys=True, ensure_ascii=False)
     assert hashlib.sha256(serialized.encode()).hexdigest() == contract['schema_structure_sha256']

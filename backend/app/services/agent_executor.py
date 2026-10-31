@@ -12928,6 +12928,16 @@ class AgentExecutor:
     def _record_contract_failure_text(
         self, receipts: Sequence[dict], *, failure_detail: str = "",
     ) -> str | None:
+        # A confirmation draft or a clinician safety response is a stronger
+        # terminal state than the generic unmet-record explanation.
+        if getattr(self, "_agent_kernel_pending_confirmation_tools", ()):
+            return None
+        snapshot = self._agent_kernel_snapshot
+        if snapshot is not None:
+            clinician = classify_clinician_turn(snapshot.envelope.text)
+            if (clinician.kind in _CLINICIAN_ZERO_TOOL_KINDS
+                    or clinician.reason_code in _CLINICIAN_ZERO_TOOL_REASON_CODES):
+                return None
         goals = self._record_contract_outcomes(receipts)
         if goals and goals[0]["reason_code"] == "record_capability_unavailable":
             return "我理解你要保存这项记录，但目前还没有能可靠处理它的记录能力。本轮未完成保存，重复发送同一句话无法解决；需要补齐对应能力。"
