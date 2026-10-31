@@ -137,6 +137,7 @@ def test_stale_diet_frame_cannot_compile_a_supplement_as_a_meal():
     ) is None
 
 
+@pytest.mark.parametrize('dose', ['一粒', '两粒'])
 @pytest.mark.parametrize('text', [
     '记录妈妈吃了两粒肌酸。', '记录明天吃两粒肌酸。', '记录没吃两粒肌酸。',
     '记录吃了两粒肌酸吗？', '记录吃了两粒肌酸激酶。',
@@ -144,7 +145,7 @@ def test_stale_diet_frame_cannot_compile_a_supplement_as_a_meal():
     '记录吃了一粒复合维生素 VB，这是妈妈的。',
     '“记录吃了一粒复合维生素 VB”', '记录吃了两粒肌酸软糖。',
 ])
-def test_expansion_does_not_authorize_residue_or_other_subjects(text):
+def test_expansion_does_not_authorize_residue_or_other_subjects(text, dose):
     assert parse_intake_plan(text).status != 'complete'
     for name in ('肌酸', '复合维生素vb'):
-        assert decision(text, 'supplement', {'supplement_name': name, 'dosage': '两粒'}).action == 'block'
+        assert decision(text, 'supplement', {'supplement_name': name, 'dosage': dose}).action == 'block'

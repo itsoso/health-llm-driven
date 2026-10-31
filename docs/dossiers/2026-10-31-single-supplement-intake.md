@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | implementation |
-| 当前阶段 | G3 复发修复验证；上一轮用户验收失败 |
+| 当前阶段 | G3/G4 最终候选验证；上一轮用户验收失败 |
 | Controller | health-harness-orchestrator (incident), safety-gate overlay |
 | Run | `docs/_generated/harness-runs/09731e372ccf.jsonl` (local) |
 
@@ -272,3 +272,21 @@ test-only correction. No production operation has started.
   production receipt remain required. Test-only import failures are not RED
   behavioral evidence. New live cases require explicit opt-in and synthetic
   AI consent; no real user's health record is used for validation.
+
+### Follow-up validation checkpoint
+
+- Expanded offline integration: 4093 passed, 3 opt-in live cases skipped.
+  The first live attempt was correctly stopped by the imported offline socket
+  isolation fixture, before provider network access. Test fixture separation
+  preserves offline isolation and uses actual synthetic-user AI consent for the
+  explicit live cases; it does not bypass the consent guard.
+- All three real-provider → real Pi/gateway → isolated authenticated API
+  scenarios then passed on `2323bf5a6` (47.50 seconds). Both creatine sentence
+  forms and the explicit VB product identity produced verified supplement
+  records, no extra meal record, unchanged usual dosage and same-turn replay.
+- Review requested matching-dose negative probes; tests now exercise both one
+  and two capsules so a dose mismatch cannot hide an authorization regression.
+- Main advanced by documentation-only changes during validation. The earlier
+  local CI-mode run was intentionally stopped (SIGTERM, exit -15) and is not a
+  pass. Integrate current main, then rerun frozen final-source CI-mode, live and
+  PostgreSQL checks before push/release. No new production operation has begun.
