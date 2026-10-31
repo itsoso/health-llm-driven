@@ -3,13 +3,15 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | building |
-| 当前阶段 | G3/G4 locally verified; G5 blocked by existing divergence and release gates |
+| 当前阶段 | G3/G4 verified on integrated candidate; G5 release validation |
 | Controller | health-harness-orchestrator (incident), safety-gate overlay |
 | Run | `docs/_generated/harness-runs/09731e372ccf.jsonl` (local) |
 
 ## G1 admission
 
-PASS: existing record-and-verify loop reliability. A current-user explicit
+裁决: PASS
+
+Admission: existing record-and-verify loop reliability. A current-user explicit
 supplement intake must preserve its name, quantity and unit through authorization,
 tool planning, authenticated persistence and verified receipt. This is a bounded
 bugfix, not dosage advice or regimen modification. No schema, public API, client
