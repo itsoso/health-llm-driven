@@ -33,11 +33,22 @@ test_remote_health_queries.py
 test_remote_health_transport.py'''.splitlines()
 
 
+RECORD_CONTRACT_SELECTORS = {
+    "tests/test_agent_record_contract_postgres.py",
+    "tests/test_nasal_wash_endpoint.py",
+    "tests/test_rhinitis_checkin_routing.py",
+}
+
+
+def test_record_contract_is_exercised_on_postgres_in_ci():
+    assert RECORD_CONTRACT_SELECTORS <= {s for group in runner.SHARDS for s in group}
+
+
 def test_catalog_preserves_exact_original_selectors_once():
     selectors = [s for group in runner.SHARDS for s in group]
     assert len(runner.SHARDS) == 2
     assert len(selectors) == len(set(selectors))
-    assert set(selectors) == {"tests/" + s for s in LEGACY_SELECTORS} | {"tests/test_life_navigation.py", "tests/test_health_week_navigation.py", "tests/test_health_navigation_concurrency.py", "tests/test_lifenav_grants.py", "tests/test_supplement_groups.py", "tests/test_daily_journey.py", "tests/test_daily_journey_postgres.py", "tests/test_medication_reminder_single_delivery.py"}
+    assert set(selectors) == {"tests/" + s for s in LEGACY_SELECTORS} | {"tests/test_life_navigation.py", "tests/test_health_week_navigation.py", "tests/test_health_navigation_concurrency.py", "tests/test_lifenav_grants.py", "tests/test_supplement_groups.py", "tests/test_daily_journey.py", "tests/test_daily_journey_postgres.py", "tests/test_medication_reminder_single_delivery.py"} | RECORD_CONTRACT_SELECTORS
 
 
 def test_postgres_placement_limits_observed_tail_without_omitting_selectors():
@@ -48,8 +59,11 @@ def test_postgres_placement_limits_observed_tail_without_omitting_selectors():
     assert len(selectors) == len(set(selectors))
     for sample in evidence["samples"]:
         durations = sample["selector_seconds"]
-        assert set(selectors) == set(durations)
-        loads = [sum(durations[selector] for selector in group) for group in runner.SHARDS]
+        # These retained samples predate the added record-contract suites.
+        # Recheck their original placement without inventing new timing data.
+        assert set(selectors) - RECORD_CONTRACT_SELECTORS == set(durations)
+        loads = [sum(durations[selector] for selector in group if selector in durations)
+                 for group in runner.SHARDS]
         baseline = [sum(durations[selector] for selector in group)
                     for group in evidence["baseline_groups"]]
         assert max(loads) <= max(baseline) - 30

@@ -36,6 +36,8 @@ SHARDS = (
         "tests/test_life_navigation.py",
         "tests/test_health_navigation_concurrency.py",
         "tests/test_remote_health_oauth.py",
+        "tests/test_nasal_wash_endpoint.py",
+        "tests/test_rhinitis_checkin_routing.py",
     ),
     (
         "tests/test_agent_runtime_concurrency.py",
@@ -55,6 +57,7 @@ SHARDS = (
         "tests/test_remote_health_queries.py",
         "tests/test_health_week_navigation.py",
         "tests/test_lifenav_grants.py",
+        "tests/test_agent_record_contract_postgres.py",
     ),
 )
 OWN_NAME = re.compile(r"reva_ci_test_[0-9a-f]{32}_0[12]\Z")

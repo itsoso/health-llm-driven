@@ -97,3 +97,9 @@ nasal enum into the historical schema freeze, and regenerates both clients.
 Original failed CI is retained; no production deployment consumed that candidate.
 Targeted failed-file suites, both client typechecks, type-drift regeneration and
 fresh live LLM regression passed. Independent correction review GO.
+
+The PostgreSQL CI runner now explicitly selects the new record-contract E2E,
+nasal event endpoint and neighboring rhinitis suites. An initially failing
+selection assertion proves this closes a real CI omission; all legacy selectors
+remain. Historical timing assertions are scoped to their measured original
+selectors, with no invented timing evidence for the added suites.
