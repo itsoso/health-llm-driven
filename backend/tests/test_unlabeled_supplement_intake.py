@@ -248,6 +248,10 @@ def test_quick_conflicting_quantities_serialize_on_postgres(db, auth_user_and_he
 
 @pytest.mark.parametrize('text', [
     '记录妈妈吃了两粒肌酸。', '记录明天吃两粒肌酸。', '记录没吃两粒肌酸。',
+    '记录妈妈吃了一粒复合维生素 VB。', '“记录吃了一粒复合维生素 VB”',
+    '妈妈吃了一粒复合维生素 VB。', '他说记录吃了一粒复合维生素 VB。',
+    '妈妈吃了鱼油，但是我吃了维生素D',
+    '不记录妈妈吃的维生素B，只记录我吃的鱼油',
     '记录吃了一粒复合维生素 VB，这是妈妈的。',
     '记录吃了一粒复合维生素 VB，不要保存。', '记录吃了两粒肌酸激酶。',
 ])

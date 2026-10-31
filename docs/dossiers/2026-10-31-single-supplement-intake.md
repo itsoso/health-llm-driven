@@ -313,3 +313,17 @@ test-only correction. No production operation has started.
   observe 400 and no health rows. Existing quantity conflict checks take a
   PostgreSQL row lock, with a concurrent fill test requiring one success and
   one unchanged 409, never last-writer-wins loss of a quantity.
+
+### Independent G4: legacy provenance fallback
+
+- G4 **NO-GO** on `228655a2f`: the previous quantity issue is closed, but a
+  third-party or quoted VB sentence returns not_applicable and still reaches
+  the legacy name stripper. Independent baseline comparison confirms this
+  pre-existed the patch; it remains a blocker for the touched current-user path.
+- New API RED: four third-party/quoted/reported cases failed, six passed. Reuse
+  shared write-authorization/provenance/subject guards before legacy name
+  extraction. Two additional mixed-owner/contrasting-denial cases then exposed
+  partial-authority projection (2 failed / 10 passed); the single-name adapter
+  now rejects those whole statements instead of borrowing a sibling's authority.
+- No privileged release operation has been executed. Final G4 and source-bound
+  PostgreSQL, live and CI evidence must be refreshed after these corrections.

@@ -157,9 +157,8 @@ def _estimate_nutrition(food_text: str) -> tuple[int, float, float, float] | Non
     return None
 
 
-# 补剂自由文本落 taken=true 会进 Twin 在服集 / DSI;否定/漏服/别日/计划/提问(没吃/忘了/昨天/
-# 准备/让我吃/吗)一律 400 不写。这是只收紧的过滤,不是完整意图识别(如「睡前吃X」「我妈吃了X」
-# 仍会通过),完整修复归共享 intake 分类器。先去空白,防「不 吃」绕过。
+# 补剂自由文本落 taken=true 会进 Twin 在服集 / DSI。旧漏服/别日过滤之外，
+# 所有名称提取分支还必须通过共享当前用户写入授权；不能把他人/引用的话截成名称。
 _SUPPLEMENT_NOT_TAKEN_RE = re.compile(
     r"没|沒|未|忘|漏(?:吃|服)|拒[绝絕]|不\S{0,2}(?:吃|服|喝)|[别別](?:忘|吃|服|喝)"
     r"|昨|前天|上[周週]|准备|準備|打算|待[会會]|等[会會下]|一[会會]|稍[后後]|明天|[记記]得|提醒"
@@ -168,7 +167,23 @@ _SUPPLEMENT_NOT_TAKEN_RE = re.compile(
 
 
 def _is_not_taken_supplement_text(text: str) -> bool:
-    return bool(_SUPPLEMENT_NOT_TAKEN_RE.search(re.sub(r"\s+", "", unicodedata.normalize("NFKC", text))))
+    from app.services.write_intent_scope import (
+        _segment_has_non_current_subject,
+        authorized_health_record_clauses,
+        has_mixed_write_polarity,
+        is_reported_write_reference,
+        normalize_write_scope_text,
+    )
+
+    return bool(
+        _SUPPLEMENT_NOT_TAKEN_RE.search(re.sub(r"\s+", "", unicodedata.normalize("NFKC", text)))
+        or not authorized_health_record_clauses(text)
+        # This legacy adapter strips one name from the whole input; it cannot
+        # safely project only an authorized sibling out of a mixed statement.
+        or _segment_has_non_current_subject(normalize_write_scope_text(text))
+        or has_mixed_write_polarity(text)
+        or is_reported_write_reference(text)
+    )
 
 
 # 快速记录只写「今天」(血压/饮水时刻取 now):点名别的日子时一律 400 不写(不猜日期、不编时刻),补记去
