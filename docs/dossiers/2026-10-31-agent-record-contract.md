@@ -207,4 +207,10 @@ surfaces. New chat retains a green accent; history and more use the warm neutral
 palette. Brand spacing, avatar scale and title weight are balanced while keeping
 44-point action targets, accessibility labels, model-selection authorization and
 all callbacks unchanged. This is JS/UI only; native build 287 remains the host
-baseline. Release and simulator acceptance are pending at this checkpoint.
+baseline. The first candidate passed all Mobile tests, exact-main CI 41206822841 and
+simulator new/history/more interactions. Before publication, user feedback asked
+for less generic new/history icons. The final refinement uses a shared rounded
+conversation silhouette with plus/clock details, drawn with the already-installed
+SVG module; it introduces no native input. The first candidate authorization rotation completed normally without deploying or publishing its UI. Final icon candidate passed 382 Mobile suites (4055 tests, one existing skip),
+typecheck and signed Release simulator visual/new/history interaction checks.
+Final production publication remains pending at this checkpoint.

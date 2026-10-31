@@ -94,9 +94,7 @@ describe('ChatHeader', () => {
     expect(queryByLabelText('实时语音')).toBeNull();
     expect(getByLabelText('新建对话')).toBeTruthy();
     expect(queryByText('新对话')).toBeNull();
-    expect(getByTestId('icon-create-outline')).toBeTruthy();
     expect(queryByTestId('icon-add')).toBeNull();
-    expect(getByTestId('icon-time-outline')).toBeTruthy();
     expect(getByTestId('icon-ellipsis-horizontal')).toBeTruthy();
 
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(

@@ -1,6 +1,7 @@
 import React from 'react';
 import { View, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import Svg, { Path } from 'react-native-svg';
 import LlmModelPicker from './LlmModelPicker';
 import XiaoBaAvatar from './XiaoBaAvatar';
 import type { ModelOption } from '../../services/llmPreference';
@@ -15,6 +16,34 @@ export function compactLlmHeaderLabel(label: string): string {
     .split(' · ')[0]
     .replace(/\s+(推理|均衡|快速)$/u, '')
     .trim();
+}
+
+function ConversationIcon({ kind }: { kind: 'new' | 'history' }) {
+  return (
+    <Svg
+      testID={`chat-header-${kind}-icon`}
+      width={24}
+      height={24}
+      viewBox="0 0 24 24"
+      fill="none"
+      accessible={false}
+    >
+      <Path
+        d="M12 3.75c-5 0-8.25 3.05-8.25 7.5 0 2.05.7 3.8 2.05 5.1l-.55 3.9 4-1.65c.85.2 1.78.3 2.75.3 5 0 8.25-3.1 8.25-7.65S17 3.75 12 3.75Z"
+        stroke={C.green700}
+        strokeWidth={1.65}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+      <Path
+        d={kind === 'new' ? 'M12 8v6.5M8.75 11.25h6.5' : 'M12 7.5v4.25l2.75 1.5'}
+        stroke={C.green700}
+        strokeWidth={1.65}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </Svg>
+  );
 }
 
 interface ChatHeaderProps {
@@ -97,7 +126,7 @@ export default function ChatHeader({
                     pressed && styles.primaryHeaderActionPressed,
                   ]}
                 >
-                  <Ionicons name="create-outline" size={21} color={C.green700} />
+                  <ConversationIcon kind="new" />
                 </View>
               )}
             </Pressable>
@@ -114,7 +143,7 @@ export default function ChatHeader({
                   testID="chat-header-history-visual"
                   style={[styles.headerActionVisual, pressed && styles.headerActionPressed]}
                 >
-                  <Ionicons name="time-outline" size={21} color={C.ink2} />
+                  <ConversationIcon kind="history" />
                 </View>
               )}
             </Pressable>
