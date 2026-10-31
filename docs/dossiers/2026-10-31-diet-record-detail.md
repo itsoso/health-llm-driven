@@ -1,7 +1,7 @@
 # 饮食记录详情与后续交互
 
 - 用户原话：饮食记录要支持点击查看详情 以及进一步交互
-- 当前阶段：S5，本地实现；未发布。
+- 当前阶段：S5 本地实现与审查完成；S6 发布受阻，未发布。
 - 主流程：product-pipeline；S5 delegate：health-harness-orchestrator；overlay：safety-gate。
 - 规格与验收：[feature spec](../specs/2026-10-31-diet-record-detail.md)。
 - 现状：`mobile/app/diet.tsx` 列表正文是 View；已有 handleEdit、handleDelete、
@@ -13,7 +13,11 @@
 - G3 本地：PASS。先新增集成回归得到 10 failed（缺少详情入口），实现后详情组件、
   饮食页面、MealForm、分享组件和数字适配器合计 90 passed；全量 tsc、定向 ESLint、
   System Map、导航图及 doc drift、diff 检查通过。不是发布 CI-mode 集成闸。
-- G4：待固定本地提交的独立安全审查。
+- G4：GO，独立只读安全审查固定实现提交
+  `46309aa33cf3fa657b94e84ec929769139c46e97`，无阻断项；独立测试 54 passed。
+  已复核 owner/token/consent/date/ID 绑定、删除确认时会话变化、API 请求 generation、
+  同源图片鉴权、后端本人记录/日期重建及 iOS share dismissal。代码 GO 不等于发布 GO。
+- tracked 高置信度秘密扫描通过。
 - G5/G6：未执行。main ahead 5 / behind 126，已有并行未提交改动；按 AGENTS.md §7
   停止外部写入。保留上一项滚动修复和全部并行改动。
 
