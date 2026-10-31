@@ -42,7 +42,7 @@ def test_mobile_dependency_overrides_preserve_brace_expansion_major_compatibilit
     assert overrides["@xmldom/xmldom"] == "0.8.15"
     assert overrides["xmldom"] == "npm:@xmldom/xmldom@0.8.15"
     assert overrides["decode-uri-component"] == "0.5.1"
-    assert overrides["joi"] == "17.13.8"
+    assert overrides["joi"] == "17.13.9"
     assert overrides["nanoid"] == "3.3.18"
     assert overrides["postcss"] == "8.5.26"
     assert overrides["qs"] == "6.16.1"
@@ -67,7 +67,7 @@ def test_release_tool_dependency_overrides_close_known_advisories() -> None:
     assert package_json["overrides"]["brace-expansion@>=2.0.0 <3.0.0"] == "2.1.7"
     assert package_json["overrides"]["brace-expansion@>=5.0.0"] == "5.0.12"
     assert package_json["overrides"]["diff"] == "8.0.3"
-    assert package_json["overrides"]["joi@17"] == "17.13.8"
+    assert package_json["overrides"]["joi@17"] == "17.13.9"
     assert package_json["overrides"]["ts-deepmerge"] == "8.0.0"
     assert package_json["overrides"]["uuid"] == "11.1.1"
 

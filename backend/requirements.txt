@@ -51,7 +51,7 @@ alibabacloud_tea_util>=0.3.0
 curl_cffi==0.15.0
 pdfplumber==0.11.10
 # Explicitly pin the patched transitive ASN.1 parser used by cloud SDKs.
-pyasn1==0.6.4
+pyasn1==0.6.5
 sentry-sdk[fastapi]==2.20.0
 dashscope>=1.23.0
 # Explicitly pin the patched transitive HTTP client used by cloud SDKs.

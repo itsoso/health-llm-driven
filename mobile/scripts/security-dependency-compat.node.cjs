@@ -85,3 +85,37 @@ test('body-parser survives trailing compressed bytes and parses subsequent reque
   const result = spawnSync(process.execPath, ['-e', source], { cwd: require('node:path').resolve(__dirname, '..'), encoding: 'utf8', timeout: 10000 });
   assert.equal(result.status, 0, result.stderr || String(result.error));
 });
+
+test('cross-realm sensitive headers stay on origin and are stripped on cross-origin redirects', { timeout: 20000 }, async () => {
+  const http = require('node:http');
+  const vm = require('node:vm');
+  const { once } = require('node:events');
+  const follow = require(process.env.FOLLOW_REDIRECTS_TEST_SOURCE || 'follow-redirects').http;
+  const target = http.createServer((req, res) => { res.end(JSON.stringify(req.headers)); });
+  target.listen(0, '127.0.0.1'); await once(target, 'listening');
+  const origin = http.createServer((req, res) => {
+    if (req.url === '/echo') return res.end(JSON.stringify(req.headers));
+    res.writeHead(302, { Location: req.url === '/cross'
+      ? `http://127.0.0.1:${target.address().port}/echo` : '/echo' }); res.end();
+  });
+  origin.listen(0, '127.0.0.1'); await once(origin, 'listening');
+  try {
+    for (const sensitiveHeaders of [['X-API-Key'], vm.runInNewContext("['X-API-Key']")]) {
+      for (const route of ['/same', '/cross']) {
+        const headers = await new Promise((resolve, reject) => {
+          const req = follow.get(`http://127.0.0.1:${origin.address().port}${route}`, {
+            sensitiveHeaders, headers: { 'X-API-Key': 'synthetic-secret', 'X-Harmless': 'preserved' },
+          }, res => { let body = ''; res.on('data', chunk => { body += chunk; });
+            res.on('end', () => { try { resolve(JSON.parse(body)); } catch (error) { reject(error); } });
+            res.on('error', reject);
+          });
+          req.on('error', reject); req.setTimeout(5000, () => req.destroy(new Error('redirect test timeout')));
+        });
+        assert.equal(headers['x-api-key'], route === '/same' ? 'synthetic-secret' : undefined);
+        assert.equal(headers['x-harmless'], 'preserved');
+      }
+    }
+  } finally {
+    await Promise.all([origin, target].map(server => new Promise(resolve => server.close(resolve))));
+  }
+});

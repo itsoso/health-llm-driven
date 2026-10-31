@@ -48,36 +48,27 @@ test('public verify rejects extra nested elements while accepting both valid enc
 });
 
 const backport = require('./node-forge-backport.cjs');
-const patchFile = path.join(__dirname, '../mobile/patches/node-forge+1.4.0.patch');
-function restoreOriginal(packageDir) {
-  const rsaFile = path.join(packageDir, 'lib/rsa.js');
-  const lines = fs.readFileSync(patchFile, 'utf8').split(/^@@.*@@.*\n/m)[1].trimEnd().split('\n');
-  const old = lines.filter((s) => s[0] !== '+').map((s) => s.slice(1)).join('\n') + '\n';
-  const replacement = lines.filter((s) => s[0] !== '-').map((s) => s.slice(1)).join('\n') + '\n';
-  const data = fs.readFileSync(rsaFile, 'utf8');
-  if (data.includes(replacement)) fs.writeFileSync(rsaFile, data.replace(replacement, old));
-}
-
-test('default verification cannot mutate or accept the unpatched installation', (t) => {
+test('fixed upstream verification never mutates installed bytes', (t) => {
   const { root, packageDir } = fixture(t);
-  restoreOriginal(packageDir);
   const before = fs.readFileSync(path.join(packageDir, 'lib/rsa.js'));
-  assert.throws(() => backport.verifyInstallation({ projectRoot: root }), /backport not applied/);
+  const verified = backport.verifyInstallation({ projectRoot: root });
+  assert.equal(verified.copies[0].version, '1.4.1');
+  assert.equal(verified.copies[0].remediation, 'upstream-fixed-release');
+  assert.deepEqual(backport.verifyInstallation({ projectRoot: root, apply: true }), verified);
   assert.deepEqual(fs.readFileSync(path.join(packageDir, 'lib/rsa.js')), before);
 });
 
-test('all nested copies are patched, verified, and replayed without changing true version', (t) => {
+test('all nested upstream copies are verified without modification', (t) => {
   const { root, packageDir } = fixture(t);
   const nested = path.join(root, 'node_modules/@scope/parent/node_modules/node-forge');
   fs.mkdirSync(path.dirname(nested), { recursive: true });
   fs.cpSync(packageDir, nested, { recursive: true });
-  restoreOriginal(packageDir); restoreOriginal(nested);
   const result = backport.verifyInstallation({ projectRoot: root, apply: true });
   assert.equal(result.copies.length, 2);
   for (const copy of result.copies) {
-    assert.equal(copy.version, '1.4.0');
+    assert.equal(copy.version, '1.4.1');
     assert.equal(copy.behaviorVerified, true);
-    assert.equal(copy.advisory, 'GHSA-86w9-cpqp-85rv');
+    assert.equal(copy.remediation, 'upstream-fixed-release');
     assert.equal(copy.sourceSha256, backport.PIN.sourceSha256);
   }
   assert.deepEqual(backport.verifyInstallation({ projectRoot: root }), result);
@@ -87,7 +78,6 @@ test('all nested copies are patched, verified, and replayed without changing tru
 for (const damage of ['rsa', 'support', 'package', 'version', 'missing']) {
   test(`source or identity drift fails closed before any apply: ${damage}`, (t) => {
     const { root, packageDir } = fixture(t);
-    restoreOriginal(packageDir);
     const before = fs.readFileSync(path.join(packageDir, 'lib/rsa.js'));
     const nested = path.join(root, 'node_modules/parent/node_modules/node-forge');
     fs.mkdirSync(path.dirname(nested), { recursive: true });
@@ -97,7 +87,7 @@ for (const damage of ['rsa', 'support', 'package', 'version', 'missing']) {
     if (damage === 'package') fs.appendFileSync(path.join(nested, 'package.json'), '\n');
     if (damage === 'version') {
       const metadata = JSON.parse(fs.readFileSync(path.join(nested, 'package.json')));
-      metadata.version = '1.4.1';
+      metadata.version = '1.4.0';
       fs.writeFileSync(path.join(nested, 'package.json'), JSON.stringify(metadata));
     }
     if (damage === 'missing') fs.unlinkSync(path.join(nested, 'lib/rsa.js'));
@@ -105,18 +95,6 @@ for (const damage of ['rsa', 'support', 'package', 'version', 'missing']) {
     assert.deepEqual(fs.readFileSync(path.join(packageDir, 'lib/rsa.js')), before);
   });
 }
-
-test('fixed patch drift fails closed even when the library is already patched', (t) => {
-  const { root } = fixture(t);
-  backport.verifyInstallation({ projectRoot: root, apply: true });
-  const validatorDir = path.join(root, 'scripts');
-  fs.mkdirSync(validatorDir);
-  fs.copyFileSync(path.join(__dirname, 'node-forge-backport.cjs'), path.join(validatorDir, 'node-forge-backport.cjs'));
-  fs.mkdirSync(path.join(root, 'mobile/patches'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'mobile/patches/node-forge+1.4.0.patch'), fs.readFileSync(patchFile, 'utf8') + '\n');
-  const validator = require(path.join(validatorDir, 'node-forge-backport.cjs'));
-  assert.throws(() => validator.verifyInstalledCopy({ projectRoot: root, lockPath: 'node_modules/node-forge' }), /patch digest mismatch/);
-});
 
 test('missing copies, path traversal, and linked packages cannot produce evidence', (t) => {
   const { root, packageDir } = fixture(t);

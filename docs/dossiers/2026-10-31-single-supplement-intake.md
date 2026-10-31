@@ -145,3 +145,35 @@ The existing storage contract is one supplement row per day (upsert), not a
 cumulative multi-event diary. This change preserves actual quantity for that
 contract; same client-turn replay is tested, and universal cross-turn exactly-once
 or arbitrary unsupported natural-language interpretation is not claimed.
+
+## Release prerequisite: newly reported dependency vulnerabilities
+
+Push CI `41168343206` on `431e7754486f68b99641c62ba95dfaa3f37a597d`
+blocked at security audits. The current main lockfiles contained newly published
+advisories for pyasn1 0.6.4, joi 17.13.8, node-forge 1.4.0 and follow-redirects
+1.16.1. Release remains blocked until a new exact candidate passes all gates.
+
+- Upgrade only these lock entries to official fixed versions: pyasn1 0.6.5,
+  joi 17.13.9, node-forge 1.4.1 and follow-redirects 1.16.2. Registry integrity
+  and PyPI artifact SHA256 values were independently checked.
+- Retire the Forge 1.4.0 patch and its narrow OSV exception. Existing release
+  callers retain the verifier CLI, now read-only and pinned to upstream 1.4.1
+  package metadata and the complete JS library tree. Signature positive/negative,
+  identity drift, nested-copy and link/path checks remain. Any reported Forge
+  HIGH advisory, including a future one on 1.4.1, remains blocking.
+- Python pip-audit passed; OSV passed for release-tools (517 entries), frontend
+  (313) and mobile (1087). Node verifier/audit tests 31 passed, EAS compatibility
+  3 passed, mobile security compatibility 5 passed, mobile TypeScript passed.
+- The original integrated backend regression passed 2460 tests, PostgreSQL 71,
+  and exact `431e77544` live synthetic gate passed. Two earlier local CI-mode
+  runs are not final-source proof: the first exposed a malformed dossier verdict,
+  and both were superseded while dependency pins changed. Rerun final-source
+  CI-mode after freezing this repair.
+- No Expo/React Native/native module, permission, signing or app behavior change.
+  Publishing the backend does not claim that a new website or mobile artifact
+  has shipped. The reported supplement behavior is implemented on the server.
+
+Primary advisories: https://github.com/advisories/GHSA-4528-x5fx-h6hg,
+https://github.com/advisories/GHSA-5x38-2vff-x55p,
+https://github.com/advisories/GHSA-mrwp-f3q8-3g9p,
+https://pypi.org/project/pyasn1/0.6.5/.

@@ -1,21 +1,15 @@
 'use strict';
-// Fixed backport of digitalbazaar/forge@ceba34402e329f0365134f23fe19898756527d65.
-// This verifies a local mitigation; it does not assert an upstream fixed release.
+// Fixed upstream release verifier; historical CLI name retained for release callers.
 const fs = require('node:fs');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const assert = require('node:assert/strict');
 const PIN = Object.freeze({
-  advisory: 'GHSA-86w9-cpqp-85rv', version: '1.4.0',
-  upstreamRevision: 'ceba34402e329f0365134f23fe19898756527d65',
-  originalSha256: 'fd4740238145ec26470eb3f06a627c72039538ce1307dbdce40521f94dfd0a50',
-  sourceSha256: 'acc22e5d36e27832c34e02dd3933aad7977d45b047eead5016520735efedc9c5',
-  patchSha256: '661a391930d80461fc22397197e78bc00a55f6aadc32291f3f5195c3b4d8c1ae',
-  packageSha256: 'a907bca8a62d97478062f2bd8ed5cd47d00b79385d3f08a8cad1c3bd7e3eb5bf',
-  originalLibrarySha256: '74adb7d489d27a78a23e10b1210f2b3a07d44a050b8b864e7391d0207a83cbbb',
-  librarySha256: '8c37afbc674974fd0926f86f318fada19206316553c23ee0bfebb7738b24bd20',
+  version: '1.4.1',
+  packageSha256: '6d5f46f222e0b7e2d2986694018cc9fcd86f8300d1b80fb446b659d8fd16a06a',
+  sourceSha256: '6632e195295ce76f6bb9131ee770dcd6cc1ee4ffac7906302208b00faf95a87f',
+  librarySha256: 'cf45888813b48d869e71bf73531c48100b3ed632a53869d073019dcb829a52c7',
 });
-const PATCH_FILE = path.resolve(__dirname, '../mobile/patches/node-forge+1.4.0.patch');
 const sha = (bytes) => crypto.createHash('sha256').update(bytes).digest('hex');
 
 function regular(file, directory = false) {
@@ -40,20 +34,6 @@ function checkedLocation(projectRoot, lockPath) {
   return location;
 }
 
-function patchText() {
-  regular(PATCH_FILE);
-  const bytes = fs.readFileSync(PATCH_FILE);
-  if (sha(bytes) !== PIN.patchSha256) throw new Error('Fixed node-forge patch digest mismatch');
-  const text = bytes.toString('utf8');
-  const hunks = text.split(/^@@.*@@.*\n/m);
-  if (hunks.length !== 2) throw new Error('Unexpected fixed patch shape');
-  const lines = hunks[1].split('\n');
-  lines.pop();
-  const before = lines.filter((line) => line[0] !== '+').map((line) => line.slice(1)).join('\n') + '\n';
-  const after = lines.filter((line) => line[0] !== '-').map((line) => line.slice(1)).join('\n') + '\n';
-  return { before, after };
-}
-
 function libraryHash(packageDir) {
   const files = [];
   function walk(dir) {
@@ -74,7 +54,6 @@ function libraryHash(packageDir) {
 }
 
 function inspectCopy(projectRoot, lockPath) {
-  patchText();
   const packageDir = checkedLocation(projectRoot, lockPath);
   const metadataPath = path.join(packageDir, 'package.json');
   regular(metadataPath);
@@ -86,9 +65,8 @@ function inspectCopy(projectRoot, lockPath) {
   regular(rsaPath);
   const bytes = fs.readFileSync(rsaPath);
   const digest = sha(bytes);
-  if (![PIN.originalSha256, PIN.sourceSha256].includes(digest)) throw new Error('node-forge rsa.js source drift');
-  const expectedLibrary = digest === PIN.sourceSha256 ? PIN.librarySha256 : PIN.originalLibrarySha256;
-  if (libraryHash(packageDir) !== expectedLibrary) throw new Error('node-forge supporting library drift');
+  if (digest !== PIN.sourceSha256) throw new Error('node-forge rsa.js source drift');
+  if (libraryHash(packageDir) !== PIN.librarySha256) throw new Error('node-forge supporting library drift');
   return { packageDir, rsaPath, bytes, digest };
 }
 
@@ -122,11 +100,10 @@ function publicVerification(packageDir) {
 
 function verifyInstalledCopy({ projectRoot, lockPath }) {
   const copy = inspectCopy(projectRoot, lockPath);
-  if (copy.digest !== PIN.sourceSha256) throw new Error(`node-forge backport not applied: ${lockPath}`);
   publicVerification(copy.packageDir);
-  return { advisory: PIN.advisory, package: 'node-forge', version: PIN.version, lockPath,
-    sourceSha256: PIN.sourceSha256, patchSha256: PIN.patchSha256,
-    upstreamRevision: PIN.upstreamRevision, behaviorVerified: true };
+  return { package: 'node-forge', version: PIN.version, lockPath,
+    sourceSha256: PIN.sourceSha256, librarySha256: PIN.librarySha256,
+    remediation: 'upstream-fixed-release', behaviorVerified: true };
 }
 
 function installedCopies(projectRoot) {
@@ -154,19 +131,8 @@ function installedCopies(projectRoot) {
 function verifyInstallation({ projectRoot, apply = false }) {
   if (typeof apply !== 'boolean') throw new Error('apply must be a boolean');
   const paths = installedCopies(projectRoot);
-  // Check every copy before modifying any, so drift cannot produce a partial apply.
-  const inspected = paths.map((lockPath) => ({ lockPath, ...inspectCopy(projectRoot, lockPath) }));
-  if (apply) {
-    const patch = patchText();
-    for (const copy of inspected) {
-      if (copy.digest === PIN.sourceSha256) continue;
-      const original = copy.bytes.toString('utf8');
-      if (original.split(patch.before).length !== 2) throw new Error('Fixed patch context mismatch');
-      const patched = original.replace(patch.before, patch.after);
-      if (sha(patched) !== PIN.sourceSha256) throw new Error('Fixed patch result digest mismatch');
-      fs.writeFileSync(copy.rsaPath, patched, { flag: 'r+' });
-    }
-  }
+  // --apply is retained for existing callers. Verification never changes vendor bytes.
+  paths.forEach((lockPath) => inspectCopy(projectRoot, lockPath));
   return { copies: paths.map((lockPath) => verifyInstalledCopy({ projectRoot, lockPath })) };
 }
 

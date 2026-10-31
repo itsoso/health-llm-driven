@@ -169,11 +169,9 @@ export async function evaluateInstalledOsvFindings({
   const verified_mitigation = [];
   for (const finding of findings) {
     const details = detailsById.get(finding.id);
-    const forge = finding.id === "GHSA-86w9-cpqp-85rv"
-      && finding.packageName === "node-forge" && finding.version === "1.4.0";
     const braces = finding.id === "GHSA-vfj7-8cjw-p6xm"
       && finding.packageName === "braces" && finding.version === "3.0.3";
-    if ((!forge && !braces) || !details || classifyOsvSeverity(details) !== "HIGH") {
+    if (!braces || !details || classifyOsvSeverity(details) !== "HIGH") {
       remaining.push(finding);
       continue;
     }
@@ -181,9 +179,7 @@ export async function evaluateInstalledOsvFindings({
       if (!finding.lockPath || !projectRoot) {
         throw new Error("installed package path and project root are required");
       }
-      const { verifyInstalledCopy } = forge
-        ? await import("./node-forge-backport.cjs")
-        : await import("../frontend/scripts/braces-depth-guard.cjs");
+      const { verifyInstalledCopy } = await import("../frontend/scripts/braces-depth-guard.cjs");
       const evidence = verifyInstalledCopy({ projectRoot, lockPath: finding.lockPath });
       if (evidence?.advisory !== finding.id || evidence.package !== finding.packageName
           || evidence.version !== finding.version || evidence.lockPath !== finding.lockPath
@@ -191,7 +187,7 @@ export async function evaluateInstalledOsvFindings({
           || !/^[a-f0-9]{64}$/.test(evidence.sourceSha256 ?? "")) {
         throw new Error("fixed verifier returned invalid evidence");
       }
-      (forge ? verified_backport : verified_mitigation).push({ ...finding, severity: "HIGH", ...evidence });
+      verified_mitigation.push({ ...finding, severity: "HIGH", ...evidence });
     } catch (error) {
       verificationFailures.push(
         `${findingLabel(finding)}: ${finding.id} (HIGH); backport verification failed: ${error.message}`,
