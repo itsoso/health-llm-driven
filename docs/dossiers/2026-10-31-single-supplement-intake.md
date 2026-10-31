@@ -327,3 +327,12 @@ test-only correction. No production operation has started.
   now rejects those whole statements instead of borrowing a sibling's authority.
 - No privileged release operation has been executed. Final G4 and source-bound
   PostgreSQL, live and CI evidence must be refreshed after these corrections.
+
+- G4 **NO-GO** on `42348e9a7`: the contrasting denial still exposed a partial
+  projection (`不记录妈妈吃的维生素B，只记录我吃的鱼油`). The authenticated
+  regression returned 200 instead of 400 (1 failed / 200 passed / 4 skipped).
+  The legacy adapter now requires the normalized whole source to be covered
+  by authorized clauses, not merely one authorized sibling. Existing explicit
+  name/dose/timing forms retain their complete source coverage. The superseded
+  CI-mode run was stopped with exit -15; its live checks passed but do not
+  substitute for final-source evidence.

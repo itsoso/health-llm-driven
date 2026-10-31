@@ -173,11 +173,18 @@ def _is_not_taken_supplement_text(text: str) -> bool:
         has_mixed_write_polarity,
         is_reported_write_reference,
         normalize_write_scope_text,
+        split_write_clauses,
     )
 
+    authorized = authorized_health_record_clauses(text)
+    source_material = "".join(split_write_clauses(text))
+    authorized_material = "".join(
+        part for clause in authorized for part in split_write_clauses(clause)
+    )
     return bool(
         _SUPPLEMENT_NOT_TAKEN_RE.search(re.sub(r"\s+", "", unicodedata.normalize("NFKC", text)))
-        or not authorized_health_record_clauses(text)
+        or not authorized
+        or source_material != authorized_material
         # This legacy adapter strips one name from the whole input; it cannot
         # safely project only an authorized sibling out of a mixed statement.
         or _segment_has_non_current_subject(normalize_write_scope_text(text))
