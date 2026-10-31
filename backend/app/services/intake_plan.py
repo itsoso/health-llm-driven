@@ -9,7 +9,7 @@ import unicodedata
 from typing import Literal
 
 _COUNT = r'(?:[1-9][0-9]*|[一二两三四五六七八九]|[一二三四五六七八九]?十[一二三四五六七八九]?)'
-_SUPPLEMENT = r'(?:锌片|钙片|鱼油|甘氨酸镁|褪黑素|复合维生素|维生素[abcd][0-9]*)'
+_SUPPLEMENT = r'(?:锌片|钙片|鱼油|肌酸|甘氨酸镁|褪黑素|复合维生素|维生素[abcd][0-9]*)'
 _DRINK = r'(?:豆浆|牛奶|酸奶)'
 _DOSE = rf'{_COUNT}(?:粒|片)'
 _VOLUME = rf'(?:[1-9][0-9]*\.[0-9]+|{_COUNT}|半)(?:杯|毫升|ml)'

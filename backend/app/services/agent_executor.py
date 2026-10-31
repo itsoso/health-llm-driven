@@ -6119,7 +6119,10 @@ def _record_intent_needs_detail_message(
             f"「{text}」还没记下来：待写入的名称或剂量没能与这条请求准确对应。"
             "请补全每项的名称、数量和单位后重新发送；本轮没有执行记录。"
         )
-    if "write_tool_without_write_intent" in reason_codes:
+    if any(reason in reason_codes for reason in (
+        "write_tool_without_write_intent",
+        "health_record_authorization_target_unresolved",
+    )):
         # A policy rejection is not evidence that the user failed to choose
         # create versus update. In particular, mixed current-turn facts can
         # have a clear create intent while their target binding fails.
@@ -9620,6 +9623,23 @@ def _build_deterministic_supplement_record_tool_calls(
         # into a supplement name or replace a correctly scoped model call.
         return []
 
+    if intake.status == "complete" and intake.items[0].record_type == "supplement":
+        # Authorization and repair must consume the same parsed identity.
+        # Re-parsing the source with the legacy label stripper can turn
+        # "记录补剂吃了两粒鱼油" into the invented name "吃了鱼油".
+        item = intake.items[0]
+        return [{
+            "id": f"deterministic-supplement-{_sha12(item.name)}",
+            "type": "function",
+            "function": {
+                "name": "health_record",
+                "arguments": json.dumps({
+                    "record_type": "supplement",
+                    "data": {"supplement_name": item.name, "dosage": item.amount_text},
+                }, ensure_ascii=False),
+            },
+        }]
+
     item_metadata: dict[str, dict[str, Any]] = {}
     atomic_batch_authorized = False
     normalized_message = unicodedata.normalize("NFKC", str(message or ""))
@@ -9818,6 +9838,18 @@ def _is_complete_deterministic_supplement_batch(
         if not isinstance(item, dict) or not item.get("supplement_name") or not item.get("dosage"):
             return False
     return True
+
+
+def _is_complete_single_supplement_intake(message: str) -> bool:
+    """Only a fully consumed current-turn fact can repair an omitted tool call."""
+    from app.services.intake_plan import parse_intake_plan
+
+    plan = parse_intake_plan(message)
+    return (
+        plan.status == "complete"
+        and len(plan.items) == 1
+        and plan.items[0].record_type == "supplement"
+    )
 
 
 def _merge_deterministic_supplement_batch(
@@ -20568,8 +20600,9 @@ class AgentExecutor:
                                         has_attachment=bool(images or file_base64),
                                     )
                                 )
-                                if _is_complete_deterministic_supplement_batch(
-                                    supplement_calls
+                                if supplement_calls and (
+                                    _is_complete_deterministic_supplement_batch(supplement_calls)
+                                    or _is_complete_single_supplement_intake(message)
                                 ):
                                     deterministic_supplement_fallback_attempted = True
                                     proposed_calls = _merge_deterministic_supplement_batch(
@@ -29030,6 +29063,57 @@ class AgentExecutor:
             ensure_ascii=False,
         )
 
+    async def _record_explicit_supplement_intake(
+        self, base: str, headers: dict, *, definition_id: int, name: str,
+    ) -> str:
+        """Persist the exact dated intake, without changing the usual regimen."""
+        from app.services.intake_plan import parse_intake_plan
+
+        message = getattr(self, "_current_turn_user_message", "")
+        plan = parse_intake_plan(message)
+        if not _is_complete_single_supplement_intake(message) or name != plan.items[0].name:
+            raise ValueError("explicit supplement intake identity mismatch")
+        now = self._agent_kernel_reference_now()
+        dosage = plan.items[0].amount_text
+        record_date = now.date().isoformat()
+        result, error = await self._api_post_json(
+            f"{base}/supplements/records", headers,
+            {"supplement_id": definition_id, "record_date": record_date,
+             "taken": True, "taken_time": now.strftime("%H:%M:%S"),
+             "actual_dosage": dosage},
+        )
+        if error in {"API 返回 401", "API 返回 403"}:
+            return local_write_rejection(
+                "supplement_auth_rejected", message="补剂记录请求未通过身份或权限校验，本次未写入。",
+                recovery_guidance="请重新登录并确认当前账号的操作权限后再提交。",
+            )
+        # An HTTP success alone proves neither ownership nor saved quantity.
+        # Missing/conflicting receipts remain uncertain and cannot invite replay.
+        record_id = _positive_integer_resource_id(result.get("id")) if isinstance(result, dict) else None
+        if (
+            error or record_id is None
+            or set(result) - {"id", "supplement_id", "user_id", "record_date", "taken",
+                              "taken_time", "actual_dosage", "notes", "created_at"}
+            or result.get("taken") is not True
+            or _positive_integer_resource_id(result.get("user_id")) != str(self._current_user_id)
+            or _positive_integer_resource_id(result.get("supplement_id")) != str(definition_id)
+            or result.get("record_date") != record_date
+            or normalize_supplement_dosage(result.get("actual_dosage")) != normalize_supplement_dosage(dosage)
+            or not _supplement_payload_has_only_terminal_success(result)
+            or any(result.get(key) is False for key in ("success", "ok", "verified"))
+        ):
+            return json.dumps({
+                "status": "unverified", "verified": False,
+                "message": "本次补剂记录没有取得名称、日期与实际数量一致的保存回执，请先查询记录核对，避免重复提交。",
+            }, ensure_ascii=False)
+        return json.dumps({
+            "status": "recorded", "success": True,
+            "resource_type": "supplement_log", "record_id": int(record_id),
+            "user_id": self._current_user_id, "supplement_id": definition_id,
+            "record_date": record_date, "taken": True, "actual_dosage": result["actual_dosage"],
+            "message": f"已记录{name} {dosage}。",
+        }, ensure_ascii=False)
+
     async def _exec_health_record(
         self, base: str, headers: dict, args: dict
     ) -> str:
@@ -29913,6 +29997,10 @@ class AgentExecutor:
                     )
                 matched = exact_matches[0] if exact_matches else None
                 if matched:
+                    if _is_complete_single_supplement_intake(current_message):
+                        return await self._record_explicit_supplement_intake(
+                            base, headers, definition_id=matched["id"], name=str(name),
+                        )
                     requested_dosage = str(data.get("dosage") or "").strip()
                     if requested_dosage:
                         configured_dosage = str(
@@ -30010,6 +30098,10 @@ class AgentExecutor:
                     )
                     return "补剂记录暂时没成功（自动建档失败），你可以稍后再试一次。"
                 _created_payload, created_id = validated_created
+                if _is_complete_single_supplement_intake(current_message):
+                    return await self._record_explicit_supplement_intake(
+                        base, headers, definition_id=int(created_id), name=str(name),
+                    )
                 tap_result = await self._api_post(
                     f"{base}/nfc/tap", headers,
                     {"action": "supplement", "supplement_id": int(created_id)}
