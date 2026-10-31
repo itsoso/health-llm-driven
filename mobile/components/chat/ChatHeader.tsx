@@ -7,7 +7,6 @@ import type { ModelOption } from '../../services/llmPreference';
 import {
   revaColors as C,
   revaSpacing,
-  revaRadii,
 } from '../../constants/revaTheme';
 
 // header 里只露品牌名/压缩模型名 — 去掉尾部速度档 + 「· 供应商」后缀。
@@ -67,7 +66,7 @@ export default function ChatHeader({
             <Ionicons name="chevron-back" size={21} color={C.ink1} />
           </Pressable>
         ) : (
-          <XiaoBaAvatar size={28} compact />
+          <XiaoBaAvatar size={32} compact />
         )}
         <LlmModelPicker
           canSelectModel={canSelectModel}
@@ -98,7 +97,7 @@ export default function ChatHeader({
                     pressed && styles.primaryHeaderActionPressed,
                   ]}
                 >
-                  <Ionicons name="create-outline" size={20} color={C.greenOn} />
+                  <Ionicons name="create-outline" size={21} color={C.green700} />
                 </View>
               )}
             </Pressable>
@@ -115,7 +114,7 @@ export default function ChatHeader({
                   testID="chat-header-history-visual"
                   style={[styles.headerActionVisual, pressed && styles.headerActionPressed]}
                 >
-                  <Ionicons name="time-outline" size={20} color={C.green700} />
+                  <Ionicons name="time-outline" size={21} color={C.ink2} />
                 </View>
               )}
             </Pressable>
@@ -132,7 +131,7 @@ export default function ChatHeader({
                   testID="chat-header-more-visual"
                   style={[styles.headerActionVisual, pressed && styles.headerActionPressed]}
                 >
-                  <Ionicons name="ellipsis-horizontal" size={20} color={C.green700} />
+                  <Ionicons name="ellipsis-horizontal" size={21} color={C.ink2} />
                 </View>
               )}
             </Pressable>
@@ -148,16 +147,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: revaSpacing.s4,
     // 与状态栏时钟留清晰呼吸(页面根用动态 top inset 托底 notch)。
     paddingTop: 8,
-    paddingBottom: 6,
+    paddingBottom: 10,
   },
   // 平铺 header(2026-07-06 重设计):去掉带边框的「卡片」外壳 —— 它紧贴状态栏
   // 时钟显得挤、且和奶油底色打架。标题与操作直接落在 paper 背景上,更干净。
   headerSurface: {
-    minHeight: 40,
+    minHeight: 48,
     paddingVertical: 0,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 6,
+    gap: 10,
   },
   headerRight: {
     flexShrink: 0,
@@ -165,18 +164,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginLeft: 'auto',
   },
-  // 三个动作共用一块浅绿「气候带」；新建作为主动作使用深绿实心面。
-  // 统一尺寸、圆角和颜色语法，避免一个按钮像卡片、另外两个像裸图标。
   headerActionGroup: {
     flexDirection: 'row',
     alignItems: 'center',
-    minHeight: 46,
     gap: 2,
-    padding: 1,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    backgroundColor: C.green50,
+    backgroundColor: 'transparent',
   },
   headerAction: {
     width: 44,
@@ -188,12 +180,12 @@ const styles = StyleSheet.create({
     borderWidth: 0,
   },
   headerActionVisual: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
+    width: 36,
+    height: 36,
+    borderRadius: 12,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: 'transparent',
+    backgroundColor: C.paper2,
   },
   backAction: {
     width: 44,
@@ -206,10 +198,10 @@ const styles = StyleSheet.create({
     backgroundColor: C.green100,
   },
   primaryHeaderAction: {
-    borderRadius: 20,
-    backgroundColor: C.green700,
+    borderRadius: 12,
+    backgroundColor: C.green50,
   },
   primaryHeaderActionPressed: {
-    backgroundColor: C.green600,
+    backgroundColor: C.green100,
   },
 });

@@ -180,3 +180,31 @@ no plaintext fallback, injected token, or test health writes to the personal acc
 
 This final section supersedes earlier in-progress acceptance notes. The final
 documentation-only commit does not change deployed runtime or publisher code.
+
+
+## Production record acceptance, both directions
+
+The exact original Chinese request was submitted through the real Web UI and,
+separately, through a signed Release iOS simulator UI using the isolated review
+test account. Both turns used Pi, classified `simple_health_record`, executed
+`nasal_wash`, and ended `complete / verified_write` with one verified receipt.
+Authenticated event readback proved count 1, volume 10 ml, saline solution,
+correct ownership and no duplicate event. Fresh conversation reads and the
+opposite client showed the same persisted answer. Each test event was then
+undone through its exact owned event endpoint; fresh reads returned 404 and the
+daily wash count returned to its baseline. Audit conversations were retained and
+renamed. No synthetic health writes were made to the personal account.
+
+The first event's stored local clock differed from chat display; its prior
+profile timezone was not captured, so no confirmed cause is asserted. The second
+round ran after both clients were authenticated and effective timezone readback
+was Asia/Taipei; stored event time and both chat displays agreed.
+
+## Mobile header polish
+
+The chat header replaces the single mint capsule with separate rounded action
+surfaces. New chat retains a green accent; history and more use the warm neutral
+palette. Brand spacing, avatar scale and title weight are balanced while keeping
+44-point action targets, accessibility labels, model-selection authorization and
+all callbacks unchanged. This is JS/UI only; native build 287 remains the host
+baseline. Release and simulator acceptance are pending at this checkpoint.

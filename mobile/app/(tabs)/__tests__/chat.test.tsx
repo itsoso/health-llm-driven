@@ -967,7 +967,7 @@ describe('ChatScreen', () => {
       );
     };
 
-    expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(40);
+    expect(styleOf(getByTestId('chat-header-surface')).minHeight).toBeLessThanOrEqual(48);
     expect(styleOf(getByLabelText('对话历史'))).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),
     );
@@ -1066,7 +1066,7 @@ describe('ChatScreen', () => {
       expect(getByTestId('chat-header-surface')).toBeTruthy();
     });
     const headerSurface = StyleSheet.flatten(getByTestId('chat-header-surface').props.style);
-    expect(headerSurface.minHeight).toBeLessThanOrEqual(42);
+    expect(headerSurface.minHeight).toBeLessThanOrEqual(48);
     expect(headerSurface.paddingVertical).toBeLessThanOrEqual(2);
     expect(StyleSheet.flatten(getByLabelText('对话历史').props.style)).toEqual(
       expect.objectContaining({ width: 44, height: 44 }),

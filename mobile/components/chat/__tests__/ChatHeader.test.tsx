@@ -46,7 +46,7 @@ describe('ChatHeader', () => {
 
     const avatarStyle = StyleSheet.flatten(getByLabelText('小气候形象').props.style);
     const titleStyle = StyleSheet.flatten(getByText('小气候').props.style);
-    expect(avatarStyle).toEqual(expect.objectContaining({ width: 28, height: 28 }));
+    expect(avatarStyle).toEqual(expect.objectContaining({ width: 32, height: 32 }));
     expect(titleStyle).toEqual(expect.objectContaining({ fontSize: 20, lineHeight: 25 }));
   });
 
@@ -106,13 +106,13 @@ describe('ChatHeader', () => {
       expect.objectContaining({ width: 44, height: 44 }),
     );
     expect(StyleSheet.flatten(getByTestId('chat-header-action-group').props.style)).toEqual(
-      expect.objectContaining({ backgroundColor: C.green50, borderColor: C.green100 }),
+      expect.objectContaining({ backgroundColor: 'transparent' }),
     );
     expect(StyleSheet.flatten(getByTestId('chat-header-new-visual').props.style)).toEqual(
-      expect.objectContaining({ backgroundColor: C.green700 }),
+      expect.objectContaining({ backgroundColor: C.green50 }),
     );
     expect(StyleSheet.flatten(getByTestId('chat-header-new-visual').props.style)).toEqual(
-      expect.objectContaining({ width: 40, height: 40 }),
+      expect.objectContaining({ width: 36, height: 36 }),
     );
 
     fireEvent.press(getByLabelText('新建对话'));
