@@ -177,3 +177,11 @@ Primary advisories: https://github.com/advisories/GHSA-4528-x5fx-h6hg,
 https://github.com/advisories/GHSA-5x38-2vff-x55p,
 https://github.com/advisories/GHSA-mrwp-f3q8-3g9p,
 https://pypi.org/project/pyasn1/0.6.5/.
+
+The next push CI `41169150962` on `1b8221295` passed security audits but
+exposed a stale `pyasn1==0.6.4` assertion in the backend dependency contract.
+Local isolated reproduction: 1 failed / 4 passed. Update the assertion to the
+audited 0.6.5 pin; do not weaken or skip the contract. The partial local CI-mode
+run for that superseded SHA was stopped and is not accepted as a pass. Final
+candidate CI-mode, exact remote CI and live gate must be rebound after this
+test-only correction. No production operation has started.

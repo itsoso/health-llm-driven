@@ -22,7 +22,7 @@ def test_production_dependencies_pin_patched_security_versions():
         "garminconnect==0.3.6",
         "curl_cffi==0.15.0",
         "pdfplumber==0.11.10",
-        "pyasn1==0.6.4",
+        "pyasn1==0.6.5",
     }
     assert expected.issubset(set(requirements.splitlines()))
     assert "python-jose" not in requirements
