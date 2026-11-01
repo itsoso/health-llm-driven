@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | implementation_verified |
-| 当前阶段 | G3 本地回归通过，G4 独立审查待完成 |
+| 状态 | released_acceptance_partial |
+| 当前阶段 | G5 后端发布成功，G6 自动线上复验通过；设备实际聊天待验 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | d43aa9dd6ae3886ed19ff7215ad01f26c62911f6 |
 
@@ -35,7 +35,7 @@ API契约或健康查询授权变化，因此只发布后端，现有production 
 - 旧失败回合新增回归先RED：3 failed / 38 passed；修正后通过。
 - 相关合跑：4507 passed / 1 skipped，覆盖背景陈述、登机口、行程记录、pending choice、
   turn/write recovery、capability policy、health semantics与utterance classifier。
-- 最终定向44 passed；验证不调用模型或健康工具、无写入回执、
+- 首轮定向44 passed；验证不调用模型或健康工具、无写入回执、
   流式与持久化文本一致、重放不重复、跨用户对话拒绝和读取权限不扩大。
 - 测试数据均为合成用户与内存SQLite。无数据库查询/约束变化；完整目标CI仍须核验。
 - 首次合跑误列不存在的test_agent_recovery_flow.py，collection退出4，未算通过；
@@ -45,7 +45,18 @@ API契约或健康查询授权变化，因此只发布后端，现有production 
 
 ## G4–G6
 
-当前尚未独立GO、push或部署。精确候选完整CI、真实模型闸及后端回执需另行完成。
+修订候选92b0f24b270198aa7ec107c369e18658292320a8已独立G4 GO并推送main。
+独立复核198项测试、30个对抗负例及正向配对通过。
+精确完整CI [41320719438](https://github.com/itsoso/health-llm-driven/actions/runs/41320719438) 32/32通过；
+发布预检 [41321735100](https://github.com/itsoso/health-llm-driven/actions/runs/41321735100) 通过。
+最终候选相对基线的真实模型评测需求判定闸PASS，live_llm_required=False、confirmed=False、waived=False；
+未将旧候选模型结果充当新候选验证，也未设置确认或豁免。
+后端 [41323179145](https://github.com/itsoso/health-llm-driven/actions/runs/41323179145) 成功。
+生产完成回执为92b0f24b270198aa7ec107c369e18658292320a8 / SUCCEEDED，
+原始回执SHA256为e0d8973339f27f02b42d4bc727d979453a135ce0c92c8fa80c8e772e67094c91。
+独立只读复验确认生产clean HEAD为该候选、授权与executor匹配、业务lease已释放，
+health-backend、celery-worker、celery-beat、reva-laya均active/running，内外健康接口healthy。
+未新增OTA：本次无Mobile变化，现有App使用新后端；不把先前OTA回执计作本次发布。
 模拟器和用户设备实际聊天尚未验证，不将本地合成场景等同线上用户验收。
 
 
@@ -53,7 +64,7 @@ API契约或健康查询授权变化，因此只发布后端，现有production 
 
 固定78ec5b676被拒绝：负面症状词表漏掉鼻子持续流血、快要晕倒等近期医疗内容；
 “把你现在的位置发给我。”没有问号也被当作闭合。独立真实流式探针确认绕过普通
-路径，而不是只测辅助函数。此候选未push或部署。
+路径，而不是只测辅助函数。该NO-GO时未发布；随后与整改提交一同推送，唯一发布候选为修订后的92b0。
 
 撤销整个负向历史放行分支，恢复逐条正向user证明；增加来源绑定的完整接站事实
 及有限assistant闭合回复匹配。原agent_executor变更完全撤回。补充未知医疗、
@@ -61,3 +72,15 @@ API契约或健康查询授权变化，因此只发布后端，现有production 
 初版78ec真实合成模型闸exit0仅是被否决候选的历史证据，不当作修订候选GO。
 
 修订后相关回归4522 passed / 1 skipped（39.26秒）；System Map、Dossier一致性与diff检查通过。
+
+## 发布操作证据
+
+仅对固定候选执行一次stage、短期只读凭据更新、授权切换与backend发布；
+每步分别独立GO后执行，未备份、未重试未知操作、未读取用户原始健康或聊天数据。
+
+- Stage完成回执原始SHA256：b6fc8f0e8f661f4cfe06c70310faf5bb787e4d8c7b4928ea9abfa49f9111ac88。
+- 凭据更新审计attempt：ride-progress-92b0f24b-read-credential-v1；
+  完成回执原始SHA256：a8d2cdf21df4099324cdb44bafec53b528ede4517fce9d695c7a83b5079f7ebb。
+- 授权切换回执：INSTALLED92b0，退休旧53eec38b；这一步不等同后端部署成功。
+- 本机独立线上证明：/private/tmp/reva-ride-progress-92b0f24b-backend-acceptance.json。
+- 产品路径证据是合成真实流式入口回归；实际用户会话和模拟器交互未验，不能声称设备验收完成。
