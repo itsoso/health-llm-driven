@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | released_acceptance_partial |
-| 当前阶段 | G5 后端发布成功，G6 自动线上复验通过；设备实际聊天待验 |
+| 当前阶段 | G5 同版本后端与 OTA 发布成功，G6 自动线上复验通过；设备实际聊天待验 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | d43aa9dd6ae3886ed19ff7215ad01f26c62911f6 |
 
@@ -27,7 +27,7 @@
 均阻止本地回复，不能用较旧assistant给之后未回答的user背书。旧失败不改为成功。
 
 复用已授权隔离worktree；共享dirty main未改动。无Mobile、原生、数据库schema、
-API契约或健康查询授权变化，因此只发布后端，现有production OTA可继续使用。
+API契约或健康查询授权变化，因此首轮只发布后端；后续用户明确追加OTA的结果见末节。
 
 ## G3 验证
 
@@ -56,7 +56,7 @@ API契约或健康查询授权变化，因此只发布后端，现有production 
 原始回执SHA256为e0d8973339f27f02b42d4bc727d979453a135ce0c92c8fa80c8e772e67094c91。
 独立只读复验确认生产clean HEAD为该候选、授权与executor匹配、业务lease已释放，
 health-backend、celery-worker、celery-beat、reva-laya均active/running，内外健康接口healthy。
-未新增OTA：本次无Mobile变化，现有App使用新后端；不把先前OTA回执计作本次发布。
+首轮未新增OTA：该轮无Mobile变化，现有App使用新后端；后续明确追加OTA见末节。
 模拟器和用户设备实际聊天尚未验证，不将本地合成场景等同线上用户验收。
 
 
@@ -84,3 +84,36 @@ health-backend、celery-worker、celery-beat、reva-laya均active/running，内�
 - 授权切换回执：INSTALLED92b0，退休旧53eec38b；这一步不等同后端部署成功。
 - 本机独立线上证明：/private/tmp/reva-ride-progress-92b0f24b-backend-acceptance.json。
 - 产品路径证据是合成真实流式入口回归；实际用户会话和模拟器交互未验，不能声称设备验收完成。
+
+## 2026-11-02 用户明确追加发布与 OTA
+
+用户在首轮后端完成后明确要求“搞定之后发布和OTA”。因此继续发布production iOS OTA，
+不是将首轮仅后端结果冒称OTA。候选f2f52eaed38924e627ad191ff3f0ca1e34907e1f
+相对92仅修改本Dossier；mobile/shared运行树与上一OTA53相同，明确记录为相同运行内容的追加发布。
+按唯一入口要求对齐当前main、完整CI、后端成功回执，再以同SHA先validate后publish。
+
+- 完整CI：[41324130866](https://github.com/itsoso/health-llm-driven/actions/runs/41324130866)，32/32通过。
+- 后端预检：[41324928259](https://github.com/itsoso/health-llm-driven/actions/runs/41324928259)，成功。
+- 后端部署：[41326551895](https://github.com/itsoso/health-llm-driven/actions/runs/41326551895)，成功。
+- OTA验证：[41324953445](https://github.com/itsoso/health-llm-driven/actions/runs/41324953445)，成功。
+- OTA发布：[41327050059](https://github.com/itsoso/health-llm-driven/actions/runs/41327050059)，成功。
+- backend completed原始SHA256：d3fc648b1c3853ded5d574662791bd130b2e2b9cda8d4c23f29b83d937b455a3。
+- OTA completed原始SHA256：c24345c100ea2dc2798d0669250ecfa91369ad30493d8c5c077f9f63494a8abf。
+- OTA verified原始SHA256：cad1f144e11ac192a922a85f6c6dfb6586266fae1c0385772090cd145167a550。
+- production iOS runtime：1.3.6；group：002b9e3c-af67-45d1-837c-7fc45d6f7e38；
+  update：01a197fc-29c4-7fee-85f8-0927663573ff。
+- 公开manifest创建时间：2026-11-01T16:40:47.812Z；
+  launch hash：4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE；47项资源匹配。
+
+每步固定脚本分别独立GO后单次执行；stage回执79c2f64cdc358332aa78fbd9c100b5ebb579175d6856951f3e73d8869a85c216，
+凭据审计ride-ota-f2f52eae-read-credential-v1完成回执b2d7307a534b822692fbefa59e0f422114a9cd84bcf8a5ee9420034be0cad238。
+明确证明旧92后端成功但未启动OTA且无build.lock，单独保留最后已发布53的OTA原回执；未虚构92 OTA。
+未备份、未重试发布、未读取用户原始健康/聊天数据。GitHub只读查询曾TLS超时，
+经连接器查询和服务器原回执确认部署完成，未重发任何生产操作。
+
+独立只读复验确认生产clean f2、授权/executor匹配、四服务active/running、
+内外健康接口healthy、业务lease释放；OTA原始回执和公开manifest中的bundle/asset hashes与发布产物证明一致；
+未重新下载全部47项资源字节。
+本机证据为/private/tmp/reva-ride-ota-f2f52eae-backend-acceptance.json、
+同前缀ota-acceptance.server-proof.json与ota-acceptance.public-manifest-proof.json。
+实际设备安装/接收更新及原用户聊天交互仍未实测，自动线上证据不能替代设备验收。
