@@ -48,7 +48,7 @@ def selected(raw):
         if not any(key in lhs.upper() for key in (KEY,)):
             continue
         key, sep, value = line.partition('=')
-        if not sep or key != KEY or key in values or not re.fullmatch(r'[1-9][0-9]*', value):
+        if not sep or key != KEY or key in values or not re.fullmatch(r'[1-9][0-9]*(?:,[1-9][0-9]*)*', value):
             raise ActivationError('ambiguous viewer configuration')
         values[key] = value
     return values
@@ -66,6 +66,10 @@ def patch_env(raw):
         return raw
     if raw and not raw.endswith(b'\n'):
         raise ActivationError('environment must end with newline')
+    if OLD:
+        old_line = f'{KEY}={OLD[KEY]}\n'.encode()
+        return b''.join(f'{KEY}={NEW[KEY]}\n'.encode() if line == old_line else line
+                        for line in raw.splitlines(keepends=True))
     return raw + f'{KEY}={NEW[KEY]}\n'.encode()
 
 
@@ -80,7 +84,7 @@ def authentication_settings(raw, *, complete=True):
         if 'EDU_SSO_' not in lhs.upper():
             continue
         key, sep, value = line.partition('=')
-        if not sep or key not in allowed or key in result or not re.fullmatch(r'[A-Za-z0-9_:/.-]+', value):
+        if not sep or key not in allowed or key in result or not re.fullmatch(r'[A-Za-z0-9_:/.,-]+' if key == KEY else r'[A-Za-z0-9_:/.-]+', value):
             raise ActivationError('ambiguous effective Edu authentication')
         result[key] = value
     if complete and (set(result) - {KEY} != allowed - {KEY}
@@ -93,11 +97,20 @@ def authentication_settings(raw, *, complete=True):
     return result
 
 
-def configure(owner, viewer):
+def configure(owner, viewer, existing=''):
     if type(owner) is not int or type(viewer) is not int or min(owner, viewer) <= 0 or owner == viewer:
         raise ActivationError('distinct positive identities required')
+    if not isinstance(existing, str):
+        raise ActivationError('explicit existing viewer list required')
+    parts = existing.split(',') if existing else []
+    if (any(re.fullmatch(r'[1-9][0-9]*', part) is None for part in parts)
+            or len(parts) != len(set(parts)) or str(owner) in parts or str(viewer) in parts):
+        raise ActivationError('distinct existing viewer identities required')
+    OLD.clear()
+    if parts:
+        OLD[KEY] = existing
     NEW.clear()
-    NEW[KEY] = str(viewer)
+    NEW[KEY] = ','.join([*parts, str(viewer)])
 
 
 def check_owner_binding(raw, owner):
@@ -198,6 +211,7 @@ def service(io, name, *, allow_stopped=False):
     effective = authentication_settings(raw.replace(b'\0', b'\n'))
     expected = authentication_settings(io.read(ENV_FILE))
     previous = {key: value for key, value in expected.items() if key != KEY}
+    previous.update(OLD)
     if effective != expected and not (allow_stopped and expected.get(KEY) == NEW[KEY] and effective == previous):
         raise ActivationError('effective Edu authentication differs from base configuration')
     # Reacquire PID to reject a process replacement during the readback.
@@ -208,6 +222,8 @@ def service(io, name, *, allow_stopped=False):
 
 def validate_journal(journal, binding):
     keys = {'publisher_sha', 'production_sha', 'policy', 'before', 'after', 'done', 'pending', 'state', 'owner_id', 'viewer_id'}
+    if binding.get('policy') == 'edu-viewer-add-v2':
+        keys.add('existing_viewer_ids')
     if (not isinstance(journal, dict) or set(journal) != keys
             or any(journal.get(key) != value for key, value in binding.items())
             or any(re.fullmatch('[a-f0-9]{64}', str(journal.get(key))) is None for key in ('before', 'after'))
@@ -222,10 +238,14 @@ def validate_journal(journal, binding):
 
 
 def execute(args):
-    configure(args.owner_id, args.viewer_id)
+    configure(args.owner_id, args.viewer_id, getattr(args, 'existing_viewer_ids', ''))
     source, io, helper, bootstrap, server, gate = load(args.publisher_sha)
     binding = dict(publisher_sha=args.publisher_sha, production_sha=args.publisher_sha,
                    policy='edu-viewer-v1', owner_id=args.owner_id, viewer_id=args.viewer_id)
+    root = ROOT
+    if OLD:
+        binding.update(policy='edu-viewer-add-v2', existing_viewer_ids=OLD[KEY])
+        root = ROOT.parent / f'reva-edu-viewer-add-{args.viewer_id}'
     def preflight():
         gate.verify_release(args.publisher_sha, args.publisher_sha)
         helper._revision_proof(args.publisher_sha, source, bootstrap)
@@ -256,7 +276,7 @@ def execute(args):
         check_owner_binding(raw, args.owner_id)
         current = selected(raw)
         validate_policy(current)
-        if not ROOT.exists():
+        if not root.exists():
             if args.resume or LEASE.exists() or current != OLD:
                 raise ActivationError('original invitation policy and no operation required')
             if any(service(io, name) != OLD for name in SERVICES):
@@ -264,19 +284,19 @@ def execute(args):
             replacement = patch_env(raw)
             if not args.apply:
                 return dict(state='READY', **binding)
-            ROOT.mkdir(mode=0o700)
-            io.sync(ROOT.parent)
+            root.mkdir(mode=0o700)
+            io.sync(root.parent)
             journal = dict(binding, before=digest(raw), after=digest(replacement),
                            done=[], pending=None, state='ACTIVATING')
-            io.atomic(ROOT / 'journal.json', json.dumps(journal, sort_keys=True).encode())
+            io.atomic(root / 'journal.json', json.dumps(journal, sort_keys=True).encode())
             LEASE.mkdir(mode=0o700)
             for key, value in {'token': secrets.token_hex(32), 'label': 'edu-viewer',
-                               'stage': str(ROOT), 'started_at': str(int(time.time()))}.items():
+                               'stage': str(root), 'started_at': str(int(time.time()))}.items():
                 io.atomic(LEASE / key, (value + '\n').encode())
             io.sync(LEASE.parent)
         else:
-            io.secure(ROOT, directory=True)
-            journal = server._json(io.read(ROOT / 'journal.json'))
+            io.secure(root, directory=True)
+            journal = server._json(io.read(root / 'journal.json'))
             validate_journal(journal, binding)
             if journal['state'] == 'CONFIGURATION_SUCCEEDED' and not LEASE.exists():
                 if (digest(raw) != journal['after'] or current != NEW
@@ -286,7 +306,7 @@ def execute(args):
             if not args.resume or not args.apply:
                 raise ActivationError('explicit resume of original activation required')
         io.secure(LEASE, directory=True)
-        if io.read(LEASE / 'label') != b'edu-viewer\n' or io.read(LEASE / 'stage') != (str(ROOT) + '\n').encode():
+        if io.read(LEASE / 'label') != b'edu-viewer\n' or io.read(LEASE / 'stage') != (str(root) + '\n').encode():
             raise ActivationError('activation lease differs')
         lease_identity, lease_token = io.identity(LEASE.lstat()), io.read(LEASE / 'token')
         def check_lease():
@@ -294,7 +314,7 @@ def execute(args):
                 raise ActivationError('activation lease changed')
         def save(value):
             check_lease()
-            io.atomic(ROOT / 'journal.json', json.dumps(value, sort_keys=True).encode())
+            io.atomic(root / 'journal.json', json.dumps(value, sort_keys=True).encode())
         def write_env():
             current_raw = io.read(ENV_FILE)
             if digest(current_raw) == journal['after'] and selected(current_raw) == NEW:
@@ -346,6 +366,7 @@ def main():
     parser.add_argument('--publisher-sha', required=True)
     parser.add_argument('--owner-id', type=int, required=True)
     parser.add_argument('--viewer-id', type=int, required=True)
+    parser.add_argument('--existing-viewer-ids', default='')
     parser.add_argument('--apply', action='store_true')
     parser.add_argument('--resume', action='store_true')
     args = parser.parse_args()
