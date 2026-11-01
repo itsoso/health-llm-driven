@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, AppState, Platform, Pressable, ScrollView, Text, TextInput, View } from 'react-native';
-import { Stack, useFocusEffect } from 'expo-router';
+import { Stack, useFocusEffect, useNavigation } from 'expo-router';
+import { usePreventRemove } from '@react-navigation/native';
 import { useTheme } from '../../hooks/useTheme';
 import { subscribeAIConsentInvalidation } from '../../services/aiConsentState';
 import { fetchLifeWorkspace, saveLifeWorkspace, fetchLifeHistory, restoreLifeWorkspace, fetchLifeBackup, importLifeBackup, type LifeData, type LifeWorkspace, type LifeTask, type LifeBackup, type LifeVersion } from '../../services/lifeNavigation';
@@ -10,7 +11,8 @@ import TaskCard from './TaskCard';
 import ExamStudyPanel from './ExamStudyPanel';
 import TodayTaskList from './TodayTaskList';
 import DateNavigation from './DateNavigation';
-const tabs = ['今日', '周计划', '备考学习', '时段导航', '周复盘', '成果', '方向与季度', '机会', '备份'] as const;
+import NotebookPanel from './NotebookPanel';
+const tabs = ['今日', '周计划', '记事本', '备考学习', '时段导航', '周复盘', '成果', '方向与季度', '机会', '备份'] as const;
 const reviewFields = { summary: '复盘总结', gap: '差距与根因', learning: '复盘收获', next_week: '下周改进' };
 const noteFields = { valuable: '有价值的事', beautiful: '美好的事', mistake: '失误', learning: '今日所学' };
 const quarterFields = { review: '季度回顾', strategy: '季度战略', decomposition: '季度拆解', plan: '季度计划', risk: '季度风险' };
@@ -20,6 +22,7 @@ export default function Workspace({ owner, onViewHealth }: {
     owner: number; onViewHealth:()=>void;
 }) {
     const { c } = useTheme();
+    const navigation = useNavigation();
     const [workspace, setWorkspace] = useState<LifeWorkspace | null>(null), [draft, setDraft] = useState<LifeData | null>(null), [tab, setTab] = useState<typeof tabs[number]>('今日'), [date, setDate] = useState(localDate()), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [refresh, setRefresh] = useState(0), [now, setNow] = useState(Date.now());
     const [expandedTask,setExpandedTask]=useState<string|null>(null);
     const [showHelp,setShowHelp]=useState(false);
@@ -107,6 +110,13 @@ export default function Workspace({ owner, onViewHealth }: {
     } }
     function ask(title: string, body: string, run: () => void) { const version = epoch.current; confirm(title, body, () => { if (alive.current && active.current && version === epoch.current)
         run(); }); }
+    usePreventRemove(Boolean(draft && (dirty || title || criterion)) || busy, ({ data }) => {
+        if (lock.current) {
+            Alert.alert('正在保存', '请等待保存结果后再离开。');
+            return;
+        }
+        ask('离开个人安排？', '尚有未保存内容。确认离开将丢弃草稿，取消后可先点击保存。', () => navigation.dispatch(data.action));
+    });
     function checkedSave(data: LifeData) { validateData(data); return saveLifeWorkspace(owner, workspace!.revision, data); }
     const save = () => { if (draft && workspace)
         void write(() => checkedSave(copy(draft))); };
@@ -159,13 +169,16 @@ export default function Workspace({ owner, onViewHealth }: {
     } finally {nativeDialog.current=false;} }
     return <><Stack.Screen options={{ title: tab === '今日' ? '今日安排' : tab, headerShown: true, headerBackTitle: '返回', headerRight: tab === '今日' && draft ? () => <Pressable accessibilityRole="button" accessibilityLabel={showTaskSearch?'退出任务搜索':'查找当日任务'} accessibilityState={{expanded:showTaskSearch,disabled:busy}} aria-expanded={showTaskSearch} disabled={busy} onPress={()=>setShowTaskSearch(v=>!v)} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center',opacity:busy?0.5:1}}><Text style={{fontSize:13,lineHeight:18,color:c.brand}}>{showTaskSearch?'取消':'查找'}</Text></Pressable> : undefined }}/><ScrollView keyboardShouldPersistTaps="handled" keyboardDismissMode={Platform.OS === 'web' ? 'none' : 'on-drag'} automaticallyAdjustKeyboardInsets style={{ backgroundColor: c.bgPrimary }} contentContainerStyle={{ padding: 12, gap: 8 }}>
  <View style={{flexDirection:'row',alignItems:'center',gap:6}}><ScrollView horizontal style={{flex:1}} showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="handled"><View accessibilityRole="tablist" style={{ flexDirection: 'row', gap: 6 }}>{tabs.map(t => <Pressable key={t} accessibilityRole="tab" accessibilityLabel={t} aria-selected={tab===t} accessibilityState={{selected:tab===t,disabled:busy}} disabled={busy} onPress={()=>setTab(t)} style={{minHeight:44,justifyContent:'center',paddingHorizontal:10,paddingVertical:6,borderWidth:1,borderRadius:8,borderColor:tab===t?c.brand:'transparent',backgroundColor:tab===t?c.bgCard:'transparent',opacity:busy?0.5:1}}><Text style={{fontSize:13,lineHeight:18,fontWeight:tab===t?'600':'400',color:tab===t?c.brand:c.labelSecondary}}>{t}</Text></Pressable>)}</View></ScrollView><Pressable accessibilityRole="button" accessibilityLabel={showHelp?'收起说明':'使用说明'} accessibilityState={{expanded:showHelp}} onPress={()=>setShowHelp(v=>!v)} style={{minWidth:44,minHeight:44,justifyContent:'center',alignItems:'center'}}><Text style={{fontSize:12,lineHeight:16,color:c.labelSecondary}}>说明</Text></Pressable></View>
- {showHelp&&<View style={{padding:10,gap:6,borderWidth:1,borderColor:c.separator,borderRadius:8}}>{text('个人安排、记录与方向 · 健康执行请在 Health 中确认。后台会隐藏正文；返回恢复同账号草稿，离开页面或切换账号会清除未保存草稿。')}{workspace&&text(`本周 ${monday} · 已保存版本 ${workspace.revision}`)}{button('查看健康周导航',onViewHealth)}</View>}
+ {showHelp&&<View style={{padding:10,gap:6,borderWidth:1,borderColor:c.separator,borderRadius:8}}>{text('个人安排、记录与方向 · 健康执行请在 Health 中确认。后台会隐藏正文；返回恢复同账号草稿，离开页面前请保存；切换账号会清除未保存草稿。')}{workspace&&text(`本周 ${monday} · 已保存版本 ${workspace.revision}`)}{button('查看健康周导航',()=>dirty || title || criterion ? ask('离开个人安排？', '尚有未保存内容。确认离开将丢弃草稿，取消后可先点击保存。', onViewHealth) : onViewHealth())}</View>}
  {message ? <Text accessibilityRole="alert" style={{ color: c.labelSecondary }}>{message}</Text> : null}
  {!draft || !workspace ? <ActivityIndicator /> : <>
  <DateNavigation key={date} date={date} disabled={busy}
      status={dirty ? '有未保存草稿' : title || criterion ? '任务待加入' : '已同步'}
      trailing={button('保存个人安排', save, !dirty, '保存')}
      onDate={value=>{setDate(value);setGenerated(null);}}/>
+ {tab === '记事本' && <NotebookPanel notes={draft.notebook ?? []} disabled={busy}
+     onChange={notes => editStudy(d => { d.notebook = notes; })}
+     onDelete={id => ask('删除笔记', '确认删除这条笔记？点击保存后生效。', () => editStudy(d => { d.notebook = (d.notebook ?? []).filter(note => note.id !== id); }))}/>}
  {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} owner={owner} data={draft} day={date} disabled={busy} edit={editStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
  {tab === '今日' && <>
  <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
