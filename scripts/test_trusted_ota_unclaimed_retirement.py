@@ -1,4 +1,5 @@
 """A failed preclaim can close once, never become a publish/retry permission."""
+import base64
 import hashlib
 import importlib.util
 import io
@@ -40,7 +41,8 @@ def test_requires_exact_failed_profile_and_no_mutation_on_changed_inspection(tmp
                                       'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                                       'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
                                       'a4d922886c859f4a2a43d4322fd43d128bf934f3',
-                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35'])
+                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35',
+                                      '9a530fd2778ad8b8134a16db2941a4365d9d9836'])
 def test_artifact_rejects_vendor_receipt_or_wrong_phase(monkeypatch, failed_sha):
     m = load()
     m.select_profile(failed_sha)
@@ -90,13 +92,15 @@ def metadata(m):
 
 
 @pytest.mark.parametrize('fault', ['attempt', 'running', 'wrong_sha', 'success', 'extra_job',
-                                  'wrong_job', 'step', 'expired', 'digest', 'artifact_run'])
+                                  'wrong_job', 'step', 'expired', 'digest', 'artifact_run',
+                                  'run_id', 'workflow_id', 'artifact_id', 'artifact_size'])
 @pytest.mark.parametrize('failed_sha', ['da91b5de303313f1fb014bbe045e8f1597d15229',
                                       '151f26b0dd6c1c976e6d26cd6e21ab247a6fdb90',
                                       'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                                       'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
                                       'a4d922886c859f4a2a43d4322fd43d128bf934f3',
-                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35'])
+                                      '1c30cfa94a689f5b99f6c638a27c622a87a35d35',
+                                      '9a530fd2778ad8b8134a16db2941a4365d9d9836'])
 def test_official_metadata_failures_are_closed(fault, failed_sha):
     m = load(); m.select_profile(failed_sha)
     run, jobs, artifact = metadata(m)
@@ -110,6 +114,10 @@ def test_official_metadata_failures_are_closed(fault, failed_sha):
     elif fault == 'expired': artifact['expired'] = True
     elif fault == 'digest': artifact['digest'] = 'sha256:' + 'f' * 64
     elif fault == 'artifact_run': artifact['workflow_run']['id'] += 1
+    elif fault == 'run_id': run['id'] += 1
+    elif fault == 'workflow_id': run['workflow_id'] += 1
+    elif fault == 'artifact_id': artifact['id'] += 1
+    elif fault == 'artifact_size': artifact['size_in_bytes'] += 1
     with pytest.raises(m.ClosureError):
         m.validate_official_metadata(run, jobs, artifact)
 
@@ -119,7 +127,8 @@ def test_official_metadata_failures_are_closed(fault, failed_sha):
                         'f2022e10027bcf35c4225bf1cc898a9001161ecc',
                         'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf',
                         'a4d922886c859f4a2a43d4322fd43d128bf934f3',
-                        '1c30cfa94a689f5b99f6c638a27c622a87a35d35'))
+                        '1c30cfa94a689f5b99f6c638a27c622a87a35d35',
+                        '9a530fd2778ad8b8134a16db2941a4365d9d9836'))
 def transaction(tmp_path, monkeypatch, request):
     m = load()
     m.select_profile(request.param)
@@ -368,7 +377,7 @@ def test_history_allows_different_current_lease_but_not_original_inode(transacti
     with pytest.raises(m.ClosureError):m.validate_closed_history(a.server,op)
 
 
-def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(transaction):
+def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_new_profiles(transaction):
     m,a,op,_lease,_calls=transaction
     inspected=m.close_transaction(a)
     m.close_transaction(a,inspected['evidence_sha256'])
@@ -381,7 +390,7 @@ def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(
                'intent_sha256':m.digest(intent)}
     (a.record/'intent.json').write_text(json.dumps(intent))
     (a.record/'completed.json').write_text(json.dumps(completed))
-    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA}:
+    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA, NINEA_FAILED_SHA}:
         with pytest.raises(m.ClosureError):
             m.validate_closed_history(a.server,op)
     else:
@@ -390,7 +399,7 @@ def test_history_keeps_pre_ctime_closures_compatible_but_requires_ctime_for_a4d(
 
 def test_history_rejects_mixed_ctime_schema_for_legacy_profiles(transaction):
     m,a,op,_lease,_calls=transaction
-    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA}:
+    if m.FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA, NINEA_FAILED_SHA}:
         pytest.skip('current profiles already require ctime on every lease file')
     inspected=m.close_transaction(a)
     m.close_transaction(a,inspected['evidence_sha256'])
@@ -488,6 +497,7 @@ def test_f202_rejects_foreign_profile_and_preserves_loaded_history(foreign_sha):
 C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
 A4D_FAILED_SHA = 'a4d922886c859f4a2a43d4322fd43d128bf934f3'
 ONEC_FAILED_SHA = '1c30cfa94a689f5b99f6c638a27c622a87a35d35'
+NINEA_FAILED_SHA = '9a530fd2778ad8b8134a16db2941a4365d9d9836'
 
 
 def test_c29d_fixed_official_profile():
@@ -668,3 +678,125 @@ def test_a4d_does_not_change_or_accept_historical_profiles(foreign_sha):
         old.select_profile(A4D_FAILED_SHA)
     assert metadata(old) == old_metadata and old.ENTRY_DIGESTS == old_entries
     assert new.FAILED_SHA == A4D_FAILED_SHA
+
+
+# Exact official GitHub audit ZIP; only release identifiers and content digests,
+# no credentials, signed URLs, or user health data. Kept inline to bind ZIP bytes.
+NINEA_OFFICIAL_ZIP = base64.b64decode(
+    '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'
+)
+
+
+def test_9a53_fixed_official_profile_and_original_archive():
+    m = load(); m.select_profile(NINEA_FAILED_SHA)
+    assert (m.RUN_ID, m.RUN_ATTEMPT, m.WORKFLOW_ID, m.JOB_ID,
+            m.ARTIFACT_ID, m.ARTIFACT_SIZE) == (
+        41279412983, 1, 370218159, 124768075123, 13072503978, 2565)
+    assert m.ARTIFACT_ZIP_SHA256 == '7b873f5bca4679c529c7f0b2338e4400fabe0d9c4e36c8c73876af54c15270bb'
+    assert m.ENTRY_DIGESTS == {
+        'ota-diagnostic.json': '900d159483cb07c7d7c4705bbb7ef3f438ac8a088e0cb421acda6f13020db60f',
+        'ota-claim.json': '9d7c8d99ec390b6f3bc08ed8065194343cac8aa8078c3d20c59acf239924939b',
+        'ota-preflight.json': '53c5c4c6327d2b08a66cb0c4003059cd00d314429a3171eb5d38673ae0b49682'}
+    assert m.SOURCE_HASHES == {
+        '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+        'scripts/trusted_ota_publish.py': '26f85aad75e3ae025659ad93fb0e033a0c81112cbf2413dc4ebeeac68b03b645',
+        'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+        'scripts/trusted_ota.py': 'a5eb47eaf4b4bee62ccfd2a446c597c08b0fa9fc5cec061440c22c727d0a13dd'}
+    assert len(NINEA_OFFICIAL_ZIP) == m.ARTIFACT_SIZE
+    entries = m.validate_artifact(NINEA_OFFICIAL_ZIP)
+    assert {name: m.digest(value) for name, value in entries.items()} == m.ENTRY_DIGESTS
+    assert m.validate_official_metadata(*metadata(m))['run']['head_sha'] == NINEA_FAILED_SHA
+    with pytest.raises(m.ClosureError, match='artifact bytes differ'):
+        m.validate_artifact(NINEA_OFFICIAL_ZIP + b'changed')
+
+
+@pytest.mark.parametrize('foreign_sha', [
+    'da91b5de303313f1fb014bbe045e8f1597d15229', NEW_FAILED_SHA,
+    F202_FAILED_SHA, C29D_FAILED_SHA, A4D_FAILED_SHA, ONEC_FAILED_SHA])
+def test_9a53_never_reuses_other_profile_metadata_or_archive(foreign_sha):
+    import copy
+    old = load(); old.select_profile(foreign_sha)
+    original_metadata = copy.deepcopy(metadata(old))
+    original_entries = copy.deepcopy(old.ENTRY_DIGESTS)
+    new = load(); new.select_profile(NINEA_FAILED_SHA)
+    for index in range(3):
+        mixed = list(metadata(new)); mixed[index] = original_metadata[index]
+        with pytest.raises(new.ClosureError):
+            new.validate_official_metadata(*mixed)
+    with pytest.raises(old.ClosureError):
+        old.validate_artifact(NINEA_OFFICIAL_ZIP)
+    with pytest.raises(new.ClosureError):
+        new.select_profile(foreign_sha)
+    with pytest.raises(old.ClosureError):
+        old.select_profile(NINEA_FAILED_SHA)
+    new.select_profile(NINEA_FAILED_SHA)
+    assert metadata(old) == original_metadata and old.ENTRY_DIGESTS == original_entries
+    assert new.FAILED_SHA == NINEA_FAILED_SHA
+
+
+@pytest.mark.parametrize('entry_name', ['ota-diagnostic.json', 'ota-claim.json', 'ota-preflight.json'])
+def test_9a53_different_receipt_is_rejected_even_if_zip_hash_is_rebound(monkeypatch, entry_name):
+    m = load(); m.select_profile(NINEA_FAILED_SHA)
+    entries = m.validate_artifact(NINEA_OFFICIAL_ZIP)
+    entries[entry_name]['sha'] = ONEC_FAILED_SHA
+    stream = io.BytesIO()
+    with zipfile.ZipFile(stream, 'w') as archive:
+        for name, value in entries.items():
+            archive.writestr(name, json.dumps(value))
+    raw = stream.getvalue()
+    monkeypatch.setattr(m, 'ARTIFACT_ZIP_SHA256', hashlib.sha256(raw).hexdigest())
+    with pytest.raises(m.ClosureError):
+        m.validate_artifact(raw)
+
+
+@pytest.mark.parametrize('transaction', [A4D_FAILED_SHA, ONEC_FAILED_SHA, NINEA_FAILED_SHA], indirect=True)
+@pytest.mark.parametrize('file_name', ['token', 'label', 'stage', 'started_at'])
+def test_new_profiles_require_ctime_for_each_of_all_four_lease_files(transaction, file_name):
+    m, a, op, _lease, _calls = transaction
+    inspected = m.close_transaction(a)
+    m.close_transaction(a, inspected['evidence_sha256'])
+    intent = json.loads((a.record / 'intent.json').read_text())
+    intent['lease']['files'][file_name].pop('ctime_ns')
+    intent['evidence_sha256'] = m.digest({k: v for k, v in intent.items()
+                                         if k not in {'state', 'evidence_sha256'}})
+    completed = {'state': m.TERMINAL, 'failed_sha': m.FAILED_SHA,
+                 'intent_sha256': m.digest(intent)}
+    (a.record / 'intent.json').write_text(json.dumps(intent))
+    (a.record / 'completed.json').write_text(json.dumps(completed))
+    with pytest.raises(m.ClosureError, match='historical original lease binding differs'):
+        m.validate_closed_history(a.server, op)

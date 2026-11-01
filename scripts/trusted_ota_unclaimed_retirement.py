@@ -69,9 +69,10 @@ F202_FAILED_SHA = 'f2022e10027bcf35c4225bf1cc898a9001161ecc'
 C29D_FAILED_SHA = 'c29d2a60f3fa8e49b87c183af3d7cfba72b9dfaf'
 A4D_FAILED_SHA = 'a4d922886c859f4a2a43d4322fd43d128bf934f3'
 ONEC_FAILED_SHA = '1c30cfa94a689f5b99f6c638a27c622a87a35d35'
+NINEA_FAILED_SHA = '9a530fd2778ad8b8134a16db2941a4365d9d9836'
 SUPPORTED_FAILED_SHAS = (
     LEGACY_FAILED_SHA, CURRENT_FAILED_SHA, F202_FAILED_SHA, C29D_FAILED_SHA,
-    A4D_FAILED_SHA, ONEC_FAILED_SHA,
+    A4D_FAILED_SHA, ONEC_FAILED_SHA, NINEA_FAILED_SHA,
 )
 _SELECTED_PROFILE = None
 
@@ -178,6 +179,24 @@ def select_profile(failed_sha):
             'scripts/trusted_ota_publish.py': '18766c3b0138d501e65e8254ae24a31f2baadc5f9be0d8aee3e3c228e47cc0b5',
             'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
             'scripts/trusted_ota.py': '16c3e5e691882e9776e344803f0739152537d04af52012bebf31ec9df00b2061',
+        }
+    elif failed_sha == NINEA_FAILED_SHA:
+        FAILED_SHA = NINEA_FAILED_SHA
+        RUN_ID = 41279412983
+        JOB_ID = 124768075123
+        ARTIFACT_ID = 13072503978
+        ARTIFACT_SIZE = 2565
+        ARTIFACT_ZIP_SHA256 = '7b873f5bca4679c529c7f0b2338e4400fabe0d9c4e36c8c73876af54c15270bb'
+        ENTRY_DIGESTS = {
+            'ota-diagnostic.json': '900d159483cb07c7d7c4705bbb7ef3f438ac8a088e0cb421acda6f13020db60f',
+            'ota-claim.json': '9d7c8d99ec390b6f3bc08ed8065194343cac8aa8078c3d20c59acf239924939b',
+            'ota-preflight.json': '53c5c4c6327d2b08a66cb0c4003059cd00d314429a3171eb5d38673ae0b49682',
+        }
+        SOURCE_HASHES = {
+            '.github/workflows/trusted-ota.yml': 'd35f63792dfc753e43775454785de75279dba55ad6ba375e3686c6469172e74c',
+            'scripts/trusted_ota_publish.py': '26f85aad75e3ae025659ad93fb0e033a0c81112cbf2413dc4ebeeac68b03b645',
+            'scripts/trusted_ota_server.py': 'd61b0b19d9fb8804f8238ba6a641f391742559d56b8ff310327b873edc6166d5',
+            'scripts/trusted_ota.py': 'a5eb47eaf4b4bee62ccfd2a446c597c08b0fa9fc5cec061440c22c727d0a13dd',
         }
     _SELECTED_PROFILE = failed_sha
 
@@ -610,7 +629,7 @@ def validate_closed_history(server, operation):
             or snapshot['directory'] != lease.get('identity', [])[:2]):
         raise ClosureError('historical original lease binding differs')
     snapshot_file_keys = {frozenset(snapshot['files'][name]) for name in expected_content}
-    allowed_file_keys = ({frozenset(current_file_keys)} if FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA} else
+    allowed_file_keys = ({frozenset(current_file_keys)} if FAILED_SHA in {A4D_FAILED_SHA, ONEC_FAILED_SHA, NINEA_FAILED_SHA} else
                          {frozenset(base_file_keys), frozenset(current_file_keys)})
     if (len(snapshot_file_keys) != 1
             or not snapshot_file_keys.issubset(allowed_file_keys)
