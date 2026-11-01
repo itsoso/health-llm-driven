@@ -1254,7 +1254,13 @@ export default function ChatScreen() {
             onScrollBeginDrag={cancelForcedScrollOnUserDrag}
             onScrollEndDrag={(e) => {
               updateUserScrollPosition(e);
-              userScrollInProgress.current = false;
+              // Native end-drag is emitted before deceleration begins. Retain
+              // user intent across that gap so a new card cannot steal the fling.
+              const { velocity, targetContentOffset, contentOffset } = e.nativeEvent;
+              const willDecelerate = Math.abs(velocity?.y ?? 0) > 0
+                || (targetContentOffset != null && Math.abs(targetContentOffset.y - contentOffset.y) > 1);
+              userMomentumPending.current = willDecelerate;
+              userScrollInProgress.current = willDecelerate;
             }}
             onMomentumScrollBegin={() => {
               userScrollInProgress.current = userMomentumPending.current;

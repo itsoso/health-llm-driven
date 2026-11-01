@@ -20,7 +20,7 @@ const mockChatState = {
 jest.mock('expo-router', () => ({
   router: { push: jest.fn(), navigate: jest.fn(), setParams: jest.fn() },
   useLocalSearchParams: () => ({}),
-  useFocusEffect: (cb: () => void | (() => void)) => cb(),
+  useFocusEffect: (cb: () => void | (() => void)) => jest.requireActual('react').useEffect(cb, [cb]),
 }));
 
 jest.mock('@tanstack/react-query', () => ({

@@ -1744,7 +1744,8 @@ describe('ChatScreen', () => {
       act(() => {
         list.props.onScrollBeginDrag();
         if (momentum) {
-          list.props.onScrollEndDrag(scrollEvent(600));
+          const release = scrollEvent(600);
+          list.props.onScrollEndDrag({ nativeEvent: { ...release.nativeEvent, velocity: { x: 0, y: 1 } } });
           list.props.onMomentumScrollBegin();
           fireEvent.scroll(list, scrollEvent(1100));
           list.props.onMomentumScrollEnd(scrollEvent(1100));
@@ -1764,6 +1765,43 @@ describe('ChatScreen', () => {
       });
       expect(scrollToEnd).toHaveBeenCalledTimes(2);
       expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['velocity', 'target'])('does not follow a card between drag release and upward momentum (%s)', async (signal) => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐' },
+      { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+    const event = (y: number) => ({ nativeEvent: {
+      layoutMeasurement: { height: 500 }, contentOffset: { y }, contentSize: { height: 1600 },
+    } });
+    try {
+      await act(async () => {});
+      act(() => { jest.advanceTimersByTime(1500); });
+      const list = view.getByTestId('chat-message-list');
+      scrollToEnd.mockClear();
+      act(() => {
+        list.props.onScrollBeginDrag();
+        list.props.onScrollEndDrag({ nativeEvent: {
+          ...event(1050).nativeEvent,
+          ...(signal === 'velocity' ? { velocity: { x: 0, y: -1 } } : { targetContentOffset: { x: 0, y: 300 } }),
+        } });
+        list.props.onContentSizeChange(390, 1700);
+        list.props.onMomentumScrollBegin();
+        fireEvent.scroll(list, event(300));
+        list.props.onMomentumScrollEnd(event(300));
+        list.props.onContentSizeChange(390, 1800);
+      });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy();
     } finally {
       view.unmount();
       scrollToEnd.mockRestore();
