@@ -1,18 +1,23 @@
 """本人私人规划：读取无写入，显式保存、恢复和备份。"""
 from datetime import date
+import logging
 from app.schemas.exam_practice import ExamAttempt, ExamAttemptWrite, ExamHistory, ExamPractice, QuestionId
 from app.services import exam_practice
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.orm import Session
 from uuid import UUID
 from fastapi import Query
-from app.api.deps import get_authenticated_relay_token
+from app.api.deps import get_authenticated_relay_token, get_current_user_required
 from app.schemas.life_morning_readings import MorningReadingList, MorningReadingDetail
 from app.services import life_morning_readings
 from app.api.integration_lifenav import PrivateIntegrationRoute, _private, self_only
 from app.database import get_db
 from app.schemas.life_navigation import LifeBackup, LifeHistory, LifeImport, LifeRevisionRequest, LifeWorkspace, LifeWorkspaceWrite
 from app.services import life_navigation as service
+from app.services import life_goals
+from app.schemas.life_goals import LifeGoalsContext
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix='/life-navigation', tags=['life-navigation'], route_class=PrivateIntegrationRoute)
 
@@ -35,6 +40,27 @@ def morning_readings(request: Request, response: Response, offset: int = Query(0
 def morning_reading(report_id: UUID, request: Request, response: Response, user=Depends(owner)):
     _private(response)
     return life_morning_readings.get_reading(user.id, get_authenticated_relay_token(request, user), str(report_id))
+
+
+@router.get('/goals-context', response_model=LifeGoalsContext)
+def goals_context(request: Request, response: Response,
+                  user=Depends(get_current_user_required), db: Session=Depends(get_db)):
+    auth_type = getattr(request.state, 'auth_type', None)
+    if (auth_type not in {'jwt', 'cookie', 'api_key'}
+            or getattr(request.state, 'is_proxy_mode', False) or user.is_managed):
+        raise HTTPException(403, '目标摘要仅供本人读取')
+    if auth_type == 'api_key' and 'read' not in getattr(request.state, 'auth_scopes', frozenset()):
+        raise HTTPException(403, 'API Key 缺少 read 权限')
+    if request.query_params:
+        raise HTTPException(400, '仅支持本人当前目标，不接受用户或日期选择器')
+    subject = request.headers.get('x-reva-ai-subject')
+    if subject is not None and subject != str(user.id):
+        raise HTTPException(409, '登录账号已变化，请刷新页面后重试')
+    _private(response)
+    response.headers['Vary'] = 'Authorization, X-API-Key, Cookie'
+    context = life_goals.get_context(db, user.id)
+    logger.info('LifeNav goals read owner_id=%s auth_type=%s revision=%s', user.id, auth_type, context.revision)
+    return context
 
 
 @router.get('/workspace', response_model=LifeWorkspace)

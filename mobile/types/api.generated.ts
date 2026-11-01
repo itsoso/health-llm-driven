@@ -2555,6 +2555,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/life-navigation/goals-context": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Goals Context */
+        get: operations["goals_context_api_v1_life_navigation_goals_context_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/life-navigation/workspace": {
         parameters: {
             query?: never;
@@ -23287,6 +23304,36 @@ export interface components {
              */
             direction: string;
         };
+        /** CurrentQuarter */
+        CurrentQuarter: {
+            /** Key */
+            key: string;
+            /**
+             * Strategy
+             * @default
+             */
+            strategy: string;
+            /**
+             * Decomposition
+             * @default
+             */
+            decomposition: string;
+            /**
+             * Plan
+             * @default
+             */
+            plan: string;
+        };
+        /** CurrentWeek */
+        CurrentWeek: {
+            /**
+             * Start
+             * Format: date
+             */
+            start: string;
+            /** Tracks */
+            tracks?: components["schemas"]["Track"][];
+        };
         /** DailyArtifactEventIn */
         DailyArtifactEventIn: {
             /** Event Type */
@@ -28763,6 +28810,33 @@ export interface components {
             occurred_display: string;
             /** Notes */
             notes?: string | null;
+        };
+        /** LifeGoalsContext */
+        LifeGoalsContext: {
+            /**
+             * Schema Version
+             * @default life_navigation.goals.v1
+             * @constant
+             */
+            schema_version: "life_navigation.goals.v1";
+            /** Owner Id */
+            owner_id: number;
+            /**
+             * Local Date
+             * Format: date
+             */
+            local_date: string;
+            /** Timezone */
+            timezone: string;
+            /** Revision */
+            revision: number;
+            /** Updated At */
+            updated_at: string | null;
+            strategy: components["schemas"]["Strategy"];
+            quarter: components["schemas"]["CurrentQuarter"];
+            week: components["schemas"]["CurrentWeek"];
+            /** Missing Horizons */
+            missing_horizons: ("life" | "annual" | "quarterly" | "monthly" | "weekly")[];
         };
         /** LifeHistory */
         "LifeHistory-Input": {
@@ -40986,6 +41060,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    goals_context_api_v1_life_navigation_goals_context_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LifeGoalsContext"];
                 };
             };
         };

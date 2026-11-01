@@ -232,3 +232,88 @@ def test_import_full_history_retains_pre_import_current(db, auth_user_and_header
     assert history[0].data.strategy.vision == 'original-private-state'
     assert history[-1].data.strategy.vision == 'incoming19'
     assert result.revision == history[-1].revision
+
+
+def test_goals_context_key_reads_only_current_owned_goals(private_client, db, auth_user_and_headers, monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    from tests.test_api_key_scope_enforcement import _headers_for_key
+    from app.utils import timezone as user_time
+    user, _ = auth_user_and_headers
+    monkeypatch.setattr(user_time, 'get_user_now', lambda *_: datetime(2026, 11, 1, 7, tzinfo=ZoneInfo('Asia/Taipei')))
+    value = data('人生方向')
+    value['strategy']['annual_goal'] = '年度目标'
+    value['quarters'] = {'2026-Q4': {'plan': '季度计划'}, '2025-Q4': {'plan': 'past-secret'}}
+    value['weeks'] = {'2026-10-26': {'tracks': [{'id': 'main', 'title': '本周主线'}],
+        'notes': {'2026-10-31': {'valuable': 'note-secret'}},
+        'tasks': [{'id': 'b24dafdd-92da-4364-91f5-49ac9f719bdc', 'date': '2026-10-31', 'title': 'task-secret'}]},
+        '2026-10-19': {'tracks': [{'id': 'main', 'title': 'old-week-secret'}]}}
+    value['notebook'] = [{'id': '33070e9f-cfae-4a9f-820c-a99829b429ed', 'body': 'notebook-secret'}]
+    service.save_workspace(db, user.id, LifeWorkspaceWrite(expected_revision=0, data=value))
+    headers, _ = _headers_for_key(db, user, 'read')
+    response = private_client.get('/api/v1/life-navigation/goals-context', headers=headers)
+    assert response.status_code == 200
+    result = response.json()
+    assert result['owner_id'] == user.id and result['revision'] == 1
+    assert result['local_date'] == '2026-11-01'
+    assert result['strategy']['vision'] == '人生方向'
+    assert result['quarter']['key'] == '2026-Q4' and result['quarter']['plan'] == '季度计划'
+    assert result['week']['start'] == '2026-10-26'
+    assert result['week']['tracks'][0]['title'] == '本周主线'
+    assert result['missing_horizons'] == ['monthly']
+    assert 'secret' not in response.text
+    assert response.headers['cache-control'] == 'private, no-store'
+    assert 'Authorization' in response.headers['vary']
+    assert service.get_workspace(db, user.id).revision == 1
+    assert private_client.get('/api/v1/life-navigation/workspace', headers=headers).status_code == 403
+
+
+@pytest.mark.parametrize('scopes,expected', [('read', 200), ('read,write', 200), ('write', 403), ('', 403)])
+def test_goals_context_scopes_and_no_write_promotion(private_client, db, auth_user_and_headers, scopes, expected):
+    from tests.test_api_key_scope_enforcement import _headers_for_key
+    user, _ = auth_user_and_headers
+    headers, _ = _headers_for_key(db, user, scopes)
+    path = '/api/v1/life-navigation/goals-context'
+    response = private_client.get(path, headers=headers)
+    assert response.status_code == expected
+    if expected == 200:
+        assert response.json()['revision'] == 0
+        assert response.json()['missing_horizons'] == ['life', 'annual', 'quarterly', 'monthly', 'weekly']
+    assert private_client.put('/api/v1/life-navigation/workspace', headers=headers,
+        json={'expected_revision': 0, 'data': data('must-not-write')}).status_code == 403
+    assert service.get_workspace(db, user.id).revision == 0
+
+
+def test_goals_context_owner_isolation_and_selectors(private_client, db, auth_user_and_headers):
+    from tests.test_api_key_scope_enforcement import _headers_for_key, _create_user
+    owner, owner_session = auth_user_and_headers
+    service.save_workspace(db, owner.id, LifeWorkspaceWrite(expected_revision=0, data=data('other-owner-secret')))
+    other = _create_user(db, admin=True)
+    headers, _ = _headers_for_key(db, other, 'read')
+    path = '/api/v1/life-navigation/goals-context'
+    response = private_client.get(path, headers=headers)
+    assert response.status_code == 200 and response.json()['owner_id'] == other.id
+    assert 'other-owner-secret' not in response.text
+    assert private_client.get(path, headers=owner_session).json()['strategy']['vision'] == 'other-owner-secret'
+    for query in [f'?user_id={owner.id}', '?date=2025-01-01', '?fields=notebook']:
+        assert private_client.get(path+query, headers=headers).status_code == 400
+    assert private_client.get(path, headers={**headers, 'X-Reva-AI-Subject':str(owner.id)}).status_code == 409
+    assert private_client.get(path).status_code == 401
+    other.is_managed = True; db.commit()
+    assert private_client.get(path, headers=headers).status_code == 403
+    other.is_managed = False; other.is_active = False; db.commit()
+    assert private_client.get(path, headers=headers).status_code == 403
+
+
+def test_goals_context_rejects_proxy_session(private_client, monkeypatch, auth_user_and_headers):
+    from fastapi import Request
+    from app.api.deps import get_current_user_required
+    user, _ = auth_user_and_headers
+    def proxy(request: Request):
+        request.state.auth_type = 'jwt'; request.state.is_proxy_mode = True
+        return user
+    private_client.app.dependency_overrides[get_current_user_required] = proxy
+    try:
+        assert private_client.get('/api/v1/life-navigation/goals-context').status_code == 403
+    finally:
+        private_client.app.dependency_overrides.pop(get_current_user_required)
