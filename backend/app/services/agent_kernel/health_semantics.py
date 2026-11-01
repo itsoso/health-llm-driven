@@ -1370,10 +1370,20 @@ def has_unresolved_chart_read_request(text: str) -> bool:
     projection on original turn text. Quoted verbs cannot waive this boundary.
     """
     raw = unicodedata.normalize("NFKC", str(text or ""))
-    return (bool(re.search(r"绘制|画出", raw))
-            and bool(re.search(r"血氧|spo2", raw, re.IGNORECASE))
-            and bool(re.search(r"本周|这周|上周", raw))
-            and project_weekly_spo2_chart_request(raw) is None)
+    if project_weekly_spo2_chart_request(raw) is not None:
+        return False
+    # Existing downstream readers remove formatting and material. Use the same
+    # projection only to detect and deny candidates, never to grant authority.
+    detection = _strip_markdown_formatting_markers(active_health_instruction_text(raw))
+    detection, _ = _strip_html_material(detection)
+    detection, _ = _strip_paired_material_spans(detection)
+    detection = re.sub(r"\s+", "", detection)
+    return any(
+        bool(re.search(r"绘制|画出", candidate))
+        and bool(re.search(r"血氧|spo2", candidate, re.IGNORECASE))
+        and bool(re.search(r"本周|这周|上周", candidate))
+        for candidate in (raw, detection)
+    )
 
 
 def active_health_instruction_text(text: str) -> str:

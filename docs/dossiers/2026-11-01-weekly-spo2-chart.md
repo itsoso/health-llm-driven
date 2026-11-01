@@ -29,7 +29,7 @@
 
 - 授权 RED：原实现 2 failed / 1 passed，准确覆盖两种拒绝原因。
 - 图表投影 RED：14 failed；Mobile 缺口/单点 RED：3 failed。
-- 后端相关 CI-mode 合跑：3850 passed，SQLite 合成记录；真实 Pi 协议运行，
+- 后端相关 CI-mode 合跑：3868 passed，SQLite 合成记录；真实 Pi 协议运行，
   仅模型输出替换为测试响应。覆盖 capability policy、共享语义、只读 scope、
   GenUI 表格/用药投影及图表防伪造回归。
 - 新流式用例通过真实 gateway/dispatcher/reader：冻结周一至当前业务日，
@@ -69,3 +69,12 @@
 新增材料、单查/批量及Unicode反例后，定向188 passed，完整合跑3850 passed。
 原始请求到gateway、DB读取、单张图及缺失值的流式验证仍通过。
 固定最终提交仍须独立复审GO；此前两候选均未推送或部署。
+
+
+## 第三轮 G4 原文完整性补强
+
+ca99aa268 的字面候选检查仍可被拆分动词/周范围的Markdown材料绕开。
+精确基线同样存在旧fallback，未宣称是本补丁新增泄漏。拒绝候选识别改为同时检查
+原文与既有材料/Markdown/HTML规范化结果；规范化结果仅能触发拒绝，授权仍要求
+原始完整命令匹配。加入格式、引述、代码和HTML拆词的单查/批量反例。
+定向206 passed，完整相关合跑3868 passed；固定提交等待再次独立复审。

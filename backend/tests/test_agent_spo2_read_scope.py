@@ -359,3 +359,23 @@ def test_unicode_metric_normalization_preserves_complete_chart_boundary(metric, 
     text = "绘制本周" + metric + suffix
     result = decision(text)
     assert result.action == ("allow" if suffix == "数据" else "block"), result.reason
+
+
+@pytest.mark.parametrize("text", [
+    "绘**制**本周血氧饱和度数据会返回什么", "绘制本~~查询~~周血氧数据会返回什么",
+    "绘制本`查询`周血氧数据会返回什么", "绘制本“查询”周血氧数据会返回什么",
+    "绘制本**周**血氧数据会返回什么", "绘制本周血**氧**数据会返回什么",
+    "绘制本周S**p**O₂数据会返回什么",
+    "绘<b>制</b>本周血氧数据会返回什么",
+    "绘制本周血<em>氧</em>数据会返回什么",
+])
+@pytest.mark.parametrize("batch", [False, True])
+def test_material_or_formatting_cannot_hide_chart_candidate_from_denial(text, batch):
+    from app.services.agent_kernel.health_semantics import project_weekly_spo2_chart_request
+    assert project_weekly_spo2_chart_request(text) is None
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    tool = "health_query_batch" if batch else "health_query"
+    args = {"queries": [{"dimension": "spo2"}]} if batch else {"dimension": "spo2"}
+    result = decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        tool_name=tool, arguments=args, source="structured_or_recovered"))
+    assert result.action == "block"
