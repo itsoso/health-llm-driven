@@ -64,6 +64,8 @@ def patch_env(raw):
     validate_policy(current)
     if current == NEW:
         return raw
+    if b'\r' in raw:
+        raise ActivationError('environment requires LF line endings')
     if raw and not raw.endswith(b'\n'):
         raise ActivationError('environment must end with newline')
     if OLD:
@@ -282,6 +284,8 @@ def execute(args):
             if any(service(io, name) != OLD for name in SERVICES):
                 raise ActivationError('running policy differs before activation')
             replacement = patch_env(raw)
+            if replacement == raw or selected(replacement) != NEW:
+                raise ActivationError('replacement must install the exact new policy')
             if not args.apply:
                 return dict(state='READY', **binding)
             root.mkdir(mode=0o700)

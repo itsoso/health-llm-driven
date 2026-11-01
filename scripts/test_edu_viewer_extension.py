@@ -99,3 +99,13 @@ def test_extension_does_not_replace_comment_containing_old_assignment():
     m.configure(7, 9, '8')
     raw = b'# previous EDU_SSO_VIEWER_IDS=8\nEDU_SSO_VIEWER_IDS=8\n'
     assert m.patch_env(raw) == b'# previous EDU_SSO_VIEWER_IDS=8\nEDU_SSO_VIEWER_IDS=8,9\n'
+
+
+def test_crlf_rejected_before_creating_operation_or_lease(extension_runtime):
+    args, env, root, lease, *_ = extension_runtime
+    env.write_bytes(env.read_bytes().replace(b'\n', b'\r\n'))
+    args.apply = True
+    with pytest.raises(m.ActivationError):
+        m.execute(args)
+    assert not lease.exists()
+    assert not (root.parent / 'reva-edu-viewer-add-9').exists()
