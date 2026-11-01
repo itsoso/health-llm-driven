@@ -1,287 +1,222 @@
-/**
- * /my-progress —— 用户视角的执行监测看板 (G-W5, 2026-05-12).
- *
- * 跟 /admin/wscla 区别: 这个是 user 自己看, 数据只是自己的.
- * 核心目的: 让用户感受"AI 给我的建议有没有真的让我变好" — 这是
- * SelfDecode/Rootine 都不做的差异化能力.
- */
-
+/** Personal progress: execution and observations, without causal attribution. */
 import React, { useState } from 'react';
-import {
-  ActivityIndicator,
-  RefreshControl,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TouchableOpacity,
-  View,
-} from 'react-native';
+import { ActivityIndicator, RefreshControl, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { Stack, useRouter, useLocalSearchParams } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-
-import { fetchMyProgress, type ProgressDashboard, type ProgressCard } from '../services/myProgress';
+import type { ProgressDashboard, ProgressCard } from '../services/myProgress';
 import {
-  causalMemorySummary,
-  fetchHealthOperatingReview,
-  predictionBacktestSummary,
-  predictionNextStepSummary,
-  predictionTimelineSummary,
-  type HealthOperatingReview,
-  type ReviewWindowDays,
+  causalMemorySummary, predictionBacktestSummary, predictionNextStepSummary, predictionTimelineSummary,
+  type HealthOperatingReview, type ReviewWindowDays,
 } from '../services/healthOperatingReview';
+import { useMyProgress } from '../hooks/useMyProgress';
 import { spacing, radii } from '../constants/theme';
-import { useTheme, type SemanticTone, type SemanticPalette } from '../hooks/useTheme';
-import HeroTile from '../components/dashboard/HeroTile';
+import { useTheme, type ColorPalette, type SemanticTone, type SemanticPalette } from '../hooks/useTheme';
+import { formatDisplayNumber } from '../utils/displayNumber';
 import EvidenceChip from '../components/shared/EvidenceChip';
 import HealthWeekNavigation from '../components/home/HealthWeekNavigation';
 
-const WINDOW_OPTIONS = [
-  { label: '7 天', days: 7 },
-  { label: '30 天', days: 30 },
-  { label: '90 天', days: 90 },
-];
-
-function pct(v: number | null): string {
-  if (v == null) return '—';
-  return `${(v * 100).toFixed(0)}%`;
-}
-
-// 颜色走 semanticColors (useTheme().s), 这里只定 tone + label/arrow.
+const WINDOWS: ReviewWindowDays[] = [7, 30, 90];
 export const OUTCOME_COLORS: Record<string, { tone: SemanticTone; label: string; arrow: string }> = {
   improved: { tone: 'success', label: '改善', arrow: '↑' },
   unchanged: { tone: 'neutral', label: '稳定', arrow: '—' },
-  worsened: { tone: 'danger', label: '反向', arrow: '↓' },
+  worsened: { tone: 'danger', label: '未达预期', arrow: '↓' },
   inconclusive: { tone: 'neutral', label: '数据不足', arrow: '?' },
 };
+const REVIEW_METRICS: Record<string, { label: string; unit: string }> = {
+  weight: { label: '体重', unit: 'kg' }, waist_cm: { label: '腰围', unit: 'cm' },
+  systolic_bp: { label: '收缩压', unit: 'mmHg' }, diastolic_bp: { label: '舒张压', unit: 'mmHg' },
+  sleep_score: { label: '睡眠评分', unit: '' }, hrv: { label: 'HRV', unit: 'ms' },
+};
+const METRIC_LABELS: Record<string, string> = {
+  ...Object.fromEntries(Object.entries(REVIEW_METRICS).map(([key, value]) => [key, value.label])),
+  weight_kg: '体重', sbp: '收缩压', dbp: '舒张压', ldl: 'LDL', hdl: 'HDL', hba1c: '糖化血红蛋白',
+  tg: '甘油三酯', bmi: 'BMI', rhr: '静息心率', hcy: '同型半胱氨酸', vitamin_d: '维生素 D', b12: '维生素 B12', ferritin: '铁蛋白',
+};
+function count(value: number): string {
+  return Number.isSafeInteger(value) && value >= 0 ? formatDisplayNumber(value) : '—';
+}
+function reading(value: string | number | null | undefined): string | null {
+  if (value == null || (typeof value === 'string' && value.trim() === '')) return null;
+  const n = Number(value);
+  return Number.isFinite(n) ? formatDisplayNumber(n) : null;
+}
+function signed(value: number): string {
+  const formatted = formatDisplayNumber(value);
+  return Number(formatted) > 0 ? `+${formatted}` : formatted;
+}
 
 export default function MyProgressScreen() {
   const params = useLocalSearchParams<{ navigation?: string }>();
-  return params.navigation === 'week' ? <HealthWeekNavigation /> : <LegacyProgressScreen />;
+  return params.navigation === 'week' ? <HealthWeekNavigation /> : <ProgressScreen />;
 }
-
-function LegacyProgressScreen() {
-  const router = useRouter();
+function ProgressScreen() {
   const { c, s: sem } = useTheme();
-  const qc = useQueryClient();
-  const [days, setDays] = useState(30);
-
-  const { data, isLoading, isRefetching, error } = useQuery<ProgressDashboard>({
-    queryKey: ['my-progress', days],
-    queryFn: () => fetchMyProgress(days),
-    staleTime: 2 * 60 * 1000,
-  });
-  const { data: operatingReview } = useQuery<HealthOperatingReview>({
-    queryKey: ['daily-plan-review', days],
-    queryFn: () => fetchHealthOperatingReview(days as ReviewWindowDays),
-    staleTime: 2 * 60 * 1000,
-  });
-
-  const onRefresh = () => qc.invalidateQueries({ queryKey: ['my-progress'] });
-
-  if (isLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
-  if (error || !data) {
-    return (
-      <View style={styles.center}>
-        <Text style={[styles.errorText, { color: c.labelPrimary }]}>加载失败</Text>
-        <Text style={[styles.errorSub, { color: c.labelTertiary }]}>{String(error)}</Text>
-      </View>
-    );
-  }
-
-  const s = data.stats;
-  const noCards = s.total_surfaced === 0;
-
+  const router = useRouter();
+  const [days, setDays] = useState<ReviewWindowDays>(30);
+  const { progress, review, canRead, refresh, refreshing } = useMyProgress(days);
   return (
     <>
       <Stack.Screen options={{ title: '我的进度', headerBackTitle: '返回', headerShown: true }} />
       <SafeAreaView style={[styles.safe, { backgroundColor: c.bgPrimary }]} edges={['bottom']}>
-        <ScrollView
-          contentContainerStyle={styles.content}
-          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={onRefresh} />}
-        >
-          {/* 时间窗口 chip */}
-          <View style={styles.chipRow}>
-            {WINDOW_OPTIONS.map(opt => (
-              <TouchableOpacity
-                key={opt.days}
-                onPress={() => setDays(opt.days)}
-                style={[
-                  styles.chip,
-                  {
-                    backgroundColor: days === opt.days ? c.brand : c.bgCard,
-                    borderColor: days === opt.days ? c.brand : c.separator,
-                  },
-                ]}
-              >
-                <Text style={[styles.chipText, { color: days === opt.days ? '#fff' : c.labelSecondary }]}>
-                  {opt.label}
-                </Text>
+        <ScrollView contentContainerStyle={styles.content}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={c.brand} />}>
+          <View style={[styles.periods, { backgroundColor: c.fill }]} accessibilityRole="tablist">
+            {WINDOWS.map(window => (
+              <TouchableOpacity key={window} accessibilityRole="button" accessibilityLabel={`最近${window}天`}
+                accessibilityState={{ selected: days === window }} onPress={() => setDays(window)}
+                style={[styles.period, days === window && { backgroundColor: c.brand }]}>
+                <Text style={[styles.periodText, { color: days === window ? c.bgPrimary : c.labelSecondary }]}>{window} 天</Text>
               </TouchableOpacity>
             ))}
           </View>
-
-          {operatingReview && <OperatingReviewCard review={operatingReview} c={c} />}
-
-          {noCards ? (
-            <View style={[styles.emptyCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-              <Ionicons name="leaf-outline" size={32} color={c.labelTertiary} />
-              <Text style={[styles.emptyTitle, { color: c.labelPrimary }]}>
-                这段时间还没有 AI 建议
-              </Text>
-              <Text style={[styles.emptySub, { color: c.labelTertiary }]}>
-                小气候主动产建议:{'\n'}
-                · Safety 触发的告警 (心率/睡眠/血压异常){'\n'}
-                · 周日 21:07 自动生成的本周建议{'\n'}
-                · Specialist 在你提问时产出的建议
-              </Text>
-            </View>
-          ) : (
-            <>
-              {/* 改善叙事 — "AI 让你变好的指标" (2026-05-13) */}
-              <NarrativeBlock cards={data.closed_cards} c={c} />
-
-              {/* 顶部核心数 */}
-              <View style={[styles.heroCard, { backgroundColor: c.brandLight, borderColor: c.brand }]}>
-                <Text style={[styles.heroLabel, { color: c.brand }]}>已闭环且改善的建议</Text>
-                <View style={styles.heroNumRow}>
-                  <Text style={[styles.heroNum, { color: c.brand }]}>{s.improved}</Text>
-                  <Text style={[styles.heroDenom, { color: c.brand }]}> / {s.total_surfaced}</Text>
-                </View>
-                <Text style={[styles.heroSub, { color: c.brand }]}>
-                  AI 这 {days} 天给了 {s.total_surfaced} 条建议, 你做完并改善 {s.improved} 条
-                </Text>
-              </View>
-
-              {/* 核心 4 数 — 学健康记录 VitalsGrid 2x2 tile 风格 (2026-05-12) */}
-              <View style={styles.statGrid}>
-                <HeroTile
-                  label="接受率"
-                  ionIcon="checkmark-circle"
-                  value={pct(s.acceptance_rate)}
-                  sub={`${s.accepted}/${s.accepted + s.declined}`}
-                  color={c.blue}
-                  bg={c.tintBlue}
-                />
-                <HeroTile
-                  label="完成率"
-                  ionIcon="hourglass"
-                  value={pct(s.completed && s.accepted ? s.completed / s.accepted : null)}
-                  sub={`${s.completed}/${s.accepted}`}
-                  color={c.purple}
-                  bg={c.tintPurple}
-                />
-                <HeroTile
-                  label="验证率"
-                  ionIcon="search"
-                  value={pct(s.verification_rate)}
-                  sub={`${s.graded}/${s.completed}`}
-                  color={c.orange}
-                  bg={c.tintOrange}
-                />
-                <HeroTile
-                  label="改善率"
-                  ionIcon="trending-up"
-                  value={pct(s.improvement_rate)}
-                  sub={`${s.improved}/${s.graded}`}
-                  color={c.green}
-                  bg={c.tintGreen}
-                />
-              </View>
-
-              {/* outcome 分布 */}
-              <View style={[styles.outcomeRow, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-                <OutcomePill label="改善" count={s.improved} color={sem.success.solid} total={s.graded} />
-                <OutcomePill label="稳定" count={s.unchanged} color={sem.neutral.solid} total={s.graded} />
-                <OutcomePill label="反向" count={s.worsened} color={sem.danger.solid} total={s.graded} />
-                <OutcomePill label="不足" count={s.inconclusive} color={c.labelQuaternary} total={s.graded} />
-              </View>
-
-              {/* 验证中 */}
-              {data.verifying_cards.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>
-                    验证中 ({data.verifying_cards.length})
-                  </Text>
-                  <Text style={[styles.sectionSub, { color: c.labelTertiary }]}>
-                    你已接受并做完, 等小气候拉数据评估
-                  </Text>
-                  {data.verifying_cards.map(card => (
-                    <CardRow
-                      key={card.id}
-                      card={card}
-                      onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-                      c={c}
-                      sem={sem}
-                    />
-                  ))}
-                </View>
-              )}
-
-              {/* 已闭环 */}
-              {data.closed_cards.length > 0 && (
-                <View style={styles.section}>
-                  <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>
-                    已闭环 ({data.closed_cards.length})
-                  </Text>
-                  <Text style={[styles.sectionSub, { color: c.labelTertiary }]}>
-                    小气候自动评估完成, 看 metric 旅程
-                  </Text>
-                  {data.closed_cards.map(card => (
-                    <CardRow
-                      key={card.id}
-                      card={card}
-                      onPress={() => router.push({ pathname: '/card/[id]' as any, params: { id: String(card.id) } })}
-                      c={c}
-                      sem={sem}
-                    />
-                  ))}
-                </View>
-              )}
-            </>
-          )}
+          {!canRead ? (
+            <View style={styles.center}><Text style={[styles.body, { color: c.labelSecondary }]}>登录后查看你的进度</Text></View>
+          ) : <>
+            {review.error ? <SectionState title="本期回顾" retry={() => { void review.refetch(); }} c={c} />
+              : review.isLoading || !review.data ? <SectionState title="本期回顾" c={c} />
+              : <ReviewOverview key={days} review={review.data} c={c} />}
+            {progress.error ? <SectionState title="建议进展" retry={() => { void progress.refetch(); }} c={c} />
+              : progress.isLoading || !progress.data ? <SectionState title="建议进展" c={c} />
+              : <SuggestionProgress data={progress.data} c={c} sem={sem}
+                  openCard={card => router.push({ pathname: '/card/[id]', params: { id: String(card.id) } })} />}
+          </>}
         </ScrollView>
       </SafeAreaView>
     </>
   );
 }
-
-// ─── 子组件 ─────────────────────────────────────────────────────────────
-
-function OutcomePill({ label, count, color, total }: { label: string; count: number; color: string; total: number }) {
-  const { c } = useTheme();
-  const pctVal = total > 0 ? (count / total) * 100 : 0;
-  return (
-    <View style={styles.outcomePill}>
-      <Text style={[styles.outcomeLabel, { color }]}>{label}</Text>
-      <Text style={[styles.outcomeCount, { color }]}>{count}</Text>
-      <View style={[styles.outcomeBarBg, { backgroundColor: c.fill }]}>
-        <View style={[styles.outcomeBarFill, { width: `${pctVal}%`, backgroundColor: color }]} />
-      </View>
-    </View>
-  );
+function SectionState({ title, retry, c }: { title: string; retry?: () => void; c: ColorPalette }) {
+  return <View style={[styles.card, { backgroundColor: c.bgCard }]}>
+    <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>{title}</Text>
+    {retry ? <>
+      <Text style={[styles.body, { color: c.labelSecondary }]}>暂时未能加载，稍后再试。</Text>
+      <TouchableOpacity accessibilityRole="button" accessibilityLabel={`重新加载${title}`} onPress={retry} style={styles.retry}>
+        <Ionicons name="refresh-outline" size={16} color={c.brand} /><Text style={[styles.link, { color: c.brand }]}>重新加载</Text>
+      </TouchableOpacity>
+    </> : <View style={styles.inline}><ActivityIndicator color={c.brand} /><Text style={[styles.body, { color: c.labelSecondary }]}>正在加载…</Text></View>}
+  </View>;
 }
-
-const REVIEW_METRICS: Record<string, { label: string; unit: string; good: 'up' | 'down' }> = {
-  weight: { label: '体重', unit: 'kg', good: 'down' },
-  waist_cm: { label: '腰围', unit: 'cm', good: 'down' },
-  systolic_bp: { label: '收缩压', unit: 'mmHg', good: 'down' },
-  diastolic_bp: { label: '舒张压', unit: 'mmHg', good: 'down' },
-  sleep_score: { label: '睡眠评分', unit: '', good: 'up' },
-  hrv: { label: 'HRV', unit: 'ms', good: 'up' },
-};
-
-function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: any }) {
-  const rows = Object.entries(REVIEW_METRICS)
-    .map(([key, meta]) => ({ key, ...meta, change: review.metrics[key] }))
-    .filter(row => row.change?.status === 'present' && row.change.delta !== null);
+function ReviewOverview({ review, c }: { review: HealthOperatingReview; c: ColorPalette }) {
+  const { total_events: total, completed_events: completed } = review.execution;
+  const valid = Number.isSafeInteger(total) && Number.isSafeInteger(completed) && total > 0 && completed >= 0 && completed <= total;
+  const ratio = valid ? completed / total : null;
+  const rows = Object.entries(REVIEW_METRICS).map(([key, meta]) => ({ key, ...meta, change: review.metrics[key] }))
+    .filter(row => row.change?.status === 'present' && row.change.count >= 2 &&
+      typeof row.change.first === 'number' && Number.isFinite(row.change.first) &&
+      typeof row.change.current === 'number' && Number.isFinite(row.change.current) &&
+      typeof row.change.delta === 'number' && Number.isFinite(row.change.delta));
+  return <>
+    <View style={[styles.overview, { backgroundColor: c.brandLight }]}>
+      <View style={styles.between}>
+        <View style={styles.flex}>
+          <Text style={[styles.eyebrow, { color: c.brand }]}>本期回顾</Text>
+          <Text style={[styles.date, { color: c.labelSecondary }]}>{review.start_date} — {review.end_date}</Text>
+        </View>
+        <View style={[styles.overviewIcon, { backgroundColor: c.bgCard }]}><Ionicons name="leaf-outline" size={22} color={c.brand} /></View>
+      </View>
+      <View style={styles.between}>
+        <View style={styles.flex}>
+          <Text style={[styles.overviewTitle, { color: c.labelPrimary }]}>{total === 0 ? '本期还没有行动记录' : '每一次行动，都值得回顾'}</Text>
+          <Text style={[styles.body, { color: c.labelSecondary }]}>{total === 0 ? '记录之后，在这里回看行动和身体变化。' : `已完成 ${count(completed)} 项，共 ${count(total)} 项`}</Text>
+        </View>
+        {ratio !== null && <Text style={[styles.rate, { color: c.brand }]}>{formatDisplayNumber(ratio * 100)}%</Text>}
+      </View>
+      {ratio !== null && <View style={[styles.progressTrack, { backgroundColor: c.bgCard }]}>
+        <View style={[styles.progressFill, { width: `${ratio * 100}%`, backgroundColor: c.brand }]} />
+      </View>}
+    </View>
+    <View style={[styles.card, { backgroundColor: c.bgCard }]}>
+      <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>身体变化</Text>
+      <Text style={[styles.caption, { color: c.labelSecondary }]}>对比这段时间内最早与最近的记录</Text>
+      {rows.length ? rows.map((row, index) => <View key={row.key}
+        style={[styles.metricRow, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: c.separator }]}>
+        <View style={styles.flex}><Text style={[styles.metricLabel, { color: c.labelPrimary }]}>{row.label}</Text>
+          <Text style={[styles.caption, { color: c.labelSecondary }]}>{reading(row.change.first) ?? '—'} → {reading(row.change.current) ?? '—'}{row.unit ? ` ${row.unit}` : ''}</Text>
+        </View>
+        <Text style={[styles.metricDelta, { color: c.labelPrimary }]}>{signed(row.change.delta as number)}{row.unit ? ` ${row.unit}` : ''}</Text>
+      </View>) : <View style={styles.emptyBody}>
+        <Text style={[styles.metricLabel, { color: c.labelPrimary }]}>还没有足够的前后记录</Text>
+        <Text style={[styles.body, { color: c.labelSecondary }]}>有了同一指标的前后记录，就能在这里查看变化。</Text>
+      </View>}
+      <Text style={[styles.boundary, { color: c.labelSecondary }]}>指标变化仅供回顾，不代表由某条建议造成。</Text>
+      <ReviewEvidence review={review} c={c} />
+    </View>
+  </>;
+}
+function SuggestionProgress({ data, c, sem, openCard }: { data: ProgressDashboard; c: ColorPalette; sem: SemanticPalette; openCard: (card: ProgressCard) => void }) {
+  const s = data.stats;
+  const classified = s.improved + s.unchanged + s.worsened + s.inconclusive;
+  const unclassified = Number.isSafeInteger(classified) && s.graded > classified ? s.graded - classified : 0;
+  const outcomes = [
+    { key: 'improved', value: s.improved }, { key: 'unchanged', value: s.unchanged },
+    { key: 'worsened', value: s.worsened }, { key: 'inconclusive', value: s.inconclusive },
+  ];
+  return <>
+    <View style={[styles.card, { backgroundColor: c.bgCard }]}>
+      <View style={styles.between}>
+        <Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>建议进展</Text>
+        <Text style={[styles.caption, { color: c.labelSecondary }]}>本期共 {count(s.total_surfaced)} 条</Text>
+      </View>
+      {s.total_surfaced === 0 ? <View style={styles.emptyBody}>
+        <Text style={[styles.metricLabel, { color: c.labelPrimary }]}>这段时间还没有建议记录</Text>
+        <Text style={[styles.body, { color: c.labelSecondary }]}>之后收到的建议和评估结果，会汇总在这里。</Text>
+      </View> : <>
+        <View style={styles.counts}>
+          {[['待回应', s.pending], ['已接受', s.accepted], ['已完成', s.completed]].map(([label, value]) => <View key={label} style={styles.countItem}>
+            <Text style={[styles.countValue, { color: c.labelPrimary }]}>{count(value as number)}</Text>
+            <Text style={[styles.caption, { color: c.labelSecondary }]}>{label}</Text>
+          </View>)}
+        </View>
+        <View style={[styles.evaluation, { borderTopColor: c.separator }]}>
+          <View style={styles.between}>
+            <Text style={[styles.metricLabel, { color: c.labelPrimary }]}>评估结果</Text>
+            <Text style={[styles.caption, { color: c.labelSecondary }]}>{count(s.graded)} 条纳入统计</Text>
+          </View>
+          {s.graded > 0 ? <View style={styles.outcomes}>
+            {outcomes.map(({ key, value }) => <View key={key} style={[styles.outcomeItem, { backgroundColor: sem[OUTCOME_COLORS[key].tone].bg }]}>
+              <Text style={[styles.outcomeLabel, { color: sem[OUTCOME_COLORS[key].tone].fg }]}>{OUTCOME_COLORS[key].label}</Text>
+              <Text style={[styles.outcomeCount, { color: sem[OUTCOME_COLORS[key].tone].fg }]}>{count(value)}</Text>
+            </View>)}
+            {unclassified > 0 && <View style={[styles.outcomeItem, { backgroundColor: c.fill }]}>
+              <Text style={[styles.outcomeLabel, { color: c.labelSecondary }]}>待分类</Text>
+              <Text style={[styles.outcomeCount, { color: c.labelSecondary }]}>{count(unclassified)}</Text>
+            </View>}
+          </View> : <Text style={[styles.body, { color: c.labelSecondary }]}>暂时没有可统计的评估结果</Text>}
+          <Text style={[styles.caption, { color: c.labelSecondary }]}>完成记录与评估结果分别统计；评估不代表行动已完成。</Text>
+        </View>
+      </>}
+    </View>
+    {data.verifying_cards.length > 0 && <CardSection title="等待评估" subtitle="已有完成记录，等待更多观察数据。" cards={data.verifying_cards} c={c} sem={sem} openCard={openCard} />}
+    {data.closed_cards.length > 0 && <CardSection title="已评估的建议" subtitle="查看具体记录与评估依据，部分结果不纳入上方统计。" cards={data.closed_cards} c={c} sem={sem} openCard={openCard} />}
+  </>;
+}
+function CardSection({ title, subtitle, cards, c, sem, openCard }: { title: string; subtitle: string; cards: ProgressCard[]; c: ColorPalette; sem: SemanticPalette; openCard: (card: ProgressCard) => void }) {
+  return <View style={styles.section}>
+    <View style={styles.between}><Text style={[styles.sectionTitle, { color: c.labelPrimary }]}>{title}</Text><Text style={[styles.caption, { color: c.labelSecondary }]}>{cards.length} 条展示中</Text></View>
+    <Text style={[styles.caption, { color: c.labelSecondary }]}>{subtitle}</Text>
+    {cards.map(card => <CardRow key={card.id} card={card} onPress={() => openCard(card)} c={c} sem={sem} />)}
+  </View>;
+}
+function CardRow({ card, onPress, c, sem }: { card: ProgressCard; onPress: () => void; c: ColorPalette; sem: SemanticPalette }) {
+  const outcome = card.outcome ? OUTCOME_COLORS[card.outcome] : undefined;
+  const tone = outcome ? sem[outcome.tone] : sem.neutral;
+  const before = reading(card.baseline_value), after = reading(card.actual_value);
+  const metric = card.metric_key ? METRIC_LABELS[card.metric_key] ?? '观察指标' : null;
+  return <TouchableOpacity accessibilityRole="button" accessibilityLabel={`查看建议详情：${card.title}`} onPress={onPress}
+    style={[styles.cardRow, { backgroundColor: c.bgCard }]}>
+    <View style={styles.flex}>
+      <View style={styles.between}><View style={[styles.statusChip, { backgroundColor: tone.bg }]}>
+        <Text style={[styles.outcomeLabel, { color: tone.fg }]}>{outcome?.label ?? (card.graded_at ? '待分类' : '等待评估')}</Text>
+      </View><EvidenceChip level={card.evidence_level} /></View>
+      <Text style={[styles.cardTitle, { color: c.labelPrimary }]} numberOfLines={2}>{card.title}</Text>
+      {metric && <Text style={[styles.caption, { color: c.labelSecondary }]}>{before !== null && after !== null ? `${metric} ${before} → ${after}` : `${metric}：${after ?? '等待更多记录'}`}</Text>}
+    </View>
+    <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
+  </TouchableOpacity>;
+}
+function ReviewEvidence({ review, c }: { review: HealthOperatingReview; c: ColorPalette }) {
+  const [expanded, setExpanded] = useState(false);
   const predictionSummary = predictionBacktestSummary(review.prediction_backtest);
   const predictionResults = review.prediction_backtest?.results ?? [];
   const nextStepResult = predictionResults.find(result => result.next_step);
@@ -291,57 +226,23 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
   const personalPatternSummary = causalMemorySummary(review.causal_memory);
   const personalPatterns = review.causal_memory?.notes ?? [];
 
-  return (
-    <View style={[styles.reviewCard, { backgroundColor: c.bgCard, borderColor: c.separator }]}>
-      <View style={styles.reviewHeader}>
-        <View>
-          <Text style={[styles.reviewTitle, { color: c.labelPrimary }]}>Daily Plan 复盘</Text>
-          <Text style={[styles.reviewSub, { color: c.labelTertiary }]}>
-            {review.start_date} → {review.end_date}
-          </Text>
-        </View>
-        <View style={[styles.reviewRate, { backgroundColor: c.tintBlue }]}>
-          <Text style={[styles.reviewRateText, { color: c.brand }]}>
-            {(review.execution.completion_rate * 100).toFixed(0)}%
-          </Text>
-          <Text style={[styles.reviewRateLabel, { color: c.brand }]}>完成率</Text>
-        </View>
-      </View>
-
-      <Text style={[styles.reviewLine, { color: c.labelSecondary }]}>
-        {review.execution.completed_events}/{review.execution.total_events} 个行动已完成
-        {review.completed_action_keys.length > 0 ? ` · ${review.completed_action_keys.length} 个可学习动作` : ''}
-      </Text>
-
-      {rows.length > 0 ? (
-        <View style={styles.reviewMetricGrid}>
-          {rows.slice(0, 4).map(row => {
-            const delta = row.change.delta as number;
-            const isGood = row.good === 'down' ? delta < 0 : delta > 0;
-            const signed = delta > 0 ? `+${delta}` : String(delta);
-            return (
-              <View key={row.key} style={[styles.reviewMetric, { backgroundColor: isGood ? c.tintGreen : c.fill }]}>
-                <Text style={[styles.reviewMetricLabel, { color: c.labelSecondary }]}>{row.label}</Text>
-                <Text style={[styles.reviewMetricValue, { color: isGood ? c.green : c.labelPrimary }]}>
-                  {signed}{row.unit ? ` ${row.unit}` : ''}
-                </Text>
-              </View>
-            );
-          })}
-        </View>
-      ) : (
-        <Text style={[styles.reviewLine, { color: c.labelTertiary }]}>
-          这段窗口内关键指标还不足，继续记录体重、腰围、血压、睡眠和 HRV。
-        </Text>
-      )}
-
+  const requiresClinician = predictionResults.some(result => result.requires_clinician || result.next_step?.requires_clinician);
+  if (!predictionSummary && !nextStepSummary && !timelineSummary && !personalPatternSummary && !requiresClinician) return null;
+  return <View>
+    {requiresClinician && <Text style={[styles.boundary, { color: c.labelSecondary }]}>部分结果需要专业人员复核，请勿据此自行调整治疗。</Text>}
+    <TouchableOpacity accessibilityRole="button" accessibilityLabel={expanded ? '收起复盘依据' : '展开复盘依据'} accessibilityState={{ expanded }}
+      style={styles.evidenceToggle} onPress={() => setExpanded(value => !value)}>
+      <Text style={[styles.link, { color: c.brand }]}>{expanded ? '收起复盘依据' : '查看复盘依据'}</Text>
+      <Ionicons name={expanded ? 'chevron-up' : 'chevron-down'} size={16} color={c.brand} />
+    </TouchableOpacity>
+    {expanded && <View style={styles.evidenceBody}>
       {predictionSummary ? (
         <View style={[styles.predictionBacktest, { backgroundColor: c.fill }]}>
           <Text style={[styles.predictionTitle, { color: c.labelPrimary }]}>{predictionSummary}</Text>
           {predictionResults.slice(0, 2).map(result => (
             <Text key={result.prediction_id} style={[styles.predictionLine, { color: c.labelSecondary }]}>
               {(REVIEW_METRICS[result.metric]?.label ?? result.metric)} · {result.verdict === 'met' ? '支持' : result.verdict === 'not_met' ? '未支持' : '数据不足'}
-              {typeof result.observed_delta === 'number' ? ` · ${result.observed_delta > 0 ? '+' : ''}${result.observed_delta}` : ''}
+              {typeof result.observed_delta === 'number' && Number.isFinite(result.observed_delta) ? ` · ${signed(result.observed_delta)}` : ''}
             </Text>
           ))}
           <Text style={[styles.predictionBoundary, { color: c.labelTertiary }]}>
@@ -401,142 +302,45 @@ function OperatingReviewCard({ review, c }: { review: HealthOperatingReview; c: 
           </Text>
         </View>
       ) : null}
-    </View>
-  );
+    </View>}
+  </View>;
 }
-
-function CardRow({ card, onPress, c, sem }: { card: ProgressCard; onPress: () => void; c: any; sem: SemanticPalette }) {
-  const oc = card.outcome ? OUTCOME_COLORS[card.outcome] : null;
-  const ocTone = oc ? sem[oc.tone] : null;
-  return (
-    <TouchableOpacity
-      onPress={onPress}
-      style={[styles.cardRow, { backgroundColor: c.bgCard, borderColor: c.separator }]}
-    >
-      <View style={{ flex: 1, gap: 4 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <Text style={[styles.cardTitle, { color: c.labelPrimary, flex: 1 }]} numberOfLines={2}>
-            {card.title}
-          </Text>
-          <EvidenceChip level={card.evidence_level} />
-        </View>
-        {card.metric_key && card.baseline_value && card.actual_value && (
-          <Text style={[styles.cardMetric, { color: c.labelTertiary }]}>
-            {card.metric_key} {card.baseline_value} → {card.actual_value}
-          </Text>
-        )}
-        {card.metric_key && !card.actual_value && (
-          <Text style={[styles.cardMetric, { color: c.labelTertiary }]}>
-            等待 {card.metric_key} 数据
-          </Text>
-        )}
-      </View>
-      {oc && ocTone && (
-        <View style={[styles.outcomeChip, { backgroundColor: ocTone.bg }]}>
-          <Text style={[styles.outcomeChipText, { color: ocTone.fg }]}>
-            {oc.arrow} {oc.label}
-            {card.effect_size != null && card.outcome !== 'inconclusive' && (
-              ` ${(Math.abs(card.effect_size) * 100).toFixed(0)}%`
-            )}
-          </Text>
-        </View>
-      )}
-      <Ionicons name="chevron-forward" size={18} color={c.labelTertiary} />
-    </TouchableOpacity>
-  );
-}
-
-// ─── 改善叙事 (2026-05-13) ─────────────────────────────────────────
-// 把 closed_cards.improved 按 metric 聚合成 "LDL 4.1→3.6, SBP 138→128" 形式.
-// 让用户一眼看到 "AI 让我变好了多少" 的具体数值证据.
-
-const METRIC_LABEL_SHORT: Record<string, string> = {
-  ldl: 'LDL', hdl: 'HDL', hba1c: '糖化', tg: 'TG',
-  systolic_bp: '收缩压', sbp: '收缩压', dbp: '舒张压',
-  weight_kg: '体重', bmi: 'BMI', hrv: 'HRV', rhr: '静息心率',
-  sleep_score: '睡眠', spo2_odi: 'ODI',
-  hcy: '同型半胱氨酸', vitamin_d: '维 D', b12: 'B12', ferritin: '铁蛋白',
-};
-
-function NarrativeBlock({ cards, c }: { cards: ProgressCard[]; c: any }) {
-  const rows = React.useMemo(() => {
-    const map = new Map<string, { baseline: string; actual: string; effect: number | null }>();
-    for (const card of cards) {
-      if (card.outcome !== 'improved') continue;
-      if (!card.metric_key || !card.baseline_value || !card.actual_value) continue;
-      if (!map.has(card.metric_key)) {
-        map.set(card.metric_key, {
-          baseline: card.baseline_value,
-          actual: card.actual_value,
-          effect: card.effect_size,
-        });
-      }
-    }
-    return Array.from(map.entries()).map(([metric, v]) => ({
-      metric, label: METRIC_LABEL_SHORT[metric] || metric, ...v,
-    }));
-  }, [cards]);
-
-  if (rows.length === 0) return null;
-
-  return (
-    <View style={[styles.narrativeCard, { backgroundColor: c.tintGreen, borderColor: c.green + '60' }]}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 8 }}>
-        <Ionicons name="trending-up" size={16} color={c.green} />
-        <Text style={{ fontSize: 13, color: c.green, fontWeight: '600' }}>AI 让你变好的指标</Text>
-      </View>
-      <View style={{ gap: 6 }}>
-        {rows.map(r => (
-          <View key={r.metric} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={{ fontSize: 12, color: c.labelSecondary, minWidth: 70 }}>{r.label}</Text>
-            <Text style={{ fontSize: 14, color: c.labelTertiary, fontVariant: ['tabular-nums'] }}>{r.baseline}</Text>
-            <Text style={{ fontSize: 12, color: c.labelTertiary }}>→</Text>
-            <Text style={{ fontSize: 14, color: c.green, fontWeight: '700', fontVariant: ['tabular-nums'] }}>{r.actual}</Text>
-            {r.effect != null && (
-              <Text style={{ fontSize: 11, color: c.green, opacity: 0.7, marginLeft: 'auto' }}>
-                {(Math.abs(r.effect) * 100).toFixed(0)}%
-              </Text>
-            )}
-          </View>
-        ))}
-      </View>
-    </View>
-  );
-}
-
-// ─── styles ─────────────────────────────────────────────────────────────
-
 const styles = StyleSheet.create({
-  safe: { flex: 1 },
-  center: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 32, gap: 12 },
-  errorText: { fontSize: 16, fontWeight: '600' },
-  errorSub: { fontSize: 12 },
+  safe: { flex: 1 }, flex: { flex: 1, minWidth: 0, gap: 4 },
   content: { padding: spacing.lg, gap: spacing.md, paddingBottom: spacing.xl * 2 },
-  chipRow: { flexDirection: 'row', gap: 8 },
-  chip: {
-    paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  chipText: { fontSize: 13, fontWeight: '500' },
-  reviewCard: {
-    borderWidth: StyleSheet.hairlineWidth,
-    borderRadius: radii.lg,
-    padding: spacing.md,
-    gap: spacing.sm,
-  },
-  reviewHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: spacing.md },
-  reviewTitle: { fontSize: 16, fontWeight: '700' },
-  reviewSub: { fontSize: 11, marginTop: 2 },
-  reviewRate: { borderRadius: radii.md, paddingHorizontal: spacing.md, paddingVertical: spacing.sm, alignItems: 'center' },
-  reviewRateText: { fontSize: 18, fontWeight: '800' },
-  reviewRateLabel: { fontSize: 10, fontWeight: '600' },
-  reviewLine: { fontSize: 12, lineHeight: 18 },
-  reviewMetricGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
-  reviewMetric: { minWidth: '47%', flex: 1, borderRadius: radii.md, padding: spacing.sm },
-  reviewMetricLabel: { fontSize: 11, marginBottom: 2 },
-  reviewMetricValue: { fontSize: 15, fontWeight: '700' },
+  center: { paddingVertical: spacing.xl, alignItems: 'center' },
+  periods: { flexDirection: 'row', padding: 4, borderRadius: radii.lg, gap: 4 },
+  period: { flex: 1, minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radii.md },
+  periodText: { fontSize: 14, fontWeight: '600' },
+  card: { borderRadius: radii.lg, padding: spacing.lg, gap: spacing.sm },
+  overview: { borderRadius: radii.lg, padding: spacing.lg, gap: spacing.lg },
+  between: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: spacing.sm },
+  inline: { flexDirection: 'row', alignItems: 'center', gap: spacing.sm },
+  eyebrow: { fontSize: 13, fontWeight: '600' }, date: { fontSize: 12, lineHeight: 18 },
+  overviewIcon: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  overviewTitle: { fontSize: 19, fontWeight: '700', lineHeight: 27 },
+  body: { fontSize: 13, lineHeight: 20 }, caption: { fontSize: 12, lineHeight: 18 },
+  sectionTitle: { fontSize: 16, fontWeight: '700', lineHeight: 23 },
+  rate: { fontSize: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  progressTrack: { height: 5, borderRadius: 3, overflow: 'hidden' }, progressFill: { height: '100%', borderRadius: 3 },
+  metricRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.md, paddingVertical: spacing.sm },
+  metricLabel: { fontSize: 13, fontWeight: '600', lineHeight: 20 },
+  metricDelta: { fontSize: 18, fontWeight: '600', fontVariant: ['tabular-nums'], flexShrink: 1 },
+  emptyBody: { gap: 4, paddingVertical: spacing.sm }, boundary: { fontSize: 11, lineHeight: 17 },
+  counts: { flexDirection: 'row', gap: spacing.sm, paddingVertical: spacing.sm }, countItem: { flex: 1, gap: 4 },
+  countValue: { fontSize: 25, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  evaluation: { borderTopWidth: StyleSheet.hairlineWidth, paddingTop: spacing.md, gap: spacing.sm },
+  outcomes: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  outcomeItem: { flexDirection: 'row', alignItems: 'center', gap: 6, borderRadius: radii.sm, paddingHorizontal: 8, paddingVertical: 6 },
+  outcomeLabel: { fontSize: 12, lineHeight: 18 }, outcomeCount: { fontSize: 13, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  section: { gap: spacing.sm, marginTop: spacing.sm },
+  cardRow: { flexDirection: 'row', alignItems: 'center', padding: spacing.md, borderRadius: radii.lg, gap: spacing.md },
+  cardTitle: { fontSize: 15, fontWeight: '600', lineHeight: 22, marginVertical: 4 },
+  statusChip: { alignSelf: 'flex-start', paddingHorizontal: 8, paddingVertical: 3, borderRadius: radii.sm },
+  retry: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', gap: 6, minHeight: 44 },
+  link: { fontSize: 13, fontWeight: '600' },
+  evidenceToggle: { flexDirection: 'row', minHeight: 44, alignItems: 'center', justifyContent: 'space-between' },
+  evidenceBody: { gap: spacing.sm },
   predictionBacktest: { borderRadius: radii.md, padding: spacing.sm, gap: 4 },
   predictionTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   predictionLine: { fontSize: 12, lineHeight: 17 },
@@ -554,58 +358,5 @@ const styles = StyleSheet.create({
   causalTitle: { fontSize: 12, fontWeight: '700', lineHeight: 18 },
   causalLine: { fontSize: 12, lineHeight: 17 },
   causalBoundary: { fontSize: 11, lineHeight: 15 },
-  emptyCard: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.xl,
-    alignItems: 'center',
-    gap: 12,
-  },
-  emptyTitle: { fontSize: 16, fontWeight: '600' },
-  emptySub: { fontSize: 13, lineHeight: 20, textAlign: 'center' },
-  heroCard: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.lg,
-    gap: 6,
-  },
-  narrativeCard: {
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    marginBottom: spacing.md,
-  },
-  heroLabel: { fontSize: 13, fontWeight: '600' },
-  heroNumRow: { flexDirection: 'row', alignItems: 'baseline' },
-  heroNum: { fontSize: 36, fontWeight: '700' },
-  heroDenom: { fontSize: 18, fontWeight: '500' },
-  heroSub: { fontSize: 12, lineHeight: 18, opacity: 0.85 },
-  statGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.md },
-  outcomeRow: {
-    flexDirection: 'row',
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-    gap: 8,
-  },
-  outcomePill: { flex: 1, gap: 4 },
-  outcomeLabel: { fontSize: 11, fontWeight: '600' },
-  outcomeCount: { fontSize: 18, fontWeight: '700' },
-  outcomeBarBg: { height: 4, borderRadius: 2 },
-  outcomeBarFill: { height: '100%', borderRadius: 2 },
-  section: { gap: spacing.sm, marginTop: spacing.sm },
-  sectionTitle: { fontSize: 15, fontWeight: '600' },
-  sectionSub: { fontSize: 12 },
-  cardRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    borderWidth: 1,
-    borderRadius: radii.md,
-    padding: spacing.md,
-  },
-  cardTitle: { fontSize: 14, fontWeight: '500', lineHeight: 20 },
-  cardMetric: { fontSize: 11 },
-  outcomeChip: { paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  outcomeChipText: { fontSize: 11, fontWeight: '700' },
+
 });

@@ -1,4 +1,5 @@
 import api from './api';
+import { readProgressForSession, type ProgressReadSession } from './progressReadSession';
 
 export interface ProgressCard {
   id: number;
@@ -39,11 +40,11 @@ export interface ProgressDashboard {
   verifying_cards: ProgressCard[];
 }
 
-export async function fetchMyProgress(days = 30): Promise<ProgressDashboard> {
-  const { data } = await api.get<ProgressDashboard>(
-    `/action-cards/me/progress?days=${days}`,
-  );
-  return data;
+export async function fetchMyProgress(days = 30, session?: ProgressReadSession): Promise<ProgressDashboard> {
+  const url = `/action-cards/me/progress?days=${days}`;
+  return readProgressForSession(session, config => session
+    ? api.get<ProgressDashboard>(url, config)
+    : api.get<ProgressDashboard>(url));
 }
 
 // ───────────── 抗衰"信任时刻": 生物年龄改善 (Step 3C) ─────────────

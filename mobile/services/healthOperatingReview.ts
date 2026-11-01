@@ -1,4 +1,5 @@
 import api from './api';
+import { readProgressForSession, type ProgressReadSession } from './progressReadSession';
 
 export type ReviewWindowDays = 7 | 30 | 90;
 
@@ -125,11 +126,12 @@ export interface HealthOperatingReview {
 
 export async function fetchHealthOperatingReview(
   windowDays: ReviewWindowDays,
+  session?: ProgressReadSession,
 ): Promise<HealthOperatingReview> {
-  const { data } = await api.get<HealthOperatingReview>('/daily-plan/review', {
+  return readProgressForSession(session, config => api.get<HealthOperatingReview>('/daily-plan/review', {
+    ...config,
     params: { window_days: windowDays },
-  });
-  return data;
+  }));
 }
 
 export function predictionBacktestSummary(backtest?: PredictionBacktestPlaceholder | null): string | null {
