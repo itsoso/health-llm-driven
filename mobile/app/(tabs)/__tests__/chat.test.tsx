@@ -1596,12 +1596,14 @@ describe('ChatScreen', () => {
     });
   });
 
+  // Virtualize scroll delays only. React act/RNTL cleanup need real task queues;
+  // faking those can strand pending work across useRealTimers on Node 22.
   it('offers an unobtrusive jump-to-latest control after scrolling away from a long transcript', async () => {
     mockMessages = [
       { id: 'u-1', role: 'user', content: '总结我这一天的活动' },
       { id: 'a-1', role: 'assistant', content: '很长的活动总结'.repeat(80), completionStatus: 'complete' },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
 
     try {
@@ -1652,7 +1654,7 @@ describe('ChatScreen', () => {
       { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
     ];
     mockIsStreaming = true;
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
 
@@ -1693,7 +1695,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐' },
       { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
 
@@ -1722,7 +1724,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐' },
       { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
     const scrollEvent = (y: number) => ({ nativeEvent: {
@@ -1779,7 +1781,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐' },
       { id: 'a-food', role: 'assistant', content: '正在识别照片中的餐食…', streaming: true },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
     const event = (y: number) => ({ nativeEvent: {
@@ -1816,7 +1818,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐' },
       { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
     try {
@@ -1863,7 +1865,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐', imageUris: ['file:///meal.jpg'] },
       { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);
     try {
@@ -1893,7 +1895,7 @@ describe('ChatScreen', () => {
       { id: 'u-photo', role: 'user', content: '记录这餐', imageUris: ['file:///meal.jpg'] },
       { id: 'a-food', role: 'assistant', content: '食物和热量卡片', completionStatus: 'complete' },
     ];
-    jest.useFakeTimers();
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     const appStateListener = jest.mocked(AppState.addEventListener);
     const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
     const view = render(<ChatScreen />);

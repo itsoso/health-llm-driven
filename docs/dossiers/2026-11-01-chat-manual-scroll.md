@@ -42,3 +42,19 @@
 生产只读预检确认旧 fad537e2 的后端和 OTA 均 SUCCEEDED、无活动 business lease、
 GitHub relay enabled/active；固定 GitHub App 只读 credential 已过期，需按既有同权限
 刷新流程准备新候选，不允许绕过凭据校验。
+
+## 首次 CI 失败与测试调度修复
+
+`4802c860627962c1c005bf43bf6832755508bcf4` 已合入 main，完整 CI
+`41298852550` 的聊天隔离套件失败：后续用例/cleanup 超时并出现跨用例卸载。
+发布尚未执行，线上保持旧 fad537e2；没有新 stage、刷新凭据或发布 claim。
+
+本机默认 Node25 原 93 tests 通过，而 CI 同款 Node22 复现 15 failed / 78 passed，
+首个超时出现在现存 momentum 用例后的 cleanup，随后级联。将滚动测试假计时器
+限定为滚动延时，保留 nextTick、setImmediate、queueMicrotask 的真实调度后，
+同一 Node22 完整聊天套件 93/93 passed，3.315 秒；不放宽超时，不跳过断言，
+不改运行时实现。新候选须重新通过完整 CI。
+
+候选4802的模拟器 Release 构建成功；首次本地构建因缺少 Sentry organization 的
+源码映射上传失败，明确关闭仅本地自动上传后构建成功，不改生产配置。原生 UI
+实际手势仍等待 Mac 解锁，不将构建成功视为 G6。
