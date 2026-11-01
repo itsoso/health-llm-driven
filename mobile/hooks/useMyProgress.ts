@@ -1,5 +1,5 @@
 import { useQuery, type UseQueryResult } from '@tanstack/react-query';
-import { useCallback, useSyncExternalStore } from 'react';
+import { useCallback, useMemo, useSyncExternalStore } from 'react';
 import { useAuth } from './useAuth';
 import { aiConsentRevision, hasAIConsentIdentity, subscribeAIConsentInvalidation } from '../services/aiConsentState';
 import { getAuthSessionSnapshot, subscribeAuthSessionChange } from '../services/api';
@@ -34,7 +34,11 @@ export function useMyProgress(days: ReviewWindowDays): MyProgressQueryResult {
     !isLoading && token && user && Number.isSafeInteger(user.id) && user.id > 0 &&
     transport.initialized && transport.token === token && hasAIConsentIdentity(),
   );
-  const session: ProgressReadSession | null = canRead && user ? { owner: user.id, revision, generation } : null;
+  const owner = user?.id;
+  const session = useMemo<ProgressReadSession | null>(
+    () => canRead && owner ? { owner, revision, generation } : null,
+    [canRead, owner, revision, generation],
+  );
   const progress = useQuery({
     queryKey: ['my-progress', 'owner', session?.owner, session?.revision, session?.generation, days],
     queryFn: () => fetchMyProgress(days, requireSession(session)),
