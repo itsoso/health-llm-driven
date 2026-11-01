@@ -1251,6 +1251,13 @@ export default function ChatScreen() {
                 setShowScrollToBottom(true);
               }
             }}
+            onScrollToTop={() => {
+              // iOS status-bar taps are explicit history navigation, but do not
+              // emit drag events. End this gesture without leaving momentum active.
+              cancelForcedScrollOnUserDrag();
+              userScrollInProgress.current = false;
+              userMomentumPending.current = false;
+            }}
             onScrollBeginDrag={cancelForcedScrollOnUserDrag}
             onScrollEndDrag={(e) => {
               updateUserScrollPosition(e);

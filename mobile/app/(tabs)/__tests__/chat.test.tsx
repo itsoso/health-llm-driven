@@ -1809,6 +1809,38 @@ describe('ChatScreen', () => {
     }
   });
 
+  it('stops card following when the user taps the iOS status bar to read history', async () => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐' },
+      { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+    try {
+      await act(async () => {});
+      scrollToEnd.mockClear();
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        fireEvent(list, 'scrollToTop');
+        list.props.onContentSizeChange(390, 1600);
+        jest.advanceTimersByTime(1500);
+      });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy();
+      act(() => {
+        fireEvent.press(view.getByTestId('chat-scroll-to-bottom'));
+        jest.advanceTimersByTime(1500);
+      });
+      expect(scrollToEnd).toHaveBeenCalled();
+      expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
   it('offers a compact control to load earlier messages at the top of the transcript', async () => {
     mockHasMoreHistory = true;
     mockMessages = [

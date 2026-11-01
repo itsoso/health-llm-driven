@@ -63,3 +63,12 @@ effect 生命周期，避免 render 中调用 focus callback；该测试 6 项�
 
 新候选仍须独立复审、完整 CI、后端回执及 trusted OTA validate/publish；
 此处不把局部通过记为已发布。
+
+第二轮复审发现 iOS 状态栏回顶是独立原生事件，未经过 drag-start。新增回归在
+修复前观察到 6 次错误跟随；补 onScrollToTop 清理跟随与定时器，且不保留虚假的
+拖动/惯性状态。回顶后点击“最新消息”可正常恢复，聊天页 88 项通过。
+
+整合回归：CI=true 移动端主套件 379 suites / 3869 passed / 1 existing skip；
+按 CI 分离执行输入框 84、认证 34、GPS 7，加最新聊天页 88，合计 4082 passed。
+全量 tsc、定向 ESLint、System Map/导航图/doc drift、高置信度秘密扫描通过。
+模拟器尚无绑定本候选的运行证据，原生体验仍单列待验；发布状态仍未执行。
