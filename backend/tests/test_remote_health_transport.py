@@ -222,11 +222,18 @@ def test_pending_expiry_cleanup_and_ingress_limits(connected,db,monkeypatch):
     from app.models.remote_health_oauth import RemoteHealthCredential
     client, provider, _ = connected
     assert pending(client).status_code == 302
-    db.query(RemoteHealthCredential).update({"expires_at":int(time.time())-1})
+    from types import SimpleNamespace
+    from app.services import remote_health_oauth
+    clock = SimpleNamespace(now=int(time.time()))
+    clock.time = lambda: clock.now
+    monkeypatch.setattr(remote_health_oauth, "time", clock)
+    db.query(RemoteHealthCredential).update({"expires_at":clock.now-1})
     db.commit()
     assert provider.rate_limit("cleanup",1)
     assert db.query(RemoteHealthCredential).count() == 0
     assert not provider.rate_limit("cleanup",1)
+    clock.now += 60
+    assert provider.rate_limit("cleanup",1)
     monkeypatch.setattr(provider,"rate_limit",lambda *args:False)
     assert client.get(PREFIX + "/connections").status_code == 429
 
