@@ -176,20 +176,26 @@ function polylineFor(values: { value: number | null }[], min: number, max: numbe
     .join(' ');
 }
 
-function polylineForValues(values: (number | null)[], min: number, max: number): string {
+function lineSegments(values: (number | null)[], min: number, max: number): { x: number; y: number }[][] {
   const range = max - min || 1;
   const innerW = CHART_W - PAD_X * 2;
   const innerH = CHART_H - PAD_Y * 2;
   const denom = Math.max(values.length - 1, 1);
-  return values
-    .map((value, index) => {
-      if (value == null) return null;
-      const x = PAD_X + (index / denom) * innerW;
-      const y = PAD_Y + innerH - ((value - min) / range) * innerH;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    })
-    .filter(Boolean)
-    .join(' ');
+  const segments: { x: number; y: number }[][] = [];
+  let current: { x: number; y: number }[] = [];
+  values.forEach((value, index) => {
+    if (value == null) {
+      if (current.length) segments.push(current);
+      current = [];
+      return;
+    }
+    current.push({
+      x: PAD_X + (index / denom) * innerW,
+      y: max === min ? CHART_H / 2 : PAD_Y + innerH - ((value - min) / range) * innerH,
+    });
+  });
+  if (current.length) segments.push(current);
+  return segments;
 }
 
 function MetricLineChart({ data }: { data: MetricChartPoint[] }) {
@@ -254,7 +260,7 @@ function RevaUiLineChart({ data }: { data: RevaUiLineChartData }) {
     color: LINE_COLORS[index % LINE_COLORS.length],
   })).filter((item) => item.values.some((value) => value != null));
   const values = normalized.flatMap((item) => item.values).filter((value): value is number => value != null);
-  if (normalized.length === 0 || values.length < 2) return null;
+  if (normalized.length === 0) return null;
   const min = Math.min(...values);
   const max = Math.max(...values);
 
@@ -264,20 +270,21 @@ function RevaUiLineChart({ data }: { data: RevaUiLineChartData }) {
         <Line x1={PAD_X} y1={PAD_Y} x2={CHART_W - PAD_X} y2={PAD_Y} stroke={C.line} strokeWidth={1} />
         <Line x1={PAD_X} y1={CHART_H / 2} x2={CHART_W - PAD_X} y2={CHART_H / 2} stroke={C.line} strokeWidth={1} />
         <Line x1={PAD_X} y1={CHART_H - PAD_Y} x2={CHART_W - PAD_X} y2={CHART_H - PAD_Y} stroke={C.line} strokeWidth={1} />
-        {normalized.map((item) => {
-          const line = polylineForValues(item.values, min, max);
-          return line ? (
+        {normalized.flatMap((item) => lineSegments(item.values, min, max).map((segment, index) => (
+          segment.length === 1 ? (
+            <Circle key={`${item.name}-${index}`} cx={segment[0].x} cy={segment[0].y} r={3} fill={item.color} />
+          ) : (
             <Polyline
-              key={item.name}
-              points={line}
+              key={`${item.name}-${index}`}
+              points={segment.map(point => `${point.x},${point.y}`).join(' ')}
               fill="none"
               stroke={item.color}
               strokeWidth={item.name.includes('均值') ? 2.6 : 2}
               strokeLinecap="round"
               strokeLinejoin="round"
             />
-          ) : null;
-        })}
+          )
+        )))}
       </Svg>
       <View style={styles.axisRow}>
         <Text maxFontSizeMultiplier={1.1} style={styles.axisText} numberOfLines={1}>

@@ -2069,6 +2069,7 @@ def _genui_readout_fences(
     diet_summary_on: bool,
     sleep_summary_on: bool,
     medication_list_on: bool,
+    chart_on: bool = False,
 ) -> List[str]:
     """Build deterministic, read-only GenUI fences from completed tool results."""
     from app.services.genui import (
@@ -2083,9 +2084,21 @@ def _genui_readout_fences(
         render_sleep_summary_block,
     )
 
+    from app.services.genui.owned_spo2_chart import build_owned_spo2_chart
+    from app.services.genui import render_reva_ui_block
+
     fences: List[str] = []
     table_calls: List[Tuple[str, Optional[dict], str]] = []
     for tool_name, args, result in tool_calls:
+        if chart_on and tool_name in {"health_query", "health_query_batch"}:
+            payload = load_tool_result_json(result)
+            queries = [args] if tool_name == "health_query" else (args or {}).get("queries", [])
+            results = [payload] if tool_name == "health_query" else (payload.get("results", []) if isinstance(payload, dict) else [])
+            if isinstance(queries, list) and isinstance(results, list) and len(queries) == len(results):
+                for query, item in zip(queries, results):
+                    chart = build_owned_spo2_chart(query, item) if isinstance(query, dict) else None
+                    if chart:
+                        fences.append(render_reva_ui_block(chart))
         dimension = str((args or {}).get("dimension") or "").strip().lower()
         if tool_name == "health_query" and dimension == "diet" and diet_summary_on:
             payload = load_tool_result_json(result)
@@ -17855,6 +17868,8 @@ class AgentExecutor:
             getattr(settings, "genui_medication_list_enabled", True)
             and _GENUI_MEDICATION_LIST_CAP in (client_caps or [])
         )
+        from app.services.genui.owned_spo2_chart import requests_owned_chart
+        genui_chart_on = "genui-v1" in (client_caps or []) and requests_owned_chart(self._ensure_agent_kernel_turn())
         # 本回合已执行的只读数据查询工具 (name, args, result) —— 供合成后确定性建表。
         genui_tool_calls: List[Tuple[str, Optional[dict], str]] = []
         emitted_genui_fences: set[str] = set()
@@ -19755,6 +19770,7 @@ class AgentExecutor:
                     or genui_diet_summary_on
                     or genui_sleep_summary_on
                     or genui_medication_list_on
+                    or genui_chart_on
                 ):
                     genui_tool_calls.append(
                         (func_name, parsed_tool_args, result)
@@ -20035,6 +20051,7 @@ class AgentExecutor:
                     or genui_diet_summary_on
                     or genui_sleep_summary_on
                     or genui_medication_list_on
+                    or genui_chart_on
                 )
             ):
                 try:
@@ -20044,6 +20061,7 @@ class AgentExecutor:
                         diet_summary_on=genui_diet_summary_on,
                         sleep_summary_on=genui_sleep_summary_on,
                         medication_list_on=genui_medication_list_on,
+                        chart_on=genui_chart_on,
                     )
                     for fence in readout_fences:
                         if fence in emitted_genui_fences:
@@ -21796,76 +21814,18 @@ class AgentExecutor:
                 or genui_diet_summary_on
                 or genui_sleep_summary_on
                 or genui_medication_list_on
+                or genui_chart_on
             )
         ):
             try:
-                from app.services.genui import (
-                    build_tables_from_tool_calls,
-                    render_metric_table_block,
-                    build_diet_daily_summary,
-                    render_diet_summary_block,
-                    build_sleep_summary,
-                    render_sleep_summary_block,
-                    build_medication_list,
-                    render_medication_list_block,
-                    load_tool_result_json,
+                _fences = _genui_readout_fences(
+                    genui_tool_calls,
+                    table_on=genui_table_on,
+                    diet_summary_on=genui_diet_summary_on,
+                    sleep_summary_on=genui_sleep_summary_on,
+                    medication_list_on=genui_medication_list_on,
+                    chart_on=genui_chart_on,
                 )
-                _fences: List[str] = []
-                _table_calls: List[Tuple[str, Optional[dict], str]] = []
-                for _fn, _args, _res in genui_tool_calls:
-                    # health_query(diet) 且 cap 开 → 结构化 diet_summary 卡(而非通用表)。
-                    # 用与 metric_table 同一宽松 JSON 解析真源(剥截断尾注),两路不漂移。
-                    # dimension 归一化 .strip().lower() 与 metric_table dispatcher 对齐 ——
-                    # 弱模型吐 'Diet'/' diet '/'DIET' 时不会静默降级回通用表。
-                    _is_diet = (
-                        _fn == "health_query"
-                        and str((_args or {}).get("dimension") or "").strip().lower() == "diet"
-                    )
-                    if _is_diet and genui_diet_summary_on:
-                        _summary = load_tool_result_json(_res)
-                        # v1:只喂饮食汇总本身。water/weight_kg 暂不透传(read_daily_diet
-                        # 结果无此字段)→ 卡片按契约优雅降级(不显饮水条、蛋白只报克数);
-                        # 二者是后续增量(接今日饮水快照 + 用户体重),composer 侧已支持。
-                        _desc = (
-                            build_diet_daily_summary(_summary)
-                            if isinstance(_summary, dict) else None
-                        )
-                        if _desc:
-                            _fences.append(render_diet_summary_block(_desc))
-                            continue  # diet 走结构化卡,不再落 metric_table
-                    # health_query(sleep) 且 cap 开 → 结构化 sleep_summary 卡(与 diet 同机制)。
-                    _is_sleep = (
-                        _fn == "health_query"
-                        and str((_args or {}).get("dimension") or "").strip().lower() == "sleep"
-                    )
-                    if _is_sleep and genui_sleep_summary_on:
-                        _analysis = load_tool_result_json(_res)
-                        _sdesc = (
-                            build_sleep_summary(_analysis)
-                            if isinstance(_analysis, dict) else None
-                        )
-                        if _sdesc:
-                            _fences.append(render_sleep_summary_block(_sdesc))
-                            continue  # sleep 走结构化卡,不再落 metric_table
-                    # health_query(medication) 且 cap 开 → 结构化 medication_list 卡。
-                    # 与 diet/sleep 的差异:该端点返回**数组**(不是 dict),故这里判 list。
-                    _is_medication = (
-                        _fn == "health_query"
-                        and str((_args or {}).get("dimension") or "").strip().lower() == "medication"
-                    )
-                    if _is_medication and genui_medication_list_on:
-                        _meds = load_tool_result_json(_res)
-                        _mdesc = (
-                            build_medication_list(_meds)
-                            if isinstance(_meds, list) else None
-                        )
-                        if _mdesc:
-                            _fences.append(render_medication_list_block(_mdesc))
-                            continue  # medication 走结构化卡,不再落 metric_table
-                    _table_calls.append((_fn, _args, _res))
-                if genui_table_on and _table_calls:
-                    for _tbl in build_tables_from_tool_calls(_table_calls):
-                        _fences.append(render_metric_table_block(_tbl))
                 for _fence in _fences:
                     if _fence in emitted_genui_fences:
                         continue

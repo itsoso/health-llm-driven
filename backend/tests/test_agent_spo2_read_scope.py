@@ -38,6 +38,21 @@ def decision(text=REQUEST, **args):
     ))
 
 
+@pytest.mark.parametrize("text", [
+    "绘制本周血氧饱和度数据",
+    "查询本周血氧饱和度数据",
+    "查询本周血氧数据",
+    "画出本周血氧饱和度数据",
+])
+def test_weekly_oxygen_chart_request_binds_only_current_calendar_week(text):
+    result = decision(text)
+    assert result.action == "allow", result.reason
+    assert result.normalized_args == {
+        "dimension": "spo2", "start_date": "2031-03-31", "end_date": "2031-04-04",
+        "timezone": "Asia/Shanghai",
+    }
+
+
 @pytest.mark.parametrize("text", [REQUEST, "分析最近一周的睡眠和血氧，给出你的建议"])
 def test_sleep_spo2_request_binds_both_frozen_domains(text):
     scope = resolve_owned_read_scope(snapshot(text))
@@ -235,3 +250,32 @@ async def test_executor_dispatch_uses_frozen_daily_facts_not_latest_night(db, ow
     spo2 = next(item for item in results if item["dimension"] == "spo2")
     assert spo2["records"][0]["daily_metrics"]["spo2_avg"] == 97
     assert spo2["source_scope"] == "owned_daily_spo2_summaries_and_samples"
+
+
+@pytest.mark.parametrize("text", [
+    "不绘制本周血氧饱和度数据", "不要画出本周血氧饱和度数据",
+    "假如绘制本周血氧饱和度数据", "绘制我朋友本周血氧饱和度数据",
+    "解释例句：‘绘制本周血氧饱和度数据’",
+    "绘制本周血氧饱和度数据，只看凌晨", "绘制本周血氧饱和度数据，取消",
+])
+def test_chart_request_keeps_read_authority_boundaries(text):
+    assert decision(text).action == "block"
+
+
+@pytest.mark.parametrize("args", [
+    {"user_id": 99}, {"owner_id": 99}, {"tenant_id": 99},
+    {"start_date": "2030-11-01", "end_date": "2031-04-04"},
+    {"timezone": "UTC"}, {"dimension": "sleep"},
+])
+def test_chart_model_arguments_cannot_expand_calendar_week(args):
+    assert decision("绘制本周血氧饱和度数据", **args).action == "block"
+
+
+@pytest.mark.parametrize("days", [7, 30, 180])
+def test_chart_rolling_model_hint_is_replaced_by_frozen_calendar_week(days):
+    result = decision("绘制本周血氧饱和度数据", days=days)
+    assert result.action == "allow", result.reason
+    assert result.normalized_args == {
+        "dimension": "spo2", "start_date": "2031-03-31", "end_date": "2031-04-04",
+        "timezone": "Asia/Shanghai",
+    }

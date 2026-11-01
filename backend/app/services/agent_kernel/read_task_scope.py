@@ -451,6 +451,7 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         or _MUTATION.search(text)
         or not (
             _READ.search(text)
+            or has_positive_health_read_verb(text)
             or _NOMINAL_LAST_NIGHT_SPO2_READ.fullmatch(text)
         )
     ):

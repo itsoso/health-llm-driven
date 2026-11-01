@@ -43,7 +43,7 @@ from app.services.agent_query_window import (
 _DOMAINS = {
     "diet": r"饮食|餐食|吃了什么",
     "sleep": r"睡眠血氧|睡眠|睡得|睡觉",
-    "spo2": r"血氧|[Ss][Pp][Oo]2",
+    "spo2": r"血氧(?:饱和度)?|[Ss][Pp][Oo]2",
     "workout": r"运动|锻炼|训练",
     "supplements": r"补剂|营养补充剂",
     "medication": r"服药|用药|药物",
