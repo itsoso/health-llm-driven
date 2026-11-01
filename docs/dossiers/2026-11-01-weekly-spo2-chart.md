@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | implementation_verified |
-| 当前阶段 | G3 本地回归通过；G4 独立安全审查待完成 |
+| 状态 | released_acceptance_partial |
+| 当前阶段 | G5 后端与 OTA 成功；G6 自动线上核验通过，模拟器业务路径未验证 |
 | 工作流 | quick_fix + safety-gate → backend-deploy + trusted OTA |
 | 基线 | 23202c56a97014c6e42454562c1ed1e14e786d8d |
 
@@ -39,18 +39,19 @@
 - 本机初始 Pi runtime 依赖缺失导致协议测试失败；按锁文件 npm ci 后重跑通过。
   不将缺依赖的失败解释为产品快速路由问题。
 - SQLite 仅证明合成单元/协议行为；未改数据库查询语义，PostgreSQL 与完整 CI
-  仍待目标 SHA 的线上 CI 验证。模拟器实际操作、发布与设备接收尚未核验。
+  已由目标 SHA 完整线上 CI 验证。模拟器实际业务操作与设备接收仍未核验。
 
 ## G4–G6
 
-待固定提交独立安全审查、精确主干完整 CI、后端发布及 trusted OTA validate/publish。
-所有生产、OTA 回执与线上验证须另行追加，不能由本地测试替代。
+固定 `53eec38b12ac4d543e4a45df73f58446acc7d82c` 独立安全审查 GO；后端与 OTA
+已发布并完成自动线上核验，精确证据见文末。下列 NO-GO 是保留的历史整改记录，
+不代表当前候选仍被阻断。模拟器真实业务点击与设备接收未验证，不宣称通过。
 
 
-## 首轮 G4 NO-GO 与整改
+## 历史：首轮 G4 NO-GO 与整改
 
 独立 reviewer 拒绝 f786fffd5：将绘制/画出加入共享动词表后，化验/病史等旧消费者
-存在取消、完成、是否安全/会返回什么与未知筛选漏判。该候选未 push、未发布。
+存在取消、完成、是否安全/会返回什么与未知筛选漏判。该轮当时未 push、未发布。
 新增跨领域及 speech-act 测试在首轮实现 21 failed / 8 passed。
 
 整改撤回通用动词新增，改为完整闭合的周范围血氧请求投影，其他领域保持原有语义。
@@ -59,7 +60,7 @@
 定向 125 passed；完整合跑结果与固定复审 SHA 在复审后确认。
 
 
-## 第二轮 G4 NO-GO 与原文闸收紧
+## 历史：第二轮 G4 NO-GO 与原文闸收紧
 
 8a6fd1954 已修复首轮跨领域扩张，但独立审查发现原文中读取动词豁免可被引号、
 行内代码、fenced/blockquote/缩进材料里的查询字样触发；NFKC 指标变体也未覆盖。
@@ -68,13 +69,65 @@
 
 新增材料、单查/批量及Unicode反例后，定向188 passed，完整合跑3850 passed。
 原始请求到gateway、DB读取、单张图及缺失值的流式验证仍通过。
-固定最终提交仍须独立复审GO；此前两候选均未推送或部署。
+该阶段固定提交尚待独立复审；当时此前两候选均未推送或部署。
 
 
-## 第三轮 G4 原文完整性补强
+## 历史：第三轮 G4 原文完整性补强
 
 ca99aa268 的字面候选检查仍可被拆分动词/周范围的Markdown材料绕开。
 精确基线同样存在旧fallback，未宣称是本补丁新增泄漏。拒绝候选识别改为同时检查
 原文与既有材料/Markdown/HTML规范化结果；规范化结果仅能触发拒绝，授权仍要求
 原始完整命令匹配。加入格式、引述、代码和HTML拆词的单查/批量反例。
-定向206 passed，完整相关合跑3868 passed；固定提交等待再次独立复审。
+定向206 passed，完整相关合跑3868 passed；随后固定53通过独立复审。
+
+
+## 最终 G4 与完整 CI
+
+裁决：GO。独立 reviewer 对固定53复验206项，并检查33个拒绝、归属与窗口探针。
+四个修复提交一并非 force 推送至 main；共享脏工作区未改动。
+
+- 真实 TokenPlan MiniMax-M2.5 Harness：invariants 12/12、health_agent_core 50/50、
+  orchestrator 5/5（均分0.92）、trajectory 12/12、golden 9/9；exit0，63.44秒。
+  只使用仓库合成夹具、真实合成主体同意审计与内存 SQLite；没有生产健康数据读写，
+  未继承生产数据库或其他服务凭据。对应main baseline文件不存在，只声明本次场景
+  通过，不声明历史质量无退化。
+- 本地汇总 `/private/tmp/reva-weekly-spo2-53eec38b-live-eval-summary.json`；日志摘要
+  `ef592cdbf71480f95c52315af98541ea7538afe6dca743467030bdb8d1407447`。
+- [完整 CI 41309894568](https://github.com/itsoso/health-llm-driven/actions/runs/41309894568)
+  首次因缺本候选真实模型确认失败，原失败保留。真实评测后精确绑定确认变量，
+  恢复原失败jobs，最终32/32成功；包含PostgreSQL、运行时与发布不变量检查。
+  未使用waiver，未取消失败记录制造绿色。发布后已删除本次确认变量并读回确认不存在。
+
+## G5 发布终态
+
+裁决：PASS。全部发布绑定 `53eec38b12ac4d543e4a45df73f58446acc7d82c`。
+
+- [部署预检41311011964](https://github.com/itsoso/health-llm-driven/actions/runs/41311011964)
+  success；独立固定审批后，canonical staging、只读App凭据刷新与canonical授权轮换
+  分别单次完成，无备份、无回滚副本。旧852发布回执保留，轮换返回INSTALLED。
+- [后端41312450217](https://github.com/itsoso/health-llm-driven/actions/runs/41312450217)
+  success；生产原始完成回执为精确53/SUCCEEDED，SHA256
+  `415ee0edc7d1eab40212f7f5525dd569c0179d9acc2bc9b183d50eadcc6f81b4`。
+- [OTA验证41312928064](https://github.com/itsoso/health-llm-driven/actions/runs/41312928064)
+  与[正式发布41313130895](https://github.com/itsoso/health-llm-driven/actions/runs/41313130895)
+  均success；原生兼容边界通过，production/iOS/runtime1.3.6。
+- OTA group `429c80f1-ddea-47b5-9eaf-cc54b3d3e233`，update
+  `01a19765-556b-7c66-896a-0e972c8bb4d6`。服务端completed原始摘要
+  `cc153bbe6f7884fe4e5b730027b75384769f866c140718598b7df1b8eb34d117`，
+  verified原始摘要 `a2b10ccfe4b9e302d9f01d7e2879dfdac1dfa27cb9bbf69a2546df31991568a4`。
+
+## G6 自动核验与未覆盖项
+
+自动线上核验 PASS，设备业务验收未验证，不将二者混同。
+
+- 独立只读核对生产HEAD精确53、工作树干净、发布授权/安装器一致、业务lease释放；
+  health-backend、celery-worker、celery-beat、reva-laya全部active/running，
+  本地与公共health均healthy。证据：
+  `/private/tmp/reva-weekly-spo2-53eec38b-backend-acceptance.json`。
+- 独立读取公开Expo清单并与服务端真实artifact/receipt对应：runtime1.3.6、上述update、
+  launch `4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE` 及47项资源匹配；
+  公开创建时间2026-11-01T13:56:03.051Z，发布lease absent。证据：
+  `/private/tmp/reva-weekly-spo2-53eec38b-ota-acceptance.server-proof.json` 与
+  `/private/tmp/reva-weekly-spo2-53eec38b-ota-acceptance.public-manifest-proof.json`。
+- 默认iOS模拟器已启动但安装的是旧候选，本次真实图表业务点击和设备收到更新
+  未验证；没有操作手机或用旧包截图冒充新版本验收。未向生产账户发起健康查询。
