@@ -1,5 +1,25 @@
 # 饮食记录详情与后续交互
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | shipping |
+| 当前阶段 | S6 主干完整 CI 与发布验证 |
+| Controller | product-pipeline; safety-gate overlay |
+
+## G1 准入
+
+裁决: PASS
+
+已授权的饮食记录详情与后续交互，沿用本人记录读写、确认删除与复盘协议。
+
+## 当前交付状态
+
+代码候选 `2ba6b42187a4c1d0608265688c1eb2ebb9028e20` 已合入 main，
+独立 G4 复审 GO（154 项测试通过）。首轮主干 CI `41268282783` 的
+Dossier 一致性检查发现本文件缺少结构化状态与 G1 标题；本次补齐文档格式，
+保留全部历史证据。新文档 revision 仍须完整 CI 后才可部署和 OTA。
+以下未提交、未整合及审查阻断说明均保留其历史时点，不代表当前代码审查状态。
+
 - 用户原话：饮食记录要支持点击查看详情 以及进一步交互
 - 当前阶段：S5 本地实现与审查完成；S6 发布受阻，未发布。
 - 主流程：product-pipeline；S5 delegate：health-harness-orchestrator；overlay：safety-gate。
