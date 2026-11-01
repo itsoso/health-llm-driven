@@ -335,3 +335,27 @@ def test_complete_chart_presentation_variants_keep_the_same_week(text):
         "dimension": "spo2", "start_date": "2031-03-31", "end_date": "2031-04-04",
         "timezone": "Asia/Shanghai",
     }
+
+
+@pytest.mark.parametrize("material", [
+    '“查询”', '`查询`', '\n```text\n查询\n```', '\n> 查询', '\n    查询',
+    '\n\t查询', '“查看”', '~~查询~~', '“不查询”',
+])
+@pytest.mark.parametrize("suffix", ["会返回什么？", "，取消", "，仅限出差之后"])
+@pytest.mark.parametrize("batch", [False, True])
+def test_material_read_verbs_cannot_waive_original_chart_boundary(material, suffix, batch):
+    text = "绘制本周血氧饱和度数据" + suffix + material
+    assert resolve_owned_read_scope(snapshot(text)) is None
+    tool = "health_query_batch" if batch else "health_query"
+    args = {"queries": [{"dimension": "spo2"}]} if batch else {"dimension": "spo2"}
+    result = decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        tool_name=tool, arguments=args, source="structured_or_recovered"))
+    assert result.action == "block"
+
+
+@pytest.mark.parametrize("metric", ["ＳｐＯ２", "SpO₂", "ＳＰＯ₂"])
+@pytest.mark.parametrize("suffix", ["数据", "数据会返回什么", "数据会返回什么？“查询”"])
+def test_unicode_metric_normalization_preserves_complete_chart_boundary(metric, suffix):
+    text = "绘制本周" + metric + suffix
+    result = decision(text)
+    assert result.action == ("allow" if suffix == "数据" else "block"), result.reason

@@ -1356,7 +1356,7 @@ def project_weekly_spo2_chart_request(text: str) -> str | None:
     quoted material and other domains never enter legacy broad read routes.
     The resulting query still requires ordinary owner/window capability checks.
     """
-    match = _WEEKLY_SPO2_CHART_REQUEST_RE.fullmatch(str(text or ""))
+    match = _WEEKLY_SPO2_CHART_REQUEST_RE.fullmatch(unicodedata.normalize("NFKC", str(text or "")))
     if match is None:
         return None
     scope = re.sub(r"(?:趋势图|曲线|图表)$", "数据", match.group("scope"))
@@ -1366,14 +1366,13 @@ def project_weekly_spo2_chart_request(text: str) -> str | None:
 def has_unresolved_chart_read_request(text: str) -> bool:
     """Do not let downstream scaffolding removal create a chart read grant.
 
-    Existing explicit read verbs keep their ordinary policy; a chart-only
-    command must match the complete, closed projection on original turn text.
+    The newly supported weekly oxygen command must match the complete
+    projection on original turn text. Quoted verbs cannot waive this boundary.
     """
-    raw = str(text or "")
+    raw = unicodedata.normalize("NFKC", str(text or ""))
     return (bool(re.search(r"绘制|画出", raw))
             and bool(re.search(r"血氧|spo2", raw, re.IGNORECASE))
             and bool(re.search(r"本周|这周|上周", raw))
-            and READ_VERB_RE.search(raw) is None
             and project_weekly_spo2_chart_request(raw) is None)
 
 
