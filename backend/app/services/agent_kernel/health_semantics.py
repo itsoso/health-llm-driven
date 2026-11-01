@@ -697,7 +697,7 @@ READ_VERB_RE = re.compile(
     r"对比(?:一下|下(?!周|月|年|季度|半年))?|"
     r"翻查(?:一下)?|翻看(?:一下)?|翻一下|看看|看(?:一下|一看|一眼|下)?|"
     r"搜索(?:一下)?|搜(?:一下)?|调取|调出|调阅|打开|展示(?:一下)?|"
-    r"拉出来|发我|发给我|呈现|绘制|画出)",
+    r"拉出来|发我|发给我|呈现)",
     re.IGNORECASE,
 )
 
@@ -809,7 +809,7 @@ _NEGATED_READ_PREFIX_PATTERN = (
     r"取消|不需要|不希望|停止|撤销|暂停|终止|放弃|"
     r"不(?=查询|查找|查看|查到|查下|查|找出|找一下|找|回顾|回看|检索|"
     r"列出|比较|对比|翻看|翻一下|看|搜索|搜|调取|调出|调阅|打开|"
-    r"展示|发我|发给我|呈现|绘制|画出)))"
+    r"展示|发我|发给我|呈现)))"
 )
 _NEGATED_READ_INTERPOSER_PATTERN = (
     r"(?:(?:帮我|给我|替我|为我|麻烦你?|请你?|让你|你|再|去|继续)){0,6}"
@@ -1341,6 +1341,42 @@ def _strip_paired_material_spans(
         projected = projected[:start] + " " + projected[end:]
 
 
+_WEEKLY_SPO2_CHART_REQUEST_RE = re.compile(
+    r"(?P<prefix>(?:请|帮我|请帮我|麻烦你)?)(?:绘制|画出)"
+    r"(?P<scope>(?:我(?:自己)?的?|本人的?|自己的?)?(?:本周|这周|上周)"
+    r"(?:的)?(?:血氧(?:饱和度)?|SpO2)(?:数据|趋势图|曲线|图表)?)"
+    r"[。！!？?]?", re.IGNORECASE,
+)
+
+
+def project_weekly_spo2_chart_request(text: str) -> str | None:
+    """Normalize only a complete owned weekly oxygen chart command.
+
+    Chart verbs are not generic read grants. Extra owners, filters, vetoes,
+    quoted material and other domains never enter legacy broad read routes.
+    The resulting query still requires ordinary owner/window capability checks.
+    """
+    match = _WEEKLY_SPO2_CHART_REQUEST_RE.fullmatch(str(text or ""))
+    if match is None:
+        return None
+    scope = re.sub(r"(?:趋势图|曲线|图表)$", "数据", match.group("scope"))
+    return match.group("prefix") + "查询" + scope
+
+
+def has_unresolved_chart_read_request(text: str) -> bool:
+    """Do not let downstream scaffolding removal create a chart read grant.
+
+    Existing explicit read verbs keep their ordinary policy; a chart-only
+    command must match the complete, closed projection on original turn text.
+    """
+    raw = str(text or "")
+    return (bool(re.search(r"绘制|画出", raw))
+            and bool(re.search(r"血氧|spo2", raw, re.IGNORECASE))
+            and bool(re.search(r"本周|这周|上周", raw))
+            and READ_VERB_RE.search(raw) is None
+            and project_weekly_spo2_chart_request(raw) is None)
+
+
 def active_health_instruction_text(text: str) -> str:
     """Project active instructions, excluding explicitly analyzed material.
 
@@ -1350,7 +1386,7 @@ def active_health_instruction_text(text: str) -> str:
     pasted text has no trustworthy end delimiter, so its remaining content
     stays non-authorizing, including apparent instructions inside that body.
     """
-    original = str(text or "")
+    original = project_weekly_spo2_chart_request(text) or str(text or "")
     material_placeholder = "“”"
     block_material_placeholder = "“”。"
     original = _strip_markdown_fenced_material(

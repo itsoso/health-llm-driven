@@ -17,6 +17,7 @@ from app.services.agent_kernel.health_semantics import (
     active_health_instruction_text,
     health_read_has_nonself_subject,
     health_read_cancelled,
+    has_unresolved_chart_read_request,
     has_positive_health_read_verb,
     normalize_health_authorization_text,
     project_read_request_without_write_veto,
@@ -310,6 +311,8 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     manufacture scope. The longitudinal resolver separately attests bounded
     recent windows and discloses default duration and unsupported coverage.
     """
+    if has_unresolved_chart_read_request(snapshot.envelope.text):
+        return None
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
@@ -451,7 +454,6 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
         or _MUTATION.search(text)
         or not (
             _READ.search(text)
-            or has_positive_health_read_verb(text)
             or _NOMINAL_LAST_NIGHT_SPO2_READ.fullmatch(text)
         )
     ):

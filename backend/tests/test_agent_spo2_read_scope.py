@@ -279,3 +279,59 @@ def test_chart_rolling_model_hint_is_replaced_by_frozen_calendar_week(days):
         "dimension": "spo2", "start_date": "2031-03-31", "end_date": "2031-04-04",
         "timezone": "Asia/Shanghai",
     }
+
+
+@pytest.mark.parametrize("tool,args,text", [
+    ("health_query", {"dimension": "medical_exam"}, "绘制我的化验报告，取消"),
+    ("health_query", {"dimension": "illness", "keyword": "高血压"}, "画出我的高血压病史，撤回"),
+    ("health_query", {"dimension": "blood_pressure"}, "绘制血压记录是否安全"),
+    ("health_manage", {"record_type": "medical_exam", "operation": "list"}, "绘制我的化验报告，取消"),
+    ("health_manage", {"record_type": "illness", "operation": "list", "keyword": "高血压"}, "画出我的高血压病史，撤回"),
+])
+def test_chart_verbs_cannot_bypass_other_read_consumers(tool, args, text):
+    result = decide_tool_capability(snapshot(text), ToolExecutionRequest(
+        tool_name=tool, arguments=args, source="structured_or_recovered"))
+    assert result.action == "block", result.reason
+
+
+@pytest.mark.parametrize("verb", ["绘制", "画出"])
+@pytest.mark.parametrize("template", [
+    "{verb}我的化验报告，取消", "{verb}我的高血压病史，撤回",
+    "取消{verb}我的化验报告", "不再{verb}我的化验报告了",
+    "{verb}我的化验报告已完成", "已经{verb}完成",
+    "{verb}血压记录是否安全", "{verb}我的化验报告会发生什么",
+    "假如{verb}我的化验报告", "不要继续{verb}我的化验报告",
+    "不是让你{verb}我的化验报告", "{verb}我的化验报告只是一个示例",
+])
+def test_chart_speech_act_is_not_authority_after_veto_or_meta_request(verb, template):
+    from app.services.agent_kernel.health_semantics import resolve_health_read_act
+    assert resolve_health_read_act(template.format(verb=verb)).status != "active"
+
+
+@pytest.mark.parametrize("text", [
+    "绘制我的化验报告，仅限出差之后", "画出我的高血压病史，仅限出差之后",
+    "绘制本周血氧饱和度数据，仅限出差之后", "假如绘制本周血氧饱和度数据",
+    "绘制本周血氧饱和度数据，取消", "绘制本周血氧饱和度数据，不再绘制了",
+    "绘制本周血氧饱和度数据，已经绘制完成", "绘制本周血氧饱和度数据是否安全",
+    "绘制本周血氧饱和度数据会返回什么", "绘制我朋友本周血氧饱和度数据",
+    '“绘制本周血氧饱和度数据”', "`绘制本周血氧饱和度数据`",
+    "> 绘制本周血氧饱和度数据", "    绘制本周血氧饱和度数据",
+    "\t绘制本周血氧饱和度数据",
+])
+def test_only_complete_weekly_oxygen_chart_requests_are_projected(text):
+    from app.services.agent_kernel.health_semantics import project_weekly_spo2_chart_request
+    assert project_weekly_spo2_chart_request(text) is None
+    assert decision(text).action == "block"
+
+
+@pytest.mark.parametrize("text", [
+    "请帮我绘制本周的血氧饱和度数据", "画出我的本周血氧饱和度曲线",
+    "绘制本周SpO2数据", "绘制本人本周血氧趋势图",
+])
+def test_complete_chart_presentation_variants_keep_the_same_week(text):
+    result = decision(text)
+    assert result.action == "allow", result.reason
+    assert result.normalized_args == {
+        "dimension": "spo2", "start_date": "2031-03-31", "end_date": "2031-04-04",
+        "timezone": "Asia/Shanghai",
+    }

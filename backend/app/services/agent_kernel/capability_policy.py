@@ -2785,6 +2785,12 @@ def decide_tool_capability(
 
     if not tool_name:
         return _decision("block", "missing_tool_name", tool_name, args)
+    from app.services.agent_kernel.health_semantics import has_unresolved_chart_read_request
+    if (has_unresolved_chart_read_request(snapshot.envelope.text)
+            and (tool_name in {"health_query", "health_query_batch"}
+                 or (tool_name == "health_manage" and args.get("operation") == "list"))):
+        return _decision("block", "health_query_semantics_unresolved", tool_name, args)
+
     if tool_name in {"health_query", "health_query_batch"}:
         plan = args.get("plan", args)
         proposals = ([args] if tool_name == "health_query" else

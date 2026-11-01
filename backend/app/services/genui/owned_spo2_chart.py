@@ -1,10 +1,9 @@
 """Project an authorized daily oxygen read; never query or infer a wider range."""
 from datetime import date, timedelta
 import math
-import re
 
 from app.services.agent_kernel.health_semantics import (
-    resolve_health_read_act,
+    project_weekly_spo2_chart_request,
 )
 from app.services.agent_query_window import parse_query_window
 from app.services.device_source_priority import excluded_sources
@@ -15,9 +14,8 @@ def requests_owned_chart(snapshot) -> bool:
     """Presentation intent only. Capability policy still authorizes every read."""
     from app.services.agent_kernel.read_task_scope import resolve_owned_read_scope
     scope = resolve_owned_read_scope(snapshot)
-    act = resolve_health_read_act(snapshot.envelope.text)
     return (scope is not None and scope.query("spo2") is not None
-            and act.status == "active" and bool(re.search(r"绘制|画出", act.active_clause)))
+            and project_weekly_spo2_chart_request(snapshot.envelope.text) is not None)
 
 
 def build_owned_spo2_chart(args: dict, payload: object) -> dict | None:
