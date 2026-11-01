@@ -9,7 +9,9 @@ export type ChatScrollMetrics = {
   contentHeight: number;
 };
 
-export const CHAT_NEAR_BOTTOM_THRESHOLD = 120;
+// A manual gesture must reach the end before layout may follow it again.
+// A large proximity zone pulls readers back while they inspect a nearby card.
+export const CHAT_NEAR_BOTTOM_THRESHOLD = 8;
 
 /**
  * A transcript should follow its end while the opening/focus scroll is settling,

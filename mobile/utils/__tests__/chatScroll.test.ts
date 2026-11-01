@@ -18,8 +18,11 @@ describe('chat scroll policy', () => {
     expect(shouldScrollChatToEnd({ forcePending: false, isNearBottom: true })).toBe(true);
   });
 
-  it('detects whether the viewport is close enough to the transcript end', () => {
-    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 910, contentHeight: 1500 })).toBe(true);
+  it('resumes following only at the end, allowing a small native rounding tolerance', () => {
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 995, contentHeight: 1500 })).toBe(true);
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 1000, contentHeight: 1500 })).toBe(true);
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 950, contentHeight: 1500 })).toBe(false);
+    expect(isChatNearBottom({ layoutHeight: 500, offsetY: 910, contentHeight: 1500 })).toBe(false);
     expect(isChatNearBottom({ layoutHeight: 500, offsetY: 700, contentHeight: 1500 })).toBe(false);
   });
 

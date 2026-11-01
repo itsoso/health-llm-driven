@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, import/first */
 import React from 'react';
-import { Alert, FlatList, Keyboard, StyleSheet } from 'react-native';
+import { Alert, AppState, FlatList, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { revaColors, revaSemantic } from '../../../constants/revaTheme';
 
@@ -26,6 +26,7 @@ const mockCaptureRef = jest.fn();
 const mockReleaseCapture = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockCanGoBack = true;
+let mockFocusEpoch = 0;
 let mockLlmPreference: any = { model_id: null, options: [] };
 let mockMessages: any[] = [];
 let mockIsStreaming = false;
@@ -47,7 +48,7 @@ jest.mock('expo-router', () => ({
     canGoBack: () => mockCanGoBack,
   },
   useLocalSearchParams: () => mockRouteParams,
-  useFocusEffect: (cb: any) => require('react').useEffect(cb, [cb]),
+  useFocusEffect: (cb: any) => require('react').useEffect(cb, [cb, mockFocusEpoch]),
 }));
 
 jest.mock('@tanstack/react-query', () => ({
@@ -238,6 +239,7 @@ import ChatScreen from '../chat';
 
 describe('ChatScreen', () => {
   beforeEach(() => {
+    mockFocusEpoch = 0;
     jest.clearAllMocks();
     mockAdminUser = false;
     // clearAllMocks 不排空 mockResolvedValueOnce 队列 —— 对 fetch mock 显式 reset,
@@ -1678,7 +1680,7 @@ describe('ChatScreen', () => {
       expect(scrollToEnd).toHaveBeenCalledTimes(2);
       expect(scrollToEnd).toHaveBeenLastCalledWith({ animated: false });
       expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
-      expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toBeUndefined();
+      expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toEqual({ minIndexForVisible: 0 });
     } finally {
       view.unmount();
       scrollToEnd.mockRestore();
@@ -1834,6 +1836,95 @@ describe('ChatScreen', () => {
       });
       expect(scrollToEnd).toHaveBeenCalled();
       expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it('keeps the native visible-row anchor stable across manual scrolling and returning to latest', async () => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐', imageUris: ['file:///meal.jpg'] },
+      { id: 'a-food', role: 'assistant', content: '食物和热量卡片', completionStatus: 'complete' },
+    ];
+    const view = render(<ChatScreen />);
+    await act(async () => {});
+    const anchor = view.getByTestId('chat-message-list').props.maintainVisibleContentPosition;
+    expect(anchor).toEqual({ minIndexForVisible: 0 });
+    act(() => { view.getByTestId('chat-message-list').props.onScrollBeginDrag(); });
+    expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toEqual(anchor);
+    fireEvent.press(view.getByTestId('chat-scroll-to-bottom'));
+    expect(view.getByTestId('chat-message-list').props.maintainVisibleContentPosition).toEqual(anchor);
+  });
+
+  it.each([1000, 1050])('does not resume automatic following when a manual drag stops short of the end (%s)', async (offsetY) => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐', imageUris: ['file:///meal.jpg'] },
+      { id: 'a-food', role: 'assistant', content: '食物和热量卡片', streaming: true },
+    ];
+    jest.useFakeTimers();
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+    try {
+      await act(async () => {});
+      act(() => { jest.advanceTimersByTime(1500); });
+      scrollToEnd.mockClear();
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        list.props.onScrollBeginDrag();
+        list.props.onScrollEndDrag({ nativeEvent: {
+          layoutMeasurement: { height: 500 }, contentOffset: { y: offsetY }, contentSize: { height: 1600 },
+        } });
+        list.props.onContentSizeChange(390, 1700);
+        jest.advanceTimersByTime(1500);
+      });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy();
+    } finally {
+      view.unmount();
+      scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['foreground', 'focus'])('preserves manual history browsing after %s', async (resume) => {
+    mockMessages = [
+      { id: 'u-photo', role: 'user', content: '记录这餐', imageUris: ['file:///meal.jpg'] },
+      { id: 'a-food', role: 'assistant', content: '食物和热量卡片', completionStatus: 'complete' },
+    ];
+    jest.useFakeTimers();
+    const appStateListener = jest.mocked(AppState.addEventListener);
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const view = render(<ChatScreen />);
+    try {
+      await act(async () => {});
+      act(() => { jest.advanceTimersByTime(1500); });
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        list.props.onScrollBeginDrag();
+        list.props.onScrollEndDrag({ nativeEvent: {
+          layoutMeasurement: { height: 500 }, contentOffset: { y: 300 }, contentSize: { height: 1600 },
+        } });
+      });
+      scrollToEnd.mockClear();
+      act(() => {
+        if (resume === 'foreground') {
+          appStateListener.mock.calls.filter(([event]) => event === 'change').forEach(([, listener]) => {
+            listener('background');
+            listener('active');
+          });
+        } else {
+          mockFocusEpoch += 1;
+          view.rerender(<ChatScreen />);
+        }
+      });
+      act(() => {
+        jest.advanceTimersByTime(1500);
+        view.getByTestId('chat-message-list').props.onContentSizeChange(390, 1700);
+      });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      expect(view.getByTestId('chat-scroll-to-bottom')).toBeTruthy();
     } finally {
       view.unmount();
       scrollToEnd.mockRestore();

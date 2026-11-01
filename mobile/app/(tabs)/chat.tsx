@@ -101,6 +101,10 @@ const SUGGESTIONS: SuggestionCard[] = [
 // founder 2026-07-05: 12 太贴底(拇指要够到屏幕最下缘反而累), 抬进舒适拇指弧区。
 const CHAT_BOTTOM_BREATHING_SPACE = 12;
 const CHAT_LIST_END_COMFORT_SPACE = 48;
+// Keep native anchoring enabled from mount. Toggling it during a Fabric mount
+// can skip the prepare phase and then adjust against a stale visible-row frame.
+// This preserves history prepends without coupling the anchor to button state.
+const CHAT_VISIBLE_CONTENT_POSITION = { minIndexForVisible: 0 };
 
 // 对话历史无限下拉每页条数 (后端 limit 上限 100)
 const HISTORY_PAGE_SIZE = 20;
@@ -531,11 +535,11 @@ export default function ChatScreen() {
     forceScrollPending.current = false;
   }, [clearChatScrollTimers]);
 
-  // Page focus and app foreground both mean the user expects the newest answer.
-  // Content-size changes continue the same request while streamed Markdown settles.
+  // Focus/foreground preserve manual history browsing. Only an explicit send,
+  // conversation selection or jump-to-latest can override that scroll intent.
   useFocusEffect(
     useCallback(() => {
-      scheduleScrollToEnd({ force: true });
+      scheduleScrollToEnd();
       return clearChatScrollTimers;
     }, [clearChatScrollTimers, scheduleScrollToEnd])
   );
@@ -546,7 +550,7 @@ export default function ChatScreen() {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
       if ((previousState === 'background' || previousState === 'inactive') && nextState === 'active') {
-        scheduleScrollToEnd({ force: true });
+        scheduleScrollToEnd();
       }
     });
     return () => subscription.remove();
@@ -1217,7 +1221,7 @@ export default function ChatScreen() {
             contentContainerStyle={messageListContentStyle}
             keyboardDismissMode="on-drag"
             keyboardShouldPersistTaps="always"
-            maintainVisibleContentPosition={showScrollToBottom ? { minIndexForVisible: 0 } : undefined}
+            maintainVisibleContentPosition={CHAT_VISIBLE_CONTENT_POSITION}
             ListHeaderComponent={hasMoreHistory || isLoadingMoreHistory ? (
               <TouchableOpacity
                 accessibilityRole="button"
