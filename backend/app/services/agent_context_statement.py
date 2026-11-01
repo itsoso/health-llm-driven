@@ -25,10 +25,12 @@ class ContextStatement:
     def allows_local_reply(self) -> bool:
         # An arbitrary hotel name is only an intent hint, never proof that its
         # free-text slot contains no additional obligation or medical concern.
-        return self.kind in {"arrival", "business_trip", "gate_arrival", "transit_timeline", "arrival_boarding"}
+        return self.kind in {"arrival", "business_trip", "gate_arrival", "transit_timeline", "arrival_boarding", "ride_progress"}
 
     @property
     def reply(self) -> str:
+        if self.kind == "ride_progress":
+            return f"收到，已上车，正在往{self.place}方向走。路上注意安全。"
         if self.kind == "arrival_boarding":
             return (
                 f"收到，你说的是{self.arrival_time}到达{self.place}，{self.boarding_time}上车。"
@@ -77,6 +79,13 @@ _TRANSIT_TIMELINE = re.compile(
     rf"{_CLOCK}从家里出发[，,。;；]?{_CLOCK}到达地铁口[，,。;；]?"
     rf"(?:冲下来才能赶上[，,。;；]?)?{_CLOCK}起床洗了个澡"
 )
+# A completed boarding plus a closed lodging destination is a new status,
+# not a route request, location observation or authority to persist a trip.
+_RIDE_PROGRESS = re.compile(
+    r"(?:我)?(?:现在)?(?P<completed>已经|刚刚|刚|已)?(?:打上车|坐上车|上车)(?P<boarded>了)?"
+    r"[，,;；]?(?:正在|正)?(?:往|朝|前往|去)"
+    r"(?P<place>酒店|宾馆|民宿|住处)(?:方向)?(?:走|开)?(?:了)?"
+)
 _PATTERNS = (
     ("arrival", re.compile(rf"{_LEAD}(?:落地|抵达|到达|到了)(?P<place>{_PLACE})(?:了)?")),
     ("arrival", re.compile(rf"{_LEAD}到(?P<place>{_PLACE})了")),
@@ -108,6 +117,9 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
     if not raw or len(raw) > 100 or any(char in raw for char in "\n\r\t"):
         return None
     text = raw.replace(" ", "").rstrip("。.!！")
+    ride = _RIDE_PROGRESS.fullmatch(text)
+    if ride is not None and (ride.group("completed") or ride.group("boarded")):
+        return ContextStatement(kind="ride_progress", place=ride.group("place"))
     arrival_boarding = _ARRIVAL_BOARDING.fullmatch(text)
     if arrival_boarding is not None:
         from app.services.llm.task_routing import has_sensitive_health_language
@@ -195,7 +207,8 @@ def _is_closed_trip_pair(source, answer) -> bool:
     )
 
 
-def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None) -> bool:
+def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None,
+                                statement: ContextStatement | None = None) -> bool:
     """Do not intercept an unresolved action or a recent medical follow-up.
 
     Only read the owned conversation. No health tables, model inference or
@@ -212,6 +225,40 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         raise ValueError("对话不存在")
     query = db.query(AgentMessage).filter(AgentMessage.conversation_id == owned.id)
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
+    if statement is not None and statement.kind == "ride_progress":
+        # The current whole statement supplies a new, non-authorizing answer
+        # goal. A finalized ordinary conversation can precede it; do not require
+        # the previous model's travel prose to equal one canned acknowledgement.
+        # Medical follow-ups, attachments and unfinished actions stay on the
+        # ordinary route. This never changes any preceding message's outcome.
+        from app.services.llm.task_routing import has_sensitive_health_language
+
+        for item in recent:
+            if item.role != "user":
+                continue
+            meta = item.meta or {}
+            if (not isinstance(meta, dict) or item.image_url
+                    or any(meta.get(key) for key in (
+                        "images", "attachments", "file_name", "file_base64", "extra_context",
+                    )) or has_sensitive_health_language(item.content or "")):
+                return False
+        latest = next((item for item in recent if item.role == "assistant"), None)
+        if latest is None:
+            return not recent
+        meta = latest.meta or {}
+        if not isinstance(meta, dict):
+            return False
+        outcome = meta.get("turn_outcome") or {}
+        if not isinstance(outcome, dict):
+            return False
+        return bool(
+            meta.get("client_turn_finalized") is True
+            and meta.get("completion_status") == outcome.get("status")
+            and outcome.get("status") in {"complete", "failed"}
+            and not meta.get("pending_choice") and not meta.get("health_fact_draft")
+            and not outcome.get("confirmation_required")
+            and not re.search(r"[?？]|请(?:补充|确认|告诉)|说一下", latest.content or "")
+        )
     closed_trip_answers = {
         recent[index - 1].id for index, item in enumerate(recent) if index > 0
         and _is_closed_trip_pair(item, recent[index - 1])
