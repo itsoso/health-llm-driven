@@ -17573,7 +17573,7 @@ class AgentExecutor:
             if context_statement is not None and context_statement.allows_local_reply and (
                 context_statement.kind in {"transit_timeline", "arrival_boarding"} or context_reply_is_standalone(
                 self.db, user_id=user_id,
-                conversation_id=conversation_id, statement=context_statement,
+                conversation_id=conversation_id,
                 )
             ):
                 async for event in self._run_input_clarification_stream(

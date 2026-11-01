@@ -169,6 +169,52 @@ def parse_context_statement(message: str | None) -> ContextStatement | None:
     return None
 
 
+# History-only proof for a complete airport pickup observation. No arbitrary
+# place, clinical or action-bearing text slots; this grants no current tool or
+# local-response authority for the pickup message itself.
+_PICKUP_TRANSFER = re.compile(
+    r"选择了(?P<gate>[1-9][0-9]{0,2})号门让网约车司机上"
+    r"(?P<floor>[一二三四五六七八九十]|[1-9][0-9]?)楼接我[，,;；]?"
+    r"(?P<flight>[A-Z]{2}[1-9][0-9]{2,3})要摆渡车[，,;；]?下次换个选择"
+)
+
+
+def _pickup_transfer_statement(text: str | None):
+    raw = unicodedata.normalize("NFKC", text or "").strip()
+    if len(raw) > 100 or any(ch in raw for ch in "\n\r\t"):
+        return None
+    return _PICKUP_TRANSFER.fullmatch(raw.replace(" ", "").rstrip("。.!！"))
+
+
+def _closed_pickup_reply(source, answer) -> bool:
+    """Prove both sides of one closed, non-medical travel exchange in full."""
+    if source.role != "user" or answer.role != "assistant":
+        return False
+    match = _pickup_transfer_statement(source.content)
+    if match is None:
+        return False
+    meta = answer.meta or {}
+    if not isinstance(meta, dict):
+        return False
+    outcome = meta.get("turn_outcome") or {}
+    if (not isinstance(outcome, dict) or meta.get("client_turn_finalized") is not True
+            or meta.get("completion_status") != outcome.get("status")
+            or outcome.get("status") not in {"complete", "failed"}
+            or meta.get("pending_choice") or meta.get("health_fact_draft")
+            or outcome.get("confirmation_required")):
+        return False
+    gate, floor, flight = match.group("gate", "floor", "flight")
+    # Exact source-bound summaries only. Finalized metadata alone cannot prove
+    # that arbitrary assistant prose is free of a medical or location follow-up.
+    replies = {
+        f"收到，{flight}需要摆渡车，{gate}号门让司机上{floor}楼接确实不太方便，"
+        "下次可以提前看看哪个门离摆渡车落客点更近，或者让司机在指定落客区等。",
+        f"收到，{flight}需要摆渡车，{gate}号门接车不太方便，"
+        "下次可以先和司机确认接站位置。",
+    }
+    return (answer.content or "").strip() in replies
+
+
 def _is_closed_trip_pair(source, answer) -> bool:
     """Only a completed owned trip receipt closes the preceding write task."""
     from app.services.write_intent_scope import current_turn_trip_payload
@@ -207,8 +253,7 @@ def _is_closed_trip_pair(source, answer) -> bool:
     )
 
 
-def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None,
-                                statement: ContextStatement | None = None) -> bool:
+def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None) -> bool:
     """Do not intercept an unresolved action or a recent medical follow-up.
 
     Only read the owned conversation. No health tables, model inference or
@@ -225,43 +270,31 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         raise ValueError("对话不存在")
     query = db.query(AgentMessage).filter(AgentMessage.conversation_id == owned.id)
     recent = query.order_by(AgentMessage.id.desc()).limit(8).all()
-    if statement is not None and statement.kind == "ride_progress":
-        # The current whole statement supplies a new, non-authorizing answer
-        # goal. A finalized ordinary conversation can precede it; do not require
-        # the previous model's travel prose to equal one canned acknowledgement.
-        # Medical follow-ups, attachments and unfinished actions stay on the
-        # ordinary route. This never changes any preceding message's outcome.
-        from app.services.llm.task_routing import has_sensitive_health_language
-
-        for item in recent:
-            if item.role != "user":
-                continue
-            meta = item.meta or {}
-            if (not isinstance(meta, dict) or item.image_url
-                    or any(meta.get(key) for key in (
-                        "images", "attachments", "file_name", "file_base64", "extra_context",
-                    )) or has_sensitive_health_language(item.content or "")):
-                return False
-        latest = next((item for item in recent if item.role == "assistant"), None)
-        if latest is None:
-            return not recent
-        meta = latest.meta or {}
+    # A later ordinary reply cannot settle an earlier uncertain action. Keep
+    # pending/unknown state visible to the normal recovery path.
+    for item in recent:
+        meta = item.meta or {}
         if not isinstance(meta, dict):
             return False
         outcome = meta.get("turn_outcome") or {}
-        if not isinstance(outcome, dict):
+        write_state = meta.get("write_state") or {}
+        if not isinstance(outcome, dict) or not isinstance(write_state, dict):
             return False
-        return bool(
-            meta.get("client_turn_finalized") is True
-            and meta.get("completion_status") == outcome.get("status")
-            and outcome.get("status") in {"complete", "failed"}
-            and not meta.get("pending_choice") and not meta.get("health_fact_draft")
-            and not outcome.get("confirmation_required")
-            and not re.search(r"[?？]|请(?:补充|确认|告诉)|说一下", latest.content or "")
-        )
+        if (meta.get("pending_choice") or meta.get("health_fact_draft")
+                or outcome.get("confirmation_required")
+                or outcome.get("status") in {"waiting_for_user", "reconciliation_required"}
+                or write_state.get("status") not in {None, "verified"}):
+            return False
+    # Never use an older assistant to close a newer unanswered user message.
+    if recent and recent[0].role != "assistant":
+        return False
     closed_trip_answers = {
         recent[index - 1].id for index, item in enumerate(recent) if index > 0
         and _is_closed_trip_pair(item, recent[index - 1])
+    }
+    closed_pickup_answers = {
+        recent[index - 1].id for index, item in enumerate(recent) if index > 0
+        and _closed_pickup_reply(item, recent[index - 1])
     }
     for index, item in enumerate(recent):
         if item.role == "user":
@@ -280,7 +313,9 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
                 re.IGNORECASE,
             )
             closed_trip = index > 0 and recent[index - 1].id in closed_trip_answers
-            if not ((previous is not None and previous.allows_local_reply) or plain_record or closed_trip):
+            closed_pickup = index > 0 and recent[index - 1].id in closed_pickup_answers
+            if not ((previous is not None and previous.allows_local_reply)
+                    or plain_record or closed_trip or closed_pickup):
                 return False
     latest_answer = next((item for item in recent if item.role == "assistant"), None)
     if latest_answer is not None:
@@ -304,7 +339,7 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
         known_ack = known_ack or any(
             item.role == "user"
             and (statement := parse_context_statement(item.content)) is not None
-            and statement.kind == "gate_arrival" and answer == statement.reply
+            and statement.kind in {"gate_arrival", "ride_progress"} and answer == statement.reply
             for item in recent
         )
         plain_receipt = re.fullmatch(r"(?:早餐|午餐|晚餐)记录已保存。", answer)
@@ -315,6 +350,7 @@ def context_reply_is_standalone(db, *, user_id: int, conversation_id: int | None
             "信息来源：上下文信息（未逐项核验）、模型推断。\n" + _ADVICE_HOLD,
             "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n" + _ADVICE_HOLD,
         }
-        if not (known_ack or plain_receipt or guard_refusal or latest_answer.id in closed_trip_answers):
+        if not (known_ack or plain_receipt or guard_refusal
+                or latest_answer.id in closed_trip_answers or latest_answer.id in closed_pickup_answers):
             return False
     return True

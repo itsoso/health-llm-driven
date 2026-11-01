@@ -46,8 +46,8 @@ async def test_ride_after_transfer_conversation_never_queries_or_writes_health(d
     conv = svc.get_or_create_conversation(user.id, None, title='Synthetic ride conversation')
     old = svc.save_message(conv.id, 'assistant', '本轮数据查询未完成，请明确类别和日期。',
                            meta={'completion_status': 'failed', 'turn_outcome': {'status': 'failed'}})
-    prior = svc.save_message(conv.id, 'user', '选了另一处接站门，司机得绕路，下次换个地方。')
-    svc.save_message(conv.id, 'assistant', '下次可以先和司机确认接站位置。',
+    prior = svc.save_message(conv.id, 'user', '选择了12号门让网约车司机上三楼接我 CA1234要摆渡车 下次换个选择')
+    svc.save_message(conv.id, 'assistant', '收到，CA1234需要摆渡车，12号门让司机上三楼接确实不太方便，下次可以提前看看哪个门离摆渡车落客点更近，或者让司机在指定落客区等。',
                      meta={'completion_status': prior_status, 'client_turn_finalized': True,
                            'turn_outcome': {'status': prior_status}})
     executor = AgentExecutor(db)
@@ -72,6 +72,9 @@ async def test_ride_after_transfer_conversation_never_queries_or_writes_health(d
 @pytest.mark.asyncio
 @pytest.mark.parametrize('prior,answer,meta', [
     ('我胸痛喘不上气', '你现在在哪里？', {}),
+    ('我鼻子流血停不下来', '先坐车前往医院，途中有人陪同。', {}),
+    ('我感觉快要晕过去了', '先坐稳，保持有人陪同就医。', {}),
+    ('选择了12号门让网约车司机上三楼接我 CA1234要摆渡车 下次换个选择', '把你现在的位置发给我。', {}),
     ('我头晕', '请告诉我现在的情况。', {}),
     ('记录行程', '请确认是否保存。', {'pending_choice': {'kind': 'confirm'}}),
     ('去酒店', '你在哪里？', {}),
@@ -117,3 +120,47 @@ def test_ride_progress_does_not_authorize_personal_reads(dimension):
     from tests.test_recent_workout_read_regression import snapshot
     assert decide_tool_capability(snapshot('上车了 往酒店方向'), ToolExecutionRequest(
         'health_query', {'dimension': dimension})).action == 'block'
+
+
+@pytest.mark.parametrize('change', ['unknown_user', 'followup', 'wrong_flight', 'extra_action'])
+def test_pickup_history_needs_complete_source_bound_reply(change):
+    from types import SimpleNamespace
+    from app.services.agent_context_statement import _closed_pickup_reply
+    source = SimpleNamespace(role='user', content='选择了12号门让网约车司机上三楼接我 CA1234要摆渡车 下次换个选择')
+    answer = SimpleNamespace(role='assistant', content='收到，CA1234需要摆渡车，12号门接车不太方便，下次可以先和司机确认接站位置。',
+        meta={'client_turn_finalized': True, 'completion_status': 'complete', 'turn_outcome': {'status': 'complete'}})
+    assert _closed_pickup_reply(source, answer)
+    if change == 'unknown_user': source.content += '，我鼻子流血停不下来'
+    if change == 'followup': answer.content = '把你现在的位置发给我。'
+    if change == 'wrong_flight': answer.content = answer.content.replace('CA1234', 'CA5678')
+    if change == 'extra_action': answer.content += '请确认是否记录。'
+    assert not _closed_pickup_reply(source, answer)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('prior_meta,unanswered', [
+    ({'pending_choice': {'kind': 'confirm'}}, False),
+    ({'health_fact_draft': {'facts': ['synthetic']}}, False),
+    ({'write_state': {'status': 'pending'}}, False),
+    ({'turn_outcome': {'status': 'reconciliation_required'}}, False),
+    ({}, True),
+])
+async def test_later_ack_cannot_hide_pending_or_unanswered_source(db, auth_user_and_headers, monkeypatch, prior_meta, unanswered):
+    user, _ = auth_user_and_headers
+    svc = AgentConversationService(db)
+    conv = svc.get_or_create_conversation(user.id, None, title='Synthetic earlier pending state')
+    svc.save_message(conv.id, 'user', '落地成都', meta=prior_meta)
+    svc.save_message(conv.id, 'assistant', '收到，你已到成都。')
+    svc.save_message(conv.id, 'user', '我在成都出差')
+    svc.save_message(conv.id, 'assistant', '收到，你现在在成都出差。',
+        meta={'client_turn_finalized': True, 'completion_status': 'complete', 'turn_outcome': {'status': 'complete'}})
+    if unanswered:
+        svc.save_message(conv.id, 'user', '落地上海')
+    executor = AgentExecutor(db)
+    calls = []
+    async def ordinary(**kwargs):
+        calls.append(kwargs['message'])
+        yield {'event': 'done', 'data': {'completion_status': 'complete'}}
+    monkeypatch.setattr(executor, '_run_stream_impl', ordinary)
+    _ = [e async for e in executor.run_stream(user_id=user.id, message='上车了 往酒店方向', conversation_id=conv.id)]
+    assert calls == ['上车了 往酒店方向']
