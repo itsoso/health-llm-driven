@@ -263,12 +263,19 @@ def test_ota_prepared_ci_cannot_be_reused_after_state_change(monkeypatch, change
     with pytest.raises(helper.PreflightError): callback({})
 
 
-def test_ota_prepared_ci_runs_actual_local_proof_without_second_github_call(monkeypatch, tmp_path):
+@pytest.mark.parametrize('local_duration', [0, 313, 480])
+def test_ota_prepared_ci_runs_actual_local_proof_without_second_github_call(monkeypatch, tmp_path, local_duration):
     helper = load_proof()
     from types import SimpleNamespace
     sha = 'a' * 40
     seen = []
-    gate = SimpleNamespace(verify_release=lambda *a: seen.append('ci'),
+    clock = [0]
+    monkeypatch.setattr(helper.time, 'monotonic', lambda: clock[0])
+    def verify_ci(*args):
+        seen.append('ci')
+        # CI network time must finish before the local proof budget starts.
+        clock[0] += 1000
+    gate = SimpleNamespace(verify_release=verify_ci,
         is_release_documentation=lambda p: False,
         _latest=lambda *a: pytest.fail('second CI after consumption'))
     server = SimpleNamespace(assert_frontend_rebuild_history=lambda: seen.append('history'),
@@ -279,7 +286,14 @@ def test_ota_prepared_ci_runs_actual_local_proof_without_second_github_call(monk
     context = (tmp_path, bootstrap, server, revision, gate)
     monkeypatch.setattr(helper, '_context', lambda s: context)
     monkeypatch.setattr(helper, 'git', lambda repo, *a: sha.encode() if a[0] == 'rev-parse' else b'100644 blob abc\tapp.py\0')
-    monkeypatch.setattr(helper, 'run', lambda cmd: b'ActiveState=active\nSubState=running\nMainPID=2\n')
+    units = []
+    def unit_check(cmd):
+        units.append(cmd[2])
+        # Synthetic pressure, not a measured production duration: the real
+        # local-proof path still performs all four service and other checks.
+        clock[0] += local_duration / 4
+        return b'ActiveState=active\nSubState=running\nMainPID=2\n'
+    monkeypatch.setattr(helper, 'run', unit_check)
     class Response:
         status = 200
         def __enter__(self): return self
@@ -290,21 +304,53 @@ def test_ota_prepared_ci_runs_actual_local_proof_without_second_github_call(monk
     assert seen == ['ci']
     assert callback({}) == {'sha':sha,'production_sha':sha,'state':'COMPATIBLE'}
     assert seen == ['ci','revision','resets','history','lease','lease']
+    assert units == ['health-backend', 'celery-worker', 'celery-beat', 'reva-laya']
+    assert clock[0] == 1000 + local_duration
+    with pytest.raises(helper.PreflightError, match='expired or consumed'):
+        callback({})
 
 
-def test_ota_prepared_ci_expires_during_local_proof(monkeypatch):
+@pytest.mark.parametrize('phase', ['before_local', 'during_local'])
+def test_ota_prepared_ci_rejects_481_seconds_and_cannot_reuse(monkeypatch, phase):
     helper = load_proof()
     from types import SimpleNamespace
     monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, SimpleNamespace(verify_release=lambda *a: None)))
     monkeypatch.setattr(helper, 'git', lambda *a: b'a' * 40)
     clock = [0]
+    local_calls = []
     monkeypatch.setattr(helper.time, 'monotonic', lambda: clock[0])
     def slow(*a, **kw):
-        clock[0] = helper.OTA_PREPARED_PROOF_TTL_SECONDS + 1
+        local_calls.append('local')
+        clock[0] = 481
         return {'state': 'COMPATIBLE'}
     monkeypatch.setattr(helper, '_prove_local', slow)
     callback = helper.prepare_ota('a' * 40)
-    with pytest.raises(helper.PreflightError): callback({})
+    if phase == 'before_local': clock[0] = 481
+    with pytest.raises(helper.PreflightError, match='expired'):
+        callback({})
+    with pytest.raises(helper.PreflightError, match='expired or consumed'):
+        callback({})
+    assert local_calls == ([] if phase == 'before_local' else ['local'])
+
+
+def test_ota_prepared_ci_local_failure_consumes_proof_even_before_deadline(monkeypatch):
+    helper = load_proof()
+    from types import SimpleNamespace
+    monkeypatch.setattr(helper, '_context', lambda sha: (None, None, None, None, SimpleNamespace(verify_release=lambda *a: None)))
+    monkeypatch.setattr(helper, 'git', lambda *a: b'a' * 40)
+    monkeypatch.setattr(helper.time, 'monotonic', lambda: 0)
+    local_calls = []
+    def fail(*args, **kwargs):
+        local_calls.append('local')
+        raise helper.PreflightError('production health is not fully healthy')
+    monkeypatch.setattr(helper, '_prove_local', fail)
+    callback = helper.prepare_ota('a' * 40)
+    with pytest.raises(helper.PreflightError, match='health'):
+        callback({})
+    monkeypatch.setattr(helper, '_prove_local', lambda *a, **kw: pytest.fail('consumed proof ran again'))
+    with pytest.raises(helper.PreflightError, match='expired or consumed'):
+        callback({})
+    assert local_calls == ['local']
 
 
 def test_deployed_same_sha_continues_without_rewriting_backend_evidence(monkeypatch, tmp_path):

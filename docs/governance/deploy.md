@@ -610,6 +610,27 @@ preflight；不存在 vendor receipt，原 publisher 控制流在 RPC 返回前�
 不允许重发 1c30，也不把它记为 OTA 成功。新的 OTA 候选必须重新通过自己的完整 CI、
 后端部署及 trusted validate/publish。
 
+`9a530fd2778ad8b8134a16db2941a4365d9d9836` 的固定 profile 仅接受 run
+`41279412983`、attempt `1`、workflow `370218159`、job `124768075123` 和官方
+artifact `13072503978`（2565 bytes）。官方 ZIP 及三份审计 JSON 摘要固定在源码内；
+原四项控制流源码摘要来自该失败 SHA 的 Git 对象。审计包为 intent、preflight 和
+`claim-ota` / `command_failed` 诊断，原服务器操作保留 intent/lease，没有 claimed、
+vendor 或完成回执。profile 已独立审查，但不代表原操作已收口；仍须由新的精确绿色
+reviewed SHA 重新验证原 intent/lease、双锁、生产后端终态和健康，才能执行关闭。
+同 A4D/ONEC，四个 lease 文件必须全部绑定 device、inode、内容摘要与 `ctime_ns`；
+拒绝未知或交叉 profile、不同 receipt 及混用 schema。只记独立未发布失败终态，
+不把后端成功或 OTA validate 成功视为 OTA 发布成功，不允许原 SHA 重发。
+
+OTA 进程内 prepared proof 的固定有效期调整为 480 秒，仍从精确 CI 和初始生产
+revision 核验后起算，消费前及完整本地校验后均检查过期，开始消费即不可复用。
+2026-11-01 无 profiling 的 canonical 只读诊断为 prepare 2.93 秒、本地校验
+221.28 秒、`COMPATIBLE`，保护文件及原 lease 身份摘要均保持不变；旧 240 秒
+预算仅余约 19 秒，原 120 秒基线已过时。480 秒约为新正常基线两倍，仍低于
+server 600 秒和 publisher 900 秒外层上限；所有来源、历史、租约、生产状态与健康
+检查保持不变。带 profiling 的 550.64 秒诊断仅在最后有效期检查失败，不是正常
+生产基线，也未复现原 run 失败。此次为预算余量修正，不宣称确诊原 OTA 根因，
+更不授权重发或跳过原未发布操作的收口。
+
 `53f9c6aee3eb30d8937a4582e206cce47de80157` 的 run `40861067214` 在
 `claim-ota` RPC 处失败；服务器尚未创建 `ota/<sha>` intent，publisher 也未进入
 vendor update。同期 no-backup Web 流程随后完成，但现有持久证据不足以把该流程或其

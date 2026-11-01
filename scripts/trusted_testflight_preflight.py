@@ -18,8 +18,10 @@ from pathlib import Path
 
 STATE = Path("/var/lib/reva-release")
 PRODUCTION = Path("/opt/health-app")
-# Production read-only local phases measured ~120s; bound at twice that budget.
-OTA_PREPARED_PROOF_TTL_SECONDS = 240
+# Uninstrumented canonical local proof measured 221.28s (2026-11-01).
+# Allow roughly twice that baseline, below server 600s / publisher 900s limits.
+# This bounds normal timing variation; it does not establish a past failure's cause.
+OTA_PREPARED_PROOF_TTL_SECONDS = 480
 ENV = {"PATH": "/usr/bin:/bin", "HOME": "/nonexistent", "LC_ALL": "C",
        "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null",
        "GIT_CONFIG_SYSTEM": "/dev/null", "GIT_NO_REPLACE_OBJECTS": "1"}
