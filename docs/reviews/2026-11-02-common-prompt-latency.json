@@ -1,7 +1,7 @@
 {
   "schema_version": "common-agent-latency-screen.v1",
   "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
-  "status": "water_correctness_followup_pending_review_and_release",
+  "status": "released_acceptance_partial",
   "environment": {
     "synthetic_only": true,
     "database": "ephemeral SQLite",
@@ -5821,6 +5821,921 @@
       "Before fix, days=7 was ignored by the legacy daily-water adapter; complete responses falsely reported six seeded days as absent. Runtime complete is not quality PASS.",
       "Fixed: closed current-turn owner/date scope, bounded calendar records, verified table and factual totals; no inferred hydration goal or advice. Four samples: first content 248-455ms, complete 279-714ms; zero model calls. Local disposable SQLite only; no HTTP, PostgreSQL performance or native rendering acceptance.",
       "Water followup tool boundary additionally permits health_manage only for operation=list and record_type=water. Baseline/candidate budget stops are retained; no production success-rate claim."
+    ],
+    "exact_release_candidate": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "client_capabilities": "mobile/services/clientCaps.ts current enabled seven caps",
+      "rows": [
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 2
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 2291,
+          "total_ms": 2586,
+          "answer_chars": 348,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-11-02 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-11-02，Asia/Shanghai。\n\n饮水：已记录1条，记录合计500 ml。\n2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 131,
+            "pre_llm_ms": 200,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 3,
+              "opener_ms": 7,
+              "system_prompt_ms": 37,
+              "kb_ms": 38,
+              "inspect_ms": 0,
+              "history_ms": 54,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 2158,
+            "end_to_end_total_ms": 2398,
+            "end_to_end_ttft_ms": 2290,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_calendar_dates_and_amounts"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-10-27",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 248,
+          "total_ms": 278,
+          "answer_chars": 708,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-10-27\",\"amount\":\"800 ml\"},{\"date\":\"2026-10-28\",\"amount\":\"750 ml\"},{\"date\":\"2026-10-29\",\"amount\":\"700 ml\"},{\"date\":\"2026-10-30\",\"amount\":\"650 ml\"},{\"date\":\"2026-10-31\",\"amount\":\"600 ml\"},{\"date\":\"2026-11-01\",\"amount\":\"550 ml\"},{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮水：已记录7条，记录合计4550 ml。\n2026-10-27：800 ml；2026-10-28：750 ml；2026-10-29：700 ml；2026-10-30：650 ml；2026-10-31：600 ml；2026-11-01：550 ml；2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 6,
+            "pre_llm_ms": 7,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 2,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 240,
+            "end_to_end_total_ms": 254,
+            "end_to_end_ttft_ms": 247,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_calendar_dates_and_amounts"
+        },
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 2
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 233,
+          "total_ms": 260,
+          "answer_chars": 348,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-11-02 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-11-02，Asia/Shanghai。\n\n饮水：已记录1条，记录合计500 ml。\n2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 6,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 2,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 231,
+            "end_to_end_total_ms": 240,
+            "end_to_end_ttft_ms": 233,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_calendar_dates_and_amounts"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-10-27",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 236,
+          "total_ms": 265,
+          "answer_chars": 708,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-10-27\",\"amount\":\"800 ml\"},{\"date\":\"2026-10-28\",\"amount\":\"750 ml\"},{\"date\":\"2026-10-29\",\"amount\":\"700 ml\"},{\"date\":\"2026-10-30\",\"amount\":\"650 ml\"},{\"date\":\"2026-10-31\",\"amount\":\"600 ml\"},{\"date\":\"2026-11-01\",\"amount\":\"550 ml\"},{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮水：已记录7条，记录合计4550 ml。\n2026-10-27：800 ml；2026-10-28：750 ml；2026-10-29：700 ml；2026-10-30：650 ml；2026-10-31：600 ml；2026-11-01：550 ml；2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 7,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 2,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 233,
+            "end_to_end_total_ms": 243,
+            "end_to_end_ttft_ms": 235,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_calendar_dates_and_amounts"
+        }
+      ],
+      "candidate_sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+      "source_sha256": "60b26b556d26b18783b2fcd708d98a3c0ae29216fcc84601e680fca2bd6ff4ae",
+      "empirical_only": {
+        "first_ms": {
+          "n": 4,
+          "min": 233,
+          "p50": 242.0,
+          "p95_nearest_rank": 2291,
+          "p99_nearest_rank": 2291,
+          "max": 2291
+        },
+        "total_ms": {
+          "n": 4,
+          "min": 260,
+          "p50": 271.5,
+          "p95_nearest_rank": 2586,
+          "p99_nearest_rank": 2586,
+          "max": 2586
+        }
+      },
+      "limitations": [
+        "Four sequential local samples; first sample 2291ms, later 233-248ms. Keep all samples, do not infer production percentiles or a cause for the first-sample delay.",
+        "Ephemeral SQLite, real Pi/Gateway and current App capabilities; no HTTP/native rendering/device reception evidence.",
+        "Zero model calls for closed factual queries; the configured provider is not invoked, not replaced by another model."
+      ]
+    }
+  },
+  "final_reviews": [
+    {
+      "sha256": "3b544ac787e30d7185d3fc844026352ecf1e6660aef35a7c21d2fbe3a55ec805",
+      "value": {
+        "base_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+        "candidate_sha": "00565857ee3cdd27cea413bc42c2a40fee26fa90",
+        "checks": [
+          "Final implementation difference is only batch root terminal contract, not broader authorization semantics.",
+          "Success-root valid sibling remains rendered when another child conflicts; root truncation tests use success status and independently reject truncation.",
+          "Owner/date scope, consent path, history/clinical/pending exclusions, selected model/quality floor and final response gates retain earlier reviewed protections.",
+          "Diet legacy fixture uses actual unbounded route; bound calendar route has explicit reject coverage. SpO2 batch fixture now matches adapter success envelope."
+        ],
+        "file_sha256": {
+          "backend/app/services/agent_executor.py": "c48d7efd2a30d8f9f59551fff3b58f6263d541d85d6adaf14de558cb7a407d82",
+          "backend/tests/test_agent_composed_synthesis_projection.py": "e4a858ee665383ac09588ffa369fd344cf62885ce83105393d100883e76a94fa",
+          "backend/tests/test_genui_bound_read_results.py": "28d6a6f470141bc7af703fdc3bd09d1383d2eb4caab19a6a87ea3f65714b0c56",
+          "backend/tests/test_genui_owned_spo2_chart.py": "011d6969e61e2a44ba53f7198ab999565ca1a6d7ec1dac335010f36666c3bbe8",
+          "backend/tests/test_genui_table.py": "97a27fc48e4659d856a7c034b3d96c45ee6298f7048bf3222b628dbf279d6b4a",
+          "backend/tests/test_simple_lookup_latency.py": "f8bbdd2f512fbf4c5baf8fe2ba057adf946a304a9eb4a2c2f40d19cbfd0e3b1d",
+          "docs/dossiers/2026-11-02-explicit-model-latency.md": "895e073cf44b6eec7b6aabccd9a4c87e895c52a2b9e98a0df493a5ada8eae661",
+          "docs/reviews/2026-11-02-common-prompt-latency.json": "e20f6ba28e04b16f2d13ca3555dc3044867778abdcff7f727bba86eeb01783bc"
+        },
+        "findings": [],
+        "limits": [
+          "Code G4 GO only; exact candidate live Harness, full CI, release, OTA, native/device and production acceptance remain separate gates.",
+          "Six App-capability timing samples bind ccfc, not final SHA; reviewed terminal-only patch does not change single-sleep path. They do not prove all requests or complete answers under three seconds.",
+          "Previous two blocked samples retained; dangling 这两件事 after evidence removal remains a nonblocking coherence issue. No universal quality or success-rate claim."
+        ],
+        "resolved_blockers": [
+          "Date-window-conflicting single query cannot produce early or final card; independently re-run real Pi/Gateway fault probe passes.",
+          "Bound batch root now requires existing _terminal plus explicit status in _TERMINAL before independently validating children. Pending/processing/unknown/missing status all yield zero cards; success control yields one.",
+          "Calendar envelopes cannot inject legacy unbound daily summaries; bound legacy diet summary rejected."
+        ],
+        "review_scope": "Cumulative implementation versus base, with focused re-review of ccfc to final terminal-batch followup. No repository edits or production actions.",
+        "reviewer": "diet_detail_safety_review",
+        "validation": {
+          "artifact_sha256": {
+            "/private/tmp/reva-common-prompts-00565857-batch-probe.log": "d95aead603059e71517a19c8cc7f1b736c2892bcc67fb5ec7eb01c8d24a14ff0",
+            "/private/tmp/reva-common-prompts-00565857-card-probe.log": "271c52492eac389aa186b2634ec88ee61485d1ad7f65e443390ffa0ad7415fc4",
+            "/private/tmp/reva-common-prompts-00565857-independent-tests.log": "7fc7fa0e3b6a4d16662e427fb356c550dd6029597c3c69812501571a2045794c",
+            "/private/tmp/reva-common-prompts-71357e2b9-card-probe.py": "3bff77fb826f95d3a480ecc6aadd45457771808b6db2b4da850fb0c3301b3e8e",
+            "/private/tmp/reva-common-prompts-ccfc5139-batch-probe.py": "51962895ed3be9006abc39776497042da662f973cd9d6b28ac2a46ff6817c56a"
+          },
+          "batch_fault_probe": "exit 0; four negative cases rejected and successful control accepted",
+          "original_streaming_fault_probe": "1 passed, 6 warnings, 1.05s",
+          "targeted": "119 passed, 6 warnings, 16.30s; test_genui_bound_read_results/test_genui_owned_spo2_chart/test_simple_lookup_latency"
+        },
+        "verdict": "GO"
+      }
+    },
+    {
+      "sha256": "4bfd487577c47e4be1f29bc0f290f4f3486cabd26d600b40e39b68b2ee8cabd0",
+      "value": {
+        "base_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+        "candidate_sha": "10de8b8452de68174b7a332750308e4df2413c29",
+        "file_sha256": {
+          ".github/ci/backend-pytest-shards.json": "856dbe7097e970c37b551e9f0cbb3c874f94f0501ab4ad677ba38d8208c2d533",
+          "docs/dossiers/2026-11-02-explicit-model-latency.md": "9f2d19b81f7dfd9635a3e24ae3d67ab666f07e822d12aa3cae67920e4261b01e",
+          "scripts/test_ci_timing_refresh.py": "59db408772d72022a0c42a458a15b1e261017cccb83489d8d8ae1dd9021e1f3b"
+        },
+        "findings": [],
+        "limits": [
+          "Code G4 GO only. Old failed CI remains failed; new exact-SHA full CI and live gate required separately.",
+          "No stage approval, production mutation, or new performance claim. Previous incomplete 3-second/device/quality acceptance limits remain."
+        ],
+        "reviewed_followup_base_sha": "00565857ee3cdd27cea413bc42c2a40fee26fa90",
+        "reviewer": "diet_detail_safety_review",
+        "scope": "Narrow followup extends independently reviewed 00565857 code GO; exact three-file CI catalog/hash/documentation delta.",
+        "validation": {
+          "artifact_sha256": {
+            "/private/tmp/reva-common-prompts-10de8b84-independent-tests.log": "7981fa83f986a35ad95621f5a90b5b4943a4c32b4ae3c79e3c193ba91a240b4d",
+            "/private/tmp/reva-common-prompts-10de8b84-partition.log": "6742e38a4fc53196cb616e21e1203476e55c0a02aac05ccb754c95670297dd2c"
+          },
+          "ci_timing_refresh": "46 passed, 1 warning, 0.62s",
+          "complete_partition": "1 passed, 6 warnings, 0.10s"
+        },
+        "verdict": "GO",
+        "verified": [
+          "No backend application/test, mobile, or shared runtime changes versus approved 00565857.",
+          "Shard JSON preserves all previous values/selectors and adds only three regression selectors to agent-composed-synthesis-04. No removed tests or relaxed attempts/timeouts/estimates/scheduling.",
+          "Expected catalog digest reflects exact catalog change; test assertion remains active.",
+          "Dossier preserves failed old CI and requires fresh exact-candidate CI."
+        ]
+      }
+    },
+    {
+      "sha256": "33801d473f5b0ac882922b44e5cae12de46f7ba7547fd65687f48707d17d4b7c",
+      "value": {
+        "base_sha": "10de8b8452de68174b7a332750308e4df2413c29",
+        "candidate_sha": "23f2fa5e4f79a6908818e08a25893e2bf5e2d66c",
+        "file_sha256": {
+          "backend/app/services/agent_composed_read_completion.py": "643492d614bc1dda9534c65f7e20a053a59b1d7c5eb4b0dac2ff57a98bc02d09",
+          "backend/app/services/agent_executor.py": "3aff43ca277f02c7f2d23239ab797e1df1934c1a6df1042e559d0e7d8295a4b0",
+          "backend/app/services/agent_kernel/read_task_scope.py": "eaabf9ff2eae88d0076b47d16f3c796875ff551ef57b7c165d3d9883d091143c",
+          "backend/app/services/agent_query_window.py": "ae1a845a93ff475e933c0f10df7487ce7e6a00e8df4f445019d99492e21886e0",
+          "backend/app/services/genui/table_builder.py": "c1f98146fc9b20b6d7458e86cca71f618180a979637245d88c9adc4ba9c00b3c",
+          "backend/tests/test_agent_executor_reads_in_process.py": "a0ea20fff25fab7db1ccf88e0821f9abab0b4fb0f660374f754bc1fc8c8260a0",
+          "backend/tests/test_water_record_lookup.py": "8dd5d0327265726188ecd932310ec6d6aa40e277ce2277fbd432b1935e8c98ca",
+          "docs/dossiers/2026-11-02-explicit-model-latency.md": "38c393738dbd07965200633776eea0c5d0f76ceeb8f4a3a45b28bcb547c751e5",
+          "docs/reviews/2026-11-02-common-prompt-latency.json": "a42ccbd51ea3a96d217c4d34126cf20c47793a317d8333dbe61bbd56c396cb2c",
+          "scripts/run_postgres_ci.py": "842aed7791691c10ce8c11c7e6731b919364a358186f79f861a28b49df6819e0",
+          "scripts/test_run_postgres_ci.py": "935da8cf8295252be334802dea847288902a29972d91691733649a719ec8b875"
+        },
+        "findings": [
+          {
+            "location": "backend/app/services/agent_kernel/read_task_scope.py:308-314,341-343",
+            "reproduction": "Four-space or tab-prefixed 查询我最近7天的饮水记录 binds a water scope and Gateway allows it. Independent real Pi/Gateway synthetic DB run dispatches one bounded query with zero model calls, emits all seven dates and 910 ml total, and marks complete. Existing active_health_instruction_text projects this input to material-only punctuation.",
+            "required_fix": "Match the closed new authority grammar against original text without stripping code indentation or transforming material into commands; add scope and real model-proposed tool negative coverage for four-space/tab material.",
+            "severity": "blocking",
+            "title": "Whitespace stripping promotes indented code material into private-read authority"
+          }
+        ],
+        "limits": [
+          "No repository edits or production operation by reviewer.",
+          "Parent has uncommitted original-text matching repair; excluded from this fixed 23f2 verdict and requires new SHA review.",
+          "Performance samples are synthetic/no HTTP or native UI; no three-second device acceptance or production release claim."
+        ],
+        "reviewed_positive_boundaries": [
+          "Closed whole command excludes mixed/foreign/quoted/cancelled/filter requests; unsupported water requests cannot fall back to today adapter.",
+          "Authenticated owner/context/envelope/current message and exact normalized query equality guard actual dispatch. SQL reader filters owner and requested record-date bounds, with bounded rows and serialized size.",
+          "Source identity, window, truncation, positive integer amounts and availability checked before early/final cards and deterministic facts.",
+          "Facts label saved intake only; missing records do not imply no water, and no hydration target or adequacy claim is generated.",
+          "Historical and flag-off output replacement remains fact-only; final buffer/output/persistence path retained. No second definite blocker found in inspected paths.",
+          "PostgreSQL selector added without removing prior tests; local SQLite evidence does not establish PostgreSQL acceptance."
+        ],
+        "reviewer": "diet_detail_safety_review",
+        "validation": {
+          "artifact_sha256": {
+            "/private/tmp/reva-water-23f2fa5e4-independent-tests.log": "c9c4bd193c3026efd1b472efb78df955327d8c09934b858d87903d620d164dc7",
+            "/private/tmp/reva-water-23f2fa5e4-material-probe.log": "8057f609bb99d971d79103e12c97cca7d3899e522ed52e6275e083955ec7f4cb",
+            "/private/tmp/reva-water-23f2fa5e4-material-probe.py": "8d19fea128a61b11172161cd58c57ca07a5d48634feb70c9c09c2fa53d0b9436"
+          },
+          "fault_probe": "1 failed as expected; read exposure reproduced against original 23f2 implementation before WIP fix.",
+          "water_suite": "27 existing tests passed; 2 newly added uncommitted indentation negative tests failed. Test suite mutated by parent during review, so this is explicitly not an exact committed-suite green claim."
+        },
+        "verdict": "NO-GO"
+      }
+    },
+    {
+      "sha256": "bcaaaa5e614c0d6982d61b65fc64c552aa977f8f466d7d1b4f4d8a03117a125b",
+      "value": {
+        "base_sha": "10de8b8452de68174b7a332750308e4df2413c29",
+        "candidate_sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "file_sha256": {
+          "backend/app/services/agent_composed_read_completion.py": "643492d614bc1dda9534c65f7e20a053a59b1d7c5eb4b0dac2ff57a98bc02d09",
+          "backend/app/services/agent_executor.py": "3aff43ca277f02c7f2d23239ab797e1df1934c1a6df1042e559d0e7d8295a4b0",
+          "backend/app/services/agent_kernel/read_task_scope.py": "979041cb038101e06c32fe3d02cc3efc5f983a226476910243d065dfcb5841da",
+          "backend/app/services/agent_query_window.py": "ae1a845a93ff475e933c0f10df7487ce7e6a00e8df4f445019d99492e21886e0",
+          "backend/app/services/genui/table_builder.py": "c1f98146fc9b20b6d7458e86cca71f618180a979637245d88c9adc4ba9c00b3c",
+          "backend/tests/test_agent_executor_reads_in_process.py": "a0ea20fff25fab7db1ccf88e0821f9abab0b4fb0f660374f754bc1fc8c8260a0",
+          "backend/tests/test_water_record_lookup.py": "b4f11aac88343af37905b638e8c32dfefa38a7e7f0bd1c495b0a4cbe4a0999e4",
+          "docs/dossiers/2026-11-02-explicit-model-latency.md": "7141b61de534ce2ef89b2a364d67efe93691386cd95d22e2493112b21ee2bb64",
+          "docs/reviews/2026-11-02-common-prompt-latency.json": "a42ccbd51ea3a96d217c4d34126cf20c47793a317d8333dbe61bbd56c396cb2c",
+          "scripts/run_postgres_ci.py": "842aed7791691c10ce8c11c7e6731b919364a358186f79f861a28b49df6819e0",
+          "scripts/test_run_postgres_ci.py": "935da8cf8295252be334802dea847288902a29972d91691733649a719ec8b875"
+        },
+        "findings": [],
+        "limits": [
+          "Code G4 GO only. Exact-candidate live Harness/full CI including PostgreSQL and release/OTA gates remain separate. Local independent tests used ephemeral SQLite, not PostgreSQL production-semantic proof.",
+          "No production operation or staging approval. Synthetic latency is not HTTP/native/device or universal three-second acceptance.",
+          "Original 23f2 NO-GO and its fault evidence remain preserved; this report supersedes only its code blocker for the new SHA."
+        ],
+        "resolved_blocker": "The new water authority grammar now fullmatches original text. Indented material cannot bind a water scope; original real Pi/Gateway exposure probe passes. Four new scope/model-proposed-tool regressions cover spaces and tabs.",
+        "review_scope": "Whole water followup against 10de plus fixed original-material authorization repair; cumulative preceding common-prompts safety reviews retained.",
+        "reviewer": "diet_detail_safety_review",
+        "validation": {
+          "artifact_sha256": {
+            "/private/tmp/reva-water-23f2fa5e4-material-probe.py": "8d19fea128a61b11172161cd58c57ca07a5d48634feb70c9c09c2fa53d0b9436",
+            "/private/tmp/reva-water-cb6b698d0-independent-tests.log": "1c8532655e59e9c3ca4f96ebf12991af624367d235518591ea4fa405509b18e7",
+            "/private/tmp/reva-water-cb6b698d0-material-probe.log": "357fb5fb06e2e8fe63976c03e9d4d9e17ceba182703f0b7c87f7e160290d5740"
+          },
+          "original_material_probe": "1 passed, 6 warnings, 1.07s; no unauthorized dispatch or exposed seeded records",
+          "water_and_bound_cards": "48 passed, 6 warnings, 5.89s"
+        },
+        "verdict": "GO",
+        "verified_boundaries": [
+          "Current-turn closed factual query binds authenticated owner and server calendar/timezone; mixed/foreign/quoted/cancelled/filter grammar does not gain new water authorization.",
+          "Actual water dispatch requires exact scope query, current user/context/envelope identity and current message equality; unbound queries cannot silently read today.",
+          "Bounded DB query filters authenticated owner/date, preserves records and explicitly fails row/size limits. No migration or write action introduced.",
+          "Result source/window/availability/positive-integer amounts and completion checked before early/final cards; no-data is not zero intake, recorded amounts are not hydration adequacy.",
+          "History and flag-off paths preserve planning and emit only attested water facts; ordinary final buffering, output review and persistence remain.",
+          "PostgreSQL test selector added without removal or relaxation; old fallback test now verifies intended unbound rejection and valid bound reads cover flag modes."
+        ]
+      }
+    }
+  ],
+  "release_acceptance": {
+    "candidate_sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+    "ci": {
+      "run_id": 41441749609,
+      "attempt": 1,
+      "jobs_passed": 32
+    },
+    "trusted_validate_run": 41442976831,
+    "backend_run": 41446168567,
+    "ota_validate_run": 41447062231,
+    "ota_publish_run": 41447774658,
+    "postgres": {
+      "summary": {
+        "databases": [
+          "reva_ci_test_62171f88284e4c04975a03d01850e12a_01",
+          "reva_ci_test_62171f88284e4c04975a03d01850e12a_02"
+        ],
+        "elapsed_seconds": 316.084,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "state": "passed"
+      },
+      "water_tests": 31,
+      "water_tests_all_passed_without_skip": true,
+      "water_junit_projection": {
+        "sha256": "f5d6083c42e86e507ca57c91dc25cf3bfb76402ec0f7a627eb43da6810e49a25",
+        "value": [
+          {
+            "name": "test_water_lookup_binds_business_dates_and_rejects_model_expansion[\\u4eca\\u5929-2031-04-04-2031-04-04]",
+            "seconds": "0.012",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_binds_business_dates_and_rejects_model_expansion[\\u6628\\u5929-2031-04-03-2031-04-03]",
+            "seconds": "0.003",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_binds_business_dates_and_rejects_model_expansion[\\u6700\\u8fd17\\u5929-2031-03-29-2031-04-04]",
+            "seconds": "0.003",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_binds_business_dates_and_rejects_model_expansion[\\u672c\\u5468-2031-03-31-2031-04-04]",
+            "seconds": "0.003",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[    \\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.002",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\t\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.001",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u4e0d\\u8981\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.001",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u67e5\\u8be2\\u670b\\u53cb\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.002",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u5982\\u679c\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.002",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u201c\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55\\u201d]",
+            "seconds": "0.001",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u67e5\\u8be2\\u6211\\u6700\\u8fd132\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.005",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u67e5\\u8be2\\u6211\\u6700\\u8fd10\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "0.005",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55\\u5e76\\u8bb0\\u5f55500ml]",
+            "seconds": "0.006",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_does_not_infer_unsupported_authority[\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55\\uff0c\\u6392\\u9664\\u5496\\u5561]",
+            "seconds": "0.006",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u4eca\\u5929-100-1-False]",
+            "seconds": "1.135",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u4eca\\u5929-100-1-True]",
+            "seconds": "1.129",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u6628\\u5929-110-1-False]",
+            "seconds": "1.126",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u6628\\u5929-110-1-True]",
+            "seconds": "1.057",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u6700\\u8fd17\\u5929-910-7-False]",
+            "seconds": "1.061",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_lookup_returns_owned_bounded_records_without_model_advice[\\u6700\\u8fd17\\u5929-910-7-True]",
+            "seconds": "1.115",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_fault_never_emits_an_unverified_card[wrong_window]",
+            "seconds": "1.047",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_fault_never_emits_an_unverified_card[truncated]",
+            "seconds": "1.071",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_fault_never_emits_an_unverified_card[invalid_amount]",
+            "seconds": "1.107",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_empty_window_is_factual_without_hydration_advice[False]",
+            "seconds": "1.068",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_empty_window_is_factual_without_hydration_advice[True]",
+            "seconds": "1.062",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_existing_conversation_uses_current_window_and_only_verified_facts",
+            "seconds": "1.148",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_query_budget_is_explicit_not_silent_partial[rows]",
+            "seconds": "0.871",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_query_budget_is_explicit_not_silent_partial[chars]",
+            "seconds": "2.522",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_unbound_days_never_silently_reads_today",
+            "seconds": "0.853",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_code_material_never_dispatches_a_calendar_read[    \\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "1.105",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          },
+          {
+            "name": "test_water_code_material_never_dispatches_a_calendar_read[\\t\\u67e5\\u8be2\\u6211\\u6700\\u8fd17\\u5929\\u7684\\u996e\\u6c34\\u8bb0\\u5f55]",
+            "seconds": "1.033",
+            "failed": false,
+            "error": false,
+            "skipped": false
+          }
+        ]
+      }
+    },
+    "exact_candidate_local_ci_mode_passed": 3676,
+    "exact_candidate_live_gate": {
+      "sha256": "ff1bb9f7fb962d6f51bb8686444421467a317276808a8f582941dd429a637158",
+      "value": {
+        "configuration": "existing_provider_allowlist",
+        "database": "sqlite_memory",
+        "elapsed_seconds": 66.39,
+        "exit_code": 0,
+        "log_sha256": "2275acdd9897e0e6ac81ee86197b40c345a770bcb3c14f23404cacb04dd7b3b6",
+        "synthetic_only": true
+      }
+    },
+    "backend": {
+      "sha256": "2098c7fc71ea2c296c01fa9f8144bd73e04c73b139dfd942d6eee3016edbb31c",
+      "value": {
+        "authorization_matches": true,
+        "backend_completed": {
+          "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+          "state": "SUCCEEDED"
+        },
+        "backend_completed_sha256": "52f096fef441aed3cb2f97fcc30cc80d717123acd378b77b7a7f821dd5a8092b",
+        "business_lease_absent": true,
+        "local_health": "healthy",
+        "production_clean": true,
+        "public_health": "healthy",
+        "services": {
+          "celery-beat": "active/running",
+          "celery-worker": "active/running",
+          "health-backend": "active/running",
+          "reva-laya": "active/running"
+        },
+        "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "state": "BACKEND_READONLY_VERIFIED"
+      }
+    },
+    "ota_server": {
+      "sha256": "48f009f20aa09608f724d59eb8cbe8ab591b97c62bd1a9e199b135b8c8538452",
+      "value": {
+        "artifact": {
+          "assets": [
+            "-iq30lV4GbK_5QCeRoRO-nFwzxd753NdQ6oqwSlfHVQ",
+            "0Dpc16Zu8QxRR5FvnVh4stCgpa1G9AWjHNmWfvqlWv0",
+            "0FydMNefRaeOVYWi5-xnxqBqiD3ZE34dUFnoyHszznY",
+            "0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb-LCkA",
+            "3Fa5dr1FY44RJfZol0NSXmiGrgvvLI9GUZlIM2hagx8",
+            "3Y7kA7vL9eWLd9ykrAPrr6E6KEo9h9jqnKSQQ1qG-kg",
+            "78edo8TJffsVcb_2IClYqwUpxaox6DkmAFeLPjWdFEc",
+            "7xP8DfxS7COBdYX9fhCfvfWTo7JUnEDOcaybDtoSzCw",
+            "7xSfCL3S_wmk4shXNHa3sPP7sVtiOVSt5ZiZ5xdb7do",
+            "AriOrZGt5XENfKGO20Omllpx2TcywG8pDMB6bdJJ6Yc",
+            "BvTQCSPqJGl99d8LkphBdZkdi9JXdqAtUxu0AeOT7EI",
+            "CKnVtRPPlH4i7egemoQ72Nd2OmNETNIUhL_edmLMZUM",
+            "FvkimFh7qytGm8E8DfxtXRcbyhC60MkFOtFrwCO_cX0",
+            "GZbLuodu68L0o3kUlVL3movAjfgAWW98KjpH6XRhsBE",
+            "IyXFOnPlTEOMu8YN_92LUT1HG6QuL1ZxPvQEuV4Mofw",
+            "J_TSKdRAklv3IS1d__pF1Zayx7O7KQXJa4ObIIGh2-s",
+            "K3RDqaWOksoRpXW9wRWYYVpX3eMFzYznDWAmBrMCzZg",
+            "LN_rjlzN55dvcBL7jM5zryIpAp7iHU8VCf7RFIccbNg",
+            "MfCZwT9uS6BfG0cb8XDLVJMklHQiKRc3LePKXPKeaho",
+            "P1Ad2wXHCCm7tRz-nKn_9X854GBFfCV7PM8l33Z_CHA",
+            "PQavHzHNg6znomWgFLj7Xe4Vdw7KyPelVVUZDmJ-A8I",
+            "Pd0Hc-0n4j0leJ8wFzGzrEVa2L5aonoKG4OPicbSciU",
+            "VwohI4CsLEQxbZlLKr6PvwztC0aXZNClgSa9buvFrp0",
+            "YeirpaTpgf4iz3yOi82-oAR251xiw38Bv37jM2HWhCg",
+            "ZPn7YjaB8RImHpovl4JngkOfOSXeqPRKV9Hk25W6bP0",
+            "ajQS8FjH2N_ZFwxB6FreSOUVbsuJNWEQylegonc0r0Y",
+            "beyjK1a5f6H6h_rNaZa0bMRRkKVTQA5_698dIJMJm1c",
+            "cIp5z1YbiipIUM4CVFhNOlIxBGvgj7f630tu39sxF4s",
+            "fh3QPdTOkLZYBSVUzXRZ3xZxZxc4mlUvpMbVal-JM-Y",
+            "ku2BdqyMtENipfxqNwNiagAGrGt8snLumfWFAmLsBw4",
+            "lNq58dWxPqB2nRJKLaDQJDPzuZ1t6loHwERqdxWBAMA",
+            "m8TZ9emU53S9w--amofadJr19QuGFHPvfRzD1vgikmc",
+            "mtuMXvypMuK3MrKT2oE70uMZUiYwVrzp4lF_7A8LanY",
+            "pcrrTTlcXjLx1aMKyzgq68Zk8brf0UkxmQfyIV5OPiY",
+            "ppou21tsYLhDPVttI8afUgzNimAvP2DnmW5Ilxi8F1w",
+            "q1YT0s5w-mfFkm6DE1NmSUUZn8GV-m_nbF_jzsRS4xo",
+            "qbTEm7KZ4FtfbEgef7XniUPSeTJJoMiHSrV0otHqZ1U",
+            "qljzPyOaD7AvXHpsRcBD16msmgkzNYBmlOzW1O3A1qg",
+            "rPaRlXo7zOfRlYVtzpilzxTc4QvqKKpcELNVDAeOI7U",
+            "sbwYEMoj4sOM12lxxDWR1yYWEGEkDYt5KwV1cZbdtSg",
+            "tDSnzxjC1M50fHCULqL-4tRBLZOWftkrNy-BC7kmHqU",
+            "vIRLWwLT862rtRTeTgwCCCUtMSNBO9A_Yof6RGrO6Fk",
+            "wV7HKnTROVchGAgxPVw13rf3YGxtItvdzrAADU4FR60",
+            "xOVOagp95jaqFTN4-8YupKQWlb_t-Af5Dfexj_1zP2c",
+            "xlG4pn0xkyBvYiw8Ow-8pKLycnEIxCErUsHiouhMmzE",
+            "y9-SE-VfZcSNB2rNhCO3ya7k8bgRAf9slaOMTNioZGE",
+            "yGu0he7mh-BsUA_EI09RpnhLRTDCrhHQx2SBEQvOMQU"
+          ],
+          "launch": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE"
+        },
+        "business_lease_absent": true,
+        "completed": {
+          "intent_sha256": "d838d4bb736b75c5ae123fa5442441bc6cb132caf3666b78420c04072ee2902a",
+          "receipt_sha256": "d0febff2ec9176f926f4bd96ffe2d0485cc879bf0bb389dd50e14fe06d3157dc",
+          "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+          "state": "SUCCEEDED"
+        },
+        "completed_raw_sha256": "f4186fad07c999106cfc542471a584b5925a29a2d0c41f55a9f81666e49a5f27",
+        "receipt": {
+          "group_id": "07ffecb2-9798-4083-9031-83a77a6dd6f6",
+          "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+          "update_id": "01a19c54-fe9c-70aa-bf79-646bbb9f36d0"
+        },
+        "runtime": "1.3.6",
+        "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "state": "OTA_SERVER_READONLY_VERIFIED"
+      }
+    },
+    "ota_public_manifest": {
+      "sha256": "e800ad3ce462519fc6954bfcbf4dfa8c299564a055f3382c8ede38ac3f395632",
+      "value": {
+        "asset_count": 47,
+        "channel": "production",
+        "created_at": "2026-11-02T12:56:18.332Z",
+        "group_id": "07ffecb2-9798-4083-9031-83a77a6dd6f6",
+        "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+        "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "runtime": "1.3.6",
+        "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+        "update_id": "01a19c54-fe9c-70aa-bf79-646bbb9f36d0"
+      }
+    },
+    "runtime_flag": {
+      "sha256": "c926c386edea83580320e48194b86c290d674723783a7533a9dc94ecf1b8d536",
+      "value": {
+        "sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "DOMAIN_PROMPT_OPTIMIZATION": true
+      }
+    },
+    "unverified": [
+      "production request latency distribution and success rate",
+      "HTTP send-to-receive latency",
+      "native rendering and simulator interaction while Mac locked",
+      "device OTA reception",
+      "all common requests within three seconds",
+      "full sleep analysis within three seconds"
     ]
   }
 }

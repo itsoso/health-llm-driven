@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | 第四轮常见请求性能初筛与局部优化验证中；第三轮已发布，App 三秒验收未完成 |
+| 状态 | released_acceptance_partial |
+| 当前阶段 | 第四轮已合入 main、部署后端并发布 OTA；App 三秒与设备接收验收仍未完成 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 5806a685d880cb258f2733fe40cef0a9849cc195 |
 
@@ -413,3 +413,36 @@ CI发布/计时契约68项通过。没有改变执行预算或调度估时，历
 修复改为对原文fullmatch，不先移除材料边界；两个授权反例先红，
 加真实Pi模型提议也不能触发calendar read的反例，共31项通过。
 后续必须以新提交重新取得独立GO与完整CI/发布证据，旧通过不替代新候选。
+
+
+### 第四轮发布收尾（最新状态）
+
+候选 `cb6b698d033c5aa1fe8edcca13a4f720899b66c4` 已合入 main 并完成后端与 iOS OTA。
+以上“未提交/未发布”是过程状态，不能覆盖本节的精确版本证据；原 NO-GO 和失败样本仍保留。
+本轮筛查覆盖16类常见请求的两模型样本，优先优化慢睡眠分析；饮水补测发现日期正确性问题后
+先修复再发布，没有将错误答案、预算停止或加载提示计为性能成功。
+
+- G4：cb6独立GO；原23f缩进材料读取漏洞NO-GO保留，新原文匹配与真实Pi反例通过。
+  固定候选CI-mode3676项、独立水域/卡片48项及原漏洞探针通过；真实模型Harness exit0。
+- G5：[完整CI41441749609](https://github.com/itsoso/health-llm-driven/actions/runs/41441749609)
+  首次32/32成功；PostgreSQL两分片exit0，JUnit确认新增31个water测试全部执行通过、无skip。
+  [发布预检41442976831](https://github.com/itsoso/health-llm-driven/actions/runs/41442976831)通过。
+  canonical staging、固定只读凭据刷新、授权轮换均单次成功，保留原锁/回执/审计，没有备份或恢复演练。
+- [后端41446168567](https://github.com/itsoso/health-llm-driven/actions/runs/41446168567)成功；
+  独立回读生产精确SHA、干净工作树、对应SUCCEEDED回执、授权与无业务租约。
+  health-backend、celery-worker、celery-beat、reva-laya均active/running，内外health均healthy；
+  实际进程DOMAIN_PROMPT_OPTIMIZATION=true。
+- [OTA validate41447062231](https://github.com/itsoso/health-llm-driven/actions/runs/41447062231)
+  后单次[publish41447774658](https://github.com/itsoso/health-llm-driven/actions/runs/41447774658)成功。
+  服务端完成回执与公开manifest独立一致：group `07ffecb2-9798-4083-9031-83a77a6dd6f6`，
+  update `01a19c54-fe9c-70aa-bf79-646bbb9f36d0`，production/iOS/runtime1.3.6，47资源及启动包摘要匹配。
+
+后端部署后以同一干净SHA重新跑饮水合成样本：4/4正确完成、零模型调用，首条有效内容233–2291ms，
+全程260–2586ms。首样本明显慢于其余233–248ms，不删除、不挑快样本，也不从四次数据推导生产长尾。
+7日4550ml及每天500–800ml与日期逐项核对；这仍是本地SQLite/Pi链路，非线上个人请求或手机绘制。
+先前睡眠App能力样本首卡302–1106ms，完整分析仍可超过三秒，质量待办继续保留。
+
+G6仅线上发布证据通过；真实用户请求分布、HTTP发送至接收、原生绘制、模拟器交互和设备OTA接收
+均未验证。Mac锁屏时继续无界面检查，没有要求手机/电脑解锁；本批不宣称全面达到三秒SLA。
+机器证据、全部前后样本、审查裁决和公开清单摘要已写入
+`docs/reviews/2026-11-02-common-prompt-latency.json`。后续文档提交只收尾证据，不重部署同一运行时代码。
