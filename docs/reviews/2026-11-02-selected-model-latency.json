@@ -1474,7 +1474,7 @@
   "locked_screen_performance_followup": {
     "baseline_sha": "fd28f9a2e0eb00549b2dc5559ea6a7f8ede71188",
     "production_sha_observed": "70d318d7168534694539dd65990748eb6e7528d7",
-    "status": "implementation_in_progress_not_released",
+    "status": "released_acceptance_partial",
     "artifacts": [
       {
         "path": "/private/tmp/reva-app-visible-latency-followup-20261102.json",
@@ -3455,6 +3455,277 @@
       "verdict": "NO-GO",
       "finding": "History corrections lost by deterministic synthesis bypass; limit all lookup shortcuts to new conversations and assert released/persisted correction text.",
       "pushed": false
+    },
+    "final_candidate_release": {
+      "candidate_sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+      "code_review": {
+        "verdict": "GO",
+        "independent_tests_passed": 271,
+        "history_correction_preserved": true
+      },
+      "local_integration": {
+        "passed": 501,
+        "seconds": 113.87
+      },
+      "full_ci": {
+        "run_id": 41388549068,
+        "jobs_passed": 32
+      },
+      "release_validate_run_id": 41389579925,
+      "backend": {
+        "authorization_matches": true,
+        "backend_completed": {
+          "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+          "state": "SUCCEEDED"
+        },
+        "backend_completed_sha256": "e2f2ca6a5bf93f933f5630eb9b233e8c208965bcdf9b7c987a6ef01c846c843d",
+        "business_lease_absent": true,
+        "local_health": "healthy",
+        "production_clean": true,
+        "public_health": "healthy",
+        "services": {
+          "celery-beat": "active/running",
+          "celery-worker": "active/running",
+          "health-backend": "active/running",
+          "reva-laya": "active/running"
+        },
+        "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "state": "BACKEND_READONLY_VERIFIED"
+      },
+      "backend_run_id": 41391562479,
+      "ota_validate_run_id": 41392147077,
+      "ota_publish_run_id": 41392335561,
+      "ota_status": "PUBLIC_OTA_MANIFEST_VERIFIED",
+      "final_synthetic_benchmark": {
+        "synthetic_only": true,
+        "engine": "disposable_sqlite",
+        "rows": [
+          {
+            "case": "sleep",
+            "repeat": 0,
+            "calls": [],
+            "passed": true,
+            "first_ms": 865,
+            "total_ms": 943,
+            "answer_chars": 144,
+            "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 74,
+              "pre_llm_ms": 101,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 2,
+                "opener_ms": 2,
+                "system_prompt_ms": 41,
+                "kb_ms": 8,
+                "inspect_ms": 0,
+                "history_ms": 22,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 759,
+              "end_to_end_total_ms": 867,
+              "end_to_end_ttft_ms": 864
+            }
+          },
+          {
+            "case": "sleep",
+            "repeat": 1,
+            "calls": [],
+            "passed": true,
+            "first_ms": 356,
+            "total_ms": 383,
+            "answer_chars": 144,
+            "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 13,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 6,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 345,
+              "end_to_end_total_ms": 357,
+              "end_to_end_ttft_ms": 356
+            }
+          },
+          {
+            "case": "sleep",
+            "repeat": 2,
+            "calls": [],
+            "passed": true,
+            "first_ms": 293,
+            "total_ms": 319,
+            "answer_chars": 144,
+            "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 12,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 6,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 281,
+              "end_to_end_total_ms": 293,
+              "end_to_end_ttft_ms": 292
+            }
+          }
+        ]
+      },
+      "artifacts": {
+        "reva-simple-lookup-mobile-final.json": {
+          "path": "/private/tmp/reva-simple-lookup-mobile-final.json",
+          "sha256": "6a5d72e7e66c8d25b5160fe4e150dccc1342968fcfa13eb4cec3ae08d44cf819"
+        },
+        "reva-lookup-ddb7b779-live-gate-result.json": {
+          "path": "/private/tmp/reva-lookup-ddb7b779-live-gate-result.json",
+          "sha256": "cda6188806a8e19941010a0ce4574fdd59b406f54bfacd5e32db9a7bf1cac734"
+        },
+        "reva-lookup-ci-current.json": {
+          "path": "/private/tmp/reva-lookup-ci-current.json",
+          "sha256": "ff1a329a0b476ed2aa3a899f4b36819087a2d27e51680cee202cce5ebf5e4500"
+        },
+        "reva-lookup-validate.json": {
+          "path": "/private/tmp/reva-lookup-validate.json",
+          "sha256": "c0e88c9a3a40ec6571a7fa2719ca502fea81f4993d51c3bd139ffe3574602c68"
+        },
+        "reva-lookup-ddb7b779-backend-acceptance.json": {
+          "path": "/private/tmp/reva-lookup-ddb7b779-backend-acceptance.json",
+          "sha256": "ee8b6c324e91dc6ed0c1590ecc4ffc48be7d27dcf1c90e8e26b43c961353c8aa"
+        },
+        "reva-lookup-ddb7b779-rotation-once.completed.json": {
+          "path": "/private/tmp/reva-lookup-ddb7b779-rotation-once.completed.json",
+          "sha256": "7a641e999f908dfdcf1470d1b25486f08b4497a9ca04a552a723cd9a5ba13145"
+        },
+        "reva-lookup-ota-validate-run.json": {
+          "path": "/private/tmp/reva-lookup-ota-validate-run.json",
+          "sha256": "47a8ce16278b6e08360b1d3d77856dc8783726e0eb68d5dc579e2f45c9f91080"
+        },
+        "reva-lookup-ota-publish-run.json": {
+          "path": "/private/tmp/reva-lookup-ota-publish-run.json",
+          "sha256": "24aca984d24d909da622101db051f2e88d90082b54a0e7529e3d8ec9d31721c3"
+        },
+        "reva-lookup-ddb7b779-ota-acceptance.server-proof.json": {
+          "path": "/private/tmp/reva-lookup-ddb7b779-ota-acceptance.server-proof.json",
+          "sha256": "94eef341c7e16483b1e5234479cf772c2167aa279a412365a416b68eb2ca5fcb"
+        },
+        "reva-lookup-ddb7b779-ota-acceptance.public-manifest-proof.json": {
+          "path": "/private/tmp/reva-lookup-ddb7b779-ota-acceptance.public-manifest-proof.json",
+          "sha256": "a90d5375e3aafda333e90605ba104c1cac74e6468c5298d9e60b63bfdfd542b4"
+        },
+        "reva-lookup-live-variable-cleanup.json": {
+          "path": "/private/tmp/reva-lookup-live-variable-cleanup.json",
+          "sha256": "c49e5f8d73c75b2258cc56c9eaba18fec26d29ac48c033566aadfa28616dda68"
+        }
+      },
+      "overall_three_second_app_goal": "NOT_VERIFIED",
+      "native_ui_verification": "NOT_VERIFIED_LOCKED_SCREEN",
+      "mobile_runtime_tree_changed_since_prior_ota": false,
+      "ota_server": {
+        "artifact": {
+          "assets": [
+            "-iq30lV4GbK_5QCeRoRO-nFwzxd753NdQ6oqwSlfHVQ",
+            "0Dpc16Zu8QxRR5FvnVh4stCgpa1G9AWjHNmWfvqlWv0",
+            "0FydMNefRaeOVYWi5-xnxqBqiD3ZE34dUFnoyHszznY",
+            "0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb-LCkA",
+            "3Fa5dr1FY44RJfZol0NSXmiGrgvvLI9GUZlIM2hagx8",
+            "3Y7kA7vL9eWLd9ykrAPrr6E6KEo9h9jqnKSQQ1qG-kg",
+            "78edo8TJffsVcb_2IClYqwUpxaox6DkmAFeLPjWdFEc",
+            "7xP8DfxS7COBdYX9fhCfvfWTo7JUnEDOcaybDtoSzCw",
+            "7xSfCL3S_wmk4shXNHa3sPP7sVtiOVSt5ZiZ5xdb7do",
+            "AriOrZGt5XENfKGO20Omllpx2TcywG8pDMB6bdJJ6Yc",
+            "BvTQCSPqJGl99d8LkphBdZkdi9JXdqAtUxu0AeOT7EI",
+            "CKnVtRPPlH4i7egemoQ72Nd2OmNETNIUhL_edmLMZUM",
+            "FvkimFh7qytGm8E8DfxtXRcbyhC60MkFOtFrwCO_cX0",
+            "GZbLuodu68L0o3kUlVL3movAjfgAWW98KjpH6XRhsBE",
+            "IyXFOnPlTEOMu8YN_92LUT1HG6QuL1ZxPvQEuV4Mofw",
+            "J_TSKdRAklv3IS1d__pF1Zayx7O7KQXJa4ObIIGh2-s",
+            "K3RDqaWOksoRpXW9wRWYYVpX3eMFzYznDWAmBrMCzZg",
+            "LN_rjlzN55dvcBL7jM5zryIpAp7iHU8VCf7RFIccbNg",
+            "MfCZwT9uS6BfG0cb8XDLVJMklHQiKRc3LePKXPKeaho",
+            "P1Ad2wXHCCm7tRz-nKn_9X854GBFfCV7PM8l33Z_CHA",
+            "PQavHzHNg6znomWgFLj7Xe4Vdw7KyPelVVUZDmJ-A8I",
+            "Pd0Hc-0n4j0leJ8wFzGzrEVa2L5aonoKG4OPicbSciU",
+            "VwohI4CsLEQxbZlLKr6PvwztC0aXZNClgSa9buvFrp0",
+            "YeirpaTpgf4iz3yOi82-oAR251xiw38Bv37jM2HWhCg",
+            "ZPn7YjaB8RImHpovl4JngkOfOSXeqPRKV9Hk25W6bP0",
+            "ajQS8FjH2N_ZFwxB6FreSOUVbsuJNWEQylegonc0r0Y",
+            "beyjK1a5f6H6h_rNaZa0bMRRkKVTQA5_698dIJMJm1c",
+            "cIp5z1YbiipIUM4CVFhNOlIxBGvgj7f630tu39sxF4s",
+            "fh3QPdTOkLZYBSVUzXRZ3xZxZxc4mlUvpMbVal-JM-Y",
+            "ku2BdqyMtENipfxqNwNiagAGrGt8snLumfWFAmLsBw4",
+            "lNq58dWxPqB2nRJKLaDQJDPzuZ1t6loHwERqdxWBAMA",
+            "m8TZ9emU53S9w--amofadJr19QuGFHPvfRzD1vgikmc",
+            "mtuMXvypMuK3MrKT2oE70uMZUiYwVrzp4lF_7A8LanY",
+            "pcrrTTlcXjLx1aMKyzgq68Zk8brf0UkxmQfyIV5OPiY",
+            "ppou21tsYLhDPVttI8afUgzNimAvP2DnmW5Ilxi8F1w",
+            "q1YT0s5w-mfFkm6DE1NmSUUZn8GV-m_nbF_jzsRS4xo",
+            "qbTEm7KZ4FtfbEgef7XniUPSeTJJoMiHSrV0otHqZ1U",
+            "qljzPyOaD7AvXHpsRcBD16msmgkzNYBmlOzW1O3A1qg",
+            "rPaRlXo7zOfRlYVtzpilzxTc4QvqKKpcELNVDAeOI7U",
+            "sbwYEMoj4sOM12lxxDWR1yYWEGEkDYt5KwV1cZbdtSg",
+            "tDSnzxjC1M50fHCULqL-4tRBLZOWftkrNy-BC7kmHqU",
+            "vIRLWwLT862rtRTeTgwCCCUtMSNBO9A_Yof6RGrO6Fk",
+            "wV7HKnTROVchGAgxPVw13rf3YGxtItvdzrAADU4FR60",
+            "xOVOagp95jaqFTN4-8YupKQWlb_t-Af5Dfexj_1zP2c",
+            "xlG4pn0xkyBvYiw8Ow-8pKLycnEIxCErUsHiouhMmzE",
+            "y9-SE-VfZcSNB2rNhCO3ya7k8bgRAf9slaOMTNioZGE",
+            "yGu0he7mh-BsUA_EI09RpnhLRTDCrhHQx2SBEQvOMQU"
+          ],
+          "launch": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE"
+        },
+        "business_lease_absent": true,
+        "completed": {
+          "intent_sha256": "8cfc1342ed8ca5628bf7624d9c882d45550cc02ffa6ce71fa8b33a42158a763d",
+          "receipt_sha256": "3c13237ee9093b9b39aa18543351a112cec6d3716a5229f6cd21ed5ea169929d",
+          "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+          "state": "SUCCEEDED"
+        },
+        "completed_raw_sha256": "0945ba3ec1f18afc76645c82e46ddd43926493a79ebcd5ff0b7b3e21e7ad3392",
+        "receipt": {
+          "group_id": "334737e2-ea06-4e35-bf7c-3915cbeef94f",
+          "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+          "update_id": "01a19ab0-635a-7616-a9a4-e1d5cf360652"
+        },
+        "runtime": "1.3.6",
+        "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "state": "OTA_SERVER_READONLY_VERIFIED"
+      },
+      "ota_public_manifest": {
+        "asset_count": 47,
+        "channel": "production",
+        "created_at": "2026-11-02T05:16:53.466Z",
+        "group_id": "334737e2-ea06-4e35-bf7c-3915cbeef94f",
+        "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+        "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "runtime": "1.3.6",
+        "sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+        "update_id": "01a19ab0-635a-7616-a9a4-e1d5cf360652"
+      },
+      "live_confirmation_cleanup": {
+        "candidate_sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "name": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+        "state": "REMOVED_AND_ABSENT_VERIFIED"
+      }
     }
   }
 }

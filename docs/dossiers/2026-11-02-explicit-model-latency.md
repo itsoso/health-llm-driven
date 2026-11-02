@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | in_progress |
-| 当前阶段 | 首轮 G5 已发布；第二轮性能优化 G3 验证中，三秒 App 验收未完成 |
+| 当前阶段 | 第二轮 G5 后端及 OTA 已发布；自动线上复验通过，三秒 App 验收未完成 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 5806a685d880cb258f2733fe40cef0a9849cc195 |
 
@@ -204,7 +204,46 @@ live Harness、完整 CI、第二轮部署及 OTA，不能复用首轮发布回�
 
 第二轮 G4 首次 NO-GO：`474423b026daf78b6f410d95fca1a1d322dd94b9` 的事实免转述
 未排除历史会话，独立 Pi/Gateway 对照复现先前用户否认设备记录却被最终答复遗漏。
-该候选未推送。整改把规划、转述和可选路由跳过都限制为新会话；免转述另外要求初始
+该候选未单独推送或发布，整改后同批进入主干。整改把规划、转述和可选路由跳过都限制为新会话；免转述另外要求初始
 对话只有当前用户消息。新回归先 RED，再断言历史更正同时存在于保存文本和实际释放
 文本。定向87项通过，完整501项重新通过（113.87秒）；此前该候选 live Harness 成功只记为历史
 证据，不能代替修订候选。另一项前端发布占锁期间没有推送或操作生产，锁闭合后再核验。
+
+
+## 第二轮精确候选验证与发布证据
+
+候选 `ddb7b7796e450105acdcdf755f74fc4a3c25b735` 已合入 main；独立 G4 GO，
+reviewer 重新执行271项测试通过，并复现真实 Pi/Gateway 历史更正路径仍保留两次模型调用。
+本地最终集成501项通过，未把历史 NO-GO 候选的评测复用为本候选。
+
+精确候选 live Harness：12 invariants、50 health core、5 live orchestrator、12 trajectory、
+9 goldens 通过；live orchestrator 平均8.71秒，因此不能宣称所有回复已三秒内。
+完整 CI [41388549068](https://github.com/itsoso/health-llm-driven/actions/runs/41388549068)
+32/32通过；release validate
+[41389579925](https://github.com/itsoso/health-llm-driven/actions/runs/41389579925)成功。
+
+最终同一合成查询再次测量3/3完成，首个有效文本0.87、0.36、0.29秒，完整结束0.94、0.38、
+0.32秒，均无模型调用。仅证明新会话单日睡眠事实查询在该内存SQLite测试环境的收益；
+不覆盖HTTP、生产负载、真实用户历史、识图或native显示时间。Mac锁屏未作为后台验证的阻断，
+真实native显示仍未验证。
+
+后端 [41391562479](https://github.com/itsoso/health-llm-driven/actions/runs/41391562479)
+发布成功，独立回读生产 HEAD 为该候选且工作树干净，health-backend、Celery worker/beat、
+reva-laya 均 active/running，内外网 health 正常，发布锁已释放。
+后端完成回执 SHA256：`e2f2ca6a5bf93f933f5630eb9b233e8c208965bcdf9b7c987a6ef01c846c843d`。
+
+按用户本会话明确要求继续发布 OTA。本次 Mobile/shared 运行树与上一 OTA 相同，提速来自后端，
+不把重复 bundle 算作新的 Mobile 性能收益。
+OTA [validate 41392147077](https://github.com/itsoso/health-llm-driven/actions/runs/41392147077)
+及 [publish 41392335561](https://github.com/itsoso/health-llm-driven/actions/runs/41392335561)
+成功；group `334737e2-ea06-4e35-bf7c-3915cbeef94f`、
+update `01a19ab0-635a-7616-a9a4-e1d5cf360652`，production/iOS runtime `1.3.6`。
+独立公开 manifest 核对 launch `4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE` 与47项资源
+摘要一致；未声称逐字节下载全部资源、设备已接收或native显示达标。
+OTA 完成回执 SHA256：`0945ba3ec1f18afc76645c82e46ddd43926493a79ebcd5ff0b7b3e21e7ad3392`。
+
+本轮部署前的只读凭据刷新、unused fd28授权关闭及canonical轮换分别经独立G4，
+按原intent单次完成，无备份、回退副本或未知操作重发。生产旧后端70d与旧授权fd28身份独立核对。
+临时 `HARNESS_LIVE_LLM_EVAL_CONFIRMED` 已确认仍绑定本候选后删除并核验不存在。
+完整机器证据位于 `locked_screen_performance_followup.final_candidate_release`。
+本轮G5完成、G6自动线上检查通过；所有请求三秒内、真实App显示及设备接收仍未验收。
