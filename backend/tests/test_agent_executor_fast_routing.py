@@ -1092,17 +1092,27 @@ async def test_staged_high_stakes_turn_revokes_fast_and_compact_record_routes(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("selected_model", ["qwen3.6-flash", "deepseek-v4.1-flash"])
+@pytest.mark.parametrize("selection_source", ["request", "saved_preference"])
 async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
     db,
     auth_user_and_headers,
     monkeypatch,
     selected_model,
+    selection_source,
 ):
     """A UI-selected weak model cannot bypass the medical safety floor."""
     user, _ = auth_user_and_headers
     # Explicit model-selection scenarios use an authenticated administrator.
     user.is_admin = True
     db.flush()
+    if selection_source == "saved_preference":
+        from app.models.user_profile import UserProfile
+        profile = db.query(UserProfile).filter_by(user_id=user.id).one_or_none()
+        if profile is None:
+            profile = UserProfile(user_id=user.id)
+            db.add(profile)
+        profile.llm_model_id = selected_model
+        db.commit()
     executor = AgentExecutor(db)
     created = []
 
@@ -1122,7 +1132,7 @@ async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
     events = await _run(
         executor,
         "我现在胸痛而且呼吸困难，怎么办",
-        extra_context=json.dumps({"client": "mac", "model_id": selected_model}),
+        extra_context=json.dumps({"client": "mac", "model_id": selected_model}) if selection_source == "request" else None,
         user_id=user.id,
     )
     done = events[-1]["data"]

@@ -17039,6 +17039,9 @@ class AgentExecutor:
         runs the same synthesis pipeline but can never mutate user data.
         """
         request_started_at = time.time()
+        # Clear before replay, panel, or any other early-return branch. Only the
+        # current single-model turn may establish an authorized manual choice.
+        self._explicit_request_model_id = None
         selection = selected_notification_id(extra_context)
         self._turn_selected_notification_id = (
             selection if message.strip() == NOTIFICATION_REVIEW_PROMPT
@@ -23914,12 +23917,26 @@ class AgentExecutor:
         )
 
     def _admin_model_override(self, extra_context: Optional[str], user_id: int) -> Optional[str]:
+        """Resolve the current admin's per-message choice, then saved UI preference.
+
+        Mobile persists its picker via /me/llm-preference and normally sends no
+        model_id in extra_context. A saved choice is still manual, not a default
+        route. Retain the factory's owner/admin and recipient-disclosure guards.
+        """
         selected = _extract_model_id_from_extra_context(extra_context)
-        if not selected:
-            return None
         from app.models.user import User
-        admin = self.db.query(User.id).filter(User.id == user_id, User.is_admin.is_(True)).first()
-        return selected if admin is not None else None
+        if selected:
+            admin = self.db.query(User.id).filter(User.id == user_id, User.is_admin.is_(True)).first()
+            return selected if admin is not None else None
+        from app.models.user_profile import UserProfile
+        from app.services.llm.model_registry import get_model
+        from app.services.ai_consent import is_disclosed_model
+
+        profile = (self.db.query(UserProfile).join(User, User.id == UserProfile.user_id)
+                   .filter(UserProfile.user_id == user_id, User.is_admin.is_(True)).first())
+        selected = getattr(profile, "llm_model_id", None) if profile else None
+        entry = get_model(selected) if isinstance(selected, str) and selected else None
+        return selected if entry is not None and is_disclosed_model(entry) else None
 
     def _should_send_raw_images_to_primary_model(self, user_id: int) -> bool:
         """Return True when the active chat model should receive image parts directly."""

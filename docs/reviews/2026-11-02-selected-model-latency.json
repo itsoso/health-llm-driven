@@ -747,5 +747,333 @@
       "95": 3462,
       "99": 3462
     }
+  },
+  "initial_candidate_sha": "1c90fe99747f9fd62da1ccd733c6cc8b77357d5a",
+  "saved_preference_followup": {
+    "script_sha256": "5977ad2f47e474396f6d9e96807002ab6f9e8cfac79071121371de07de27188f",
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "73e3dec5f29f5feb9190466369816aae6a96f2cad37f52d077d6f657b10afbea",
+      "backend/app/services/llm/model_registry.py": "f3519464bd4e44ffc8b5b75343d556a72877d214b608f1a56e6137c98853eaa0"
+    },
+    "request_shape": "admin owned UserProfile.llm_model_id=deepseek-v4.1-flash; extra_context absent",
+    "baseline_source": "5806a685d880cb258f2733fe40cef0a9849cc195 routing modules loaded from git; all other runtime modules unchanged",
+    "baseline": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "rows": [
+        {
+          "case": "story",
+          "repeat": 0,
+          "calls": [
+            {
+              "model": "qwen3.6-flash",
+              "ms": 3846
+            },
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 1235
+            }
+          ],
+          "passed": true,
+          "first_ms": 5895,
+          "total_ms": 5956,
+          "answer_chars": 51,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 66,
+            "pre_llm_ms": 161,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 2,
+              "opener_ms": 2,
+              "system_prompt_ms": 62,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 73,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5090,
+            "first_useful_ms": 4256
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 7,
+          "total_ms": 7,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        },
+        {
+          "case": "story",
+          "repeat": 1,
+          "calls": [
+            {
+              "model": "qwen3.6-flash",
+              "ms": 2138
+            },
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 1114
+            }
+          ],
+          "passed": true,
+          "first_ms": 3507,
+          "total_ms": 3531,
+          "answer_chars": 54,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 3260,
+            "first_useful_ms": 2237
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 6,
+          "total_ms": 6,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        },
+        {
+          "case": "story",
+          "repeat": 2,
+          "calls": [
+            {
+              "model": "qwen3.6-flash",
+              "ms": 4914
+            },
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 1216
+            }
+          ],
+          "passed": true,
+          "first_ms": 6389,
+          "total_ms": 6411,
+          "answer_chars": 43,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6138,
+            "first_useful_ms": 4975
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 6,
+          "total_ms": 6,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        }
+      ]
+    },
+    "candidate": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "rows": [
+        {
+          "case": "story",
+          "repeat": 0,
+          "calls": [
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 2530
+            }
+          ],
+          "passed": true,
+          "first_ms": 3237,
+          "total_ms": 3311,
+          "answer_chars": 52,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 67,
+            "pre_llm_ms": 147,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 1,
+              "system_prompt_ms": 99,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 20,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2535,
+            "first_useful_ms": 2716
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 7,
+          "total_ms": 7,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        },
+        {
+          "case": "story",
+          "repeat": 1,
+          "calls": [
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 1218
+            }
+          ],
+          "passed": true,
+          "first_ms": 1480,
+          "total_ms": 1502,
+          "answer_chars": 59,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 4,
+            "pre_llm_ms": 15,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 2,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1222,
+            "first_useful_ms": 1122
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 6,
+          "total_ms": 6,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        },
+        {
+          "case": "story",
+          "repeat": 2,
+          "calls": [
+            {
+              "model": "deepseek-v4.1-flash",
+              "ms": 1075
+            }
+          ],
+          "passed": true,
+          "first_ms": 1333,
+          "total_ms": 1357,
+          "answer_chars": 38,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1079,
+            "first_useful_ms": 1111
+          }
+        },
+        {
+          "case": "travel",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 6,
+          "total_ms": 6,
+          "answer_chars": 23,
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": null,
+            "pre_llm_ms": null,
+            "pre_llm_stages": null,
+            "model_wait_ms": null,
+            "first_useful_ms": null
+          }
+        }
+      ]
+    },
+    "limits": [
+      "3 repeats per case, no production p95/p99 claim",
+      "Travel already takes the deterministic local path with no extra_context; no speed gain attributed to this patch",
+      "A cold story task still exceeds 3 seconds",
+      "Saved-preference provider label in this probe is the configured choice; no claim that raw vendor response model metadata was captured"
+    ]
   }
 }

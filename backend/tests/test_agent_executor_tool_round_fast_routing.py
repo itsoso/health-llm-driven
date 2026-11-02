@@ -237,6 +237,16 @@ async def _run(executor, message, user_id, extra_context=None):
     ]
 
 
+def _save_model_preference(db, user_id, model_id):
+    from app.models.user_profile import UserProfile
+    profile = db.query(UserProfile).filter_by(user_id=user_id).one_or_none()
+    if profile is None:
+        profile = UserProfile(user_id=user_id)
+        db.add(profile)
+    profile.llm_model_id = model_id
+    db.commit()
+
+
 @pytest.mark.asyncio
 async def test_advice_turn_tool_round_fast_synthesis_strong(db, auth_user_and_headers, monkeypatch):
     """核心: flag 开, advice 轮调工具 → 首个工具决策轮 fast (qwen3.6-flash), 工具后合成轮强模型。
@@ -566,13 +576,16 @@ async def test_explicit_model_owns_tool_and_answer_rounds(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("selected_model", ["qwen3.7-max", "deepseek-v4.1-flash"])
+@pytest.mark.parametrize("selection_source", ["request", "saved_preference"])
 async def test_explicit_model_direct_answer_needs_only_one_call(
-    db, auth_user_and_headers, monkeypatch, selected_model
+    db, auth_user_and_headers, monkeypatch, selected_model, selection_source
 ):
     """Ordinary chat must not pay for a discarded Qwen answer before the selected model."""
     user, _ = auth_user_and_headers
     user.is_admin = True
     db.commit()
+    if selection_source == "saved_preference":
+        _save_model_preference(db, user.id, selected_model)
     executor = AgentExecutor(db)
     provider_calls = []
 
@@ -607,7 +620,7 @@ async def test_explicit_model_direct_answer_needs_only_one_call(
 
     events = await _run(
         executor, "讲一个纸飞机的小故事，只需一句话。", user.id,
-        extra_context=json.dumps({"model_id": selected_model}),
+        extra_context=json.dumps({"model_id": selected_model}) if selection_source == "request" else None,
     )
     rendered = "".join(
         e["data"].get("content", "") for e in events if e.get("event") == "token"
@@ -619,6 +632,46 @@ async def test_explicit_model_direct_answer_needs_only_one_call(
     assert "纸飞机带着小熊的愿望飞过了小溪。" in rendered
     assert provider_calls == [{"model": selected_model, "has_tools": True}]
     assert "fast_tool_round_direct_answer_resynthesized" not in done["fallback_reasons"]
+
+
+@pytest.mark.parametrize("is_admin", [False, True])
+def test_saved_selection_is_owner_and_admin_bound(db, auth_user_and_headers, is_admin):
+    user, _ = auth_user_and_headers
+    user.is_admin = is_admin
+    db.commit()
+    _save_model_preference(db, user.id, "deepseek-v4.1-flash")
+    executor = AgentExecutor(db)
+    assert executor._admin_model_override(None, user.id) == ("deepseek-v4.1-flash" if is_admin else None)
+    assert executor._admin_model_override(None, user.id + 100000) is None
+    # A per-message selection takes precedence over the saved preference.
+    selected = executor._admin_model_override(json.dumps({"model_id": "qwen3.7-max"}), user.id)
+    assert selected == ("qwen3.7-max" if is_admin else None)
+
+
+def test_saved_selection_must_still_be_disclosed(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
+    _save_model_preference(db, user.id, "deepseek-v4.1-flash")
+    monkeypatch.setattr("app.services.ai_consent.is_disclosed_model", lambda entry: False)
+    assert AgentExecutor(db)._admin_model_override(None, user.id) is None
+
+
+@pytest.mark.asyncio
+async def test_panel_early_branch_clears_previous_manual_origin(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    executor._explicit_request_model_id = "claude-opus-4.7"
+    seen = []
+
+    async def panel(*args, **kwargs):
+        seen.append(executor._explicit_request_model_id)
+        yield {"event": "done", "data": {"content": "合成测试"}}
+
+    monkeypatch.setattr(executor, "_run_multi_model_stream", panel)
+    await _run(executor, "讲一个纸飞机的小故事，只需一句话。", user.id,
+               json.dumps({"multi_model": True}))
+    assert seen == [None]
 
 
 @pytest.mark.parametrize("second_has_selection", [False, True])
