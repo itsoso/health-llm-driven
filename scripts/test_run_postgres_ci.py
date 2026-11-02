@@ -36,6 +36,7 @@ test_remote_health_transport.py'''.splitlines()
 RECORD_CONTRACT_SELECTORS = {
     "tests/test_agent_record_contract_postgres.py",
     "tests/test_water_record_lookup.py",
+    "tests/test_range_record_lookup.py",
     "tests/test_nasal_wash_endpoint.py",
     "tests/test_rhinitis_checkin_routing.py",
 }

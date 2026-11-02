@@ -301,17 +301,22 @@ def requires_owned_read_tool_scope(scope: OwnedReadScope) -> bool:
             or "recent_workout_candidates_not_identified_event" in scope.limitations
             or "subday_workout_timestamp_scope" in scope.limitations
             or "daily_supplement_recorded_intakes" in scope.limitations
-            or "water_record_lookup" in scope.limitations)
+            or "water_record_lookup" in scope.limitations
+            or "range_record_lookup" in scope.limitations)
 
 
-def _closed_water_lookup_query(snapshot) -> dict | None:
+def _closed_record_lookup_query(snapshot) -> dict | None:
     """A whole factual request, never a date supplied by the model or history."""
     match = re.fullmatch(
         r"(?:请)?(?:查询|查看)(?:我(?:的)?)?"
         r"(?P<period>今天|今日|昨天|昨日|前天|本周|上周|最近(?P<days>[1-9]|[12][0-9]|3[01])天)"
-        r"(?:的)?饮水(?:记录|数据)[。.!！?？]?", snapshot.envelope.text,
+        r"(?:的)?(?P<domain>饮水|饮食|睡眠)(?:记录|数据)[。.!！?？]?", snapshot.envelope.text,
     )
     if match is None or snapshot.intent.is_write:
+        return None
+    dimension = {'饮水': 'water', '饮食': 'diet', '睡眠': 'sleep'}[match['domain']]
+    # Keep existing single-day diet/sleep semantics and their daily-plan binder.
+    if dimension != 'water' and not (match['days'] or match['period'] in {'本周', '上周'}):
         return None
     if match['days']:
         zone = ZoneInfo(snapshot.context.timezone)
@@ -322,7 +327,7 @@ def _closed_water_lookup_query(snapshot) -> dict | None:
     else:
         window = resolve_calendar_query_window(
             match['period'], snapshot.context.current_time, 'diet', timezone_name=snapshot.context.timezone)
-    return {'dimension': 'water', **window} if window else None
+    return {'dimension': dimension, **window} if window else None
 
 
 def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
@@ -338,9 +343,10 @@ def resolve_owned_read_scope(snapshot) -> OwnedReadScope | None:
     owner = snapshot.context.user_id
     if type(owner) is not int or owner <= 0 or type(snapshot.envelope.user_id) is not int or snapshot.envelope.user_id != owner:
         return None
-    water_query = _closed_water_lookup_query(snapshot)
-    if water_query is not None:
-        return OwnedReadScope((water_query,), ('water_record_lookup',))
+    record_query = _closed_record_lookup_query(snapshot)
+    if record_query is not None:
+        marker = 'water_record_lookup' if record_query['dimension'] == 'water' else 'range_record_lookup'
+        return OwnedReadScope((record_query,), (marker,))
     active = _active(snapshot.envelope.text)
     if active is not None and _owned_active(active) and not _MUTATION.search(active):
         weight_trend = _WEIGHT_TREND_ADVICE.fullmatch(active)

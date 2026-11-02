@@ -13975,7 +13975,7 @@ class AgentExecutor:
         match = re.fullmatch(
             r"(?:请)?(?:查询|查看)(?:我(?:的)?)?"
             r"(?:今天|今日|昨天|昨日|前天|本周|上周|最近(?:[1-9]|[12][0-9]|3[01])天)"
-            r"(?:的)?(?P<domain>睡眠|饮食|饮水)(?:记录|数据)[。.!！?？]?", message.strip(),
+            r"(?:的)?(?P<domain>睡眠|饮食|饮水)(?:记录|数据)[。.!！?？]?", message,
         )
         if (
             not getattr(settings, "domain_prompt_optimization", False)
@@ -14003,12 +14003,13 @@ class AgentExecutor:
                 or scope.queries[0].get("dimension") != {"睡眠": "sleep", "饮食": "diet", "饮水": "water"}[match["domain"]]):
             return None
         query = scope.queries[0]
-        if query.get("dimension") != "water" and not re.fullmatch(
+        range_lookup = "range_record_lookup" in scope.limitations
+        if query.get("dimension") != "water" and not range_lookup and not re.fullmatch(
             r"(?:请)?(?:查询|查看)(?:我(?:的)?)?(?:今天|今日|昨天|昨日|前天)"
             r"(?:的)?(?:睡眠|饮食)(?:记录|数据)[。.!！?？]?", message.strip(),
         ):
             return None
-        if not query.get("start_date") or (query.get("dimension") != "water"
+        if not query.get("start_date") or (query.get("dimension") != "water" and not range_lookup
                                          and query.get("start_date") != query.get("end_date")):
             return None
         return scope
@@ -14020,7 +14021,8 @@ class AgentExecutor:
         water_lookup = bool(scope and 'water_record_lookup' in scope.limitations)
         if (sealed or (not history_free and not water_lookup) or scope is None
                 or not scope.queries[0].get("start_date")
-                or (not water_lookup and scope.queries[0]["start_date"] != scope.queries[0]["end_date"])):
+                or (not water_lookup and "range_record_lookup" not in scope.limitations
+                    and scope.queries[0]["start_date"] != scope.queries[0]["end_date"])):
             return None
         completion = self._composed_read_completion()
         if (completion is None or not completion.complete
@@ -14032,6 +14034,10 @@ class AgentExecutor:
             )
 
             return render_verified_diet_lookup(scope.queries[0], completion)
+        if "range_record_lookup" in scope.limitations:
+            from app.services.agent_record_lookup_render import render_verified_sleep_lookup
+
+            return render_verified_sleep_lookup(scope.queries[0], completion)
         return completion.trusted_fact_summary or None
 
     def _closed_sleep_analysis_scope(self):
@@ -16682,6 +16688,7 @@ class AgentExecutor:
         elif panel_completion is not None and panel_read_scope is not None and 'water_record_lookup' in panel_read_scope.limitations:
             full_reply = panel_completion.trusted_fact_summary
         elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None
+              or (panel_read_scope is not None and 'range_record_lookup' in panel_read_scope.limitations)
               or (panel_read_scope is not None and panel_read_scope.workout_selection is not None)) and panel_completion is not None:
             full_reply = panel_completion.trusted_fact_summary + "\n\n" + full_reply
         from app.services.agent_composed_read_completion import (
@@ -21800,6 +21807,8 @@ class AgentExecutor:
         elif composed_completion is not None and read_scope is not None and 'water_record_lookup' in read_scope.limitations:
             full_reply = composed_completion.trusted_fact_summary
         elif (composed_synthesis_used or self._focused_read_scopes()[1] is not None
+              or (read_scope is not None and 'range_record_lookup' in read_scope.limitations
+                  and not simple_lookup_rendered)
               or (read_scope is not None and read_scope.workout_selection is not None)) and composed_completion is not None:
             if final_finish_reason != "stop":
                 # A status flag does not make an incomplete model candidate

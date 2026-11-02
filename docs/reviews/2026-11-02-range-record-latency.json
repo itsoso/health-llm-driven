@@ -1,0 +1,995 @@
+{
+  "version": 1,
+  "status": "in_progress",
+  "baseline_sha": "dd69f76f19696a86f34b2c9789a6c0a949fde49b",
+  "synthetic_only": true,
+  "environment": "ephemeral SQLite; real providers and Pi/Gateway; saved preference; seven App capabilities; no HTTP/native rendering timing",
+  "baseline": {
+    "raw_sha256": "758c7eda4b7be799766e23c9c2162478966d066b8a1ad3bfab5074389fe4b9f5",
+    "rows": [
+      {
+        "case": "diet_week__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9009,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 10551
+          },
+          {
+            "prompt_chars": 9345,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 3821
+          },
+          {
+            "prompt_chars": 9681,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": false,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1284
+          }
+        ],
+        "tools": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "stop_reason": "call_budget",
+        "total_ms": 18308
+      },
+      {
+        "case": "diet_week__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9009,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 965
+          },
+          {
+            "prompt_chars": 9617,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 973,
+            "finish_reason": "stop",
+            "ms": 2425,
+            "synthetic_visible_text_sha256": "df6c598f5e010e04af460057a3c58c188a8275d16781349bd30919c48c40ac3e"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "diet",
+              "days": 7
+            },
+            "ms": 23
+          }
+        ],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 1314,
+        "total_ms": 3976,
+        "answer_chars": 839,
+        "answer": "```reva-ui\n{\"type\":\"diet_daily_summary\",\"v\":1,\"data\":{\"record_date\":\"2026-11-02\",\"meals\":[{\"meal_type\":\"dinner\",\"name\":\"晚餐\",\"detail\":\"合成番茄\",\"calories\":200,\"protein\":null,\"carbs\":null,\"fat\":null}],\"totals\":{\"calories\":200,\"protein\":null,\"carbs\":null,\"fat\":null,\"fiber\":null},\"nutrition_coverage\":{\"version\":1,\"record_count\":1,\"incomplete_records\":1,\"missing_by_nutrient\":{\"calories\":0,\"protein\":1,\"carbs\":1,\"fat\":1,\"fiber\":1}},\"observations\":[]}}\n```\n\n我查了最近 7 天的饮食记录，实际查到的记录很少：\n\n**关键情况**\n1. 这段时间内只有 1 条记录，也就是**今天（11 月 2 日）的晚餐：合成番茄，约 200 千卡**。\n2. 这一餐只填了热量，蛋白质、碳水、脂肪、纤维都是空白，因此没法评估营养结构。\n3. 昨天及更早的 6 天，系统里没有任何饮食记录，所以查不到。\n\n**顺带提醒**\n今天到现在累计只记录了 200 千卡，饮水也只有 500ml（目标 2000ml）；现在是 21:28，如果今天实际还吃了别的东西，只是没有记录，建议补记一下，否则后续的饮食分析会明显偏低。\n\n**建议**\n- 想让我长期评估饮食，可以从明天开始把三餐（含大致份量和热量）都记上；\n- 如果更早的饮食是在别的地方记录的，告诉我日期和内容，我可以帮你补录。\n\n如果需要，我也可以现在帮你把今天早、午餐补进来；告诉我吃了什么就行。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 7,
+          "pre_llm_ms": 14,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 3395,
+          "first_useful_ms": 1305,
+          "end_to_end_total_ms": 3846,
+          "end_to_end_ttft_ms": 1313,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_week__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9175,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 4327
+          },
+          {
+            "prompt_chars": 9511,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 6126
+          },
+          {
+            "prompt_chars": 9847,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": false,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2686
+          }
+        ],
+        "tools": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "stop_reason": "call_budget",
+        "total_ms": 13468
+      },
+      {
+        "case": "sleep_week__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9175,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1437
+          },
+          {
+            "prompt_chars": 9511,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1299
+          },
+          {
+            "prompt_chars": 10919,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1696,
+            "finish_reason": "stop",
+            "ms": 3879,
+            "synthetic_visible_text_sha256": "d27460fbeebec5970fb94402237e7537fb75e076db4f3bfe4f191542851274c2"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7
+            },
+            "ms": 10
+          }
+        ],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 3061,
+        "total_ms": 6979,
+        "answer_chars": 915,
+        "answer": "```reva-ui\n{\"type\":\"sleep_summary\",\"v\":1,\"data\":{\"range_label\":\"近7天\",\"nights\":[{\"date\":\"2026-11-02\",\"score\":80,\"duration_h\":7.0,\"deep_min\":null},{\"date\":\"2026-11-01\",\"score\":79,\"duration_h\":7.1,\"deep_min\":null},{\"date\":\"2026-10-31\",\"score\":78,\"duration_h\":7.2,\"deep_min\":null},{\"date\":\"2026-10-30\",\"score\":77,\"duration_h\":7.2,\"deep_min\":null},{\"date\":\"2026-10-29\",\"score\":76,\"duration_h\":7.3,\"deep_min\":null},{\"date\":\"2026-10-28\",\"score\":75,\"duration_h\":7.4,\"deep_min\":null},{\"date\":\"2026-10-27\",\"score\":74,\"duration_h\":7.5,\"deep_min\":null}],\"averages\":{\"score\":77,\"duration_h\":7.2,\"deep_min\":0},\"observations\":[{\"severity\":\"normal\",\"label\":\"睡眠时长充足\",\"detail\":\"平均 7.2h,一般建议 7–9h。\"},{\"severity\":\"normal\",\"label\":\"睡眠评分\",\"detail\":\"近期平均 77(设备评分)。\"}],\"duration\":{\"current_h\":7.2,\"target_h\":8.0}}}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n本轮数据查询未完成，不能用其他日期的汇总或历史背景代替本次查询结果。请明确要查看的数据类别和日期，例如“查询昨天的饮食和睡眠”；如果只需要通用建议，也可以直接说明。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "tool_blocked",
+          "reason_code": "health_query_calendar_window_unsupported",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 1,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 7,
+          "pre_llm_ms": 14,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6622,
+          "first_useful_ms": 3052,
+          "end_to_end_total_ms": 6958,
+          "end_to_end_ttft_ms": 3060,
+          "model_call_count": 3,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "diet_review__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9007,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 12072
+          }
+        ],
+        "tools": [
+          {
+            "name": "knowledge_search",
+            "args": {
+              "query": "一日膳食结构评价 蛋白质 碳水 脂肪 膳食纤维 均衡饮食标准"
+            },
+            "ms": 294
+          }
+        ],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "first_ms": 12648,
+        "total_ms": 12670,
+        "answer_chars": 24,
+        "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "tool_blocked",
+          "reason_code": "health_query_subject_not_current_user",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 1,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 9,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 12074,
+          "first_useful_ms": 12644,
+          "end_to_end_total_ms": 12648,
+          "end_to_end_ttft_ms": 12647,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "diet_review__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9007,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1981
+          }
+        ],
+        "tools": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 2328,
+        "total_ms": 2349,
+        "answer_chars": 24,
+        "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "tool_blocked",
+          "reason_code": "health_query_subject_not_current_user",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 1,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 9,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 1983,
+          "first_useful_ms": 2324,
+          "end_to_end_total_ms": 2328,
+          "end_to_end_ttft_ms": 2327,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 5876
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 28538,
+            "finish_reason": "stop",
+            "ms": 30357,
+            "synthetic_visible_text_sha256": "8af1d122a0e1c4530380fda8fd0f14e33a414b154a122e0d52f015e0f4922a94"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 3
+          }
+        ],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 6198,
+        "total_ms": 36598,
+        "answer_chars": 1831,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n10月27日至11月2日：睡眠为 Garmin 按醒来日期的日汇总，睡眠评分逐日小幅上升，总睡眠时长逐日小幅缩短；但没有入睡/醒来时间和睡眠阶段，不能判断整夜结构或恢复情况。\n\n饮食方面，这7天每天仅有一条晚餐“合成番茄”记录，不能代表全天实际摄入，也无法判断营养是否充足。以上仅是记录层面的趋势，不构成健康结论。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "diet",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            },
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 9,
+          "pre_llm_ms": 38,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 14,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 36235,
+          "first_useful_ms": 6188,
+          "end_to_end_total_ms": 36574,
+          "end_to_end_ttft_ms": 6198,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1975
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4049,
+            "finish_reason": "stop",
+            "ms": 5111,
+            "synthetic_visible_text_sha256": "9f6b8145a7b941ddf0342e707874a6e496508b9fa1187c59dfb2a006fa2034f1"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 2385,
+        "total_ms": 7537,
+        "answer_chars": 1701,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "medical_evidence_required",
+          "reason_code": "medical_evidence_required",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "diet",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            },
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": [
+            "unsupported_current_health_inference"
+          ]
+        },
+        "segments": {
+          "turn_setup_ms": 9,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 6,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 7088,
+          "first_useful_ms": 2376,
+          "end_to_end_total_ms": 7513,
+          "end_to_end_ttft_ms": 2385,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_chart__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9174,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 7609
+          }
+        ],
+        "tools": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "first_ms": 7873,
+        "total_ms": 7894,
+        "answer_chars": 25,
+        "answer": "这次查询未执行。当前请求没有授权读取这些个人记录。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "tool_blocked",
+          "reason_code": "health_query_not_requested",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 1,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 24,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 7610,
+          "first_useful_ms": 7868,
+          "end_to_end_total_ms": 7873,
+          "end_to_end_ttft_ms": 7872,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_chart__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9174,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 4589
+          }
+        ],
+        "tools": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 4868,
+        "total_ms": 4889,
+        "answer_chars": 25,
+        "answer": "这次查询未执行。当前请求没有授权读取这些个人记录。",
+        "outcome": "blocked",
+        "turn_outcome": {
+          "status": "blocked",
+          "category": "tool_blocked",
+          "reason_code": "health_query_not_requested",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 1,
+          "tool_failure_count": 0,
+          "confirmation_required": false
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 23,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 15,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4590,
+          "first_useful_ms": 4865,
+          "end_to_end_total_ms": 4869,
+          "end_to_end_ttft_ms": 4868,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "spo2_chart__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9864,
+            "tool_count": 11,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 8854
+          },
+          {
+            "prompt_chars": 6204,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 12173,
+            "finish_reason": "stop",
+            "ms": 13378,
+            "synthetic_visible_text_sha256": "8d5756b1114363e39b1c63b6f1991f4d11ff76ff380c9e9dfe4b55fae9e2d223"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "spo2",
+              "start_date": "2026-11-02",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 5
+          }
+        ],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 22651,
+        "total_ms": 22676,
+        "answer_chars": 180,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：血氧，2026-11-02，Asia/Shanghai。\n\n血氧：目标日期没有可用记录，不能判断血氧正常或异常；已排除不用于血氧判断的来源。\n\n解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "spo2",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 6,
+          "pre_llm_ms": 138,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 133,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 22233,
+          "first_useful_ms": 9252,
+          "end_to_end_total_ms": 22652,
+          "end_to_end_ttft_ms": 22640,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "spo2_chart__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9864,
+            "tool_count": 11,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 9533
+          },
+          {
+            "prompt_chars": 6204,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 9395,
+            "finish_reason": "stop",
+            "ms": 10339,
+            "synthetic_visible_text_sha256": "d15c54fb150c6640a450da82f3ad02ff3afd923969a73b1a17df28562fe4bee1"
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "spo2",
+              "start_date": "2026-11-02",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 20259,
+        "total_ms": 20283,
+        "answer_chars": 180,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：血氧，2026-11-02，Asia/Shanghai。\n\n血氧：目标日期没有可用记录，不能判断血氧正常或异常；已排除不用于血氧判断的来源。\n\n解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "spo2",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [
+            "staged_high_stakes_overrode_fast_model",
+            "staged_answer_tier_high_stakes"
+          ],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 5,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 19872,
+          "first_useful_ms": 9899,
+          "end_to_end_total_ms": 20259,
+          "end_to_end_ttft_ms": 20247,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "target": "First useful reply/card under 3000ms for closed diet/sleep range lookups; no change to selected model or clinical floors",
+  "quality_floor": [
+    "exact authenticated owner and date window",
+    "all returned dates retained; missing not zero",
+    "quoted/code material cannot authorize read",
+    "history corrections kept; failure never complete or emits unverified card"
+  ],
+  "limits": [
+    "one baseline per request/model; no production P95/P99 claim",
+    "budget stops are Harness stops, not production errors",
+    "complete outcome is not semantic quality acceptance"
+  ],
+  "stopping_conditions": [
+    "owner/date/consent boundary regression",
+    "omitted records or fabricated health claims",
+    "increased errors or worse tail latency"
+  ],
+  "cost": "No provider token billing estimate; record actual call count only"
+}

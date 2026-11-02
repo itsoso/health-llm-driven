@@ -69,7 +69,7 @@ async def test_closed_lookup_uses_verified_read_without_planner_or_synthesis(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["exception", "truncated", "wrong_date"])
-@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录"])
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录", "查询我最近7天的睡眠记录", "查询我最近7天的饮食记录"])
 async def test_unverified_result_cannot_finish_as_fast_lookup(
     db, owned_data, clock, monkeypatch, failure, query
 ):
@@ -209,9 +209,7 @@ async def test_closed_lookup_skips_optional_router_only_without_quality_floor(
         "查询今天的睡眠记录，只看深睡",
         "查询今天的睡眠记录，我呼吸困难",
         "查询今天的睡眠记录并同步佳明",
-        "查询最近7天的饮食记录",
         "查询最近32天的睡眠记录",
-        "查询我最近7天的睡眠记录",
         "查询最近7天的睡眠记录并分析恢复",
         "查询昨天的饮食记录，我头晕",
         "查询昨天的饮食记录并删除重复的",
@@ -255,7 +253,7 @@ def test_lookup_does_not_erase_other_goals_or_qualifiers(
         "floor",
     ],
 )
-@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录"])
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录", "查询我最近7天的睡眠记录", "查询我最近7天的饮食记录"])
 def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary, query):
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
     executor = script_executor(db, monkeypatch, []).executor

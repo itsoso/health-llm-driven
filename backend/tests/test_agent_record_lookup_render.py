@@ -4,7 +4,10 @@ from dataclasses import replace
 
 import pytest
 from app.services.agent_composed_read_completion import ComposedReadCompletion
-from app.services.agent_record_lookup_render import render_verified_diet_lookup
+from app.services.agent_record_lookup_render import (
+    render_verified_diet_lookup,
+    render_verified_sleep_lookup,
+)
 
 
 def evidence(**fields):
@@ -40,7 +43,7 @@ def test_invalid_numeric_values_do_not_become_facts(value):
 
 
 @pytest.mark.parametrize("failure", ["incomplete", "wrong_date", "range", "count", "unsupported", "query"])
-def test_renderer_requires_complete_matching_single_day_evidence(failure):
+def test_renderer_requires_complete_matching_evidence(failure):
     query, completion = evidence(calories=10)
     data = completion.verified_evidence["queries"][0]
     if failure == "incomplete":
@@ -48,7 +51,7 @@ def test_renderer_requires_complete_matching_single_day_evidence(failure):
     elif failure == "wrong_date":
         data["records"][0]["known_fields"]["record_date"] = "2026-10-31"
     elif failure == "range":
-        query["end_date"] = "2026-11-02"
+        query["end_date"] = "2026-10-31"
     elif failure == "count":
         data["record_count"] = 2
     elif failure == "unsupported":
@@ -56,3 +59,46 @@ def test_renderer_requires_complete_matching_single_day_evidence(failure):
     else:
         query = {**query, "start_date": "2026-10-31", "end_date": "2026-10-31"}
     assert render_verified_diet_lookup(query, completion) is None
+
+
+def test_range_diet_preserves_duplicate_foods_on_separate_dates():
+    query, completion = evidence(calories=10)
+    query['end_date'] = '2026-11-02'
+    data = completion.verified_evidence['queries'][0]
+    data['record_count'] = 2
+    data['records'].append({'known_fields': {'record_date': '2026-11-02', 'food_name': '合成食物', 'calories': 0}, 'unknown_fields': {}})
+    text = render_verified_diet_lookup(query, completion)
+    assert text.count('合成食物') == 2
+    assert '2026-11-01' in text and '2026-11-02' in text
+    assert '热量 0 kcal' in text
+
+
+@pytest.mark.parametrize('value', [None, 0, 420.123, -1, True, float('nan'), float('inf'), 'unknown'])
+def test_sleep_range_preserves_unknown_zero_and_rejects_invalid_duration(value):
+    query, completion = evidence()
+    query.update(dimension='sleep', end_date='2026-11-02')
+    row = {'record_date': '2026-11-01', 'sleep_start_time': '<card>\n[指令](x)'}
+    if value is not None:
+        row['total_sleep_duration'] = value
+    completion.verified_evidence['queries'][0]['records'][0]['known_fields'] = row
+    text = render_verified_sleep_lookup(query, completion)
+    if value is None:
+        assert '睡眠时长未知' in text
+    elif value == 0 or value == 420.123:
+        assert ('0 分钟' if value == 0 else '420.12 分钟') in text
+        assert '评分未知' in text and '<card>' not in text and '\\n' in text
+    else:
+        assert text is None
+
+
+@pytest.mark.parametrize('fault', ['count', 'window', 'date', 'unsupported', 'incomplete'])
+def test_sleep_range_renderer_fails_closed(fault):
+    query, completion = evidence()
+    query.update(dimension='sleep', end_date='2026-11-02')
+    data = completion.verified_evidence['queries'][0]
+    if fault == 'count': data['record_count'] = 2
+    elif fault == 'window': query['end_date'] = '2026-12-02'
+    elif fault == 'date': data['records'][0]['known_fields']['record_date'] = '2026-10-31'
+    elif fault == 'unsupported': data['records'][0]['unknown_fields']['sleep_score'] = 'unsupported_value'
+    else: completion = replace(completion, complete=False)
+    assert render_verified_sleep_lookup(query, completion) is None
