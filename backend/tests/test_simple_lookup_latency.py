@@ -69,8 +69,9 @@ async def test_closed_lookup_uses_verified_read_without_planner_or_synthesis(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["exception", "truncated", "wrong_date"])
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录"])
 async def test_unverified_result_cannot_finish_as_fast_lookup(
-    db, owned_data, clock, monkeypatch, failure
+    db, owned_data, clock, monkeypatch, failure, query
 ):
     from app.services import agent_query_window
 
@@ -92,7 +93,7 @@ async def test_unverified_result_cannot_finish_as_fast_lookup(
     events = [
         event
         async for event in trace.executor.run_stream(
-            owned_data.id, QUERY, channel="typed"
+            owned_data.id, query, channel="typed"
         )
     ]
     done = events[-1]["data"]
@@ -103,8 +104,9 @@ async def test_unverified_result_cannot_finish_as_fast_lookup(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("query,dimension", [(QUERY, "sleep"), ("查询昨天的饮食记录", "diet"), ("查询我最近7天的睡眠记录", "sleep")])
 async def test_existing_conversation_keeps_model_planner_and_history(
-    db, owned_data, clock, monkeypatch
+    db, owned_data, clock, monkeypatch, query, dimension
 ):
     from app.models.agent_conversation import AgentConversation
 
@@ -126,7 +128,7 @@ async def test_existing_conversation_keeps_model_planner_and_history(
         db,
         monkeypatch,
         [
-            ("health_query", {"dimension": "sleep"}),
+            ("health_query", {"dimension": dimension}),
             correction,
         ],
     )
@@ -134,7 +136,7 @@ async def test_existing_conversation_keeps_model_planner_and_history(
         event
         async for event in trace.executor.run_stream(
             owned_data.id,
-            QUERY,
+            query,
             channel="typed",
             conversation_id=conv.id,
         )
@@ -205,6 +207,15 @@ async def test_closed_lookup_skips_optional_router_only_without_quality_floor(
         "查询今天的睡眠记录，只看深睡",
         "查询今天的睡眠记录，我呼吸困难",
         "查询今天的睡眠记录并同步佳明",
+        "查询最近7天的饮食记录",
+        "查询最近32天的睡眠记录",
+        "查询我最近7天的睡眠记录",
+        "查询最近7天的睡眠记录并分析恢复",
+        "查询昨天的饮食记录，我头晕",
+        "查询昨天的饮食记录并删除重复的",
+        "查询妈妈昨天的饮食记录",
+        "不要查询昨天的饮食记录",
+        "查询昨天的饮食记录，只看午餐",
     ],
 )
 def test_lookup_does_not_erase_other_goals_or_qualifiers(
@@ -233,13 +244,14 @@ def test_lookup_does_not_erase_other_goals_or_qualifiers(
         "floor",
     ],
 )
-def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary):
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录"])
+def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary, query):
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
     executor = script_executor(db, monkeypatch, []).executor
     executor._current_user_id = owned_data.id
-    executor._current_turn_user_message = QUERY
+    executor._current_turn_user_message = query
     executor._start_agent_kernel_turn(
-        user_id=owned_data.id, message=QUERY, channel="typed"
+        user_id=owned_data.id, message=query, channel="typed"
     )
     if boundary == "owner":
         executor._current_user_id += 1
@@ -249,7 +261,7 @@ def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary):
             s, context=replace(s.context, user_id=owned_data.id + 1)
         )
     if boundary == "text":
-        executor._current_turn_user_message = "查询昨天的睡眠记录"
+        executor._current_turn_user_message = "不执行这次查询"
     if boundary == "attachment":
         executor._current_turn_has_attachment = True
     if boundary == "pending":
@@ -263,3 +275,79 @@ def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary):
     if boundary == "floor":
         executor._staged_answer_task_tier = "high_stakes"
     assert executor._simple_record_lookup_scope() is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("state", ["available", "empty", "duplicates"])
+async def test_diet_lookup_renders_every_verified_record_without_model(
+    db, owned_data, clock, monkeypatch, state,
+):
+    from datetime import timedelta
+
+    from app.models.daily_health import DietRecord
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    if state == "empty":
+        db.query(DietRecord).filter(DietRecord.user_id == owned_data.id).delete()
+    elif state == "duplicates":
+        db.add(DietRecord(user_id=owned_data.id, record_date=clock[0].date() - timedelta(days=1),
+                          meal_type="lunch", food_name="合成番茄", calories=12.345, protein=None))
+    from app.models.user import User
+
+    other = db.query(User).filter(User.id != owned_data.id).first()
+    db.add(DietRecord(user_id=other.id, record_date=clock[0].date() - timedelta(days=1),
+                      meal_type="dinner", food_name="其他所有者不可见", calories=9876))
+    db.add(DietRecord(user_id=owned_data.id, record_date=clock[0].date(),
+                      meal_type="dinner", food_name="其他日期不可见", calories=8765))
+    db.commit()
+    trace = script_executor(db, monkeypatch, [])
+    events = [e async for e in trace.executor.run_stream(owned_data.id, "查询昨天的饮食记录", channel="typed")]
+    assert not trace.unexpected and not trace.calls
+    assert len(trace.dispatches) == 1 and trace.dispatches[0].arguments["dimension"] == "diet"
+    done = events[-1]["data"]
+    assert done["turn_outcome"]["status"] == "complete"
+    saved = db.get(AgentMessage, done["message_id"])
+    assert saved.content == "".join(e["data"]["content"] for e in events if e.get("event") == "token")
+    assert "其他所有者不可见" not in saved.content and "其他日期不可见" not in saved.content
+    assert "9876" not in saved.content and "8765" not in saved.content
+    if state != "empty":
+        assert "合成番茄" in saved.content and "200 kcal" in saved.content
+        assert "蛋白质未知" in saved.content
+    if state == "duplicates":
+        assert "12.35 kcal" in saved.content and "午餐" in saved.content and "晚餐" in saved.content
+    assert "模型推断" not in saved.content
+    assert done["perf"]["model_call_count"] == 0 and done["perf"]["simple_lookup_rendered"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query,expected", [("你好！", "你好"), ("你是谁", "小气候")])
+async def test_standalone_public_answer_does_not_wait_for_model(
+    db, owned_data, clock, monkeypatch, query, expected,
+):
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    trace = script_executor(db, monkeypatch, [])
+    events = [e async for e in trace.executor.run_stream(owned_data.id, query, channel="typed")]
+    assert not trace.dispatches and not trace.calls and not trace.unexpected
+    done = events[-1]["data"]
+    assert done["turn_outcome"]["status"] == "complete"
+    assert done["perf"]["model_call_count"] == 0
+    saved = db.get(AgentMessage, done["message_id"])
+    assert expected in saved.content and "合成番茄" not in saved.content
+    assert saved.content == "".join(e["data"]["content"] for e in events if e.get("event") == "token")
+
+
+@pytest.mark.asyncio
+async def test_greeting_in_existing_conversation_preserves_unfinished_context(
+    db, owned_data, clock, monkeypatch,
+):
+    from app.models.agent_conversation import AgentConversation
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    conv = AgentConversation(user_id=owned_data.id)
+    db.add(conv);db.flush()
+    db.add(AgentMessage(conversation_id=conv.id, role="user", content="我之前提到的设备记录有误，还没说完。"))
+    db.commit()
+    trace = script_executor(db, monkeypatch, ["你好，我们可以继续之前的话题。"])
+    events = [e async for e in trace.executor.run_stream(owned_data.id, "你好", conversation_id=conv.id, channel="typed")]
+    assert trace.executor._public_task is None
+    assert any("记录有误" in str(m.get("content")) for m in trace.calls[0][0])
+    assert events[-1]["data"]["turn_outcome"]["status"] == "complete"

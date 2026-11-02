@@ -3727,5 +3727,3204 @@
         "state": "REMOVED_AND_ABSENT_VERIFIED"
       }
     }
+  },
+  "other_prompts_followup": {
+    "status": "local_candidate_measured_pending_review_and_release",
+    "baseline": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "rows": [
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 6596,
+              "finish_reason": "stop",
+              "ms": 9219
+            }
+          ],
+          "passed": true,
+          "first_ms": 11642,
+          "total_ms": 11749,
+          "answer_chars": 191,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候 👋\n\n我可以帮你：\n- **记录**：饮食、饮水、体重、血压、睡眠、运动、用药/补剂、症状、提醒\n- **查询**：你已记录的健康数据、体检和化验指标、基因报告\n- **分析**：睡眠与恢复趋势、指标变化的解读、干预效果复盘\n\n现在是 11月2日（周一）下午 15:39。今天还没有饮食和饮水记录，你想从哪一项开始？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 130,
+            "pre_llm_ms": 326,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 5,
+              "system_prompt_ms": 197,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 65,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 9234,
+            "first_useful_ms": 8816,
+            "end_to_end_total_ms": 11645,
+            "end_to_end_ttft_ms": 8947
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 860,
+              "finish_reason": "stop",
+              "ms": 1167
+            }
+          ],
+          "passed": true,
+          "first_ms": 1440,
+          "total_ms": 1462,
+          "answer_chars": 100,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候。你可以让我帮你记录饮食、饮水、体重、血压、用药或补剂，也可以查询睡眠、步数、心率、化验报告，或者帮你设置提醒。今天下午有什么想处理的？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1168,
+            "first_useful_ms": 1125,
+            "end_to_end_total_ms": 1440,
+            "end_to_end_ttft_ms": 1127
+          }
+        },
+        {
+          "case": "rewrite__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9324,
+              "tool_count": 9,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 5017,
+              "finish_reason": "stop",
+              "ms": 5939
+            }
+          ],
+          "passed": true,
+          "first_ms": 6197,
+          "total_ms": 6222,
+          "answer_chars": 50,
+          "answer": "今天计划的工作已全部完成。\n\n其他更短的版本：\n- 今日计划工作已完成。\n- 计划内工作已全部做完。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 5,
+            "pre_llm_ms": 16,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 9,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5943,
+            "first_useful_ms": 5259,
+            "end_to_end_total_ms": 6198,
+            "end_to_end_ttft_ms": 5265
+          }
+        },
+        {
+          "case": "rewrite__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9324,
+              "tool_count": 9,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1003,
+              "finish_reason": "stop",
+              "ms": 1127
+            }
+          ],
+          "passed": true,
+          "first_ms": 1398,
+          "total_ms": 1423,
+          "answer_chars": 43,
+          "answer": "**改后：** 今天的计划工作都完成了。\n\n如果想更简短，可以说：今天的计划全部完成。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 15,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 9,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1134,
+            "first_useful_ms": 1252,
+            "end_to_end_total_ms": 1399,
+            "end_to_end_ttft_ms": 1256
+          }
+        },
+        {
+          "case": "story__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9312,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 3076,
+              "finish_reason": "stop",
+              "ms": 6169
+            }
+          ],
+          "passed": true,
+          "first_ms": 6431,
+          "total_ms": 6455,
+          "answer_chars": 132,
+          "answer": "月亮每晚都爬上小镇的屋顶，替失眠的人把黑暗调得柔和一些。\n\n有个孩子问它累不累，它只是把光又铺厚了一层，像一床没人认领的被子。\n\n后来孩子长大了，搬去了看不见月亮的城市，只在加班回家的路上偶尔抬头。\n\n月亮还是那个月亮，它从不追问谁记得它，只负责在需要的时候亮着。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 13,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6173,
+            "first_useful_ms": 3320,
+            "end_to_end_total_ms": 6432,
+            "end_to_end_ttft_ms": 3323
+          }
+        },
+        {
+          "case": "story__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9312,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 856,
+              "finish_reason": "stop",
+              "ms": 1434
+            }
+          ],
+          "passed": true,
+          "first_ms": 1696,
+          "total_ms": 1720,
+          "answer_chars": 119,
+          "answer": "夜里停电，我和外婆坐在院子里，谁也不说话。\n\n她说月亮是天上的一盏旧灯，坏了也懒得修，因为黑影正好能让人睡得着。\n\n我数着那些影子，忽然觉得它们像谁没说完的话，一句一句停在半空。\n\n后来外婆握了握我的手，说别急，话没说完，明天月亮还会来。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1439,
+            "first_useful_ms": 1098,
+            "end_to_end_total_ms": 1696,
+            "end_to_end_ttft_ms": 1101
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 7247
+            },
+            {
+              "prompt_chars": 9489,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 6498,
+              "finish_reason": "stop",
+              "ms": 9258
+            }
+          ],
+          "passed": true,
+          "first_ms": 16837,
+          "total_ms": 16938,
+          "answer_chars": 179,
+          "answer": "昨天（2026-11-01，周日）的饮食记录只有一条：\n\n- **晚餐**：合成番茄，热量约 200 kcal\n\n其余信息都是空的——具体份量、用餐时间没有填，蛋白质、碳水、脂肪、膳食纤维也没有估算值。早餐、午餐和加餐都没有记录。\n\n也就是说，昨天只有晚餐这一条留痕，无法据此判断全天摄入是否均衡。如果需要，我可以帮你补录缺失的餐次或把这条记录的营养素补齐。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 28,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 23,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 16511,
+            "first_useful_ms": 7558,
+            "end_to_end_total_ms": 16838,
+            "end_to_end_ttft_ms": 14062
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1490
+            },
+            {
+              "prompt_chars": 9489,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4194,
+              "finish_reason": "stop",
+              "ms": 4893
+            }
+          ],
+          "passed": true,
+          "first_ms": 6768,
+          "total_ms": 6792,
+          "answer_chars": 227,
+          "answer": "昨天（11 月 1 日）只有一条饮食记录：\n\n- **晚餐**：合成番茄，热量约 200 千卡\n\n其余营养数据（蛋白质、碳水、脂肪、膳食纤维）当时没有填写；而且早餐和午餐都没有记录。\n\n需要说明的是：**“没记录”不等于“没吃”**，所以昨天的总摄入我只能给出这一个已知数值，不能作为全天摄入的判断依据。\n\n如果你还记得早餐和午餐吃了什么，可以告诉我，我会帮你补录；以后记录时，也可以把每种食物的热量和三大营养素一起估上，这样后续做饮食结构分析才有参照。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6388,
+            "first_useful_ms": 1858,
+            "end_to_end_total_ms": 6769,
+            "end_to_end_ttft_ms": 6057
+          }
+        },
+        {
+          "case": "sleep_week__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9128,
+              "tool_count": 5,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 4332
+            },
+            {
+              "prompt_chars": 9700,
+              "tool_count": 5,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4707,
+              "finish_reason": "stop",
+              "ms": 12193
+            }
+          ],
+          "passed": true,
+          "first_ms": 4651,
+          "total_ms": 16884,
+          "answer_chars": 879,
+          "answer": "```reva-ui\n{\"type\":\"sleep_summary\",\"v\":1,\"data\":{\"range_label\":\"最近一晚\",\"nights\":[{\"date\":\"2026-11-01\",\"score\":80,\"duration_h\":7.0,\"deep_min\":null}],\"averages\":{\"score\":80,\"duration_h\":7.0,\"deep_min\":0},\"observations\":[{\"severity\":\"normal\",\"label\":\"睡眠时长充足\",\"detail\":\"平均 7.0h,一般建议 7–9h。\"},{\"severity\":\"normal\",\"label\":\"睡眠评分\",\"detail\":\"近期平均 80(设备评分)。\"}],\"duration\":{\"current_h\":7.0,\"target_h\":8.0}}}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**最近7天（10月27日–11月2日）只有1晚有睡眠记录**，其余6天没有数据，所以下面的结论只代表那一晚，不能当作你这一周的整体睡眠状况。\n\n**已记录的那一晚（11月1日）**\n- 睡眠评分 80 分，总时长 7 小时（420 分钟）——时长达到成人推荐的 7 小时以上区间，评分属于良好水平。\n- 深睡、REM、夜间清醒时长都是空的，设备没有上传阶段明细。因此\"深睡不足\"这个提示只是**因为缺少阶段数据无法评估**，不等于你真的深睡不够，不必据此焦虑。\n\n**接下来可以做的**\n1. 补齐数据：确认手表/手环夜间佩戴并开启睡眠监测，连续记录 5–7 晚后再看趋势，单晚数据说明不了问题。\n2. 若你希望，我可以按天帮你查具体某一晚（比如\"昨晚\"），或做一段时间的睡眠质量洞察分析。\n3. 通用睡眠卫生（对多数人适用）：固定起床时间、睡前 1 小时减少屏幕强光、卧室保持安静偏凉。\n\n以上信息用于健康管理，不替代诊断；如有持续失眠、白天嗜睡或打鼾伴呼吸暂停等情况，请咨询医生。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 6,
+            "pre_llm_ms": 14,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 8,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 16531,
+            "first_useful_ms": 4644,
+            "end_to_end_total_ms": 16864,
+            "end_to_end_ttft_ms": 4651
+          }
+        },
+        {
+          "case": "sleep_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9128,
+              "tool_count": 5,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1246
+            },
+            {
+              "prompt_chars": 9700,
+              "tool_count": 5,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1043,
+              "finish_reason": "stop",
+              "ms": 2785
+            }
+          ],
+          "passed": true,
+          "first_ms": 2919,
+          "total_ms": 5742,
+          "answer_chars": 944,
+          "answer": "```reva-ui\n{\"type\":\"sleep_summary\",\"v\":1,\"data\":{\"range_label\":\"最近一晚\",\"nights\":[{\"date\":\"2026-11-01\",\"score\":80,\"duration_h\":7.0,\"deep_min\":null}],\"averages\":{\"score\":80,\"duration_h\":7.0,\"deep_min\":0},\"observations\":[{\"severity\":\"normal\",\"label\":\"睡眠时长充足\",\"detail\":\"平均 7.0h,一般建议 7–9h。\"},{\"severity\":\"normal\",\"label\":\"睡眠评分\",\"detail\":\"近期平均 80(设备评分)。\"}],\"duration\":{\"current_h\":7.0,\"target_h\":8.0}}}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n最近 7 天里，只有 2026-11-01 这一晚有睡眠记录，其余几天没有数据，所以只能对单晚做判断，还不能代表“最近 7 天的趋势”。\n\n- **这一晚**：时长约 7 小时、睡眠评分 80，属于时长基本达标、质量偏好的水平；按档案里 7.5 小时的睡眠目标来算，还差大约 30 分钟。\n- **结构信息缺失**：深睡、REM、夜间清醒这些分段数据都没有返回，所以任何“深睡不足”或“睡得不沉”的结论都还不成立。系统给的深睡提示只是基于数据缺失时的默认建议，不能当成对你的判断；按个体差异原则，缺少分段数据时更适合看主观睡感。\n- **步数、HRV、静息心率这几天同样是数据缺口**，也没法用夜间恢复指标来交叉验证睡眠质量。\n\n接下来比较实用的做法是：如果手表或 App 一直戴着睡觉，可以检查一下这几晚有没有漏同步，把数据补全后再看 7 天趋势会更可靠。单看这一晚，7 小时是在成人常规建议范围内（CDC 建议成人每晚 7 小时以上，并强调规律作息与睡眠质量同样重要）；想再贴近档案里的目标，可以把上床时间提前约 30 分钟，并保持固定起床时间。\n\n这些内容用于健康管理参考，不替代诊断；做医疗决定前请咨询医生。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 4036,
+            "first_useful_ms": 2916,
+            "end_to_end_total_ms": 5720,
+            "end_to_end_ttft_ms": 2919
+          }
+        },
+        {
+          "case": "diet_review__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 8893,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 11178
+            }
+          ],
+          "passed": false,
+          "first_ms": 11458,
+          "total_ms": 11480,
+          "answer_chars": 24,
+          "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+          "outcome": "blocked",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 11180,
+            "first_useful_ms": 11455,
+            "end_to_end_total_ms": 11458,
+            "end_to_end_ttft_ms": 11457
+          }
+        },
+        {
+          "case": "diet_review__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 8893,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1408
+            }
+          ],
+          "passed": false,
+          "first_ms": 1768,
+          "total_ms": 1788,
+          "answer_chars": 24,
+          "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+          "outcome": "blocked",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 10,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1409,
+            "first_useful_ms": 1765,
+            "end_to_end_total_ms": 1768,
+            "end_to_end_ttft_ms": 1767
+          }
+        }
+      ]
+    },
+    "limits": [
+      "Synthetic requests and disposable SQLite; no production load or native rendering proof.",
+      "One initial sample per case/model; no valid population P95/P99.",
+      "Diet review blocked outcomes are failures, not speed wins."
+    ],
+    "initial_candidate": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "rows": [
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 2075,
+              "finish_reason": "stop",
+              "ms": 2268
+            }
+          ],
+          "passed": true,
+          "first_ms": 2685,
+          "total_ms": 2692,
+          "answer_chars": 18,
+          "answer": "你好！下午好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 66,
+            "pre_llm_ms": 25,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 1,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2273,
+            "first_useful_ms": 2387,
+            "end_to_end_total_ms": 2686,
+            "end_to_end_ttft_ms": 2453
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 680,
+              "finish_reason": "stop",
+              "ms": 682
+            }
+          ],
+          "passed": true,
+          "first_ms": 925,
+          "total_ms": 929,
+          "answer_chars": 13,
+          "answer": "你好！有什么可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 682,
+            "first_useful_ms": 916,
+            "end_to_end_total_ms": 925,
+            "end_to_end_ttft_ms": 917
+          }
+        },
+        {
+          "case": "rewrite__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9324,
+              "tool_count": 9,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4008,
+              "finish_reason": "stop",
+              "ms": 5331
+            }
+          ],
+          "passed": true,
+          "first_ms": 5650,
+          "total_ms": 5722,
+          "answer_chars": 89,
+          "answer": "几个更简洁的版本：\n\n- 今天的计划已全部完成。\n- 今日工作已按计划完成。\n- 今天的事都做完了。（口语）\n\n最推荐第一个：去掉“我”“已经”“所有计划中的”等冗余，信息不丢。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 5,
+            "pre_llm_ms": 78,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 68,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 3,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5341,
+            "first_useful_ms": 4303,
+            "end_to_end_total_ms": 5650,
+            "end_to_end_ttft_ms": 4309
+          }
+        },
+        {
+          "case": "rewrite__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9324,
+              "tool_count": 9,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1253,
+              "finish_reason": "stop",
+              "ms": 1352
+            }
+          ],
+          "passed": true,
+          "first_ms": 1614,
+          "total_ms": 1637,
+          "answer_chars": 13,
+          "answer": "今天计划的工作已全部完成。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 17,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 9,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1356,
+            "first_useful_ms": 1500,
+            "end_to_end_total_ms": 1614,
+            "end_to_end_ttft_ms": 1504
+          }
+        },
+        {
+          "case": "story__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9312,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 3404,
+              "finish_reason": "stop",
+              "ms": 5777
+            }
+          ],
+          "passed": true,
+          "first_ms": 6028,
+          "total_ms": 6051,
+          "answer_chars": 115,
+          "answer": "月亮每晚都准时上班，却从不打卡。\n\n它把光分给赶路的人、失眠的人，和窗台上那盆没人浇的花。\n\n有一天它累了，躲进云里睡了整晚，第二天发现世界依然亮着——原来是那些被它照过的人，自己发着光。\n\n于是月亮笑了，继续慢慢地圆，慢慢地缺。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5781,
+            "first_useful_ms": 3637,
+            "end_to_end_total_ms": 6029,
+            "end_to_end_ttft_ms": 3640
+          }
+        },
+        {
+          "case": "story__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9312,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1405,
+              "finish_reason": "stop",
+              "ms": 1939
+            }
+          ],
+          "passed": true,
+          "first_ms": 2191,
+          "total_ms": 2215,
+          "answer_chars": 111,
+          "answer": "夜里，月亮从云层的缝里探出头，像一枚刚擦亮的硬币。\n\n它照着一条没人的小巷，也照着巷口那盏忽明忽暗的路灯。\n\n一个睡不着的人在窗边抬头，忽然觉得月亮也在陪他熬夜。\n\n于是他笑了笑，关掉手机，去睡了——月亮替他守着剩下的夜。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1942,
+            "first_useful_ms": 1644,
+            "end_to_end_total_ms": 2191,
+            "end_to_end_ttft_ms": 1647
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9489,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 854,
+              "finish_reason": "stop",
+              "ms": 3078
+            }
+          ],
+          "passed": true,
+          "first_ms": 3378,
+          "total_ms": 3402,
+          "answer_chars": 181,
+          "answer": "昨天（11月1日）只有 **1 条饮食记录**，是一顿晚餐：\n\n- **食物**：合成番茄\n- **热量**：约 200 kcal\n- **蛋白质、碳水、脂肪、膳食纤维**：未填写\n\n整体来看，昨天的饮食记录非常少，仅有一餐且营养素信息不完整。如果实际吃了其他东西但没记上，可以随时告诉我补录；若需要我帮你估算这顿饭的营养缺口或安排今天的均衡饮食，也可以直接说。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 32,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 0,
+              "system_prompt_ms": 25,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 3078,
+            "first_useful_ms": 284,
+            "end_to_end_total_ms": 3378,
+            "end_to_end_ttft_ms": 1142
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9489,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 2094,
+              "finish_reason": "stop",
+              "ms": 2807
+            }
+          ],
+          "passed": true,
+          "first_ms": 3093,
+          "total_ms": 3117,
+          "answer_chars": 186,
+          "answer": "昨天（11月1日）只查到一条饮食记录：晚餐吃了“合成番茄”，热量约 200 千卡。\n\n有两点需要提醒你：\n- 这条记录里只有热量，蛋白质、碳水、脂肪、膳食纤维都是空的，营养成分不完整；\n- 昨天全天只记了这一餐，早餐、午餐、饮水都没有记录，看起来更可能是漏记，而不是真没吃。\n\n如果昨天的早餐和午餐也值得补上，可以告诉我吃了什么、大概份量，我帮你补录到 11 月 1 日。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2807,
+            "first_useful_ms": 271,
+            "end_to_end_total_ms": 3094,
+            "end_to_end_ttft_ms": 2369
+          }
+        },
+        {
+          "case": "sleep_week__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9128,
+              "tool_count": 5,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 4387
+            },
+            {
+              "prompt_chars": 9464,
+              "tool_count": 5,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 6917
+            },
+            {
+              "prompt_chars": 9800,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1791
+            }
+          ],
+          "passed": false,
+          "error_type": "BenchmarkStopped",
+          "total_ms": 13421
+        },
+        {
+          "case": "sleep_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9128,
+              "tool_count": 5,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1209
+            },
+            {
+              "prompt_chars": 9700,
+              "tool_count": 5,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1128,
+              "finish_reason": "stop",
+              "ms": 2435
+            }
+          ],
+          "passed": true,
+          "first_ms": 2168,
+          "total_ms": 4643,
+          "answer_chars": 798,
+          "answer": "```reva-ui\n{\"type\":\"sleep_summary\",\"v\":1,\"data\":{\"range_label\":\"最近一晚\",\"nights\":[{\"date\":\"2026-11-01\",\"score\":80,\"duration_h\":7.0,\"deep_min\":null}],\"averages\":{\"score\":80,\"duration_h\":7.0,\"deep_min\":0},\"observations\":[{\"severity\":\"normal\",\"label\":\"睡眠时长充足\",\"detail\":\"平均 7.0h,一般建议 7–9h。\"},{\"severity\":\"normal\",\"label\":\"睡眠评分\",\"detail\":\"近期平均 80(设备评分)。\"}],\"duration\":{\"current_h\":7.0,\"target_h\":8.0}}}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n我查了最近 7 天的睡眠记录，实际只有 1 天有数据：\n\n**关键点**\n- 只有 11月1日这一晚有完整记录：睡了 7 小时 0 分钟，睡眠评分 80 分（良好）。\n- 最近 7 天里，其余 6 晚都没有睡眠数据。这更像是设备没戴，或者没有同步上来，不代表你那几晚没睡。所以现在还不能说“最近 7 天睡眠怎么样”，只能先给这 1 晚的结论。\n- 深睡、REM、夜醒这几项记录都是空的，无法评估睡眠结构，所以“深睡不足”的说法现在没有依据。\n\n**接下来可以做的**\n- 想真正看一周的趋势，需要连续几天佩戴设备同步，至少凑够 5–7 晚，再回来看。\n- 就这 1 晚来说，7 小时落在成人常规建议的 7 小时及以上范围内，评分也属于良好区间，不需要额外干预。\n\n以上用于健康管理参考，不替代诊断；如需做医疗决定请咨询医生。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 13,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 7,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 3652,
+            "first_useful_ms": 2164,
+            "end_to_end_total_ms": 4623,
+            "end_to_end_ttft_ms": 2167
+          }
+        },
+        {
+          "case": "diet_review__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 8893,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 6442
+            }
+          ],
+          "passed": false,
+          "first_ms": 6717,
+          "total_ms": 6736,
+          "answer_chars": 24,
+          "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+          "outcome": "blocked",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6443,
+            "first_useful_ms": 6714,
+            "end_to_end_total_ms": 6717,
+            "end_to_end_ttft_ms": 6716
+          }
+        },
+        {
+          "case": "diet_review__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 8893,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1834
+            }
+          ],
+          "passed": false,
+          "first_ms": 2100,
+          "total_ms": 2121,
+          "answer_chars": 24,
+          "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+          "outcome": "blocked",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1836,
+            "first_useful_ms": 2097,
+            "end_to_end_total_ms": 2100,
+            "end_to_end_ttft_ms": 2099
+          }
+        }
+      ]
+    },
+    "focused_baseline": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "rows": [
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 6262,
+              "finish_reason": "stop",
+              "ms": 9223
+            }
+          ],
+          "passed": true,
+          "first_ms": 9809,
+          "total_ms": 9879,
+          "answer_chars": 206,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候 👋\n\n我可以帮你：\n- **记录**：饮食、饮水、体重、血压、睡眠、运动、补剂和用药\n- **查询**：某项指标的历史数据、体检报告、化验结果、基因信息\n- **分析**：睡眠、恢复状态、趋势变化，以及跨维度的健康解读\n\n现在是 2026年11月2日（周一）下午 15:51。今天的饮食和饮水还没有记录，需要我帮你补上，或者看看最近的健康数据吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 61,
+            "pre_llm_ms": 174,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 1,
+              "system_prompt_ms": 132,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 19,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 9231,
+            "first_useful_ms": 6762,
+            "end_to_end_total_ms": 9810,
+            "end_to_end_ttft_ms": 6824
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 936,
+              "finish_reason": "stop",
+              "ms": 1054
+            }
+          ],
+          "passed": true,
+          "first_ms": 1306,
+          "total_ms": 1331,
+          "answer_chars": 38,
+          "answer": "你好，我是小气候。有什么健康上的记录、查询或分析需要帮忙，都可以直接告诉我。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1055,
+            "first_useful_ms": 1176,
+            "end_to_end_total_ms": 1306,
+            "end_to_end_ttft_ms": 1178
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 5052,
+              "finish_reason": "stop",
+              "ms": 6695
+            }
+          ],
+          "passed": true,
+          "first_ms": 6920,
+          "total_ms": 6926,
+          "answer_chars": 166,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是 Reva 健康助手。\n\n我可以协助你：\n\n- 整理和查询本人的健康记录；\n- 解读已有的健康资料；\n- 跟进健康计划；\n- 回答常见的公共健康问题。\n\n涉及记录或修改时，需要你的授权，并以真实回执为准。我不能替代医生诊断，也不会提供个人化的用药、补剂、疾病治疗或运动处方。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6695,
+            "first_useful_ms": 5264,
+            "end_to_end_total_ms": 6920,
+            "end_to_end_ttft_ms": 5266
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 751,
+              "finish_reason": "stop",
+              "ms": 1290
+            }
+          ],
+          "passed": true,
+          "first_ms": 1538,
+          "total_ms": 1544,
+          "answer_chars": 183,
+          "answer": "你好，我是 Reva 健康助手。\n\n我可以帮你：\n- 整理和查询你本人的健康记录（需要你授权后才会执行，并以真实操作回执为准）\n- 解读你已有的健康资料，帮你理解其中的信息\n- 跟进你的健康计划，协助你梳理和记录进展\n\n需要说明的是：我不能替代医生进行诊断，也不提供诊断结论。涉及记录和修改时，需要你授权，并以真实操作回执为准。\n\n有什么想整理或了解的，告诉我就好。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1290,
+            "first_useful_ms": 987,
+            "end_to_end_total_ms": 1538,
+            "end_to_end_ttft_ms": 989
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 7513
+            },
+            {
+              "prompt_chars": 9489,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 3344,
+              "finish_reason": "stop",
+              "ms": 6216
+            }
+          ],
+          "passed": true,
+          "first_ms": 14061,
+          "total_ms": 14087,
+          "answer_chars": 180,
+          "answer": "昨天（2026-11-01，周日）只有 **1 条饮食记录**：\n\n- **晚餐**：合成番茄，约 200 kcal；蛋白质、碳水、脂肪、膳食纤维均未填写。\n\n也就是说，早餐和午餐没有记录，全天可见摄入仅 200 kcal，明显低于正常水平——这更可能是漏记，而不是真的只吃了这些。如果昨天还有其他餐次，可以补录；需要的话我也可以帮你把这条晚餐的营养明细补全。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 4,
+            "pre_llm_ms": 30,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 24,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 13735,
+            "first_useful_ms": 7822,
+            "end_to_end_total_ms": 14062,
+            "end_to_end_ttft_ms": 11174
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1252
+            },
+            {
+              "prompt_chars": 9489,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 878,
+              "finish_reason": "stop",
+              "ms": 1359
+            }
+          ],
+          "passed": true,
+          "first_ms": 2998,
+          "total_ms": 3025,
+          "answer_chars": 162,
+          "answer": "昨天（11月1日）只有一条饮食记录：\n\n- **晚餐**：合成番茄，约 200 kcal\n\n没有早餐、午餐或加餐的记录。这条晚餐记录也只有热量，蛋白质、碳水、脂肪和膳食纤维都没有填写，所以没法据此评估昨天的营养结构是否均衡。\n\n如果昨天还有其他餐食没有记录，或者想补上营养信息，可以告诉我具体吃了什么、大概份量，我帮你补录。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2614,
+            "first_useful_ms": 1621,
+            "end_to_end_total_ms": 2999,
+            "end_to_end_ttft_ms": 2504
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 8149,
+              "finish_reason": "stop",
+              "ms": 10438
+            }
+          ],
+          "passed": true,
+          "first_ms": 11485,
+          "total_ms": 11509,
+          "answer_chars": 162,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候 👋\n\n现在是 11 月 2 日周一下午 15:52。我可以帮你记录饮食、饮水、体重、血压、运动和用药，查询你的睡眠、心率、HRV、化验和体检报告，也能结合这些数据做趋势解读。\n\n直接说需求就行，比如\"记一下刚喝了 300ml 水\"或\"看看我最近一周的睡眠\"。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 10,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 10441,
+            "first_useful_ms": 9183,
+            "end_to_end_total_ms": 11486,
+            "end_to_end_ttft_ms": 9184
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1044,
+              "finish_reason": "stop",
+              "ms": 1238
+            }
+          ],
+          "passed": true,
+          "first_ms": 2091,
+          "total_ms": 2111,
+          "answer_chars": 99,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好！我是小气候，可以帮你记录、查询和管理健康信息。\n\n今天有什么想记的或想查的？比如睡眠、饮食、饮水、体重血压、化验报告，或者用药与补剂打卡都可以。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 10,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1240,
+            "first_useful_ms": 1884,
+            "end_to_end_total_ms": 2091,
+            "end_to_end_ttft_ms": 1886
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 5536,
+              "finish_reason": "stop",
+              "ms": 6953
+            }
+          ],
+          "passed": true,
+          "first_ms": 7779,
+          "total_ms": 7785,
+          "answer_chars": 140,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是 Reva 健康助手。\n\n我可以帮你：\n- 整理和查询你的健康记录；\n- 解读你已有的健康资料；\n- 协助跟进健康计划。\n\n涉及记录或修改时，我会以你的授权和真实回执为准。我不能替代医生进行诊断、治疗或开具用药/运动处方。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6953,
+            "first_useful_ms": 6349,
+            "end_to_end_total_ms": 7780,
+            "end_to_end_ttft_ms": 6351
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1255,
+              "finish_reason": "stop",
+              "ms": 2107
+            }
+          ],
+          "passed": true,
+          "first_ms": 2366,
+          "total_ms": 2371,
+          "answer_chars": 296,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是 Reva 健康助手。我可以帮你：\n\n- **整理和查询你自己的健康记录**，例如就诊、检查、日常健康数据等；\n- **解读你已有的健康资料**，用更易懂的方式说明内容；\n- **跟进健康计划**，帮你梳理目标、提醒事项和执行情况；\n- 提供一般性的健康信息参考，帮助你把问题整理清楚，方便与医生沟通。\n\n需要说明的是：涉及**记录、修改或查询你的个人健康数据**时，需要你先授权，并以系统真实回执为准；我不会声称已经操作过你的记录。我也不能替代医生做诊断或给出个体化治疗建议。\n\n你可以直接告诉我想了解什么，或者想整理哪类健康资料。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 5,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2107,
+            "first_useful_ms": 1500,
+            "end_to_end_total_ms": 2366,
+            "end_to_end_ttft_ms": 1502
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 5621
+            },
+            {
+              "prompt_chars": 9490,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 3426,
+              "finish_reason": "stop",
+              "ms": 7102
+            }
+          ],
+          "passed": true,
+          "first_ms": 13006,
+          "total_ms": 13029,
+          "answer_chars": 261,
+          "answer": "昨天（2026-11-01）的饮食记录只有一条：**晚餐**，内容是「合成番茄」，估算热量 200 kcal。\n\n几点说明：\n- **没有早餐和午餐记录**，所以昨天全天摄入并不完整，200 kcal 只是已记录部分，不能当作当日总摄入。\n- 这条记录**没有填写用餐时间**，也**缺少蛋白质、碳水、脂肪、膳食纤维**的估算，只有热量一项。\n- 食物名称「合成番茄」看起来像测试或占位条目，如果实际吃的是别的东西，可以告诉我，我帮你改成正确的记录。\n\n需要补录昨天的早餐、午餐，或者修正这条晚餐记录，直接说具体内容就行。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 12728,
+            "first_useful_ms": 5886,
+            "end_to_end_total_ms": 13006,
+            "end_to_end_ttft_ms": 9318
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1334
+            },
+            {
+              "prompt_chars": 9490,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1277,
+              "finish_reason": "stop",
+              "ms": 1917
+            }
+          ],
+          "passed": true,
+          "first_ms": 4938,
+          "total_ms": 4960,
+          "answer_chars": 191,
+          "answer": "昨天（11月1日）的饮食记录里只有一条：\n\n- **晚餐**：合成番茄，估算热量约 200 千卡\n\n全天只有这一餐有记录，没有早餐、午餐的信息，蛋白质、碳水、脂肪、膳食纤维这些营养素也都没有填写。因此这更像是有记录但没记全的一天：我只能确认这一餐，没法据此还原你昨天的总摄入量。\n\n如果昨天还有其他餐次、加餐或饮料没记，可以现在告诉我，我来补记；补记时我会一并给出热量和营养素估算。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 10,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 3257,
+            "first_useful_ms": 3002,
+            "end_to_end_total_ms": 4939,
+            "end_to_end_ttft_ms": 4285
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4274,
+              "finish_reason": "stop",
+              "ms": 7526
+            }
+          ],
+          "passed": true,
+          "first_ms": 7777,
+          "total_ms": 7798,
+          "answer_chars": 220,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候。现在是你本地时间 2026-11-02（周一）15:52。\n\n我可以帮你做这些事：\n- **记录**：饮食、饮水、体重、血压、睡眠、用药/补剂、运动、提醒\n- **查询**：某项指标的历史数据、体检报告、化验指标\n- **分析**：睡眠、恢复状态、心率/HRV 趋势，或多维度综合解读\n\n需要的话直接说，比如\"记一下刚才喝了 300ml 水\"或\"看看我最近 7 天的睡眠\"。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 7527,
+            "first_useful_ms": 4512,
+            "end_to_end_total_ms": 7777,
+            "end_to_end_ttft_ms": 4513
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9298,
+              "tool_count": 11,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1070,
+              "finish_reason": "stop",
+              "ms": 1195
+            }
+          ],
+          "passed": true,
+          "first_ms": 1449,
+          "total_ms": 1559,
+          "answer_chars": 69,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是小气候。今天想记录点什么，或者查一下睡眠、步数、饮食、用药这类数据，直接说就行。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1196,
+            "first_useful_ms": 1313,
+            "end_to_end_total_ms": 1449,
+            "end_to_end_ttft_ms": 1314
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 5293,
+              "finish_reason": "stop",
+              "ms": 6002
+            }
+          ],
+          "passed": true,
+          "first_ms": 6250,
+          "total_ms": 6255,
+          "answer_chars": 80,
+          "answer": "你好，我是 Reva 健康助手。我可以协助你整理和查询本人的健康记录、解读已有资料，并跟进健康计划。记录和修改需要你授权，并以真实回执为准；我不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 6002,
+            "first_useful_ms": 5528,
+            "end_to_end_total_ms": 6250,
+            "end_to_end_ttft_ms": 5530
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 899,
+              "finish_reason": "stop",
+              "ms": 1135
+            }
+          ],
+          "passed": true,
+          "first_ms": 1389,
+          "total_ms": 1395,
+          "answer_chars": 100,
+          "answer": "你好，我是 Reva 健康助手。我可以帮你整理和查询本人的健康记录，解读你已有的健康资料，并协助你跟进健康计划。记录和修改都需要你授权，并且以真实回执为准；我不能替代医生做诊断。有什么需要我帮忙的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 5,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1135,
+            "first_useful_ms": 1140,
+            "end_to_end_total_ms": 1389,
+            "end_to_end_ttft_ms": 1142
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 7264
+            },
+            {
+              "prompt_chars": 9490,
+              "tool_count": 4,
+              "model": "qwen3.8-max",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 3269,
+              "finish_reason": "stop",
+              "ms": 6567
+            }
+          ],
+          "passed": true,
+          "first_ms": 14116,
+          "total_ms": 14139,
+          "answer_chars": 195,
+          "answer": "昨天（2026-11-01）只有一条饮食记录：晚餐的「合成番茄」，估算热量 200 kcal。\n\n需要说明的是，这条记录只有热量，蛋白质、碳水、脂肪和膳食纤维都是空的，份量也没有填写，所以无法据此评估当天的营养结构是否均衡。另外早餐、午餐和加餐都没有记录，昨天全天的摄入情况是不完整的。\n\n如果你想让这条记录更有参考价值，可以补充一下当时的实际份量（比如几克或几个），我帮你把营养估算补齐。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 13837,
+            "first_useful_ms": 7531,
+            "end_to_end_total_ms": 14117,
+            "end_to_end_ttft_ms": 10805
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9115,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1537
+            },
+            {
+              "prompt_chars": 9490,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 2011,
+              "finish_reason": "stop",
+              "ms": 2548
+            }
+          ],
+          "passed": true,
+          "first_ms": 4507,
+          "total_ms": 4531,
+          "answer_chars": 184,
+          "answer": "昨天（11月1日）只有一条饮食记录：\n\n- **晚餐**：合成番茄，约 200 kcal；蛋白质、碳水、脂肪、膳食纤维都没有记录。\n\n也就是说，昨天早餐和午餐都没有记录，因此无法判断全天摄入是否充足或是否均衡。如果你昨天实际吃了其他餐次，可以补充告诉我，我来帮你补录。另外，这条晚餐记录只有热量、没有营养结构，如果方便，可以提供大致的份量，我可以帮你把营养素估算补全。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 4090,
+            "first_useful_ms": 1941,
+            "end_to_end_total_ms": 4508,
+            "end_to_end_ttft_ms": 3957
+          }
+        }
+      ]
+    },
+    "focused_prompt_candidate": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "rows": [
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 5189,
+              "finish_reason": "stop",
+              "ms": 5497
+            }
+          ],
+          "passed": true,
+          "first_ms": 6528,
+          "total_ms": 6559,
+          "answer_chars": 18,
+          "answer": "你好！下午好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 163,
+            "pre_llm_ms": 78,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 6,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5507,
+            "first_useful_ms": 5866,
+            "end_to_end_total_ms": 6540,
+            "end_to_end_ttft_ms": 6029
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 564,
+              "finish_reason": "stop",
+              "ms": 566
+            }
+          ],
+          "passed": true,
+          "first_ms": 2024,
+          "total_ms": 2030,
+          "answer_chars": 13,
+          "answer": "你好！有什么可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 566,
+            "first_useful_ms": 2008,
+            "end_to_end_total_ms": 2025,
+            "end_to_end_ttft_ms": 2010
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 630,
+              "finish_reason": "stop",
+              "ms": 2440
+            }
+          ],
+          "passed": true,
+          "first_ms": 3685,
+          "total_ms": 3691,
+          "answer_chars": 169,
+          "answer": "你好！我是 **Reva 健康助手**。\n\n我可以协助你完成以下事项：\n- **整理和查询**本人的健康记录；\n- **解读**已有的健康资料；\n- **跟进**你的健康计划。\n\n需要说明的是，记录和修改健康信息需要你本人授权，并以真实回执为准；同时，我提供的信息不能替代医生的专业诊断。\n\n如果你有需要整理或查询的健康记录，随时告诉我！",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2441,
+            "first_useful_ms": 1861,
+            "end_to_end_total_ms": 3686,
+            "end_to_end_ttft_ms": 1863
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 756,
+              "finish_reason": "stop",
+              "ms": 1758
+            }
+          ],
+          "passed": true,
+          "first_ms": 2754,
+          "total_ms": 2759,
+          "answer_chars": 349,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是 Reva 健康助手。\n\n我能帮你做这些事：\n\n- **整理和查询健康记录**：比如帮你查看已有的健康档案、历史记录，方便你回顾。\n- **解读已有资料**：你手头有检查报告、健康相关的资料，我可以帮你梳理内容、解释其中的术语和指标含义。\n- **跟进健康计划**：协助你记录和回顾日常健康安排，让计划更容易坚持。\n\n需要说明几点：\n\n- 涉及**记录、修改**个人数据时，都需要你先授权；结果以真实的操作回执为准，我不会凭空声称已经保存或改动。\n- 我**不能替代医生诊断**，也不能提供用药、补剂、疾病或运动处方方面的建议。有诊疗需求，请以专业医生的意见为准。\n\n如果你想开始，可以直接告诉我你想查什么或想整理什么，我会先帮你理清思路。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1758,
+            "first_useful_ms": 1736,
+            "end_to_end_total_ms": 2755,
+            "end_to_end_ttft_ms": 1738
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9705,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 1206,
+              "finish_reason": "stop",
+              "ms": 2870
+            }
+          ],
+          "passed": true,
+          "first_ms": 3289,
+          "total_ms": 3408,
+          "answer_chars": 141,
+          "answer": "昨天（2026-11-01）的饮食记录如下：\n\n- **晚餐**：合成番茄，热量 200 kcal。蛋白质、碳水、脂肪、膳食纤维及具体份量未记录。\n\n本次查询范围为 2026-11-01 全天饮食，仅返回上述一条记录；未返回的餐次或营养字段表示未知，不代表数值为 0 或未发生进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 109,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 55,
+              "kb_ms": 42,
+              "inspect_ms": 0,
+              "history_ms": 7,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2870,
+            "first_useful_ms": 402,
+            "end_to_end_total_ms": 3290,
+            "end_to_end_ttft_ms": 1613
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9705,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1025,
+              "finish_reason": "stop",
+              "ms": 1323
+            }
+          ],
+          "passed": true,
+          "first_ms": 1627,
+          "total_ms": 1653,
+          "answer_chars": 106,
+          "answer": "昨天（11 月 1 日）的饮食记录中，只查到一条：\n\n- 晚餐：合成番茄，热量约 200 kcal；蛋白质、碳水、脂肪、膳食纤维这几项没有记录，所以暂时不知道。\n\n除这条外，11 月 1 日没有查到其他饮食记录。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 18,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 9,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 1,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1323,
+            "first_useful_ms": 288,
+            "end_to_end_total_ms": 1628,
+            "end_to_end_ttft_ms": 1318
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 621,
+              "finish_reason": "stop",
+              "ms": 856
+            }
+          ],
+          "passed": true,
+          "first_ms": 1095,
+          "total_ms": 1100,
+          "answer_chars": 18,
+          "answer": "你好！下午好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 856,
+            "first_useful_ms": 848,
+            "end_to_end_total_ms": 1096,
+            "end_to_end_ttft_ms": 849
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 654,
+              "finish_reason": "stop",
+              "ms": 657
+            }
+          ],
+          "passed": true,
+          "first_ms": 898,
+          "total_ms": 903,
+          "answer_chars": 26,
+          "answer": "你好，我是 Reva 健康助手。有什么可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 657,
+            "first_useful_ms": 884,
+            "end_to_end_total_ms": 899,
+            "end_to_end_ttft_ms": 886
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 660,
+              "finish_reason": "stop",
+              "ms": 2550
+            }
+          ],
+          "passed": true,
+          "first_ms": 2785,
+          "total_ms": 2792,
+          "answer_chars": 183,
+          "answer": "你好！我是 **Reva 健康助手**。\n\n我可以协助你：\n- **整理和查询**本人的健康记录；\n- **解读**已有的健康资料；\n- **跟进**你的健康计划。\n\n需要说明的是，记录和修改健康数据需要你的明确授权，并以真实回执为准；同时，我提供的信息不能替代医生的专业诊断。\n\n现在是北京时间 2026年11月2日（周一）下午 15:54，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2550,
+            "first_useful_ms": 882,
+            "end_to_end_total_ms": 2786,
+            "end_to_end_ttft_ms": 884
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 922,
+              "finish_reason": "stop",
+              "ms": 1489
+            }
+          ],
+          "passed": true,
+          "first_ms": 1729,
+          "total_ms": 1735,
+          "answer_chars": 207,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n我是 Reva 健康助手，可以帮你：\n\n- **整理和查询**你的健康记录\n- **解读**你已有的健康资料，协助理解其中的信息\n- **跟进**你的健康计划，把目标拆分成可执行的步骤\n\n需要说明的是：涉及记录和修改个人资料时，需要你授权，并且以实际回执为准；我不能替代医生做诊断，也不适合直接给出用药、补剂或疾病治疗方案。\n\n有想了解或需要整理的内容，随时告诉我。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1489,
+            "first_useful_ms": 1150,
+            "end_to_end_total_ms": 1729,
+            "end_to_end_ttft_ms": 1152
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9706,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 998,
+              "finish_reason": "stop",
+              "ms": 1852
+            }
+          ],
+          "passed": true,
+          "first_ms": 2135,
+          "total_ms": 2159,
+          "answer_chars": 79,
+          "answer": "昨天（2026-11-01）共有 1 条饮食记录：\n\n- **晚餐**：合成番茄，热量 200.0 kcal。蛋白质、碳水、脂肪、膳食纤维及具体份量均未记录。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1852,
+            "first_useful_ms": 268,
+            "end_to_end_total_ms": 2135,
+            "end_to_end_ttft_ms": 1270
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9706,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1137,
+              "finish_reason": "stop",
+              "ms": 1317
+            }
+          ],
+          "passed": true,
+          "first_ms": 1718,
+          "total_ms": 1742,
+          "answer_chars": 70,
+          "answer": "昨天（11月1日）只有一条饮食记录：\n\n- 晚餐：合成番茄，约 200 千卡；蛋白质、碳水、脂肪、膳食纤维均未记录。\n\n没有其他餐次的记录。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1317,
+            "first_useful_ms": 386,
+            "end_to_end_total_ms": 1719,
+            "end_to_end_ttft_ms": 1528
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 727,
+              "finish_reason": "stop",
+              "ms": 1028
+            }
+          ],
+          "passed": true,
+          "first_ms": 1272,
+          "total_ms": 1277,
+          "answer_chars": 18,
+          "answer": "你好！下午好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1028,
+            "first_useful_ms": 959,
+            "end_to_end_total_ms": 1273,
+            "end_to_end_ttft_ms": 961
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 726,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 766,
+              "finish_reason": "stop",
+              "ms": 771
+            }
+          ],
+          "passed": true,
+          "first_ms": 1011,
+          "total_ms": 1016,
+          "answer_chars": 26,
+          "answer": "你好，我是 Reva 健康助手。有什么可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 771,
+            "first_useful_ms": 993,
+            "end_to_end_total_ms": 1011,
+            "end_to_end_ttft_ms": 995
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 760,
+              "finish_reason": "stop",
+              "ms": 2520
+            }
+          ],
+          "passed": true,
+          "first_ms": 2771,
+          "total_ms": 2776,
+          "answer_chars": 149,
+          "answer": "你好！我是 **Reva 健康助手**。\n\n我可以协助你整理和查询本人的健康记录、解读已有的健康资料，并跟进你的健康计划。需要说明的是，记录和修改个人数据需要你的明确授权，并以真实回执为准；同时，我提供的信息不能替代医生的专业诊断。\n\n如果你有需要整理的记录或想了解的通用健康知识，随时可以告诉我。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2521,
+            "first_useful_ms": 996,
+            "end_to_end_total_ms": 2771,
+            "end_to_end_ttft_ms": 998
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 736,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1120,
+              "finish_reason": "stop",
+              "ms": 2237
+            }
+          ],
+          "passed": true,
+          "first_ms": 3784,
+          "total_ms": 3790,
+          "answer_chars": 355,
+          "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n你好，我是 Reva 健康助手。简单说说我能做什么：\n\n- **整理和查询健康记录**：帮你就已有的健康资料进行归类、梳理，方便你按时间线或主题查看。\n- **解读已有资料**：对检查报告、健康文书等已有内容做通俗说明，帮你理解其中的术语和指标含义。\n- **跟进健康计划**：协助你回顾和梳理自己的健康安排，提醒哪些部分需要补充信息或继续跟进。\n\n几点说明：\n\n- 涉及**记录和修改**的操作，需要你明确授权，并且以实际生成的回执为准；在此之前，我不会声称已经保存或改动过任何内容。\n- 我可以帮你理解和整理信息，但**不能替代医生做诊断**，也不提供用药、补剂或运动处方方面的决策。\n- 如果有需要，我们可以先聊聊你想整理哪类资料，或者想跟进哪方面的计划。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 2238,
+            "first_useful_ms": 2652,
+            "end_to_end_total_ms": 3785,
+            "end_to_end_ttft_ms": 2654
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9706,
+              "tool_count": 0,
+              "model": "qwen3.8-max",
+              "has_tools": false,
+              "enable_thinking": false,
+              "thinking_budget": null,
+              "first_content_ms": 825,
+              "finish_reason": "stop",
+              "ms": 1738
+            }
+          ],
+          "passed": true,
+          "first_ms": 2615,
+          "total_ms": 2667,
+          "answer_chars": 76,
+          "answer": "昨天（2026-11-01）共有 1 条饮食记录：\n\n- **晚餐**：合成番茄，热量 200 kcal。蛋白质、碳水、脂肪、膳食纤维及具体份量未记录。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1738,
+            "first_useful_ms": 853,
+            "end_to_end_total_ms": 2616,
+            "end_to_end_ttft_ms": 1682
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [
+            {
+              "prompt_chars": 9706,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1254,
+              "finish_reason": "stop",
+              "ms": 1657
+            }
+          ],
+          "passed": true,
+          "first_ms": 2099,
+          "total_ms": 2123,
+          "answer_chars": 118,
+          "answer": "昨天（11 月 1 日）只有一条饮食记录：晚餐，记录的食物是“合成番茄”，热量约 200 kcal。蛋白质、碳水、脂肪、膳食纤维这几项在记录里都为空，也就是未填写。\n\n本次查询范围为 11 月 1 日全天，除此之外没有其他餐次记录返回。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 4,
+            "pre_llm_ms": 28,
+            "pre_llm_stages": {
+              "routing_ms": 1,
+              "conv_ms": 2,
+              "opener_ms": 0,
+              "system_prompt_ms": 15,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 1,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 1657,
+            "first_useful_ms": 423,
+            "end_to_end_total_ms": 2099,
+            "end_to_end_ttft_ms": 1683
+          }
+        }
+      ]
+    },
+    "focused_final": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "rows": [
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 1471,
+          "total_ms": 1563,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 67,
+            "pre_llm_ms": 27,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 3,
+              "opener_ms": 1,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 1404,
+            "end_to_end_total_ms": 1552,
+            "end_to_end_ttft_ms": 1471
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 310,
+          "total_ms": 313,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 5,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 306,
+            "end_to_end_total_ms": 310,
+            "end_to_end_ttft_ms": 309
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 221,
+          "total_ms": 225,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 218,
+            "end_to_end_total_ms": 221,
+            "end_to_end_ttft_ms": 220
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 221,
+          "total_ms": 225,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 218,
+            "end_to_end_total_ms": 221,
+            "end_to_end_ttft_ms": 220
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 352,
+          "total_ms": 448,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 84,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 44,
+              "kb_ms": 26,
+              "inspect_ms": 0,
+              "history_ms": 8,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 339,
+            "end_to_end_total_ms": 352,
+            "end_to_end_ttft_ms": 351
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "passed": true,
+          "first_ms": 307,
+          "total_ms": 329,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 296,
+            "end_to_end_total_ms": 307,
+            "end_to_end_ttft_ms": 306
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 219,
+          "total_ms": 223,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 217,
+            "end_to_end_total_ms": 220,
+            "end_to_end_ttft_ms": 218
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 225,
+          "total_ms": 229,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 223,
+            "end_to_end_total_ms": 226,
+            "end_to_end_ttft_ms": 225
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 234,
+          "total_ms": 238,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 231,
+            "end_to_end_total_ms": 234,
+            "end_to_end_ttft_ms": 233
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 230,
+          "total_ms": 234,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 227,
+            "end_to_end_total_ms": 230,
+            "end_to_end_ttft_ms": 229
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 258,
+          "total_ms": 279,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 249,
+            "end_to_end_total_ms": 258,
+            "end_to_end_ttft_ms": 258
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "passed": true,
+          "first_ms": 256,
+          "total_ms": 277,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 246,
+            "end_to_end_total_ms": 256,
+            "end_to_end_ttft_ms": 255
+          }
+        },
+        {
+          "case": "greeting__qwen3.8-max",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 221,
+          "total_ms": 225,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 218,
+            "end_to_end_total_ms": 221,
+            "end_to_end_ttft_ms": 220
+          }
+        },
+        {
+          "case": "greeting__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 233,
+          "total_ms": 238,
+          "answer_chars": 14,
+          "answer": "你好，有什么我可以帮你的吗？",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 3,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 231,
+            "end_to_end_total_ms": 234,
+            "end_to_end_ttft_ms": 233
+          }
+        },
+        {
+          "case": "introduction__qwen3.8-max",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 237,
+          "total_ms": 241,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 234,
+            "end_to_end_total_ms": 237,
+            "end_to_end_ttft_ms": 236
+          }
+        },
+        {
+          "case": "introduction__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 231,
+          "total_ms": 236,
+          "answer_chars": 77,
+          "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 1,
+            "pre_llm_ms": 4,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 0,
+              "opener_ms": 0,
+              "system_prompt_ms": 0,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 229,
+            "end_to_end_total_ms": 232,
+            "end_to_end_ttft_ms": 231
+          }
+        },
+        {
+          "case": "diet_lookup__qwen3.8-max",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 266,
+          "total_ms": 288,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 12,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 6,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 255,
+            "end_to_end_total_ms": 266,
+            "end_to_end_ttft_ms": 265
+          }
+        },
+        {
+          "case": "diet_lookup__deepseek-v4.1-flash",
+          "repeat": 2,
+          "calls": [],
+          "passed": true,
+          "first_ms": 268,
+          "total_ms": 290,
+          "answer_chars": 236,
+          "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+          "outcome": "complete",
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 5,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 257,
+            "end_to_end_total_ms": 268,
+            "end_to_end_ttft_ms": 267
+          }
+        }
+      ]
+    },
+    "decisions": [
+      "Rejected first prompt-only diet answer: unsolicited missing-meal inference and advice.",
+      "Removed weekly sleep preplanning: existing date binder does not attest this exact limited grammar; keep normal path.",
+      "Rejected prompt-only finality: Qwen greeting cold sample 6528ms, diet sample3289ms; no all-under-3s claim.",
+      "Final: exact standalone greeting/introduction copy and owner/date verified single-day diet detail through Pi/final guards; no new read authority.",
+      "Preserve historical corrections and mixed medical/attachment/analysis requests, failures and unsupported records on original path."
+    ],
+    "distribution": {
+      "focused_baseline": {
+        "n": 18,
+        "successful": 18,
+        "sample_p50_ms": 4938,
+        "sample_p95_ms": 14116,
+        "sample_p99_ms": 14116,
+        "max_ms": 14116,
+        "method": "nearest-rank descriptive only; n=18 cannot establish production tails",
+        "model_calls": 24
+      },
+      "focused_prompt_candidate": {
+        "n": 18,
+        "successful": 18,
+        "sample_p50_ms": 2099,
+        "sample_p95_ms": 6528,
+        "sample_p99_ms": 6528,
+        "max_ms": 6528,
+        "method": "nearest-rank descriptive only; n=18 cannot establish production tails",
+        "model_calls": 18
+      },
+      "focused_final": {
+        "n": 18,
+        "successful": 18,
+        "sample_p50_ms": 234,
+        "sample_p95_ms": 1471,
+        "sample_p99_ms": 1471,
+        "max_ms": 1471,
+        "method": "nearest-rank descriptive only; n=18 cannot establish production tails",
+        "model_calls": 0
+      }
+    },
+    "quality_floor": [
+      "No fabricated or omitted records; duplicate rows stay distinct.",
+      "Unknown nutrients remain unknown, zero remains zero, display precision <=2 decimals.",
+      "No change to selected model for model-led requests, owner/date binding, consent, Pi/Gateway, output guards or persistence.",
+      "Stop promotion on quality regression, errors, or tail worsening. No automatic old-config restore."
+    ],
+    "validation": {
+      "red": "5 failed before deterministic implementation",
+      "initial_regression": "476 passed",
+      "final_regression": "503 passed, 6 existing deprecation warnings; 62.59s",
+      "native_visible_latency": "unverified: GUI locked; no bypass attempted",
+      "production_post_deploy_latency": "pending",
+      "owner_date_followup": "3 passed, 53 deselected",
+      "system_map": "regenerated canonical graph; full shell check passed",
+      "ruff": "new renderer and changed lookup tests pass; existing large executor has pre-existing lint debt; no global formatting"
+    }
   }
 }

@@ -11,6 +11,7 @@ from app.twin.schema import HealthTwin, TwinMeta
 @pytest.mark.parametrize('message', [
     '杭州明天天气温度怎么样？空气质量。',
     '请介绍一下你自己',
+    '你好',
 ])
 async def test_public_completion_never_builds_personal_twin(
     db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, message,

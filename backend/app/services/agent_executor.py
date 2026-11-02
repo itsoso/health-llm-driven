@@ -13911,11 +13911,16 @@ class AgentExecutor:
         """Recognize a complete factual lookup, never infer extra read authority.
 
         Only the existing owner/date binder supplies query arguments. Keep the
-        initially proven sleep-record shape narrow: analysis, modifiers,
+        factual sleep/diet record shapes narrow: analysis, modifiers,
         references, attachments and all mutation/clinical goals stay model-led.
         """
         snapshot = self._agent_kernel_snapshot
         message = self._current_turn_user_message or ""
+        match = re.fullmatch(
+            r"(?:请)?(?:查询|查看)(?:我(?:的)?)?"
+            r"(?:今天|今日|昨天|昨日|前天)"
+            r"(?:的)?(?P<domain>睡眠|饮食)(?:记录|数据)[。.!！?？]?", message.strip(),
+        )
         if (
             not getattr(settings, "domain_prompt_optimization", False)
             or snapshot is None or snapshot.intent.is_write
@@ -13933,30 +13938,35 @@ class AgentExecutor:
             or self._turn_sync_attempted or self._read_repair_failures
             or self._force_no_tools_synthesis or self._requires_quality_floor()
             or self._turn_invoked_deep_analysis
-            or not re.fullmatch(
-                r"(?:请)?(?:查询|查看)(?:我(?:的)?)?(?:今天|今日|昨天|昨日|前天)"
-                r"(?:的)?睡眠(?:记录|数据)[。.!！?？]?", message.strip(),
-            )
+            or match is None
         ):
             return None
         scope = self._owned_read_scope_for(snapshot)
         if (scope is None or len(scope.queries) != 1 or scope.composite_advice
                 or scope.weather_city is not None or scope.workout_selection is not None
-                or scope.queries[0].get("dimension") != "sleep"
-                or not scope.queries[0].get("start_date")
-                or scope.queries[0].get("start_date") != scope.queries[0].get("end_date")):
+                or scope.queries[0].get("dimension") != {"睡眠": "sleep", "饮食": "diet"}[match["domain"]]):
+            return None
+        query = scope.queries[0]
+        if not query.get("start_date") or query.get("start_date") != query.get("end_date"):
             return None
         return scope
 
     def _verified_simple_lookup_reply(
         self, *, sealed: bool = False, history_free: bool = False,
     ) -> Optional[str]:
-        if sealed or not history_free or self._simple_record_lookup_scope() is None:
+        scope = self._simple_record_lookup_scope()
+        if (sealed or not history_free or scope is None
+                or not scope.queries[0].get("start_date")
+                or scope.queries[0]["start_date"] != scope.queries[0]["end_date"]):
             return None
         completion = self._composed_read_completion()
         if (completion is None or not completion.complete
                 or completion.verified_evidence is None):
             return None
+        if scope.queries[0]["dimension"] == "diet":
+            from app.services.agent_record_lookup_render import render_verified_diet_lookup
+
+            return render_verified_diet_lookup(scope.queries[0], completion)
         return completion.trusted_fact_summary or None
 
     def _preplanned_owned_read_calls(
@@ -17895,6 +17905,8 @@ class AgentExecutor:
         composed_synthesis_used = False
         owned_read_preplanned = False
         simple_lookup_rendered = False
+        simple_lookup_text = None
+        public_answer_text = None
         static_report_model_calls_avoided = 0
         record_write_requested = (
             completion_intent.primary == "write"
@@ -18061,7 +18073,9 @@ class AgentExecutor:
             from app.services.llm.task_routing import classify_answer_task_tier
 
             candidate = classify_public_task(message, has_attachments=bool(images or file_base64))
-            if candidate and classify_answer_task_tier(message, has_attachments=False) == "casual":
+            if (candidate and classify_answer_task_tier(message, has_attachments=False) == "casual"
+                    and (candidate != "greeting" or (conversation_id is None
+                         and not self._agent_kernel_snapshot.actionable_references))):
                 self._public_task = candidate
         self._analysis_turn_subset = False  # R5:纯分析轮只读工具子集(flag 门控,下方设定)
         self._tool_round_fast_routed = False
@@ -20390,6 +20404,24 @@ class AgentExecutor:
                             self._begin_read_repair_batch()
                             round_idx += 1
                             messages = request["messages"]
+                            if (round_idx == 0 and conversation_id is None
+                                    and self._public_task in {"greeting", "introduction"}
+                                    and not health_advice_buffered and not self._requires_quality_floor()
+                                    and not self._agent_kernel_snapshot.actionable_references
+                                    and len(initial_dialogue) == 1
+                                    and initial_dialogue[0].get("role") == "user"
+                                    and not remaining_batch_tools and not blocked_pi_calls
+                                    and not pending_pi_writes and not write_receipts
+                                    and not failed_write_operations and not unverified_write_operations
+                                    and not last_recoverable_write_rejection):
+                                from app.services.agent_public_task import public_task_reply
+
+                                public_answer_text = public_task_reply(self._public_task)
+                                # Closed, context-free copy; Pi and ordinary final
+                                # delivery, safety and persistence gates still run.
+                                await pi.respond(request, content=public_answer_text,
+                                                 tool_calls=[], finish_reason="stop")
+                                continue
                             report_receipt = self._take_orchestrator_delivery(messages)
                             if (
                                 report_receipt is not None and not remaining_batch_tools
@@ -20437,6 +20469,7 @@ class AgentExecutor:
                                     await pi.respond(request, content=lookup_reply,
                                                      tool_calls=[], finish_reason="stop")
                                     simple_lookup_rendered = True
+                                    simple_lookup_text = lookup_reply
                                     continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
@@ -21733,7 +21766,8 @@ class AgentExecutor:
             model_generated=not (
                 (simple_lookup_rendered and composed_completion is not None
                  and composed_completion.complete
-                 and full_reply == composed_completion.trusted_fact_summary)
+                 and full_reply == simple_lookup_text)
+                or (public_answer_text is not None and full_reply == public_answer_text)
                 or (deterministic_query_mode == "on"
                 and deterministic_query_text
                 and full_reply == deterministic_query_text)
@@ -22089,6 +22123,7 @@ class AgentExecutor:
             "model_call_count": model_call_count,
             "owned_read_preplanned": owned_read_preplanned,
             "simple_lookup_rendered": simple_lookup_rendered,
+            "public_answer_rendered": public_answer_text is not None,
             "simple_lookup_route_skipped": simple_lookup_route_skipped,
             **({"report_render": {
                 "kind": "cycling_html",
