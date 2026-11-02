@@ -1,5 +1,5 @@
 {
-  "status": "revised_candidate_local_validation",
+  "status": "backend_and_ios_ota_published_independently_verified",
   "baseline_sha": "ea5cb3c4b79aa4bdc0c9debe385a66ed82da1738",
   "runtime_change": "Only qwen3.8-flash: JSON mode plus meal=null to avoid prose that sanitizer already derives; food fields/tips/model/temperature/budget/consent/persistence unchanged.",
   "experiments": {
@@ -2540,5 +2540,4185 @@
     "passed": true,
     "source_state": "Uncommitted revision after1ad; bound by runtime file digest, not HEAD alone",
     "runtime_file_sha256": "514dcba094abc4aa29c78dc032d3be19d32314add5042147393e10f36379e1f1"
-  }
+  },
+  "release": {
+    "candidate_sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+    "prior_candidate_sha": "1ad16b11816362423e85b4164737188f7a984d18",
+    "status": "backend_and_ios_ota_published_independently_verified",
+    "production_endpoint": {
+      "endpoint": {
+        "scheme": "https",
+        "host": "dashscope.aliyuncs.com",
+        "path": "/compatible-mode/v1"
+      },
+      "model": "qwen3.8-flash"
+    },
+    "local_tests": {
+      "ci_mode": "456 passed, 1 skipped",
+      "derived_red": "2 failed,25 passed"
+    },
+    "prior_candidate_hold": {
+      "candidate_sha": "1ad16b11816362423e85b4164737188f7a984d18",
+      "verdict": "HOLD",
+      "scope": "Deployment/performance acceptance; code G4 unchanged",
+      "evidence_path": "/private/tmp/reva-vision-20261103-json-production-endpoint-full.json",
+      "evidence_sha256": "7ae66e46b43dbfa9f21eaf0da867c4a2c650be4e3c105313659017373b8c123f",
+      "independent_summary": {
+        "wire_async": {
+          "attempts": 14,
+          "valid": 11,
+          "valid_median_ms": 2174
+        },
+        "wire_stream": {
+          "attempts": 14,
+          "valid": 14,
+          "valid_median_ms": 2099.0
+        }
+      },
+      "reason": "Production endpoint valid median2174 to2099ms is3.45percent improvement, below frozen minimum10percent. Increased valid rate does not substitute for performance gate.",
+      "stage_deploy": "Do not execute current staging/deployment",
+      "next_experiment": "JSON plus omitted/derived meal description is a separate proposal, not approved by existing G4. Requires frozen candidate and fresh quality/performance review.",
+      "prior_evidence_preserved": true
+    },
+    "unrounded_statistics": {
+      "baseline_median_ms": 2273.0,
+      "candidate_median_ms": 2010.5,
+      "improvement_percent": 11.548614166300041
+    },
+    "ci_run": 41491001279,
+    "g4": {
+      "candidate_sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "base_sha": "ea5cb3c4b79aa4bdc0c9debe385a66ed82da1738",
+      "incremental_parent": "1ad16b11816362423e85b4164737188f7a984d18",
+      "verdict": "GO",
+      "scope": "Independent code G4 and bounded synthetic same-endpoint evidence review; not deployment or device acceptance",
+      "reviewed_at_utc": "2026-11-02T17:25:00.882088+00:00",
+      "file_sha256": {
+        "backend/app/services/ai/food_recognition.py": "514dcba094abc4aa29c78dc032d3be19d32314add5042147393e10f36379e1f1",
+        "backend/tests/test_food_recognition_output_format.py": "b0151257d40e5855bbf7f25a1f3af27cae7f785ee461df0b46216c290c39ee4d",
+        "backend/tests/test_food_vision_output_benchmark.py": "9d863d31e78812f2ac03bf02e68696547fddfbc1f114bed4d8cd4f93e51bf4b1",
+        "docs/dossiers/2026-10-08-diet-vision-latency.md": "0146900605484d2874ed2a84c8be426990ad1d27596b8849bb2f5bddce2d8682",
+        "docs/reviews/2026-11-03-diet-vision-json-mode.json": "b3f7aaf00c37795b3fd3ac225db46929ff85eeeeac9822bfeb6a89e96364bfe1",
+        "scripts/benchmark_food_vision_output.py": "1446e06fb083d953692669e3395c893deb934cba8741141e7bd6c3bd20bf053f"
+      },
+      "blocking_findings": [],
+      "nonblocking_findings": [
+        {
+          "severity": "low",
+          "detail": "Raw candidate median2010.5ms versus baseline2273ms implies11.55percent improvement. Artifact summary rounds to2010ms and dossier derives11.57percent; same gate outcome, prefer raw precision in subsequent evidence record."
+        }
+      ],
+      "verified": [
+        "Exact normalized qwen3.8-flash only: JSON object mode plus meal:null and one fixed prompt suffix. Reversing schema replacement/suffix reproduces baseline prompt exactly; all food/tips/policy text retained.",
+        "Both URL/base64 paths pass provider into builder. Consent guard and guarded SDK, temperature/max_tokens/thinking, output expansion/sanitization, write/confirmation authority remain unchanged.",
+        "Existing sanitizer ignores generated meal prose and rebuilds description from sanitized foods; meal:null therefore removes discarded text. Empty/nonfood remains unsuccessful and unknown nutrient values remain unknown.",
+        "No weaker-contract retry on provider rejection; unsupported models preserve original prompt/options.",
+        "DashScope reproduction script digest matches and pins required source1ad; this avoids applying new provider-aware prompt twice in the historical snapshot. Maintained wire_text/wire CLI compares original text versus new prompt+JSON using identical sync transport.",
+        "Paired same-endpoint report independently recomputed:28/28 valid; medians2273 and2010.5ms;14candidate max2944ms; sampleP95/token reductions satisfy preset bounded gates. Prior JSON-only HOLD and TokenPlan endpoint mismatch/failures retained.",
+        "Actual service smoke is explicitly dirty-after1ad evidence, not falsely exactHEAD. Runtime digest514dcba094abc4aa29c78dc032d3be19d32314add5042147393e10f36379e1f1 matches fixed candidate source."
+      ],
+      "independent_tests": {
+        "result": "130 passed; exit0",
+        "log": "/private/tmp/reva-vision-e87f04d51-independent-tests.log",
+        "log_sha256": "155b2db725a5fb2fbf72f24169b764ca909350af84ae73556f235cd53881bf5f",
+        "additional_probes": "9 model boundaries;2 generated-meal-versus-null sanitation invariance cases; reproduction script and service smoke source digests PASS"
+      },
+      "limits": [
+        "Synthetic text-image oracle only; does not establish real-photo nutritional truth or general clinical non-inferiority.",
+        "Local DashScope SDK timing is not production-server, HTTP/upload/save/card-render or native-device acceptance. Sample percentile is not production SLA.",
+        "New exact-SHA fullCI and separate governed release helper review remain required. Old1ad CI and staging approval cannot approve newcandidate.",
+        "No paid model calls, repository edits, staging, credential refresh, rotation, deploy or OTA performed by reviewer."
+      ]
+    },
+    "g4_sha256": "fafd43150081893a7521531ea6855238a927cefcdb366b9f1c3c99e3251387f5",
+    "ci_recovery": {
+      "run_id": 41491001279,
+      "failed_attempt": 1,
+      "cancelled_job": 125433803889,
+      "reason": "Hosted macOS arm64 runner capacity; job never acquired and no steps executed",
+      "recovery": "Rerun cancelled job within original CI run; retain failed attempt; require current attempt full green before release",
+      "candidate_unchanged": true,
+      "production_mutations_before_recovery": false,
+      "failed_attempt_evidence": {
+        "path": "/private/tmp/reva-vision-e87f04d51-ci-attempt1.json",
+        "sha256": "306bc62a336636c8cb6a85cc6a8f9cab3a643a9d8ba3a489c2692eafcb7769b0"
+      },
+      "annotations_evidence": {
+        "path": "/private/tmp/reva-vision-e87f04d51-ci-attempt1-annotations.json",
+        "sha256": "71dabf80248570fb2e317b48ed888dc5d7d0bc83c8a7507cfe43bbc8fe78fd82"
+      },
+      "failed_attempt_snapshot": {
+        "conclusion": "failure",
+        "headSha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "jobs": [
+          {
+            "completedAt": "2026-11-02T17:25:31Z",
+            "conclusion": "success",
+            "databaseId": 125433643473,
+            "name": "classify-changes",
+            "startedAt": "2026-11-02T17:25:16Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:18Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:28Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:18Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:28Z",
+                "conclusion": "success",
+                "name": "Classify changed paths",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:28Z",
+                "conclusion": "success",
+                "name": "Build timing-balanced pytest matrix",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:28Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 8,
+                "startedAt": "2026-11-02T17:25:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:28Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 9,
+                "startedAt": "2026-11-02T17:25:28Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433643473"
+          },
+          {
+            "completedAt": "2026-11-02T17:26:01Z",
+            "conclusion": "success",
+            "databaseId": 125433803766,
+            "name": "docs-quality",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:44Z",
+                "conclusion": "success",
+                "name": "Install lightweight documentation dependencies",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:47Z",
+                "conclusion": "success",
+                "name": "Scan tracked files for high-confidence secrets",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:48Z",
+                "conclusion": "success",
+                "name": "Check System Map and doc drift",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:47Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Test System Map harness",
+                "number": 7,
+                "startedAt": "2026-11-02T17:25:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Check dossier consistency",
+                "number": 8,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Check Agent Skill governance",
+                "number": 9,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Run isolated Agent and Harness tooling tests",
+                "number": 10,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:58Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 19,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:58Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 20,
+                "startedAt": "2026-11-02T17:25:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:58Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 21,
+                "startedAt": "2026-11-02T17:25:58Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433803766"
+          },
+          {
+            "completedAt": "2026-11-02T17:40:33Z",
+            "conclusion": "cancelled",
+            "databaseId": 125433803889,
+            "name": "mac-build",
+            "startedAt": "2026-11-02T17:25:31Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433803889"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:59Z",
+            "conclusion": "success",
+            "databaseId": 125433803982,
+            "name": "agent-runtime-postgres",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:51Z",
+                "conclusion": "success",
+                "name": "Initialize containers",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:53Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:59Z",
+                "conclusion": "success",
+                "name": "Install official Pi for PostgreSQL integration",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:02Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:31Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:02Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:40Z",
+                "conclusion": "success",
+                "name": "Verify live-run task publishing on isolated Redis",
+                "number": 8,
+                "startedAt": "2026-11-02T17:26:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:40Z",
+                "conclusion": "success",
+                "name": "Verify isolated review closure PostgreSQL boundary",
+                "number": 9,
+                "startedAt": "2026-11-02T17:26:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:42Z",
+                "conclusion": "success",
+                "name": "Verify fresh Xiaoqihou briefing PostgreSQL boundary",
+                "number": 10,
+                "startedAt": "2026-11-02T17:26:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:53Z",
+                "conclusion": "success",
+                "name": "Verify old-target rollback closure PostgreSQL boundary",
+                "number": 11,
+                "startedAt": "2026-11-02T17:26:42Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:54Z",
+                "conclusion": "success",
+                "name": "Verify bounded no-backup daily journey migration on PostgreSQL",
+                "number": 12,
+                "startedAt": "2026-11-02T17:26:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:58Z",
+                "conclusion": "success",
+                "name": "Verify bounded exam attempt migration on PostgreSQL",
+                "number": 13,
+                "startedAt": "2026-11-02T17:26:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:05Z",
+                "conclusion": "success",
+                "name": "Verify exam practice PostgreSQL transactions",
+                "number": 14,
+                "startedAt": "2026-11-02T17:26:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:06Z",
+                "conclusion": "success",
+                "name": "Verify journey preflight closure catalog on isolated PostgreSQL",
+                "number": 15,
+                "startedAt": "2026-11-02T17:27:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:06Z",
+                "conclusion": "success",
+                "name": "Verify Runtime migration upgrade and idempotency",
+                "number": 16,
+                "startedAt": "2026-11-02T17:27:06Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:07Z",
+                "conclusion": "success",
+                "name": "Verify PostgreSQL shard database isolation",
+                "number": 17,
+                "startedAt": "2026-11-02T17:27:06Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:48Z",
+                "conclusion": "success",
+                "name": "Run Runtime and medication PostgreSQL semantics",
+                "number": 18,
+                "startedAt": "2026-11-02T17:27:07Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:49Z",
+                "conclusion": "success",
+                "name": "Preserve PostgreSQL shard evidence",
+                "number": 19,
+                "startedAt": "2026-11-02T17:32:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:49Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 35,
+                "startedAt": "2026-11-02T17:32:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:49Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 36,
+                "startedAt": "2026-11-02T17:32:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:49Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 37,
+                "startedAt": "2026-11-02T17:32:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:50Z",
+                "conclusion": "success",
+                "name": "Stop containers",
+                "number": 38,
+                "startedAt": "2026-11-02T17:32:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:50Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 39,
+                "startedAt": "2026-11-02T17:32:50Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433803982"
+          },
+          {
+            "completedAt": "2026-11-02T17:27:03Z",
+            "conclusion": "success",
+            "databaseId": 125433804006,
+            "name": "backend-quality",
+            "startedAt": "2026-11-02T17:25:33Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:39Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:42Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:09Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:42Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:20Z",
+                "conclusion": "success",
+                "name": "Audit production Python dependencies",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:09Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:20Z",
+                "conclusion": "success",
+                "name": "Health MCP tool contracts",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:20Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:32Z",
+                "conclusion": "success",
+                "name": "Independent WeChat bridge audit and isolated tests",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:20Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:35Z",
+                "conclusion": "success",
+                "name": "Lint (ruff, non-blocking warnings)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:26:32Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:35Z",
+                "conclusion": "success",
+                "name": "Lint (ruff, blocking — undefined names / syntax)",
+                "number": 9,
+                "startedAt": "2026-11-02T17:26:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:35Z",
+                "conclusion": "success",
+                "name": "LLM live-change regression gate",
+                "number": 10,
+                "startedAt": "2026-11-02T17:26:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:36Z",
+                "conclusion": "success",
+                "name": "LLM synthesis regression gate",
+                "number": 11,
+                "startedAt": "2026-11-02T17:26:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:39Z",
+                "conclusion": "success",
+                "name": "Eval Golden Set (safety + insight + retrieval, no LLM cost)",
+                "number": 12,
+                "startedAt": "2026-11-02T17:26:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:55Z",
+                "conclusion": "success",
+                "name": "System KB retrieval eval (observation mode)",
+                "number": 13,
+                "startedAt": "2026-11-02T17:26:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:56Z",
+                "conclusion": "success",
+                "name": "Upload System KB eval metrics",
+                "number": 14,
+                "startedAt": "2026-11-02T17:26:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:56Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 27,
+                "startedAt": "2026-11-02T17:26:56Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:56Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 28,
+                "startedAt": "2026-11-02T17:26:56Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:56Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 29,
+                "startedAt": "2026-11-02T17:26:56Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804006"
+          },
+          {
+            "completedAt": "2026-11-02T17:25:56Z",
+            "conclusion": "success",
+            "databaseId": 125433804050,
+            "name": "neo-wechat-systemd249",
+            "startedAt": "2026-11-02T17:25:44Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:51Z",
+                "conclusion": "success",
+                "name": "Verify actual target systemd 249 containment with synthetic fixtures",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:52Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:52Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 7,
+                "startedAt": "2026-11-02T17:25:52Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804050"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:03Z",
+            "conclusion": "success",
+            "databaseId": 125433804312,
+            "name": "backend-test-balanced-01",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:51Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:06Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:09Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:06Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:26Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:09Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:41Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-01)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:43Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-01)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:41Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:43Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:43Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:43Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:43Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:43Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:43Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:43Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:43Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804312"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:03Z",
+            "conclusion": "success",
+            "databaseId": 125433804365,
+            "name": "backend-test-balanced-05",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:36Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:54Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:15Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:52Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-05)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:15Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:53Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-05)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:31:52Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:53Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:31:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:54Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:31:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:54Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:31:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:54Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:31:54Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804365"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:02Z",
+            "conclusion": "success",
+            "databaseId": 125433804370,
+            "name": "backend-test-balanced-10",
+            "startedAt": "2026-11-02T17:25:44Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:49Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:55Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:04Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:08Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:04Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:26Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:08Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:58Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-10)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-10)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:00Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:00Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:33:00Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:00Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:33:00Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804370"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:10Z",
+            "conclusion": "success",
+            "databaseId": 125433804378,
+            "name": "backend-test-balanced-06",
+            "startedAt": "2026-11-02T17:25:33Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:39Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:44Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:53Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:55Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:13Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:58Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-06)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:13Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-06)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:00Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:00Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:33:00Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804378"
+          },
+          {
+            "completedAt": "2026-11-02T17:30:32Z",
+            "conclusion": "success",
+            "databaseId": 125433804388,
+            "name": "backend-test-balanced-07",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:51Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:54Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:07Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:25Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-07)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:07Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:26Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-07)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:30:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:26Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:30:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:26Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:30:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:27Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:30:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:27Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:30:27Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804388"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:24Z",
+            "conclusion": "success",
+            "databaseId": 125433804398,
+            "name": "backend-test-balanced-02",
+            "startedAt": "2026-11-02T17:25:44Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:51Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:58Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:06Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:15Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:06Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:31Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:15Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:16Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-02)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:17Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-02)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:16Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:17Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:18Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:18Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:18Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:18Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:18Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804398"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:02Z",
+            "conclusion": "success",
+            "databaseId": 125433804444,
+            "name": "backend-test-balanced-09",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:54Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:56Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:10Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:56Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:57Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-09)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:10Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-09)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:59Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:59Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804444"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:42Z",
+            "conclusion": "success",
+            "databaseId": 125433804445,
+            "name": "backend-test-balanced-03",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:55Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:15Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:28Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-03)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:15Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:29Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-03)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:33:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:29Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:33:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:29Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:33:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:30Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:33:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:30Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:33:30Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804445"
+          },
+          {
+            "completedAt": "2026-11-02T17:29:43Z",
+            "conclusion": "success",
+            "databaseId": 125433804451,
+            "name": "backend-test-balanced-04",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:39Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:44Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:50Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:52Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:04Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:52Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:35Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-04)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:04Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:36Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-04)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:29:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:36Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:29:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:36Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:29:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:36Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:29:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:36Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:29:36Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804451"
+          },
+          {
+            "completedAt": "2026-11-02T17:30:35Z",
+            "conclusion": "success",
+            "databaseId": 125433804508,
+            "name": "backend-test-balanced-13",
+            "startedAt": "2026-11-02T17:25:37Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:39Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:44Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:50Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:57Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:03Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:16Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:30Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-13)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:16Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:31Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-13)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:30:30Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:31Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:30:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:31Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:30:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:31Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:30:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:31Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:30:31Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804508"
+          },
+          {
+            "completedAt": "2026-11-02T17:31:44Z",
+            "conclusion": "success",
+            "databaseId": 125433804553,
+            "name": "backend-test-balanced-11",
+            "startedAt": "2026-11-02T17:25:44Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:50Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:56Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:04Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:56Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:07Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:04Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:21Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:07Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:27Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-11)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:21Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:28Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-11)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:31:27Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:29Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:31:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:29Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:31:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:29Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:31:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:29Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:31:29Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804553"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:17Z",
+            "conclusion": "success",
+            "databaseId": 125433804558,
+            "name": "backend-test-balanced-15",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:36Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:40Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:47Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:56Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:47Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:00Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:56Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:17Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:00Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:10Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-15)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:11Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-15)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:10Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:11Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:11Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:12Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:11Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:12Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:12Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:12Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:12Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804558"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:00Z",
+            "conclusion": "success",
+            "databaseId": 125433804590,
+            "name": "backend-test-balanced-16",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:36Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:41Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:47Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:41Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:54Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:47Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:59Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:22Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:49Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-16)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:22Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:51Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-16)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:31:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:51Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:31:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:51Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:31:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:51Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:31:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:51Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:31:51Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804590"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:00Z",
+            "conclusion": "success",
+            "databaseId": 125433804668,
+            "name": "backend-test-balanced-08",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:45Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:48Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:53Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:03Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:05Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:24Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:54Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-08)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:24Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:55Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-08)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:55Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:55Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:55Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:55Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:55Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804668"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:40Z",
+            "conclusion": "success",
+            "databaseId": 125433804757,
+            "name": "backend-test-balanced-14",
+            "startedAt": "2026-11-02T17:25:58Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:59Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:58Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:04Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:59Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:08Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:26:04Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:18Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:26:08Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:20Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:18Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:38Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:20Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:16Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-14)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:17Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-14)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:16Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:17Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:17Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:18Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:17Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:18Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:18Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804757"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:46Z",
+            "conclusion": "success",
+            "databaseId": 125433804760,
+            "name": "backend-test-balanced-12",
+            "startedAt": "2026-11-02T17:25:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:25:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:25:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:39Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:25:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:44Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:25:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:53Z",
+                "conclusion": "success",
+                "name": "Install and verify official Pi kernel",
+                "number": 4,
+                "startedAt": "2026-11-02T17:25:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:25:55Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:25:53Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:12Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:25:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:38Z",
+                "conclusion": "success",
+                "name": "Run isolated shards (balanced-12)",
+                "number": 7,
+                "startedAt": "2026-11-02T17:26:12Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:39Z",
+                "conclusion": "success",
+                "name": "Upload pytest timing (balanced-12)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:32:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:40Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:40Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:40Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:32:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:40Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:32:40Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125433804760"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:46Z",
+            "conclusion": "success",
+            "databaseId": 125434028881,
+            "name": "release-invariants",
+            "startedAt": "2026-11-02T17:26:04Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:26:05Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:26:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:12Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:26:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:16Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:26:12Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:25Z",
+                "conclusion": "success",
+                "name": "Verify installed release-tool consumers before publishing",
+                "number": 4,
+                "startedAt": "2026-11-02T17:26:16Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:26:28Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 5,
+                "startedAt": "2026-11-02T17:26:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:03Z",
+                "conclusion": "success",
+                "name": "Install release-test dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:26:29Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:30Z",
+                "conclusion": "success",
+                "name": "Verify real application network boundary in isolated namespace",
+                "number": 7,
+                "startedAt": "2026-11-02T17:27:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:32Z",
+                "conclusion": "success",
+                "name": "Verify synthetic WeChat systemd containment on disposable runner",
+                "number": 8,
+                "startedAt": "2026-11-02T17:27:30Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:34Z",
+                "conclusion": "success",
+                "name": "Verify real retained runner filesystem and canonical startup",
+                "number": 9,
+                "startedAt": "2026-11-02T17:27:32Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:36Z",
+                "conclusion": "success",
+                "name": "Run deployment and rollback invariants",
+                "number": 10,
+                "startedAt": "2026-11-02T17:27:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:38Z",
+                "conclusion": "success",
+                "name": "Verify isolated OpenSSH single-key pause and restore",
+                "number": 11,
+                "startedAt": "2026-11-02T17:32:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:39Z",
+                "conclusion": "success",
+                "name": "Verify frontend builder uses a private mount namespace and dynamic UID",
+                "number": 12,
+                "startedAt": "2026-11-02T17:32:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:39Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 22,
+                "startedAt": "2026-11-02T17:32:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:39Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 23,
+                "startedAt": "2026-11-02T17:32:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:39Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 24,
+                "startedAt": "2026-11-02T17:32:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:40Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 25,
+                "startedAt": "2026-11-02T17:32:39Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434028881"
+          },
+          {
+            "completedAt": "2026-11-02T17:27:42Z",
+            "conclusion": "success",
+            "databaseId": 125434079030,
+            "name": "retained-runner-startup",
+            "startedAt": "2026-11-02T17:27:05Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:27:06Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:27:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:11Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:27:06Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:11Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 3,
+                "startedAt": "2026-11-02T17:27:11Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:13Z",
+                "conclusion": "success",
+                "name": "Install only the credential-free test adapter dependencies",
+                "number": 4,
+                "startedAt": "2026-11-02T17:27:11Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:18Z",
+                "conclusion": "success",
+                "name": "Materialize exact retained startup pipeline without release admission",
+                "number": 5,
+                "startedAt": "2026-11-02T17:27:13Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:22Z",
+                "conclusion": "success",
+                "name": "First publisher Node setup on this fresh runner",
+                "number": 6,
+                "startedAt": "2026-11-02T17:27:18Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Exercise actual retained dependency installation and patches",
+                "number": 7,
+                "startedAt": "2026-11-02T17:27:22Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Exercise actual isolated retained startup CLI without credentials",
+                "number": 8,
+                "startedAt": "2026-11-02T17:27:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Post First publisher Node setup on this fresh runner",
+                "number": 14,
+                "startedAt": "2026-11-02T17:27:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 15,
+                "startedAt": "2026-11-02T17:27:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 16,
+                "startedAt": "2026-11-02T17:27:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:38Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 17,
+                "startedAt": "2026-11-02T17:27:38Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079030"
+          },
+          {
+            "completedAt": "2026-11-02T17:29:21Z",
+            "conclusion": "success",
+            "databaseId": 125434079138,
+            "name": "ota-runner-startup",
+            "startedAt": "2026-11-02T17:27:44Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:27:45Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:27:44Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:48Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:27:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:48Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 3,
+                "startedAt": "2026-11-02T17:27:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:51Z",
+                "conclusion": "success",
+                "name": "Install credential-free OTA test adapter dependencies",
+                "number": 4,
+                "startedAt": "2026-11-02T17:27:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:27:57Z",
+                "conclusion": "success",
+                "name": "Materialize actual OTA startup without release admission",
+                "number": 5,
+                "startedAt": "2026-11-02T17:27:51Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:28:01Z",
+                "conclusion": "success",
+                "name": "Fixed OTA publisher Node toolchain",
+                "number": 6,
+                "startedAt": "2026-11-02T17:27:57Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:28:25Z",
+                "conclusion": "success",
+                "name": "Exercise actual OTA dependencies and patches",
+                "number": 7,
+                "startedAt": "2026-11-02T17:28:01Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:28:26Z",
+                "conclusion": "success",
+                "name": "Exercise actual isolated OTA preflight",
+                "number": 8,
+                "startedAt": "2026-11-02T17:28:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:18Z",
+                "conclusion": "success",
+                "name": "Export and verify real iOS artifact without publishing",
+                "number": 9,
+                "startedAt": "2026-11-02T17:28:26Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:19Z",
+                "conclusion": "success",
+                "name": "Post Fixed OTA publisher Node toolchain",
+                "number": 16,
+                "startedAt": "2026-11-02T17:29:18Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:19Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 17,
+                "startedAt": "2026-11-02T17:29:19Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:19Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 18,
+                "startedAt": "2026-11-02T17:29:19Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:19Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 19,
+                "startedAt": "2026-11-02T17:29:19Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079138"
+          },
+          {
+            "completedAt": "2026-11-02T17:30:31Z",
+            "conclusion": "success",
+            "databaseId": 125434079210,
+            "name": "type-drift",
+            "startedAt": "2026-11-02T17:29:23Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:29:25Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:29:24Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:31Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:29:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:34Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 3,
+                "startedAt": "2026-11-02T17:29:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:07Z",
+                "conclusion": "success",
+                "name": "Install backend deps",
+                "number": 4,
+                "startedAt": "2026-11-02T17:29:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:08Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 5,
+                "startedAt": "2026-11-02T17:30:07Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:27Z",
+                "conclusion": "success",
+                "name": "Regenerate client types + assert no drift",
+                "number": 6,
+                "startedAt": "2026-11-02T17:30:08Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:28Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 10,
+                "startedAt": "2026-11-02T17:30:27Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:28Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 11,
+                "startedAt": "2026-11-02T17:30:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:28Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 12,
+                "startedAt": "2026-11-02T17:30:28Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:28Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 13,
+                "startedAt": "2026-11-02T17:30:28Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079210"
+          },
+          {
+            "completedAt": "2026-11-02T17:34:09Z",
+            "conclusion": "success",
+            "databaseId": 125434079214,
+            "name": "mobile-typecheck",
+            "startedAt": "2026-11-02T17:30:34Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:30:35Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:30:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:37Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:30:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:40Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:30:37Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:34Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 4,
+                "startedAt": "2026-11-02T17:30:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:35Z",
+                "conclusion": "success",
+                "name": "Verify installed signature backport",
+                "number": 5,
+                "startedAt": "2026-11-02T17:31:34Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:35Z",
+                "conclusion": "success",
+                "name": "Test security dependency compatibility and collection limits",
+                "number": 6,
+                "startedAt": "2026-11-02T17:31:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:35Z",
+                "conclusion": "success",
+                "name": "Test patched image parser denial-of-service guards",
+                "number": 7,
+                "startedAt": "2026-11-02T17:31:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:38Z",
+                "conclusion": "success",
+                "name": "Audit production dependencies",
+                "number": 8,
+                "startedAt": "2026-11-02T17:31:35Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:38Z",
+                "conclusion": "success",
+                "name": "Test OSV dependency audit gate",
+                "number": 9,
+                "startedAt": "2026-11-02T17:31:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:03Z",
+                "conclusion": "success",
+                "name": "TypeScript check",
+                "number": 10,
+                "startedAt": "2026-11-02T17:31:38Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:03Z",
+                "conclusion": "success",
+                "name": "Design token gate (复元 Reva ratchet)",
+                "number": 11,
+                "startedAt": "2026-11-02T17:32:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:20Z",
+                "conclusion": "success",
+                "name": "Test (jest main suite)",
+                "number": 12,
+                "startedAt": "2026-11-02T17:32:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:32Z",
+                "conclusion": "success",
+                "name": "Test stateful chat input (isolated)",
+                "number": 13,
+                "startedAt": "2026-11-02T17:33:20Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:42Z",
+                "conclusion": "success",
+                "name": "Test stateful chat screen (isolated)",
+                "number": 14,
+                "startedAt": "2026-11-02T17:33:32Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:54Z",
+                "conclusion": "success",
+                "name": "Test stateful auth hook (isolated)",
+                "number": 15,
+                "startedAt": "2026-11-02T17:33:42Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:34:05Z",
+                "conclusion": "success",
+                "name": "Test stateful GPS prompt hook (isolated)",
+                "number": 16,
+                "startedAt": "2026-11-02T17:33:54Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:34:05Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 31,
+                "startedAt": "2026-11-02T17:34:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:34:05Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 32,
+                "startedAt": "2026-11-02T17:34:05Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:34:05Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 33,
+                "startedAt": "2026-11-02T17:34:05Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079214"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:26Z",
+            "conclusion": "success",
+            "databaseId": 125434079222,
+            "name": "frontend-artifact-integration",
+            "startedAt": "2026-11-02T17:30:32Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:30:36Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:30:33Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:41Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:30:36Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:30:41Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:45Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-python@v6",
+                "number": 4,
+                "startedAt": "2026-11-02T17:30:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:50Z",
+                "conclusion": "success",
+                "name": "Install isolated artifact test dependencies",
+                "number": 5,
+                "startedAt": "2026-11-02T17:30:45Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:50Z",
+                "conclusion": "success",
+                "name": "Reject real Linux bind mounts before frontend deletion",
+                "number": 6,
+                "startedAt": "2026-11-02T17:30:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:22Z",
+                "conclusion": "success",
+                "name": "Build and consume a real frontend artifact without recompiling",
+                "number": 7,
+                "startedAt": "2026-11-02T17:30:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:22Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-python@v6",
+                "number": 12,
+                "startedAt": "2026-11-02T17:32:22Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:22Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 13,
+                "startedAt": "2026-11-02T17:32:22Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:23Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 14,
+                "startedAt": "2026-11-02T17:32:22Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:23Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 15,
+                "startedAt": "2026-11-02T17:32:23Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079222"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:24Z",
+            "conclusion": "success",
+            "databaseId": 125434079266,
+            "name": "frontend-build",
+            "startedAt": "2026-11-02T17:29:45Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:29:46Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:29:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:52Z",
+                "conclusion": "success",
+                "name": "Run actions/checkout@v5",
+                "number": 2,
+                "startedAt": "2026-11-02T17:29:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:55Z",
+                "conclusion": "success",
+                "name": "Run actions/setup-node@v5",
+                "number": 3,
+                "startedAt": "2026-11-02T17:29:52Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:29:55Z",
+                "conclusion": "success",
+                "name": "Check frontend page freeze (Phase 0-4)",
+                "number": 4,
+                "startedAt": "2026-11-02T17:29:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:41Z",
+                "conclusion": "success",
+                "name": "Install dependencies",
+                "number": 5,
+                "startedAt": "2026-11-02T17:29:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:42Z",
+                "conclusion": "success",
+                "name": "Audit production dependencies",
+                "number": 6,
+                "startedAt": "2026-11-02T17:30:41Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:30:42Z",
+                "conclusion": "success",
+                "name": "Test OSV dependency audit gate",
+                "number": 7,
+                "startedAt": "2026-11-02T17:30:42Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:27Z",
+                "conclusion": "success",
+                "name": "Test (vitest)",
+                "number": 8,
+                "startedAt": "2026-11-02T17:30:42Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:31:55Z",
+                "conclusion": "success",
+                "name": "Build",
+                "number": 9,
+                "startedAt": "2026-11-02T17:31:27Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:19Z",
+                "conclusion": "success",
+                "name": "Lint",
+                "number": 10,
+                "startedAt": "2026-11-02T17:31:55Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:19Z",
+                "conclusion": "success",
+                "name": "Post Run actions/setup-node@v5",
+                "number": 19,
+                "startedAt": "2026-11-02T17:32:19Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:20Z",
+                "conclusion": "success",
+                "name": "Post Run actions/checkout@v5",
+                "number": 20,
+                "startedAt": "2026-11-02T17:32:19Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:20Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 21,
+                "startedAt": "2026-11-02T17:32:20Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125434079266"
+          },
+          {
+            "completedAt": "2026-11-02T17:32:52Z",
+            "conclusion": "success",
+            "databaseId": 125437700388,
+            "name": "release-tests",
+            "startedAt": "2026-11-02T17:32:49Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:32:50Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:32:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:50Z",
+                "conclusion": "success",
+                "name": "Enforce release-only gates",
+                "number": 2,
+                "startedAt": "2026-11-02T17:32:50Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:32:50Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "startedAt": "2026-11-02T17:32:50Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125437700388"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:49Z",
+            "conclusion": "success",
+            "databaseId": 125438214186,
+            "name": "backend-tests",
+            "startedAt": "2026-11-02T17:33:46Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:33:47Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:33:47Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:47Z",
+                "conclusion": "success",
+                "name": "Enforce backend test and quality gates",
+                "number": 2,
+                "startedAt": "2026-11-02T17:33:47Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:47Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "startedAt": "2026-11-02T17:33:47Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125438214186"
+          },
+          {
+            "completedAt": "2026-11-02T17:33:56Z",
+            "conclusion": "success",
+            "databaseId": 125438271319,
+            "name": "backend-release-ready-v1",
+            "startedAt": "2026-11-02T17:33:51Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:33:52Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:33:52Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:52Z",
+                "conclusion": "success",
+                "name": "Require every backend release dependency to have actually passed",
+                "number": 2,
+                "startedAt": "2026-11-02T17:33:52Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:33:52Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 3,
+                "startedAt": "2026-11-02T17:33:52Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279/job/125438271319"
+          }
+        ],
+        "status": "completed",
+        "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41491001279"
+      },
+      "official_annotations": [
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/itsoso/health-llm-driven/blob/e87f04d51dbd328b408c7fa787297d0b32e4e3b4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "failure",
+          "title": "",
+          "message": "The job was not acquired by Runner of type hosted even after multiple attempts",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/itsoso/health-llm-driven/blob/e87f04d51dbd328b408c7fa787297d0b32e4e3b4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/itsoso/health-llm-driven/blob/e87f04d51dbd328b408c7fa787297d0b32e4e3b4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        },
+        {
+          "path": ".github",
+          "blob_href": "https://github.com/itsoso/health-llm-driven/blob/e87f04d51dbd328b408c7fa787297d0b32e4e3b4/.github",
+          "start_line": 1,
+          "start_column": null,
+          "end_line": 1,
+          "end_column": null,
+          "annotation_level": "notice",
+          "title": "",
+          "message": "Due to capacity constraints, jobs targeting macOS arm64 runners may experience longer queue times.",
+          "raw_details": ""
+        }
+      ]
+    },
+    "ci": {
+      "run_id": 41491001279,
+      "attempt": 2,
+      "status": "success",
+      "job_count": 32,
+      "artifact_sha256": "3953714714fdeb94a2efc23df30368dec1267d8ef2a8c82d5b42f787209adab4",
+      "prior_cancel_retained": true
+    },
+    "postgres": {
+      "ci_run": 41491001279,
+      "artifact_id": 13164252900,
+      "summary": {
+        "databases": [
+          "reva_ci_test_24ac2a4f37f948f28320cf7ea93ed815_01",
+          "reva_ci_test_24ac2a4f37f948f28320cf7ea93ed815_02"
+        ],
+        "elapsed_seconds": 340.496,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "state": "passed"
+      },
+      "junit": {
+        "shard-1.xml": {
+          "sha256": "4e8c0c39798c90833233bc7ec7c0ce8663a72f838bdbb94219fd9e070a967d4e",
+          "cases": 262,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0
+        },
+        "shard-2.xml": {
+          "sha256": "0ff24db3d83f0ef22da80f9a689b5e36599168a032458f9621b7c28693f7a987",
+          "cases": 379,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 1
+        }
+      }
+    },
+    "canonical_stage": {
+      "original_ota_preserved": true,
+      "production_objects": "/opt/health-app/.git/objects",
+      "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "source": "/var/lib/reva-release/bootstrap/e87f04d51dbd328b408c7fa787297d0b32e4e3b4/source",
+      "state": "CANONICAL_STAGED"
+    },
+    "validate": {
+      "run_id": 41494746558,
+      "result": {
+        "conclusion": "success",
+        "databaseId": 41494746558,
+        "event": "workflow_dispatch",
+        "headBranch": "main",
+        "headSha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "jobs": [
+          {
+            "completedAt": "2026-11-02T17:49:33Z",
+            "conclusion": "success",
+            "databaseId": 125446631109,
+            "name": "preflight",
+            "startedAt": "2026-11-02T17:49:24Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T17:49:25Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T17:49:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:49:31Z",
+                "conclusion": "success",
+                "name": "Materialize canonical source and check exact CI without production credentials",
+                "number": 2,
+                "startedAt": "2026-11-02T17:49:25Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:49:31Z",
+                "conclusion": "success",
+                "name": "Probe fixed production TCP and SSH banner without credentials",
+                "number": 3,
+                "startedAt": "2026-11-02T17:49:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:49:31Z",
+                "conclusion": "success",
+                "name": "Record non-release result",
+                "number": 4,
+                "startedAt": "2026-11-02T17:49:31Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T17:49:31Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 5,
+                "startedAt": "2026-11-02T17:49:31Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446631109"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446735838,
+            "name": "build-permission",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446735838"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446736080,
+            "name": "retained-testflight",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446736080"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446737130,
+            "name": "ios-build",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446737130"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446737899,
+            "name": "backend",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446737899"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446738061,
+            "name": "testflight",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446738061"
+          },
+          {
+            "completedAt": "2026-11-02T17:49:34Z",
+            "conclusion": "skipped",
+            "databaseId": 125446738406,
+            "name": "release-result",
+            "startedAt": "2026-11-02T17:49:34Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41494746558/job/125446738406"
+          }
+        ],
+        "status": "completed",
+        "workflowName": "Trusted release"
+      }
+    },
+    "credential_refresh": {
+      "state": "READ_CREDENTIAL_REFRESHED",
+      "candidate_sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "expires_at": 1793645912,
+      "after_sha256": "3c49864b88993a094125ee18c0cc0c45f85319971bce19eec49b9a2a7a212b3b",
+      "receipt_sha256": "9c73f421dcbb8bad351e0ddcff3ad2147993695adcc8d017c8b5b25f3bdb5c35"
+    },
+    "rotation": {
+      "retired_sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+      "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "state": "INSTALLED"
+    },
+    "backend_run_id": 41497577849,
+    "backend": {
+      "run": {
+        "conclusion": "success",
+        "databaseId": 41497577849,
+        "headSha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "jobs": [
+          {
+            "completedAt": "2026-11-02T18:07:59Z",
+            "conclusion": "success",
+            "databaseId": 125456443005,
+            "name": "preflight",
+            "startedAt": "2026-11-02T18:07:40Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T18:07:41Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T18:07:40Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:07:48Z",
+                "conclusion": "success",
+                "name": "Materialize canonical source and check exact CI without production credentials",
+                "number": 2,
+                "startedAt": "2026-11-02T18:07:41Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:07:49Z",
+                "conclusion": "success",
+                "name": "Probe fixed production TCP and SSH banner without credentials",
+                "number": 3,
+                "startedAt": "2026-11-02T18:07:48Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:07:49Z",
+                "conclusion": "success",
+                "name": "Record non-release result",
+                "number": 4,
+                "startedAt": "2026-11-02T18:07:49Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:07:49Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 5,
+                "startedAt": "2026-11-02T18:07:49Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456443005"
+          },
+          {
+            "completedAt": "2026-11-02T18:08:35Z",
+            "conclusion": "success",
+            "databaseId": 125456648162,
+            "name": "build-permission",
+            "startedAt": "2026-11-02T18:08:03Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T18:08:04Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T18:08:03Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:08:12Z",
+                "conclusion": "success",
+                "name": "Independently materialize and recheck before read-only server readiness checks",
+                "number": 2,
+                "startedAt": "2026-11-02T18:08:04Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:08:29Z",
+                "conclusion": "success",
+                "name": "Check actual server readiness without consuming authorization",
+                "number": 3,
+                "startedAt": "2026-11-02T18:08:12Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:08:29Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 4,
+                "startedAt": "2026-11-02T18:08:29Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456648162"
+          },
+          {
+            "completedAt": "2026-11-02T18:07:59Z",
+            "conclusion": "skipped",
+            "databaseId": 125456651405,
+            "name": "retained-testflight",
+            "startedAt": "2026-11-02T18:08:00Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456651405"
+          },
+          {
+            "completedAt": "2026-11-02T18:13:08Z",
+            "conclusion": "success",
+            "databaseId": 125456977319,
+            "name": "backend",
+            "startedAt": "2026-11-02T18:08:39Z",
+            "status": "completed",
+            "steps": [
+              {
+                "completedAt": "2026-11-02T18:08:39Z",
+                "conclusion": "success",
+                "name": "Set up job",
+                "number": 1,
+                "startedAt": "2026-11-02T18:08:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:08:46Z",
+                "conclusion": "success",
+                "name": "Independently materialize and recheck before accessing production credentials",
+                "number": 2,
+                "startedAt": "2026-11-02T18:08:39Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:12:59Z",
+                "conclusion": "success",
+                "name": "Start the fixed server-side release capability",
+                "number": 3,
+                "startedAt": "2026-11-02T18:08:46Z",
+                "status": "completed"
+              },
+              {
+                "completedAt": "2026-11-02T18:12:59Z",
+                "conclusion": "success",
+                "name": "Complete job",
+                "number": 4,
+                "startedAt": "2026-11-02T18:12:59Z",
+                "status": "completed"
+              }
+            ],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456977319"
+          },
+          {
+            "completedAt": "2026-11-02T18:08:35Z",
+            "conclusion": "skipped",
+            "databaseId": 125456979886,
+            "name": "testflight",
+            "startedAt": "2026-11-02T18:08:35Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456979886"
+          },
+          {
+            "completedAt": "2026-11-02T18:08:35Z",
+            "conclusion": "skipped",
+            "databaseId": 125456980426,
+            "name": "ios-build",
+            "startedAt": "2026-11-02T18:08:35Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125456980426"
+          },
+          {
+            "completedAt": "2026-11-02T18:13:09Z",
+            "conclusion": "skipped",
+            "databaseId": 125459465123,
+            "name": "release-result",
+            "startedAt": "2026-11-02T18:13:09Z",
+            "status": "completed",
+            "steps": [],
+            "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849/job/125459465123"
+          }
+        ],
+        "status": "completed",
+        "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41497577849"
+      },
+      "acceptance": {
+        "authorization_matches": true,
+        "backend_completed": {
+          "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+          "state": "SUCCEEDED"
+        },
+        "backend_completed_sha256": "08aded1af6f775dcf28bc4a1561c54318c818902302757d54feb29ba54decfcd",
+        "business_lease_absent": true,
+        "local_health": "healthy",
+        "production_clean": true,
+        "public_health": "healthy",
+        "services": {
+          "celery-beat": "active/running",
+          "celery-worker": "active/running",
+          "health-backend": "active/running",
+          "reva-laya": "active/running"
+        },
+        "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "state": "BACKEND_READONLY_VERIFIED"
+      },
+      "runtime": {
+        "endpoint": {
+          "host": "dashscope.aliyuncs.com",
+          "path": "/compatible-mode/v1",
+          "scheme": "https"
+        },
+        "health_data_reads": 0,
+        "model": "qwen3.8-flash",
+        "paid_calls": 0,
+        "prompt_sha256": "c490b34abbcc7a2232aca7a43395da6748d39269c8ea6a0c56c4234907bb16e8",
+        "request_options": {
+          "extra_body": {
+            "enable_thinking": false
+          },
+          "response_format": {
+            "type": "json_object"
+          }
+        },
+        "runtime_file_sha256": "514dcba094abc4aa29c78dc032d3be19d32314add5042147393e10f36379e1f1",
+        "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "state": "DEPLOYED_VISION_CONTRACT_VERIFIED"
+      }
+    },
+    "ota_validate_run_id": 41498606685,
+    "ota_validate": {
+      "conclusion": "success",
+      "databaseId": 41498606685,
+      "headSha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "jobs": [
+        {
+          "completedAt": "2026-11-02T18:16:27Z",
+          "conclusion": "success",
+          "databaseId": 125460001543,
+          "name": "ota",
+          "startedAt": "2026-11-02T18:14:23Z",
+          "status": "completed",
+          "steps": [
+            {
+              "completedAt": "2026-11-02T18:14:24Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "startedAt": "2026-11-02T18:14:23Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:14:32Z",
+              "conclusion": "success",
+              "name": "Materialize exact canonical source and verify current main CI before credentials",
+              "number": 2,
+              "startedAt": "2026-11-02T18:14:24Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:14:32Z",
+              "conclusion": "success",
+              "name": "Canonical source metadata after_checkout",
+              "number": 3,
+              "startedAt": "2026-11-02T18:14:32Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:14:37Z",
+              "conclusion": "success",
+              "name": "Fixed Node toolchain",
+              "number": 4,
+              "startedAt": "2026-11-02T18:14:32Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:14:37Z",
+              "conclusion": "success",
+              "name": "Harden fixed Node toolchain ownership before dependencies and credentials",
+              "number": 5,
+              "startedAt": "2026-11-02T18:14:37Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:15:01Z",
+              "conclusion": "success",
+              "name": "Install locked CLI and app dependencies without lifecycle scripts or shared cache",
+              "number": 6,
+              "startedAt": "2026-11-02T18:14:37Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:15:01Z",
+              "conclusion": "success",
+              "name": "Canonical source metadata after_dependencies",
+              "number": 7,
+              "startedAt": "2026-11-02T18:15:01Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:15:01Z",
+              "conclusion": "success",
+              "name": "Read-only publisher context and native source preflight",
+              "number": 8,
+              "startedAt": "2026-11-02T18:15:01Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:07Z",
+              "conclusion": "success",
+              "name": "Prepare exact OTA artifact without consuming a publication claim",
+              "number": 9,
+              "startedAt": "2026-11-02T18:15:01Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:07Z",
+              "conclusion": "skipped",
+              "name": "Publish one bound iOS artifact and verify server receipt",
+              "number": 10,
+              "startedAt": "2026-11-02T18:16:07Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:07Z",
+              "conclusion": "success",
+              "name": "Stage validated OTA audit even when publication is incomplete",
+              "number": 11,
+              "startedAt": "2026-11-02T18:16:07Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:08Z",
+              "conclusion": "success",
+              "name": "Preserve OTA audit for same-receipt recovery",
+              "number": 12,
+              "startedAt": "2026-11-02T18:16:07Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:08Z",
+              "conclusion": "success",
+              "name": "Post Fixed Node toolchain",
+              "number": 24,
+              "startedAt": "2026-11-02T18:16:08Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:16:08Z",
+              "conclusion": "success",
+              "name": "Complete job",
+              "number": 25,
+              "startedAt": "2026-11-02T18:16:08Z",
+              "status": "completed"
+            }
+          ],
+          "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41498606685/job/125460001543"
+        }
+      ],
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41498606685"
+    },
+    "ota_publish_run_id": 41499153657,
+    "acceptance_limits": [
+      "Seven synthetic image cases; not real-meal nutrition ground truth",
+      "Model/service timings from local client at matching production endpoint; not App upload-to-card timings",
+      "No production health record was read or written by the benchmark",
+      "Production P95 and App end-to-end under three seconds remain unverified",
+      "No native UI/device acceptance performed in this release"
+    ],
+    "ota_publish": {
+      "conclusion": "success",
+      "databaseId": 41499153657,
+      "headSha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "jobs": [
+        {
+          "completedAt": "2026-11-02T18:24:58Z",
+          "conclusion": "success",
+          "databaseId": 125461839772,
+          "name": "ota",
+          "startedAt": "2026-11-02T18:17:34Z",
+          "status": "completed",
+          "steps": [
+            {
+              "completedAt": "2026-11-02T18:17:36Z",
+              "conclusion": "success",
+              "name": "Set up job",
+              "number": 1,
+              "startedAt": "2026-11-02T18:17:35Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:17:45Z",
+              "conclusion": "success",
+              "name": "Materialize exact canonical source and verify current main CI before credentials",
+              "number": 2,
+              "startedAt": "2026-11-02T18:17:36Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:17:45Z",
+              "conclusion": "success",
+              "name": "Canonical source metadata after_checkout",
+              "number": 3,
+              "startedAt": "2026-11-02T18:17:45Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:17:50Z",
+              "conclusion": "success",
+              "name": "Fixed Node toolchain",
+              "number": 4,
+              "startedAt": "2026-11-02T18:17:45Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:17:50Z",
+              "conclusion": "success",
+              "name": "Harden fixed Node toolchain ownership before dependencies and credentials",
+              "number": 5,
+              "startedAt": "2026-11-02T18:17:50Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:18:16Z",
+              "conclusion": "success",
+              "name": "Install locked CLI and app dependencies without lifecycle scripts or shared cache",
+              "number": 6,
+              "startedAt": "2026-11-02T18:17:50Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:18:16Z",
+              "conclusion": "success",
+              "name": "Canonical source metadata after_dependencies",
+              "number": 7,
+              "startedAt": "2026-11-02T18:18:16Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:18:16Z",
+              "conclusion": "success",
+              "name": "Read-only publisher context and native source preflight",
+              "number": 8,
+              "startedAt": "2026-11-02T18:18:16Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:18:16Z",
+              "conclusion": "skipped",
+              "name": "Prepare exact OTA artifact without consuming a publication claim",
+              "number": 9,
+              "startedAt": "2026-11-02T18:18:16Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:24:48Z",
+              "conclusion": "success",
+              "name": "Publish one bound iOS artifact and verify server receipt",
+              "number": 10,
+              "startedAt": "2026-11-02T18:18:16Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:24:48Z",
+              "conclusion": "success",
+              "name": "Stage validated OTA audit even when publication is incomplete",
+              "number": 11,
+              "startedAt": "2026-11-02T18:24:48Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:24:49Z",
+              "conclusion": "success",
+              "name": "Preserve OTA audit for same-receipt recovery",
+              "number": 12,
+              "startedAt": "2026-11-02T18:24:48Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:24:49Z",
+              "conclusion": "success",
+              "name": "Post Fixed Node toolchain",
+              "number": 24,
+              "startedAt": "2026-11-02T18:24:49Z",
+              "status": "completed"
+            },
+            {
+              "completedAt": "2026-11-02T18:24:49Z",
+              "conclusion": "success",
+              "name": "Complete job",
+              "number": 25,
+              "startedAt": "2026-11-02T18:24:49Z",
+              "status": "completed"
+            }
+          ],
+          "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41499153657/job/125461839772"
+        }
+      ],
+      "status": "completed",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41499153657"
+    },
+    "ota_server": {
+      "artifact": {
+        "assets": [
+          "-iq30lV4GbK_5QCeRoRO-nFwzxd753NdQ6oqwSlfHVQ",
+          "0Dpc16Zu8QxRR5FvnVh4stCgpa1G9AWjHNmWfvqlWv0",
+          "0FydMNefRaeOVYWi5-xnxqBqiD3ZE34dUFnoyHszznY",
+          "0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb-LCkA",
+          "3Fa5dr1FY44RJfZol0NSXmiGrgvvLI9GUZlIM2hagx8",
+          "3Y7kA7vL9eWLd9ykrAPrr6E6KEo9h9jqnKSQQ1qG-kg",
+          "78edo8TJffsVcb_2IClYqwUpxaox6DkmAFeLPjWdFEc",
+          "7xP8DfxS7COBdYX9fhCfvfWTo7JUnEDOcaybDtoSzCw",
+          "7xSfCL3S_wmk4shXNHa3sPP7sVtiOVSt5ZiZ5xdb7do",
+          "AriOrZGt5XENfKGO20Omllpx2TcywG8pDMB6bdJJ6Yc",
+          "BvTQCSPqJGl99d8LkphBdZkdi9JXdqAtUxu0AeOT7EI",
+          "CKnVtRPPlH4i7egemoQ72Nd2OmNETNIUhL_edmLMZUM",
+          "FvkimFh7qytGm8E8DfxtXRcbyhC60MkFOtFrwCO_cX0",
+          "GZbLuodu68L0o3kUlVL3movAjfgAWW98KjpH6XRhsBE",
+          "IyXFOnPlTEOMu8YN_92LUT1HG6QuL1ZxPvQEuV4Mofw",
+          "J_TSKdRAklv3IS1d__pF1Zayx7O7KQXJa4ObIIGh2-s",
+          "K3RDqaWOksoRpXW9wRWYYVpX3eMFzYznDWAmBrMCzZg",
+          "LN_rjlzN55dvcBL7jM5zryIpAp7iHU8VCf7RFIccbNg",
+          "MfCZwT9uS6BfG0cb8XDLVJMklHQiKRc3LePKXPKeaho",
+          "P1Ad2wXHCCm7tRz-nKn_9X854GBFfCV7PM8l33Z_CHA",
+          "PQavHzHNg6znomWgFLj7Xe4Vdw7KyPelVVUZDmJ-A8I",
+          "Pd0Hc-0n4j0leJ8wFzGzrEVa2L5aonoKG4OPicbSciU",
+          "VwohI4CsLEQxbZlLKr6PvwztC0aXZNClgSa9buvFrp0",
+          "YeirpaTpgf4iz3yOi82-oAR251xiw38Bv37jM2HWhCg",
+          "ZPn7YjaB8RImHpovl4JngkOfOSXeqPRKV9Hk25W6bP0",
+          "ajQS8FjH2N_ZFwxB6FreSOUVbsuJNWEQylegonc0r0Y",
+          "beyjK1a5f6H6h_rNaZa0bMRRkKVTQA5_698dIJMJm1c",
+          "cIp5z1YbiipIUM4CVFhNOlIxBGvgj7f630tu39sxF4s",
+          "fh3QPdTOkLZYBSVUzXRZ3xZxZxc4mlUvpMbVal-JM-Y",
+          "ku2BdqyMtENipfxqNwNiagAGrGt8snLumfWFAmLsBw4",
+          "lNq58dWxPqB2nRJKLaDQJDPzuZ1t6loHwERqdxWBAMA",
+          "m8TZ9emU53S9w--amofadJr19QuGFHPvfRzD1vgikmc",
+          "mtuMXvypMuK3MrKT2oE70uMZUiYwVrzp4lF_7A8LanY",
+          "pcrrTTlcXjLx1aMKyzgq68Zk8brf0UkxmQfyIV5OPiY",
+          "ppou21tsYLhDPVttI8afUgzNimAvP2DnmW5Ilxi8F1w",
+          "q1YT0s5w-mfFkm6DE1NmSUUZn8GV-m_nbF_jzsRS4xo",
+          "qbTEm7KZ4FtfbEgef7XniUPSeTJJoMiHSrV0otHqZ1U",
+          "qljzPyOaD7AvXHpsRcBD16msmgkzNYBmlOzW1O3A1qg",
+          "rPaRlXo7zOfRlYVtzpilzxTc4QvqKKpcELNVDAeOI7U",
+          "sbwYEMoj4sOM12lxxDWR1yYWEGEkDYt5KwV1cZbdtSg",
+          "tDSnzxjC1M50fHCULqL-4tRBLZOWftkrNy-BC7kmHqU",
+          "vIRLWwLT862rtRTeTgwCCCUtMSNBO9A_Yof6RGrO6Fk",
+          "wV7HKnTROVchGAgxPVw13rf3YGxtItvdzrAADU4FR60",
+          "xOVOagp95jaqFTN4-8YupKQWlb_t-Af5Dfexj_1zP2c",
+          "xlG4pn0xkyBvYiw8Ow-8pKLycnEIxCErUsHiouhMmzE",
+          "y9-SE-VfZcSNB2rNhCO3ya7k8bgRAf9slaOMTNioZGE",
+          "yGu0he7mh-BsUA_EI09RpnhLRTDCrhHQx2SBEQvOMQU"
+        ],
+        "launch": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE"
+      },
+      "business_lease_absent": true,
+      "completed": {
+        "intent_sha256": "2cfe6f70b54da9ced79a02d4369c9b1a8bfd0b38d8bdd7040ebb3f5c9190dc31",
+        "receipt_sha256": "f8ccde59f6dce53ad83f480e3f5dc420e3933c129e049b936d755c70ac4bc430",
+        "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "state": "SUCCEEDED"
+      },
+      "completed_raw_sha256": "6822feb11a2be912f15de1ed6714dddd30353cf6ba71037396c1e46536fefccf",
+      "receipt": {
+        "group_id": "a68d55dc-4658-4e78-8617-36784b5fa18f",
+        "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+        "update_id": "01a19d81-8c9e-735b-a412-2753f8234208"
+      },
+      "runtime": "1.3.6",
+      "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "state": "OTA_SERVER_READONLY_VERIFIED"
+    },
+    "ota_public": {
+      "asset_count": 47,
+      "channel": "production",
+      "created_at": "2026-11-02T18:24:35.486Z",
+      "group_id": "a68d55dc-4658-4e78-8617-36784b5fa18f",
+      "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+      "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtime": "1.3.6",
+      "sha": "e87f04d51dbd328b408c7fa787297d0b32e4e3b4",
+      "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+      "update_id": "01a19d81-8c9e-735b-a412-2753f8234208"
+    },
+    "independent_g5": {
+      "verdict": "GO",
+      "scope": "Independent read-only review of release receipts, deployed runtime verification and public manifest evidence",
+      "findings": [],
+      "unverified": [
+        "Full asset downloads",
+        "Device receipt of OTA",
+        "UI timings",
+        "App end-to-end under three seconds"
+      ]
+    }
+  },
+  "precision_correction": "The revised benchmark summary rounded 2010.5ms to 2010ms. Paired raw median is 2010.5ms and improvement is 11.548614166300041 percent (11.55 percent displayed); earlier 11.57 percent was based on rounded summary."
 }
