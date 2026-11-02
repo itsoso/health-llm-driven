@@ -51,6 +51,10 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
     return () => controller.abort();
   }, [owner, selected, detailRefresh]);
 
+  const teaserBlocks = report ? readingBlocks(report.content_text, report.title) : [];
+  const teaserTitle = teaserBlocks.find(block => block.kind === 'heading')?.title ?? report?.title;
+  const teaser = teaserBlocks.find(block => block.kind === 'label' && /^(今日判断|核心判断|一句话判断)$/.test(block.title))?.body
+    ?? report?.content_text ?? '';
   return <section className={`${css.card} ${css.morningCard}`} aria-label="晨读" id="life-morning-reading">
     <div className={css.morningMasthead}><h2><BookOpen size={16} aria-hidden="true" /> 晨读 <span>给思考留一点时间</span></h2>
       <button type="button" className={css.button} aria-label="刷新晨读" disabled={loading} onClick={() => {
@@ -63,9 +67,9 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
     {detailError ? <div role="alert">正文读取失败。<button type="button" className={css.button} onClick={() => setDetailRefresh(v => v + 1)}>重试正文</button></div> : null}
     {report ? <article className={css.morningFeature}>
       <div className={css.morningDate} aria-hidden="true"><span>{report.reading_date.slice(0, 7).replace('-', ' / ')}</span><strong>{report.reading_date.slice(8)}</strong><span>晨间阅读</span></div>
-      <div className={css.morningCopy}><p className={css.readingEyebrow}>MORNING JOURNAL · {report.reading_date}</p><h3>{report.title}</h3>
+      <div className={css.morningCopy}><p className={css.readingEyebrow}>MORNING JOURNAL · {report.reading_date}</p><h3>{teaserTitle}</h3>
       {report.reading_date !== day ? <p className={css.muted}>历史晨读 · {report.reading_date}</p> : null}
-      <p className={css.morningPreview}>{report.content_text.slice(0, 180)}{report.content_text.length > 180 ? '…' : ''}</p>
+      <p className={css.morningPreview}>{teaser.slice(0, 180)}{teaser.length > 180 ? '…' : ''}</p>
       <div className={css.readingActions}><button type="button" className={css.readingStart} onClick={() => setReading(true)}>开始阅读 <ArrowRight size={16} aria-hidden="true" /></button>
       {reading ? <MorningReader report={report} onClose={() => setReading(false)} /> : null}
       <a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer" className={css.readingSource}>查看原版 <ArrowUpRight size={14} aria-hidden="true" /></a></div></div>
@@ -84,10 +88,10 @@ function readingBlocks(text: string, title: string): ReadingBlock[] {
     const value = part.trim();
     if (value === title) return [];
     const [first, ...rest] = value.split('\n');
-    if (/^(资料日期[：:]|含摘要与思考$|摘要简版$|材料简版$)/.test(first)) {
+    if (/^(资料日期[：:]|含摘要与思考$)/.test(first)) {
       return [{ kind: 'meta', title: '', body: value }];
     }
-    if (/^(主读|速览|深入解读|深入问题|综合思考|昨日更新|昨日上架|昨日讨论|昨日播客上架|昨日讨论与七日背景)(?:$|[\s｜|·：:])/.test(first) && first.length <= 120) {
+    if (/^(主读|速览|深入解读|深入问题|综合思考|昨日更新|昨日上架|昨日讨论|昨日播客上架|昨日讨论与七日背景|近七天背景|七日背景|今日行动)(?:$|[\s｜|·：:])/.test(first) && first.length <= 120) {
       const separator = first.search(/[｜|]/);
       return [{ kind: 'heading', title: separator >= 0 ? first.slice(separator + 1).trim() : first,
         kicker: separator >= 0 ? first.slice(0, separator).trim() : undefined, body: rest.join('\n') }];
@@ -108,12 +112,13 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
   const { blocks, appendix } = useMemo(() => {
     const allBlocks = readingBlocks(report.content_text, report.title);
     const appendixStart = allBlocks.findIndex((block, index) => index > 0 && block.kind === 'paragraph'
-      && /^(?:dedao|xiaoyuzhou|wechat) · (?:partial|available|unavailable|failed) · /.test(allBlocks[index - 1].body)
+      && /^(?:dedao|xiaoyuzhou|wechat|telegram) · (?:partial|available|unavailable|failed|success|not_configured|auth_required|empty) · /.test(allBlocks[index - 1].body)
       && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(allBlocks[index + 1]?.body ?? ''));
     return { blocks: appendixStart < 0 ? allBlocks : allBlocks.slice(0, appendixStart),
       appendix: appendixStart < 0 ? [] : allBlocks.slice(appendixStart) };
   }, [report.content_text, report.title]);
   const appendixParagraphs = useMemo(() => appendix.map((block, index) => <p key={index}>{[block.kicker, block.title, block.body].filter(Boolean).join('\n')}</p>), [appendix]);
+  const metadata = blocks.filter(block => block.kind === 'meta');
   const contents = blocks.flatMap((block, index) => block.kind === 'heading' ? [{ ...block, index }] : []);
   const updatePosition = useCallback(() => {
     const element = body.current;
@@ -173,20 +178,23 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
           <summary><span>本期目录</span><span>{String(activeIndex + 1).padStart(2, '0')} / {String(contents.length).padStart(2, '0')} <ChevronDown size={14} aria-hidden="true" /></span></summary>
           <nav aria-label="手机章节目录">{contentsButtons}</nav>
         </details>
-        <p className={css.readerSideNote}>观点与依据，分开阅读。</p>
+        <p className={css.readerSideNote}>从判断出发，沿证据追问。</p>
       </aside> : null}
       <article ref={body} className={css.readerBody} onScroll={updatePosition}>
-        <div className={css.readerTitle}><p className={css.readingEyebrow}>MORNING JOURNAL</p><h2 id={titleId}>{report.title}</h2></div>
+        <div className={contents.length ? css.readerAccessibleTitle : css.readerTitle}><h2 id={titleId}>{report.title}</h2></div>
         {blocks.map((block, index) => {
-          if (block.kind === 'heading') return <section className={css.readerSection} key={index}>
+          if (block.kind === 'meta') return null;
+          if (block.kind === 'heading') return <section className={`${css.readerSection} ${index === contents[0]?.index ? css.readerLeadSection : ''}`} key={index}>
             {block.kicker ? <p className={css.readerKicker}>{block.kicker}</p> : null}
             <h3 id={`${titleId}-section-${index}`} tabIndex={-1}>{block.title}</h3>{block.body ? <p>{block.body}</p> : null}
           </section>;
-          if (block.kind === 'label') return <section key={index} className={`${css.readerBlock} ${/复算|验证方式|验证方法/.test(block.title) ? css.readerEvidence : ''} ${/来源与时间/.test(block.title) ? css.readerSourceNote : ''}`}>
+          if (block.kind === 'label' && /^(来源与时间|采集说明|修订说明|\d{1,2}\/\d{1,2}\s*修订版)$/.test(block.title)) return <details key={index} className={css.readerProvenance} onToggle={updatePosition}><summary>{block.title}</summary><p>{block.body}</p></details>;
+          if (block.kind === 'label') return <section key={index} className={`${css.readerBlock} ${/复算|验证方式|验证方法/.test(block.title) ? css.readerEvidence : ''} ${/^(今日判断|核心判断|一句话判断)$/.test(block.title) ? css.readerThesis : ''} ${/反方|不确定|适用条件/.test(block.title) ? css.readerCounterpoint : ''}`}>
             <h4>{block.title}</h4><p>{block.body}</p>
           </section>;
-          return <p className={block.kind === 'meta' ? css.readerMeta : undefined} key={index}>{block.body}</p>;
+          return <p key={index}>{block.body}</p>;
         })}
+        {metadata.length ? <details className={css.readerProvenance} onToggle={updatePosition}><summary>资料范围</summary>{metadata.map((block, index) => <p key={index}>{block.body}</p>)}</details> : null}
         {appendix.length ? <details className={css.readerAppendix} onToggle={updatePosition}>
           <summary>查看原始材料 <span>按需展开</span></summary>
           <div>{appendixParagraphs}</div>
