@@ -611,6 +611,13 @@ def extract_json_from_text(text: str) -> str:
 def _vision_chat_options(provider: Any) -> Dict[str, Any]:
     """Keep Qwen3 visual extraction on its low-latency deterministic path."""
     model = str(getattr(provider, "model", "") or "").strip().lower()
+    if model == "qwen3.8-flash":
+        # Measured on this model only. JSON mode constrains transport syntax;
+        # the existing food/label/unknown validation still decides what is usable.
+        return {
+            "extra_body": {"enable_thinking": False},
+            "response_format": {"type": "json_object"},
+        }
     if model.startswith("qwen3"):
         return {"extra_body": {"enable_thinking": False}}
     return {}

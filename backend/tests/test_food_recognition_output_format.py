@@ -126,3 +126,54 @@ def test_wire_collision_never_returns_a_recordable_food(method):
     result = asyncio.run(getattr(service, method)("synthetic-image"))
     assert result["success"] is False
     assert result["foods"] == []
+
+
+@pytest.mark.parametrize("method", ["recognize_food_from_base64", "recognize_food_from_url"])
+@pytest.mark.parametrize("model,structured", [("qwen3.8-flash", True),
+                                               ("qwen-vl-max", False),
+                                               ("qwen3-vl-flash", False)])
+def test_json_mode_is_bound_to_the_measured_vision_model(method, model, structured):
+    calls = []
+
+    class Provider:
+        async def chat_with_vision(self, **kwargs):
+            calls.append(kwargs)
+            return json.dumps({"foods": [{"name": "苹果", "portion": "1个",
+                                          "grams": None, "calories": None}],
+                               "meal": "苹果", "tips": None})
+
+    provider = Provider()
+    provider.model = model
+    service = food.FoodRecognitionService()
+    service._provider = provider
+    result = asyncio.run(getattr(service, method)("synthetic-image"))
+    if structured:
+        assert calls[0]["response_format"] == {"type": "json_object"}
+    else:
+        assert "response_format" not in calls[0]
+    assert calls[0]["temperature"] == 0.1
+    assert calls[0]["max_tokens"] == 2000
+    assert calls[0]["messages"][0]["content"] == food._food_recognition_request_prompt()
+    assert result["success"] is True
+    assert result["foods"][0]["calories"] is None
+    assert result["foods"][0].get("quantity_grams") is None
+
+
+@pytest.mark.parametrize("method", ["recognize_food_from_base64", "recognize_food_from_url"])
+def test_json_mode_rejection_does_not_retry_without_the_contract(method):
+    calls = []
+
+    class Provider:
+        model = "qwen3.8-flash"
+
+        async def chat_with_vision(self, **kwargs):
+            calls.append(kwargs)
+            raise RuntimeError("request rejected")
+
+    service = food.FoodRecognitionService()
+    service._provider = Provider()
+    result = asyncio.run(getattr(service, method)("synthetic-image"))
+    assert result["success"] is False
+    assert result["foods"] == []
+    assert len(calls) == 1
+    assert calls[0]["response_format"] == {"type": "json_object"}

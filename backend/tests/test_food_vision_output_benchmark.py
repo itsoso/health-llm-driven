@@ -35,6 +35,19 @@ def test_candidate_replay_matches_runtime_prompt_exactly():
     )
 
 
+def test_json_comparison_preserves_prompt_and_only_changes_response_format():
+    provider = SimpleNamespace(model="qwen3.8-flash")
+    assert benchmark.variant_prompt("wire_text") == benchmark.variant_prompt("wire")
+    baseline = benchmark.replay_vision_options(provider, "wire_text")
+    candidate = benchmark.replay_vision_options(provider, "wire")
+    assert candidate == {**baseline, "response_format": {"type": "json_object"}}
+    assert baseline == {"extra_body": {"enable_thinking": False}}
+    value = '{"foods":[],"meal":null,"tips":null}'
+    assert benchmark.normalize_replay_response(value, "wire_text") == (
+        benchmark.normalize_replay_response(value, "wire")
+    )
+
+
 EXPECTED = {"food_count": 1, "food_name_patterns": ["燕麦"], "exact_food_values": [
     {"index": 0, "values": {"quantity_grams": 100, "calories": 380, "fiber": None,
                              "nutrition_basis": "nutrition_label_per_100g"}},

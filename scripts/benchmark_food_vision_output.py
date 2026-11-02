@@ -148,7 +148,7 @@ def variant_prompt(variant):
         FOOD_RECOGNITION_SYSTEM_PROMPT,
         _food_recognition_request_prompt,
     )
-    if variant in {"wire", "wire_async", "wire_stream"}:
+    if variant in {"wire", "wire_text", "wire_async", "wire_stream"}:
         return _food_recognition_request_prompt()
     return FOOD_RECOGNITION_SYSTEM_PROMPT + ("\n" + COMPACT_FORMAT if variant == "compact" else "")
 
@@ -159,9 +159,19 @@ def normalize_replay_response(content, variant):
         extract_json_from_text,
     )
     extracted = extract_json_from_text(content)
-    if variant in {"wire", "wire_async", "wire_stream"}:
+    if variant in {"wire", "wire_text", "wire_async", "wire_stream"}:
         return json.dumps(_expand_food_recognition_wire_payload(json.loads(extracted)), ensure_ascii=False)
     return extracted
+
+
+def replay_vision_options(provider, variant):
+    """Keep a text-mode control for the measured JSON-mode runtime change."""
+    from app.services.ai.food_recognition import _vision_chat_options
+
+    options = _vision_chat_options(provider)
+    if variant == "wire_text":
+        options.pop("response_format", None)
+    return options
 
 
 async def measure_vision_stream(stream, *, clock=time.perf_counter, started=None):
@@ -251,9 +261,6 @@ async def probe_stream(provider, prompt, image_url):
 
 
 async def replay(cases, variants, repeats, user_id):
-    from app.services.ai.food_recognition import (
-        _vision_chat_options,
-    )
     from app.services.ai_consent import ai_user_scope
     from app.services.llm.factory import get_vision_provider
 
@@ -294,7 +301,7 @@ async def replay(cases, variants, repeats, user_id):
                             messages=[{"role": "system", "content": prompt}, {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"}],
                             image_url=f"data:image/{case.get('image_type', 'jpeg')};base64,{encoded}",
                             model=model, temperature=0.1, max_tokens=2000,
-                            **_vision_chat_options(SimpleNamespace(model=model)),
+                            **replay_vision_options(SimpleNamespace(model=model), variant),
                         )
                         response = captured[-1]
                         usage = response.usage
@@ -315,7 +322,7 @@ def main():
     parser.add_argument("--include-live-llm", action="store_true")
     parser.add_argument("--user-id", type=int)
     parser.add_argument("--repeats", type=int, default=2)
-    parser.add_argument("--variants", nargs="+", choices=("baseline", "compact", "wire", "wire_async", "wire_stream", "flash"), default=["baseline", "compact"])
+    parser.add_argument("--variants", nargs="+", choices=("baseline", "compact", "wire", "wire_text", "wire_async", "wire_stream", "flash"), default=["baseline", "compact"])
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     cases = json.loads(args.manifest.read_text())
