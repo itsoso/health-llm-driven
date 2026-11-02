@@ -35,9 +35,12 @@ def test_candidate_replay_matches_runtime_prompt_exactly():
     )
 
 
-def test_json_comparison_preserves_prompt_and_only_changes_response_format():
+def test_comparison_binds_both_measured_runtime_changes():
     provider = SimpleNamespace(model="qwen3.8-flash")
-    assert benchmark.variant_prompt("wire_text") == benchmark.variant_prompt("wire")
+    from app.services.ai import food_recognition as food
+
+    assert benchmark.variant_prompt("wire_text", provider) == food._food_recognition_request_prompt()
+    assert benchmark.variant_prompt("wire", provider) == food._food_recognition_request_prompt(provider)
     baseline = benchmark.replay_vision_options(provider, "wire_text")
     candidate = benchmark.replay_vision_options(provider, "wire")
     assert candidate == {**baseline, "response_format": {"type": "json_object"}}

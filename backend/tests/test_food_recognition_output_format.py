@@ -153,7 +153,7 @@ def test_json_mode_is_bound_to_the_measured_vision_model(method, model, structur
         assert "response_format" not in calls[0]
     assert calls[0]["temperature"] == 0.1
     assert calls[0]["max_tokens"] == 2000
-    assert calls[0]["messages"][0]["content"] == food._food_recognition_request_prompt()
+    assert calls[0]["messages"][0]["content"] == food._food_recognition_request_prompt(provider)
     assert result["success"] is True
     assert result["foods"][0]["calories"] is None
     assert result["foods"][0].get("quantity_grams") is None
@@ -177,3 +177,38 @@ def test_json_mode_rejection_does_not_retry_without_the_contract(method):
     assert result["foods"] == []
     assert len(calls) == 1
     assert calls[0]["response_format"] == {"type": "json_object"}
+
+
+@pytest.mark.parametrize("method", ["recognize_food_from_base64", "recognize_food_from_url"])
+@pytest.mark.parametrize("model", ["qwen3.8-flash", "qwen-vl-max", "qwen3-vl-flash"])
+def test_derived_description_is_skipped_only_for_the_measured_model(method, model):
+    calls = []
+
+    class Provider:
+        async def chat_with_vision(self, **kwargs):
+            calls.append(kwargs)
+            return json.dumps({"foods": [{"name": "牛奶", "portion": "1盒",
+                                          "source": "order_estimate", "basis": "order_estimate",
+                                          "grams": None, "calories": None}],
+                               "meal": None, "tips": "份量待核对"})
+
+    provider = Provider()
+    provider.model = model
+    service = food.FoodRecognitionService()
+    service._provider = provider
+    result = asyncio.run(getattr(service, method)("synthetic-image"))
+    prompt = calls[0]["messages"][0]["content"]
+    suffix = "\nmeal 固定为 null，餐食简述由应用根据 foods 生成；不重复生成。"
+    if model == "qwen3.8-flash":
+        assert prompt.endswith(suffix)
+        assert '"meal": null' in prompt
+        restored = prompt.removesuffix(suffix).replace('"meal": null', '"meal": "餐食简述"')
+        assert restored == food._food_recognition_request_prompt()
+    else:
+        assert prompt == food._food_recognition_request_prompt()
+    assert result["meal_description"] == "牛奶 1盒"
+    assert result["health_tips"] == "份量待核对"
+    assert result["foods"][0]["portion_basis"] == "order_quantity"
+    assert result["foods"][0]["nutrition_basis"] == "order_estimate"
+    assert result["foods"][0]["calories"] is None
+    assert result["foods"][0].get("quantity_grams") is None

@@ -146,15 +146,21 @@ FOOD_RECOGNITION_WIRE_KEYS = {
 }
 
 
-def _food_recognition_request_prompt() -> str:
+def _food_recognition_request_prompt(provider: Any = None) -> str:
     # Rename transport keys throughout the complete policy, without adding a
     # second schema or changing values, unknowns, model, or recognition rules.
     prompt = FOOD_RECOGNITION_SYSTEM_PROMPT + "\n" + FOOD_RECOGNITION_OUTPUT_FORMAT
-    return re.sub(
+    prompt = re.sub(
         r"\b(" + "|".join(FOOD_RECOGNITION_WIRE_KEYS) + r")\b",
         lambda match: FOOD_RECOGNITION_WIRE_KEYS[match.group()],
         prompt,
     )
+    if str(getattr(provider, "model", "") or "").strip().lower() == "qwen3.8-flash":
+        # The sanitizer always derives this display text from validated foods.
+        # Keep all recognition fields and tips; avoid generating discarded prose.
+        prompt = prompt.replace('"meal": "餐食简述"', '"meal": null')
+        prompt += "\nmeal 固定为 null，餐食简述由应用根据 foods 生成；不重复生成。"
+    return prompt
 
 
 def _expand_food_recognition_wire_payload(payload: Any) -> Any:
@@ -677,7 +683,7 @@ class FoodRecognitionService:
             with _vision_stage("base64", "provider"), caller_scope("food_recognition.from_base64"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
-                        {"role": "system", "content": _food_recognition_request_prompt()},
+                        {"role": "system", "content": _food_recognition_request_prompt(provider)},
                         {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                     ],
                     image_url=data_url,
@@ -775,7 +781,7 @@ class FoodRecognitionService:
             with _vision_stage("url", "provider"), caller_scope("food_recognition.from_url"):
                 raw_content = await provider.chat_with_vision(
                     messages=[
-                        {"role": "system", "content": _food_recognition_request_prompt()},
+                        {"role": "system", "content": _food_recognition_request_prompt(provider)},
                         {"role": "user", "content": "请识别这张图片中的食物，并估算营养信息。"},
                     ],
                     image_url=image_url,

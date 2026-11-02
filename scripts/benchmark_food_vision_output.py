@@ -143,13 +143,13 @@ def observe_provider_responses(provider):
             provider._get_client = previous
 
 
-def variant_prompt(variant):
+def variant_prompt(variant, provider=None):
     from app.services.ai.food_recognition import (
         FOOD_RECOGNITION_SYSTEM_PROMPT,
         _food_recognition_request_prompt,
     )
     if variant in {"wire", "wire_text", "wire_async", "wire_stream"}:
-        return _food_recognition_request_prompt()
+        return _food_recognition_request_prompt(None if variant == "wire_text" else provider)
     return FOOD_RECOGNITION_SYSTEM_PROMPT + ("\n" + COMPACT_FORMAT if variant == "compact" else "")
 
 
@@ -278,7 +278,7 @@ async def replay(cases, variants, repeats, user_id):
                     start = time.perf_counter()
                     row = {"sample": f"sample-{case_index + 1}", "repeat": repeat, "variant": variant, "api_success": False, "failures": []}
                     try:
-                        prompt = variant_prompt(variant)
+                        prompt = variant_prompt(variant, provider)
                         model = provider.model
                         if variant == "flash":
                             model = "qwen3-vl-flash"
