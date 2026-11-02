@@ -201,3 +201,18 @@ it('previews the authored headline and judgement instead of dates and collection
   expect(screen.getByText('有依据的核心判断。')).toBeVisible();
   expect(screen.queryByText(/采集流水/)).toBeNull();
 });
+
+
+it('does not promote source headings or judgement labels from the raw appendix into the preview', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: `${item.title}\n\n材料简版\n\ntelegram · not_configured · 尚未绑定\n\n主读｜原文中的标题\n\n2026-10-18T12:00:00Z\n\n【今日判断】原文中的观点，不能充当编辑判断。` });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  await screen.findByRole('button', { name: '开始阅读' });
+  expect(screen.getByRole('heading', { name: item.title })).toBeVisible();
+  expect(screen.queryByText(/原文中的观点/)).toBeNull();
+  expect(screen.queryByRole('heading', { name: '原文中的标题' })).toBeNull();
+  fireEvent.click(screen.getByRole('button', { name: '开始阅读' }));
+  const source = within(screen.getByRole('dialog')).getByText(/原文中的观点/);
+  expect(source).not.toBeVisible();
+  source.closest('details')!.open = true;
+  expect(source).toBeVisible();
+});

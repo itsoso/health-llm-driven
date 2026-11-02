@@ -51,10 +51,10 @@ function ReadingSession({ owner, day }: { owner: number; day: string }) {
     return () => controller.abort();
   }, [owner, selected, detailRefresh]);
 
-  const teaserBlocks = report ? readingBlocks(report.content_text, report.title) : [];
+  const teaserBlocks = report ? readingDocument(report.content_text, report.title).blocks : [];
   const teaserTitle = teaserBlocks.find(block => block.kind === 'heading')?.title ?? report?.title;
   const teaser = teaserBlocks.find(block => block.kind === 'label' && /^(今日判断|核心判断|一句话判断)$/.test(block.title))?.body
-    ?? report?.content_text ?? '';
+    ?? teaserBlocks.map(block => [block.title, block.body].filter(Boolean).join('\n')).join('\n\n');
   return <section className={`${css.card} ${css.morningCard}`} aria-label="晨读" id="life-morning-reading">
     <div className={css.morningMasthead}><h2><BookOpen size={16} aria-hidden="true" /> 晨读 <span>给思考留一点时间</span></h2>
       <button type="button" className={css.button} aria-label="刷新晨读" disabled={loading} onClick={() => {
@@ -102,6 +102,15 @@ function readingBlocks(text: string, title: string): ReadingBlock[] {
   });
 }
 
+function readingDocument(text: string, title: string) {
+  const allBlocks = readingBlocks(text, title);
+  const appendixStart = allBlocks.findIndex((_, index) => index > 0
+    && /^(?:dedao|xiaoyuzhou|wechat|telegram) · (?:partial|available|unavailable|failed|success|not_configured|auth_required|empty) · /.test(allBlocks[index - 1].body)
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(allBlocks[index + 1]?.body ?? ''));
+  return { blocks: appendixStart < 0 ? allBlocks : allBlocks.slice(0, appendixStart),
+    appendix: appendixStart < 0 ? [] : allBlocks.slice(appendixStart) };
+}
+
 function MorningReader({ report, onClose }: { report: MorningReadingDetail; onClose: () => void }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const body = useRef<HTMLElement>(null);
@@ -109,14 +118,7 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
   const titleId = useId();
   const [position, setPosition] = useState(0);
   const [activeSection, setActiveSection] = useState<string | null>(null);
-  const { blocks, appendix } = useMemo(() => {
-    const allBlocks = readingBlocks(report.content_text, report.title);
-    const appendixStart = allBlocks.findIndex((block, index) => index > 0 && block.kind === 'paragraph'
-      && /^(?:dedao|xiaoyuzhou|wechat|telegram) · (?:partial|available|unavailable|failed|success|not_configured|auth_required|empty) · /.test(allBlocks[index - 1].body)
-      && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(allBlocks[index + 1]?.body ?? ''));
-    return { blocks: appendixStart < 0 ? allBlocks : allBlocks.slice(0, appendixStart),
-      appendix: appendixStart < 0 ? [] : allBlocks.slice(appendixStart) };
-  }, [report.content_text, report.title]);
+  const { blocks, appendix } = useMemo(() => readingDocument(report.content_text, report.title), [report.content_text, report.title]);
   const appendixParagraphs = useMemo(() => appendix.map((block, index) => <p key={index}>{[block.kicker, block.title, block.body].filter(Boolean).join('\n')}</p>), [appendix]);
   const metadata = blocks.filter(block => block.kind === 'meta');
   const contents = blocks.flatMap((block, index) => block.kind === 'heading' ? [{ ...block, index }] : []);
