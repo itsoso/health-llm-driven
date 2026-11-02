@@ -1091,10 +1091,12 @@ async def test_staged_high_stakes_turn_revokes_fast_and_compact_record_routes(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("selected_model", ["qwen3.6-flash", "deepseek-v4.1-flash"])
 async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
     db,
     auth_user_and_headers,
     monkeypatch,
+    selected_model,
 ):
     """A UI-selected weak model cannot bypass the medical safety floor."""
     user, _ = auth_user_and_headers
@@ -1120,7 +1122,7 @@ async def test_staged_high_stakes_overrides_explicit_fast_answer_model(
     events = await _run(
         executor,
         "我现在胸痛而且呼吸困难，怎么办",
-        extra_context=json.dumps({"client": "mac", "model_id": "qwen3.6-flash"}),
+        extra_context=json.dumps({"client": "mac", "model_id": selected_model}),
         user_id=user.id,
     )
     done = events[-1]["data"]

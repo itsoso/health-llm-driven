@@ -193,7 +193,9 @@ def test_new_tokenplan_models_do_not_gain_unverified_tool_authority():
         model = reg.get_model(model_id)
         assert model is not None
         assert model.chat_selectable
-        assert model.reliable_tool_calling is False
+        # DeepSeek's structured stream/nonstream contract is now live-verified;
+        # the other independent provider controls remain unverified.
+        assert model.reliable_tool_calling is (model_id == "deepseek-v4.1-flash")
         assert model.supports_forced_tool_choice is False
         assert model.supports_thinking_budget is False
         assert model.supports_explicit_cache is False

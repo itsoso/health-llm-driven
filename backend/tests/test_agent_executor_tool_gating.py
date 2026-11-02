@@ -63,7 +63,7 @@ def _executor():
     return ex
 
 
-@pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3", "deepseek-v4.1-flash"])
+@pytest.mark.parametrize("model_id", ["glm-5.1", "glm-5.3"])
 @pytest.mark.parametrize("fast_record", [False, True])
 def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_id, fast_record):
     """Unverified models borrow a reliable tool caller, including compact record turns."""
@@ -90,14 +90,16 @@ def test_gate_redirects_unreliable_request_model_when_tools(monkeypatch, model_i
     assert ex._last_effective_model_id == "qwen3.7-max"
 
 
-def test_gate_keeps_reliable_request_model(monkeypatch):
+@pytest.mark.parametrize("model_id", ["claude-opus-4.7", "deepseek-v4.1-flash"])
+def test_gate_keeps_reliable_request_model(monkeypatch, model_id):
     """request_model = claude (可靠) → provider 不变。"""
     sentinel = MagicMock(name="claude_provider")
     import app.services.llm.factory as factory
     monkeypatch.setattr(factory, "create_provider_for_model_id", lambda mid: sentinel)
 
     ex = _executor()
-    ex._request_model_id = "claude-opus-4.7"
+    ex._request_model_id = model_id
+    ex._explicit_request_model_id = model_id
 
     provider, pass_tools = ex._resolve_chat_provider([{"type": "function"}])
     assert provider is sentinel
@@ -184,7 +186,7 @@ def test_gate_keeps_unreliable_when_no_reliable_fallback(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_id", ["glm-5.3", "deepseek-v4.1-flash"])
+@pytest.mark.parametrize("model_id", ["glm-5.3"])
 async def test_simple_record_stream_gates_new_models_before_first_tool_round(
     db, auth_user_and_headers, monkeypatch, model_id,
 ):

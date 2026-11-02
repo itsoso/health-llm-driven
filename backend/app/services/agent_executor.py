@@ -12690,6 +12690,9 @@ class AgentExecutor:
         self._current_user_id: Optional[int] = None
         self._http_client: Optional[httpx.AsyncClient] = None
         self._request_model_id: Optional[str] = None
+        # Track validated manual origin separately: _request_model_id is also
+        # assigned by automatic routing and clinical quality-floor escalation.
+        self._explicit_request_model_id: Optional[str] = None
         # Two-stage response routing is turn-scoped. Only models selected by
         # this policy may be upgraded later; explicit choices stay owned by the
         # user except that high-stakes turns cannot use a fast answer model.
@@ -17961,10 +17964,14 @@ class AgentExecutor:
             has_images=bool(images),
         )
         diet_photo_progress_turn = bool(images and self._has_food_photo_purpose(message))
+        self._explicit_request_model_id = (
+            None if health_advice_buffered
+            else self._admin_model_override(extra_context, user_id)
+        ) or None
         self._request_model_id = (
             str(getattr(settings, "health_evidence_model_id", "") or "").strip()
             if health_advice_buffered
-            else self._admin_model_override(extra_context, user_id)
+            else self._explicit_request_model_id
         ) or None
         self._staged_response_mode = _staged_response_mode()
         self._staged_answer_task_tier = None
@@ -24546,12 +24553,11 @@ class AgentExecutor:
         任一不满足 → None。这样 fast 模型吐坏工具调用时, 既有 tool-turn failover +
         #147/#161 三层兜底解析仍是安全网 (被换后的 fast 模型走同一 _call_llm/_stream 路径)。
 
-        A1 (2026-07-12, 生产 190/231 回合此前零路由): 显式 UI 选模型 (_request_model_id)
-        **不再豁免**本快路由。工具决策轮是不可见的内部决策 (mac/mobile 分别显示 回答/工具
-        两个模型), 「选择器显示什么就用什么」只约束**面向用户的答案轮**, 不约束工具轮。
-        安全边界仍由 _turn_any_tool_executed 门守住: 只有**首个工具决策轮** (尚无工具执行)
-        才降 fast; 一旦跑过工具, 后续合成/答案轮恒返回 None → 落在显式选定的强模型上产出
-        医疗正文。fast 轮若直接答文本 → 既有丢弃+强模型重合成兜底 (面向用户正文绝不来自 fast)。
+        Validated manual selection owns the first model call too. Otherwise a
+        tool-free answer from the fast model is discarded and generated again
+        on the selected model, adding an unnecessary serial call. Automatic
+        routing keeps the existing fast-tool/quality-answer split. The separate
+        tool-capability gate and clinical quality floors still apply.
         """
         from app.config import settings
 
@@ -24559,9 +24565,12 @@ class AgentExecutor:
             return None
         if self._requires_quality_floor():
             return None
-        # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。显式 UI 选模型不在此
-        # 豁免 —— 只有下面 _turn_any_tool_executed 门放行的**首个工具决策轮**会被降 fast,
-        # 答案轮由该门 + round_tools=[] 保证仍落在显式模型上。
+        if (
+            self._explicit_request_model_id
+            and effective_model_id == self._explicit_request_model_id
+        ):
+            return None
+        # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。
         if self._prefer_fast_record_model or self._fast_route_simple_turn:
             return None
         # 破坏性(删/改/撤销)/ 同步意图 → 工具决策留强模型(弱 fast 不可靠,生产实证:

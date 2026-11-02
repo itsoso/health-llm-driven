@@ -298,18 +298,18 @@ MODELS: List[ModelEntry] = [
         chat_selectable=False,
         reliable_tool_calling=False,
     ),
-    # 2026-09-22: authenticated TokenPlan catalog + synthetic chat verified.
-    # Text availability does not establish safe tool-calling authority.
+    # 2026-11-02: 36 live synthetic stream/nonstream tool-contract checks passed.
+    # See smoke_tool_model_contract.py; no forced-choice/thinking/cache promotion.
     ModelEntry(
         id="deepseek-v4.1-flash",
         label="DeepSeek V4.1 Flash",
         provider="tokenplan",
         model="deepseek-v4.1-flash",
         speed_tier="fast",
-        note="文本生成 / 推理 / 视觉理解; 工具调用未验证",
+        note="文本生成 / 推理 / 视觉理解 / 工具调用",
         requires_env=("TOKENPLAN_API_KEY",),
         capabilities=("text_generation", "reasoning", "vision_understanding"),
-        reliable_tool_calling=False,
+        reliable_tool_calling=True,
     ),
     ModelEntry(
         id="deepseek-v4-pro",

@@ -69,12 +69,8 @@ def test_flag_on_fast_routes_default_path(monkeypatch):
     assert "tool_round_fast_routed" in ex._model_fallback_reasons
 
 
-def test_flag_on_fast_routes_tool_round_even_with_explicit_model_pick(monkeypatch):
-    """A1: 显式 UI 选模型 (_request_model_id) → **工具决策轮**仍降 fast (不可见内部决策)。
-
-    「选择器显示什么就用什么」只约束答案轮 —— 那由 _turn_any_tool_executed 门守住,
-    此单元覆盖首个工具决策轮 (尚无工具执行) 被降 fast 的新行为。
-    """
+def test_flag_on_preserves_explicit_model_for_first_tool_round(monkeypatch):
+    """Validated manual selection owns the first call, including tool decisions."""
     monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
     monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
     sentinel = MagicMock(name="fast_provider")
@@ -83,13 +79,22 @@ def test_flag_on_fast_routes_tool_round_even_with_explicit_model_pick(monkeypatc
 
     ex = _executor()
     ex._request_model_id = "claude-opus-4.7"  # 显式选了强模型
+    ex._explicit_request_model_id = ex._request_model_id
     out = ex._maybe_fast_route_tool_round("claude-opus-4.7")
-    assert out is not None
-    provider, fast_id = out
-    assert provider is sentinel
-    assert fast_id == "qwen3.6-flash"
-    assert ex._tool_round_fast_routed is True
-    assert "tool_round_fast_routed" in ex._model_fallback_reasons
+    assert out is None
+    assert ex._tool_round_fast_routed is False
+    assert "tool_round_fast_routed" not in ex._model_fallback_reasons
+
+
+def test_automatic_request_model_still_eligible_for_tool_routing(monkeypatch):
+    """_request_model_id is also assigned by automatic routing; don't conflate origins."""
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda mid: MagicMock())
+    ex = _executor()
+    ex._request_model_id = "qwen3.7-max"
+    ex._explicit_request_model_id = None
+    assert ex._maybe_fast_route_tool_round("qwen3.7-max")[1] == "qwen3.6-flash"
 
 
 def test_flag_on_explicit_model_after_tool_executed_no_fast_route(monkeypatch):
@@ -485,18 +490,18 @@ async def test_protocol_leak_after_fast_direct_answer_is_resynthesized_once(
 
 
 # ──────────────────────────────────────────────────────────────
-# A1: 显式 per-message 选模型时, 工具轮仍降 fast; 答案轮留在显式模型
-# (生产: mac/mobile 每条消息带 model_id → 190/231 回合此前完全无路由)
+# Explicit per-message selection owns both tool and answer rounds.
 # ──────────────────────────────────────────────────────────────
 
 
 @pytest.mark.asyncio
-async def test_explicit_model_tool_round_fast_answer_on_explicit(
+async def test_explicit_model_owns_tool_and_answer_rounds(
     db, auth_user_and_headers, monkeypatch
 ):
-    """A1 核心: 显式选 qwen3.7-max → 首个工具决策轮降 fast(qwen3.6-flash),
-    工具后合成轮回到**显式选定的 qwen3.7-max** (答案模型 = 用户所选)。"""
+    """The first tool call must use the validated selected model too."""
     user, _ = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
     executor = AgentExecutor(db)
     provider_calls = []
 
@@ -509,7 +514,7 @@ async def test_explicit_model_tool_round_fast_answer_on_explicit(
 
         async def chat_stream(self, **kwargs):
             provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools"))})
-            if self.model == "qwen3.6-flash":
+            if len(provider_calls) == 1:
                 yield {"type": "tool_calls", "tool_calls": [{
                     "id": "r1", "type": "function",
                     "function": {
@@ -550,23 +555,24 @@ async def test_explicit_model_tool_round_fast_answer_on_explicit(
     )
     done = events[-1]["data"]
 
-    # 首轮 = fast(qwen3.6-flash) 决策工具。
-    assert provider_calls[0] == {"model": "qwen3.6-flash", "has_tools": True}
-    # 工具后所有轮 = 显式选定的 qwen3.7-max —— 答案绝不来自 fast。
-    assert all(c["model"] == "qwen3.7-max" for c in provider_calls[1:]), provider_calls
+    assert provider_calls[0] == {"model": "qwen3.7-max", "has_tools": True}
+    assert len(provider_calls) == 2
+    assert all(c["model"] == "qwen3.7-max" for c in provider_calls), provider_calls
     assert rendered == "EXPLICIT SYNTHESIS"
     assert done["answer_model"] == "qwen3.7-max"       # 面向用户答案 = 显式模型
-    assert "qwen3.6-flash" in done["tool_models"]        # 工具轮 = fast (可观测)
-    assert "tool_round_fast_routed" in done["fallback_reasons"]
+    assert "qwen3.6-flash" not in done["tool_models"]
+    assert "tool_round_fast_routed" not in done["fallback_reasons"]
 
 
 @pytest.mark.asyncio
-async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
-    db, auth_user_and_headers, monkeypatch
+@pytest.mark.parametrize("selected_model", ["qwen3.7-max", "deepseek-v4.1-flash"])
+async def test_explicit_model_direct_answer_needs_only_one_call(
+    db, auth_user_and_headers, monkeypatch, selected_model
 ):
-    """A1 安全兜底: 显式选模型下, fast 工具轮直接答文本 → 丢弃 fast 文本,
-    在**显式选定的模型**上重合成; fast 文本从未下发。"""
+    """Ordinary chat must not pay for a discarded Qwen answer before the selected model."""
     user, _ = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
     executor = AgentExecutor(db)
     provider_calls = []
 
@@ -583,25 +589,25 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
                 yield {"type": "content", "text": "FAST MEDICAL PROSE (must not reach user)"}
                 yield {"type": "finish", "finish_reason": "stop"}
                 return
-            yield {"type": "content", "text": "EXPLICIT RESYNTH"}
+            yield {"type": "content", "text": "纸飞机带着小熊的愿望飞过了小溪。"}
             yield {"type": "finish", "finish_reason": "stop"}
 
         async def chat(self, **kwargs):
             provider_calls.append({"model": self.model, "has_tools": bool(kwargs.get("tools")),
                                    "nonstream": True})
-            return {"content": "EXPLICIT RESYNTH", "finish_reason": "stop"}
+            return {"content": "纸飞机带着小熊的愿望飞过了小溪。", "finish_reason": "stop"}
 
     _wire(
         executor,
         monkeypatch,
         lambda mid: FakeProvider(mid),
-        user_provider=FakeProvider("qwen3.7-max"),
+        user_provider=FakeProvider(selected_model),
         tool_name="knowledge_search",
     )
 
     events = await _run(
-        executor, "分析我的睡眠趋势", user.id,
-        extra_context=json.dumps({"model_id": "qwen3.7-max"}),
+        executor, "讲一个纸飞机的小故事，只需一句话。", user.id,
+        extra_context=json.dumps({"model_id": selected_model}),
     )
     rendered = "".join(
         e["data"].get("content", "") for e in events if e.get("event") == "token"
@@ -610,11 +616,47 @@ async def test_explicit_model_fast_direct_answer_resynthesized_on_explicit(
 
     assert "FAST MEDICAL PROSE" not in rendered
     assert "must not reach user" not in rendered
-    assert "EXPLICIT RESYNTH" in rendered
-    # 重合成落在显式选定的 qwen3.7-max, 从未在 fast 上产出用户可见正文。
-    resynth_calls = [c for c in provider_calls if c["model"] == "qwen3.7-max"]
-    assert resynth_calls, provider_calls
-    assert "fast_tool_round_direct_answer_resynthesized" in done["fallback_reasons"]
+    assert "纸飞机带着小熊的愿望飞过了小溪。" in rendered
+    assert provider_calls == [{"model": selected_model, "has_tools": True}]
+    assert "fast_tool_round_direct_answer_resynthesized" not in done["fallback_reasons"]
+
+
+@pytest.mark.parametrize("second_has_selection", [False, True])
+@pytest.mark.asyncio
+async def test_manual_origin_is_revalidated_and_cleared_each_turn(
+    db, auth_user_and_headers, monkeypatch, second_has_selection
+):
+    user, _ = auth_user_and_headers
+    user.is_admin = True
+    db.commit()
+    executor = AgentExecutor(db)
+    calls = []
+
+    class Provider:
+        def __init__(self, mid):
+            self.model = mid
+
+        async def chat_stream(self, **kwargs):
+            calls.append(self.model)
+            yield {"type": "content", "text": "纸飞机飞过了小溪。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+    _wire(executor, monkeypatch, Provider, user_provider=Provider("qwen3.7-max"))
+    monkeypatch.setattr(executor, "_user_effective_model_id", lambda: "qwen3.7-max")
+    selected = json.dumps({"model_id": "deepseek-v4.1-flash"})
+    await _run(executor, "讲一个纸飞机的小故事，只需一句话。", user.id, selected)
+    assert executor._explicit_request_model_id == "deepseek-v4.1-flash"
+    assert calls == ["deepseek-v4.1-flash"]
+    calls.clear()
+    if second_has_selection:
+        user.is_admin = False
+        db.commit()
+    await _run(executor, "讲一个纸飞机的小故事，只需一句话。", user.id,
+               selected if second_has_selection else None)
+    assert executor._explicit_request_model_id is None
+    assert calls and all(model != "deepseek-v4.1-flash" for model in calls)
 
 
 @pytest.mark.parametrize("scoped_reads_verified", [False, True])
