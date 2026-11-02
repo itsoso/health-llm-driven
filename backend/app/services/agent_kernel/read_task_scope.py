@@ -309,7 +309,7 @@ def _closed_water_lookup_query(snapshot) -> dict | None:
     match = re.fullmatch(
         r"(?:请)?(?:查询|查看)(?:我(?:的)?)?"
         r"(?P<period>今天|今日|昨天|昨日|前天|本周|上周|最近(?P<days>[1-9]|[12][0-9]|3[01])天)"
-        r"(?:的)?饮水(?:记录|数据)[。.!！?？]?", snapshot.envelope.text.strip(),
+        r"(?:的)?饮水(?:记录|数据)[。.!！?？]?", snapshot.envelope.text,
     )
     if match is None or snapshot.intent.is_write:
         return None

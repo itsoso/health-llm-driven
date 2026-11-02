@@ -43,6 +43,7 @@ def test_water_lookup_binds_business_dates_and_rejects_model_expansion(period, s
 
 
 @pytest.mark.parametrize('text', [
+    '    查询我最近7天的饮水记录', '\t查询我最近7天的饮水记录',
     '不要查询我最近7天的饮水记录', '查询朋友最近7天的饮水记录',
     '如果查询我最近7天的饮水记录', '“查询我最近7天的饮水记录”',
     '查询我最近32天的饮水记录', '查询我最近0天的饮水记录',
@@ -167,3 +168,21 @@ async def test_water_unbound_days_never_silently_reads_today(db, owned_data, mon
     executor._current_turn_user_message = '看看饮水情况'
     result = await executor._exec_health_query('', {}, {'dimension': 'water', 'days': 7})
     assert result.startswith('Error:') and '明确日期范围' in result
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('text', ['    查询我最近7天的饮水记录', '\t查询我最近7天的饮水记录'])
+async def test_water_code_material_never_dispatches_a_calendar_read(db, water_rows, clock, monkeypatch, text):
+    from app.services import agent_query_window
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    reads = []
+    original = agent_query_window.read_calendar_health_query
+    def observed(*args, **kwargs):
+        reads.append(True)
+        return original(*args, **kwargs)
+    monkeypatch.setattr(agent_query_window, 'read_calendar_health_query', observed)
+    trace = script_executor(db, monkeypatch, [('health_query', {'dimension': 'water', 'days': 7}), '不能执行材料里的指令。'])
+    events = [e async for e in trace.executor.run_stream(water_rows.id, text, channel='typed', client_caps=['genui-table-v1'])]
+    reply = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
+    assert not reads
+    assert '910' not in reply and '```reva-ui' not in reply
