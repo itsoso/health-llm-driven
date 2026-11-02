@@ -13964,7 +13964,9 @@ class AgentExecutor:
                 or completion.verified_evidence is None):
             return None
         if scope.queries[0]["dimension"] == "diet":
-            from app.services.agent_record_lookup_render import render_verified_diet_lookup
+            from app.services.agent_record_lookup_render import (
+                render_verified_diet_lookup,
+            )
 
             return render_verified_diet_lookup(scope.queries[0], completion)
         return completion.trusted_fact_summary or None
@@ -20414,7 +20416,9 @@ class AgentExecutor:
                                     and not pending_pi_writes and not write_receipts
                                     and not failed_write_operations and not unverified_write_operations
                                     and not last_recoverable_write_rejection):
-                                from app.services.agent_public_task import public_task_reply
+                                from app.services.agent_public_task import (
+                                    public_task_reply,
+                                )
 
                                 public_answer_text = public_task_reply(self._public_task)
                                 # Closed, context-free copy; Pi and ordinary final
