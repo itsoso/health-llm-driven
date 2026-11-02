@@ -13907,6 +13907,56 @@ class AgentExecutor:
             return None
         return render_owned_cycling_html_report(scope, completion)
 
+    def _simple_record_lookup_scope(self):
+        """Recognize a complete factual lookup, never infer extra read authority.
+
+        Only the existing owner/date binder supplies query arguments. Keep the
+        initially proven sleep-record shape narrow: analysis, modifiers,
+        references, attachments and all mutation/clinical goals stay model-led.
+        """
+        snapshot = self._agent_kernel_snapshot
+        message = self._current_turn_user_message or ""
+        if (
+            not getattr(settings, "domain_prompt_optimization", False)
+            or snapshot is None or snapshot.intent.is_write
+            or snapshot.actionable_references or snapshot.envelope.media
+            or snapshot.envelope.text != message
+            or type(self._current_user_id) is not int
+            or snapshot.envelope.user_id != self._current_user_id
+            or snapshot.context.user_id != self._current_user_id
+            or self._current_turn_has_attachment or self._read_only_turn
+            or self._turn_selected_exam_id is not None
+            or self._turn_selected_notification_id is not None
+            or self._agent_kernel_pending_confirmation_tools
+            or self._agent_kernel_capability_block_reasons
+            or self._agent_kernel_tool_failure_tools
+            or self._turn_sync_attempted or self._read_repair_failures
+            or self._force_no_tools_synthesis or self._requires_quality_floor()
+            or self._turn_invoked_deep_analysis
+            or not re.fullmatch(
+                r"(?:请)?(?:查询|查看)(?:我(?:的)?)?(?:今天|今日|昨天|昨日|前天)"
+                r"(?:的)?睡眠(?:记录|数据)[。.!！?？]?", message.strip(),
+            )
+        ):
+            return None
+        scope = self._owned_read_scope_for(snapshot)
+        if (scope is None or len(scope.queries) != 1 or scope.composite_advice
+                or scope.weather_city is not None or scope.workout_selection is not None
+                or scope.queries[0].get("dimension") != "sleep"
+                or not scope.queries[0].get("start_date")
+                or scope.queries[0].get("start_date") != scope.queries[0].get("end_date")):
+            return None
+        return scope
+
+    def _verified_simple_lookup_reply(self, *, sealed: bool = False) -> Optional[str]:
+        if sealed or self._simple_record_lookup_scope() is None:
+            return None
+        completion = self._composed_read_completion()
+        if (completion is None or not completion.complete
+                or completion.verified_evidence is None):
+            return None
+        return completion.trusted_fact_summary or None
+
     def _preplanned_owned_read_calls(
         self, round_index: int, messages: list[dict], tools: list[dict], *, sealed: bool = False,
     ) -> list[dict]:
@@ -13917,6 +13967,15 @@ class AgentExecutor:
         """
         snapshot = self._agent_kernel_snapshot
         message = self._current_turn_user_message or ""
+        simple_scope = self._simple_record_lookup_scope()
+        if (simple_scope is not None and round_index == 0 and not sealed
+                and sum(m.get("role") == "user" for m in messages) == 1
+                and not any(m.get("role") in {"tool", "assistant"} or m.get("tool_calls") for m in messages)
+                and any((tool.get("function") or {}).get("name") == "health_query" for tool in tools)):
+            # Pi and ToolGateway still authorize and execute this exact proposal.
+            return [{"id": "server-simple-record-lookup", "type": "function", "function": {
+                "name": "health_query", "arguments": json.dumps(simple_scope.queries[0], ensure_ascii=False),
+            }}]
         match = re.fullmatch(r"(?:请)?分析我最近([1-9]|[12][0-9]|3[01])天的睡眠和饮食记录[。.!！]?", message)
         if (
             not getattr(settings, "domain_prompt_optimization", False)
@@ -17832,6 +17891,7 @@ class AgentExecutor:
         daily_diet_evaluation = is_daily_diet_evaluation(self._turn_daily_read_plan)
         composed_synthesis_used = False
         owned_read_preplanned = False
+        simple_lookup_rendered = False
         static_report_model_calls_avoided = 0
         record_write_requested = (
             completion_intent.primary == "write"
@@ -18075,7 +18135,13 @@ class AgentExecutor:
                     "disable fast route and use quality floor: %s",
                     exc,
                 )
+        simple_lookup_route_skipped = bool(
+            not health_advice_buffered and not staged_preclassification_failed
+            and staged_preclassified_tier in {"casual", "balanced"}
+            and self._simple_record_lookup_scope() is not None
+        )
         if (settings.decision_mode != "off" and self._public_task is None
+                and not simple_lookup_route_skipped
                 and not _meal_photo_optional_route_unneeded(
                     message or "", auto_save=self._diet_photo_auto_save,
                     has_file=bool(file_base64), read_only=bool(read_only_tools),
@@ -20352,6 +20418,18 @@ class AgentExecutor:
                                     static_report_model_calls_avoided += 1
                                     self._record_model_fallback_reason("verified_static_cycling_report")
                                     continue
+                            if (not remaining_batch_tools and not blocked_pi_calls
+                                    and not pending_pi_writes and not write_receipts
+                                    and not failed_write_operations and not unverified_write_operations
+                                    and not last_recoverable_write_rejection):
+                                lookup_reply = self._verified_simple_lookup_reply(sealed=health_advice_buffered)
+                                if lookup_reply is not None:
+                                    # Attested facts only; Pi termination, output guards,
+                                    # receipts and persistence remain on their usual path.
+                                    await pi.respond(request, content=lookup_reply,
+                                                     tool_calls=[], finish_reason="stop")
+                                    simple_lookup_rendered = True
+                                    continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,
@@ -21644,9 +21722,12 @@ class AgentExecutor:
         medical_boundary = enforce_medical_evidence_boundaries(
             composed_boundary.text,
             model_generated=not (
-                deterministic_query_mode == "on"
+                (simple_lookup_rendered and composed_completion is not None
+                 and composed_completion.complete
+                 and full_reply == composed_completion.trusted_fact_summary)
+                or (deterministic_query_mode == "on"
                 and deterministic_query_text
-                and full_reply == deterministic_query_text
+                and full_reply == deterministic_query_text)
             ),
             evidence_sources=sources_used,
             has_clinician_instruction=(
@@ -21998,6 +22079,8 @@ class AgentExecutor:
             "model_wait_ms": model_wait_ms,
             "model_call_count": model_call_count,
             "owned_read_preplanned": owned_read_preplanned,
+            "simple_lookup_rendered": simple_lookup_rendered,
+            "simple_lookup_route_skipped": simple_lookup_route_skipped,
             **({"report_render": {
                 "kind": "cycling_html",
                 "model_synthesis_calls_avoided": static_report_model_calls_avoided,
@@ -25462,8 +25545,9 @@ class AgentExecutor:
         只在满足**全部**条件时给 stream_kwargs 注入 thinking_budget:
           1. staged balanced 使用 balanced_synthesis_thinking_budget；其它兼容路径
              使用 synthesis_thinking_budget；high_stakes 永不封顶；
-          2. 本回合 effective model 的 ModelEntry.supports_thinking_budget=True
-             (仅探针验证过该参数的 qwen 模型;未验证模型不传, 免端点 400 打死合成轮);
+          2. 本回合 effective model 的 ModelEntry.supports_thinking_budget=True；
+             仅关闭简单查询思考也可用单独验证的 supports_disable_thinking，
+             但该能力不授权 thinking_budget (未验证参数不传，避免端点 400);
           3. 本回合**未**调用 health_analysis(深度分析/安全裁决可能确实需要长思考 →
              fail-closed 跳过, 保留完整思考)。
         调用点已保证只在无 tools 的合成/答案轮触发, 故绝不碰工具决策轮。命中时
@@ -25484,17 +25568,23 @@ class AgentExecutor:
             from app.services.llm.model_registry import get_model
 
             entry = get_model(model_id)
-            if entry is None or not getattr(entry, "supports_thinking_budget", False):
+            if entry is None:
                 return
             # (A) 简单查询/列表回合 → 合成轮直接关思考(探针实证 TTFT ~36s→~1.6s)。
             # 只对 _is_fast_eligible_turn 判定的简单回合(已排除建议/分析)生效, 分析轮不碰 →
             # 规避全局思考封顶伤分析质量的 A/B 否决。尊重用户模型选择, 只去无谓的思考阶段。
-            if getattr(self, "_turn_synthesis_skip_thinking", False):
+            if getattr(self, "_turn_synthesis_skip_thinking", False) and (
+                entry.supports_disable_thinking or entry.supports_thinking_budget
+            ):
                 stream_kwargs["enable_thinking"] = False
                 logger.info(
                     "[agent_executor] 简单查询合成轮关思考 model=%s user=%s",
                     model_id, self._current_user_id,
                 )
+                return
+            # Disable-only probe evidence must not enable the separate bounded
+            # reasoning policy for analysis or balanced synthesis.
+            if not entry.supports_thinking_budget:
                 return
             tier = getattr(self, "_staged_answer_task_tier", None)
             if (

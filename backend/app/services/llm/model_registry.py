@@ -42,6 +42,9 @@ class ModelEntry:
     #   「需等待完整回答」而非误导性的 token 滚动。拿不准时保守标 True (走正常滚动)。
     verified_synthesis_thinking_budget: int | None = None
     # Optional explicit budget verified by a live synthesis probe; no global opt-in.
+    supports_disable_thinking: bool = False
+    # Independently verified enable_thinking=False capability. Does not authorize
+    # bounded thinking budgets or changing tool/clinical reasoning behavior.
     supports_thinking_budget: bool = False
     # ↑ 该模型是否接受 DashScope/qwen 的思考控制参数 (enable_thinking / thinking_budget,
     #   经 extra_body 顶层放置)。True 才允许 agent_executor 在合成轮给思考阶段封顶
@@ -75,6 +78,8 @@ MODELS: List[ModelEntry] = [
         label="Qwen3.8 Max · 千问",
         provider="tokenplan",
         model="qwen3.8-max",
+        # Synthetic lookup A/B, 2026-11-02: 18/18 complete; disable-only capability.
+        supports_disable_thinking=True,
         # Synthetic dietary synthesis probe, 2026-10-29: budget=1024 completed.
         verified_synthesis_thinking_budget=1024,
         speed_tier="reasoning",
@@ -98,6 +103,7 @@ MODELS: List[ModelEntry] = [
         label="Qwen3.8 Max Preview · 千问",
         provider="tokenplan",
         model="qwen3.8-max",
+        supports_disable_thinking=True,
         # Synthetic dietary synthesis probe, 2026-10-29: budget=1024 completed.
         verified_synthesis_thinking_budget=1024,
         speed_tier="reasoning",

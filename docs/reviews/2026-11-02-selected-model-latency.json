@@ -1470,5 +1470,1985 @@
     "three_second_target_accepted": false,
     "device_update_accepted": false,
     "full_asset_bytes_downloaded_in_independent_readback": false
+  },
+  "locked_screen_performance_followup": {
+    "baseline_sha": "fd28f9a2e0eb00549b2dc5559ea6a7f8ede71188",
+    "production_sha_observed": "70d318d7168534694539dd65990748eb6e7528d7",
+    "status": "implementation_in_progress_not_released",
+    "artifacts": [
+      {
+        "path": "/private/tmp/reva-app-visible-latency-followup-20261102.json",
+        "sha256": "f57ec8ed9c1bfef2e39d0bee3c6aa59064a64fadc7501887fb4a25280fea1bd7",
+        "data": {
+          "revision": "d03b540c467c977a5ae3fbf0b7ade63c036d2494",
+          "deployed_runtime_sha": "70d318d7168534694539dd65990748eb6e7528d7",
+          "scope": "App reply or card time to visible content; analysis only",
+          "telemetry": {
+            "scope": "content-free operational latency aggregates; no owner identifiers or message content",
+            "windows": {
+              "last_24h": {
+                "by_path": {
+                  "diet_photo:image": {
+                    "action_type": "diet_photo",
+                    "has_image": true,
+                    "phases": {
+                      "citations_painted": {
+                        "n": 2,
+                        "p50": 28620,
+                        "p95": 31685,
+                        "p99": 31958
+                      },
+                      "first_content_painted": {
+                        "n": 4,
+                        "p50": 21091,
+                        "p95": 30748,
+                        "p99": 31537
+                      },
+                      "first_interactive": {
+                        "n": 6,
+                        "p50": 28620,
+                        "p95": 255582,
+                        "p99": 291116
+                      },
+                      "first_key_content": {
+                        "n": 6,
+                        "p50": 28620,
+                        "p95": 255582,
+                        "p99": 291116
+                      },
+                      "first_semantic_progress": {
+                        "n": 10,
+                        "p50": 394,
+                        "p95": 650,
+                        "p99": 652
+                      },
+                      "first_useful": {
+                        "n": 6,
+                        "p50": 4398,
+                        "p95": 16356,
+                        "p99": 16856
+                      },
+                      "local_feedback": {
+                        "n": 10,
+                        "p50": 1,
+                        "p95": 6,
+                        "p99": 7
+                      },
+                      "server_accepted": {
+                        "n": 8,
+                        "p50": 1396,
+                        "p95": 6038,
+                        "p99": 7340
+                      },
+                      "write_verified": {
+                        "n": 2,
+                        "p50": 28568,
+                        "p95": 31638,
+                        "p99": 31911
+                      }
+                    }
+                  },
+                  "generic:image": {
+                    "action_type": "generic",
+                    "has_image": true,
+                    "phases": {
+                      "first_semantic_progress": {
+                        "n": 1,
+                        "p50": 283,
+                        "p95": 283,
+                        "p99": 283
+                      },
+                      "local_feedback": {
+                        "n": 1,
+                        "p50": 0,
+                        "p95": 0,
+                        "p99": 0
+                      },
+                      "server_accepted": {
+                        "n": 1,
+                        "p50": 3171,
+                        "p95": 3171,
+                        "p99": 3171
+                      }
+                    }
+                  },
+                  "generic:text": {
+                    "action_type": "generic",
+                    "has_image": false,
+                    "phases": {
+                      "citations_painted": {
+                        "n": 5,
+                        "p50": 2376,
+                        "p95": 31556,
+                        "p99": 36032
+                      },
+                      "citations_received": {
+                        "n": 3,
+                        "p50": 466,
+                        "p95": 2162,
+                        "p99": 2312
+                      },
+                      "first_content_painted": {
+                        "n": 5,
+                        "p50": 25659,
+                        "p95": 45585,
+                        "p99": 47294
+                      },
+                      "first_interactive": {
+                        "n": 9,
+                        "p50": 2376,
+                        "p95": 37922,
+                        "p99": 45762
+                      },
+                      "first_key_content": {
+                        "n": 8,
+                        "p50": 11587,
+                        "p95": 39147,
+                        "p99": 46007
+                      },
+                      "first_semantic_progress": {
+                        "n": 15,
+                        "p50": 29,
+                        "p95": 37,
+                        "p99": 37
+                      },
+                      "first_useful": {
+                        "n": 7,
+                        "p50": 2349,
+                        "p95": 37568,
+                        "p99": 45654
+                      },
+                      "local_feedback": {
+                        "n": 15,
+                        "p50": 1,
+                        "p95": 2,
+                        "p99": 2
+                      },
+                      "server_accepted": {
+                        "n": 11,
+                        "p50": 1446,
+                        "p95": 8586,
+                        "p99": 9446
+                      }
+                    }
+                  }
+                },
+                "by_phase": {
+                  "citations_painted": {
+                    "n": 7,
+                    "p50": 9174,
+                    "p95": 35614,
+                    "p99": 36844
+                  },
+                  "citations_received": {
+                    "n": 3,
+                    "p50": 466,
+                    "p95": 2162,
+                    "p99": 2312
+                  },
+                  "citations_visible": {
+                    "n": 0,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "first_content_painted": {
+                    "n": 9,
+                    "p50": 25158,
+                    "p95": 43449,
+                    "p99": 46867
+                  },
+                  "first_interactive": {
+                    "n": 15,
+                    "p50": 14521,
+                    "p95": 175630,
+                    "p99": 275126
+                  },
+                  "first_key_content": {
+                    "n": 14,
+                    "p50": 16333,
+                    "p95": 184514,
+                    "p99": 276903
+                  },
+                  "first_semantic_progress": {
+                    "n": 26,
+                    "p50": 36,
+                    "p95": 602,
+                    "p99": 651
+                  },
+                  "first_useful": {
+                    "n": 13,
+                    "p50": 2349,
+                    "p95": 29259,
+                    "p99": 43993
+                  },
+                  "local_feedback": {
+                    "n": 26,
+                    "p50": 1,
+                    "p95": 4,
+                    "p99": 6
+                  },
+                  "server_accepted": {
+                    "n": 20,
+                    "p50": 1491,
+                    "p95": 7765,
+                    "p99": 9282
+                  },
+                  "write_verified": {
+                    "n": 2,
+                    "p50": 28568,
+                    "p95": 31638,
+                    "p99": 31911
+                  }
+                },
+                "invalid": 0,
+                "valid": 135
+              },
+              "since_ota": {
+                "by_path": {
+                  "generic:text": {
+                    "action_type": "generic",
+                    "has_image": false,
+                    "phases": {
+                      "first_content_painted": {
+                        "n": 1,
+                        "p50": 47721,
+                        "p95": 47721,
+                        "p99": 47721
+                      },
+                      "first_interactive": {
+                        "n": 1,
+                        "p50": 47722,
+                        "p95": 47722,
+                        "p99": 47722
+                      },
+                      "first_key_content": {
+                        "n": 1,
+                        "p50": 47722,
+                        "p95": 47722,
+                        "p99": 47722
+                      },
+                      "first_semantic_progress": {
+                        "n": 2,
+                        "p50": 30,
+                        "p95": 34,
+                        "p99": 34
+                      },
+                      "first_useful": {
+                        "n": 1,
+                        "p50": 47676,
+                        "p95": 47676,
+                        "p99": 47676
+                      },
+                      "local_feedback": {
+                        "n": 2,
+                        "p50": 1,
+                        "p95": 2,
+                        "p99": 2
+                      },
+                      "server_accepted": {
+                        "n": 1,
+                        "p50": 7331,
+                        "p95": 7331,
+                        "p99": 7331
+                      }
+                    }
+                  }
+                },
+                "by_phase": {
+                  "citations_painted": {
+                    "n": 0,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "citations_received": {
+                    "n": 0,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "citations_visible": {
+                    "n": 0,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  },
+                  "first_content_painted": {
+                    "n": 1,
+                    "p50": 47721,
+                    "p95": 47721,
+                    "p99": 47721
+                  },
+                  "first_interactive": {
+                    "n": 1,
+                    "p50": 47722,
+                    "p95": 47722,
+                    "p99": 47722
+                  },
+                  "first_key_content": {
+                    "n": 1,
+                    "p50": 47722,
+                    "p95": 47722,
+                    "p99": 47722
+                  },
+                  "first_semantic_progress": {
+                    "n": 2,
+                    "p50": 30,
+                    "p95": 34,
+                    "p99": 34
+                  },
+                  "first_useful": {
+                    "n": 1,
+                    "p50": 47676,
+                    "p95": 47676,
+                    "p99": 47676
+                  },
+                  "local_feedback": {
+                    "n": 2,
+                    "p50": 1,
+                    "p95": 2,
+                    "p99": 2
+                  },
+                  "server_accepted": {
+                    "n": 1,
+                    "p50": 7331,
+                    "p95": 7331,
+                    "p99": 7331
+                  },
+                  "write_verified": {
+                    "n": 0,
+                    "p50": null,
+                    "p95": null,
+                    "p99": null
+                  }
+                },
+                "invalid": 0,
+                "valid": 9
+              }
+            }
+          },
+          "server_timing": {
+            "count": 2,
+            "rows": [
+              {
+                "executor_model": "qwen3.8-max",
+                "first_useful": 37528,
+                "llm": 38569,
+                "model_calls": 3,
+                "model_wait": 38569,
+                "pre_llm": 5559,
+                "rounds": 3,
+                "total": 46088,
+                "ttft": 37528
+              },
+              {
+                "executor_model": "qwen3.8-max",
+                "first_useful": 39484,
+                "llm": 34591,
+                "model_calls": 1,
+                "model_wait": 34591,
+                "pre_llm": 942,
+                "rounds": 1,
+                "total": 39489,
+                "ttft": 39484
+              }
+            ],
+            "scope": "only timing and model identifiers, no message or user identifiers",
+            "window": "since_2026-11-02T02:46:58Z"
+          },
+          "recent_routing": {
+            "rows": [
+              {
+                "answer_model": "qwen3.8-max",
+                "elapsed_ms": 39489,
+                "fallback_reasons": [],
+                "health_compile_ms": 0,
+                "model_call_count": 1,
+                "model_wait_ms": 34591,
+                "pre_llm_stages": {
+                  "conv_ms": 10,
+                  "history_ms": 7,
+                  "inspect_ms": 0,
+                  "kb_ms": 377,
+                  "opener_ms": 0,
+                  "routing_ms": 389,
+                  "system_prompt_ms": 126,
+                  "vision_ms": 0
+                },
+                "selected_model": "qwen3.8-max",
+                "tool_models": [
+                  "qwen3.8-max"
+                ],
+                "turn_setup_ms": 31
+              },
+              {
+                "answer_model": "qwen3.8-max",
+                "elapsed_ms": 46088,
+                "fallback_reasons": [
+                  "decision_timeout",
+                  "no_tools_synthesis_tool_call_retried"
+                ],
+                "health_compile_ms": 0,
+                "model_call_count": 3,
+                "model_wait_ms": 38569,
+                "pre_llm_stages": {
+                  "conv_ms": 59,
+                  "history_ms": 36,
+                  "inspect_ms": 0,
+                  "kb_ms": 0,
+                  "opener_ms": 92,
+                  "routing_ms": 5060,
+                  "system_prompt_ms": 71,
+                  "vision_ms": 0
+                },
+                "selected_model": "qwen3.8-max",
+                "tool_models": [
+                  "qwen3.8-max"
+                ],
+                "turn_setup_ms": 188
+              }
+            ],
+            "scope": "recent operational model routing and numeric timing only"
+          },
+          "validation": {
+            "mobile_suites": 3,
+            "mobile_tests_passed": 243,
+            "system_map": "passed via existing governance venv; wrapper lacked python3.12 in PATH",
+            "code_changes": false
+          },
+          "limits": [
+            "Event ingestion windows do not bind a request to an OTA version.",
+            "Sparse phase counts are not matched by owner/turn in this report; phase percentile differences are not proven paired render overhead.",
+            "Server samples have no exported user/turn identifiers and are not correlated to the reported device conversation.",
+            "onLayout telemetry is a layout proxy, not proof of physical screen visibility.",
+            "Simulator is booted but native UI automation is blocked by Mac lock; user unlock requested.",
+            "Three-second target remains unaccepted."
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-latency-runtime-config-20261102.json",
+        "sha256": "0c68befcbd98a6b36d512345022fa7f92569bcee05fbe55bf253e668621c2b0b",
+        "data": {
+          "settings": {
+            "decision_mode": "on",
+            "decision_provider": "laya",
+            "decision_timeout_seconds": 5.0,
+            "domain_prompt_optimization": true,
+            "genui_diet_summary_enabled": true,
+            "genui_sleep_summary_enabled": true,
+            "genui_table_enabled": true,
+            "owned_read_preplanning": false,
+            "staged_response_mode": "off",
+            "task_tiered_routing": true
+          },
+          "sha": "70d318d7168534694539dd65990748eb6e7528d7"
+        }
+      },
+      {
+        "path": "/private/tmp/reva-qwen38-lookup-probe.json",
+        "sha256": "74dc7811dc1eeb225ff1792c412adb25caac9ed4dd9c49d6082c74fc11ac915b",
+        "data": {
+          "synthetic_only": true,
+          "model": "qwen3.8-max",
+          "rows": [
+            {
+              "case": "water",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 6598,
+              "total_ms": 6772
+            },
+            {
+              "case": "water",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 481,
+              "total_ms": 629
+            },
+            {
+              "case": "weights",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 31,
+              "tool_call_count": 0,
+              "first_ms": 4393,
+              "total_ms": 4805
+            },
+            {
+              "case": "weights",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "first_ms": 499,
+              "total_ms": 877
+            },
+            {
+              "case": "empty",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "first_ms": 2484,
+              "total_ms": 2613
+            },
+            {
+              "case": "empty",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 18,
+              "tool_call_count": 0,
+              "first_ms": 484,
+              "total_ms": 690
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 751,
+              "total_ms": 1015
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 2306,
+              "total_ms": 2470
+            },
+            {
+              "case": "weights",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "first_ms": 709,
+              "total_ms": 1106
+            },
+            {
+              "case": "weights",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 30,
+              "tool_call_count": 0,
+              "first_ms": 2944,
+              "total_ms": 3379
+            },
+            {
+              "case": "empty",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "first_ms": 825,
+              "total_ms": 978
+            },
+            {
+              "case": "empty",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "first_ms": 1987,
+              "total_ms": 2085
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 2843,
+              "total_ms": 3003
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "first_ms": 586,
+              "total_ms": 794
+            },
+            {
+              "case": "weights",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 31,
+              "tool_call_count": 0,
+              "first_ms": 2751,
+              "total_ms": 3178
+            },
+            {
+              "case": "weights",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "first_ms": 591,
+              "total_ms": 948
+            },
+            {
+              "case": "empty",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 18,
+              "tool_call_count": 0,
+              "first_ms": 2581,
+              "total_ms": 2810
+            },
+            {
+              "case": "empty",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 18,
+              "tool_call_count": 0,
+              "first_ms": 636,
+              "total_ms": 868
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-qwen38-lookup-quality-probe.json",
+        "sha256": "03472c4dafa5ca877b49ea7d58696a607d75ae7a5ed32d93f5dea0222302e670",
+        "data": {
+          "synthetic_only": true,
+          "model": "qwen3.8-max",
+          "rows": [
+            {
+              "case": "water",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 5154,
+              "total_ms": 5333
+            },
+            {
+              "case": "water",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 803,
+              "total_ms": 985
+            },
+            {
+              "case": "weights",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 31,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录为：70.1千克、70.3千克、70.2千克。",
+              "first_ms": 1913,
+              "total_ms": 2273
+            },
+            {
+              "case": "weights",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录依次为70.1千克、70.3千克、70.2千克。",
+              "first_ms": 782,
+              "total_ms": 1217
+            },
+            {
+              "case": "empty",
+              "repeat": 0,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 17,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录，不估计睡眠时长。",
+              "first_ms": 2806,
+              "total_ms": 2958
+            },
+            {
+              "case": "empty",
+              "repeat": 0,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录。",
+              "first_ms": 679,
+              "total_ms": 838
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 735,
+              "total_ms": 940
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 2646,
+              "total_ms": 2828
+            },
+            {
+              "case": "weights",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录依次为70.1千克、70.3千克、70.2千克。",
+              "first_ms": 954,
+              "total_ms": 1298
+            },
+            {
+              "case": "weights",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 31,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录为：70.1千克、70.3千克、70.2千克。",
+              "first_ms": 3664,
+              "total_ms": 4088
+            },
+            {
+              "case": "empty",
+              "repeat": 1,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录。",
+              "first_ms": 1088,
+              "total_ms": 1248
+            },
+            {
+              "case": "empty",
+              "repeat": 1,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 18,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录，无法估计睡眠时长。",
+              "first_ms": 2624,
+              "total_ms": 2854
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 2957,
+              "total_ms": 3145
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 13,
+              "tool_call_count": 0,
+              "answer": "今天饮水总量为500毫升。",
+              "first_ms": 844,
+              "total_ms": 1045
+            },
+            {
+              "case": "weights",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 31,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录为：70.1千克、70.3千克、70.2千克。",
+              "first_ms": 3875,
+              "total_ms": 4318
+            },
+            {
+              "case": "weights",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 32,
+              "tool_call_count": 0,
+              "answer": "最近三次体重记录依次为70.1千克、70.3千克、70.2千克。",
+              "first_ms": 972,
+              "total_ms": 1320
+            },
+            {
+              "case": "empty",
+              "repeat": 2,
+              "mode": "default",
+              "passed": true,
+              "finish": "stop",
+              "chars": 19,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录，因此不估计睡眠时长。",
+              "first_ms": 2686,
+              "total_ms": 2922
+            },
+            {
+              "case": "empty",
+              "repeat": 2,
+              "mode": "disabled",
+              "passed": true,
+              "finish": "stop",
+              "chars": 9,
+              "tool_call_count": 0,
+              "answer": "本周没有睡眠记录。",
+              "first_ms": 620,
+              "total_ms": 799
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-qwen38-executor-baseline.json",
+        "sha256": "47ef94a1d596bab80ac18eb7c63ec96a273b1126d531087086a22f7e84efec1e",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "water",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 8439
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5223
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9051
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 25222
+            },
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5124
+                }
+              ],
+              "passed": false,
+              "first_ms": 5488,
+              "total_ms": 5569,
+              "answer_chars": 37,
+              "outcome": "blocked",
+              "segments": {
+                "turn_setup_ms": 37,
+                "pre_llm_ms": 34,
+                "pre_llm_stages": {
+                  "routing_ms": 1,
+                  "conv_ms": 2,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 25,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 5125,
+                "first_useful_ms": 5450,
+                "end_to_end_total_ms": 5489,
+                "end_to_end_ttft_ms": 5488
+              },
+              "answer_sha256": "751ca3094573b4342865708c22e94ba9390efc365370a1b59b4a71d47aa66c47"
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 8060
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6708
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 7270
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 22375
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9951
+                }
+              ],
+              "passed": false,
+              "first_ms": 10253,
+              "total_ms": 10279,
+              "answer_chars": 37,
+              "outcome": "blocked",
+              "segments": {
+                "turn_setup_ms": 5,
+                "pre_llm_ms": 19,
+                "pre_llm_stages": {
+                  "routing_ms": 1,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 11,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 9952,
+                "first_useful_ms": 10247,
+                "end_to_end_total_ms": 10254,
+                "end_to_end_ttft_ms": 10252
+              },
+              "answer_sha256": "751ca3094573b4342865708c22e94ba9390efc365370a1b59b4a71d47aa66c47"
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 14025
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5789
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 3759
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 23916
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6243
+                }
+              ],
+              "passed": false,
+              "first_ms": 6527,
+              "total_ms": 6550,
+              "answer_chars": 37,
+              "outcome": "blocked",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 14,
+                "pre_llm_stages": {
+                  "routing_ms": 1,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 6,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 6243,
+                "first_useful_ms": 6522,
+                "end_to_end_total_ms": 6527,
+                "end_to_end_ttft_ms": 6526
+              },
+              "answer_sha256": "751ca3094573b4342865708c22e94ba9390efc365370a1b59b4a71d47aa66c47"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-qwen38-calendar-baseline.json",
+        "sha256": "57874f0e4811f98ee19e347db3d966b4f2d7bc1e8e915459084431db14378d11",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "water",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 10203
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6058
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 4888
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 21815
+            },
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 4929
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 10549
+                }
+              ],
+              "passed": true,
+              "first_ms": 16157,
+              "total_ms": 16228,
+              "answer_chars": 363,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 53,
+                "pre_llm_ms": 60,
+                "pre_llm_stages": {
+                  "routing_ms": 1,
+                  "conv_ms": 4,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 47,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 15482,
+                "first_useful_ms": 5520,
+                "end_to_end_total_ms": 16158,
+                "end_to_end_ttft_ms": 11083
+              },
+              "answer_sha256": "8f58f8dad47a0a72d806d20a1134039927c0d234709b8682d7c096d661f8d748"
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 8206
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5311
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 11810
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 25642
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6523
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9890
+                }
+              ],
+              "passed": true,
+              "first_ms": 16824,
+              "total_ms": 16853,
+              "answer_chars": 377,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 2,
+                "pre_llm_ms": 16,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 10,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 16416,
+                "first_useful_ms": 6915,
+                "end_to_end_total_ms": 16825,
+                "end_to_end_ttft_ms": 11214
+              },
+              "answer_sha256": "76463c562520d860b3628b202ada0a07eda1131f7a0fa851e131167a889a3947"
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9252
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6052
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6386
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 22016
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6218
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 11021
+                }
+              ],
+              "passed": true,
+              "first_ms": 17670,
+              "total_ms": 17694,
+              "answer_chars": 325,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 14,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 8,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 17243,
+                "first_useful_ms": 6630,
+                "end_to_end_total_ms": 17671,
+                "end_to_end_ttft_ms": 13686
+              },
+              "answer_sha256": "06ae343bf09ef59a05b3603bd34d74d015a28cc7f2a422759e14974cd735926d"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-qwen38-calendar-candidate.json",
+        "sha256": "6e03622714b177a99a55e9acb79adf6a9520aa2d679565961b937e6091c1de12",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "water",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 10419
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 4225
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": false,
+                  "thinking_budget": null,
+                  "ms": 1513
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 16755
+            },
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 7061
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 14725
+                }
+              ],
+              "passed": true,
+              "first_ms": 22165,
+              "total_ms": 22236,
+              "answer_chars": 383,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 33,
+                "pre_llm_ms": 34,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 26,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 21789,
+                "first_useful_ms": 7364,
+                "end_to_end_total_ms": 22167,
+                "end_to_end_ttft_ms": 16762
+              },
+              "answer_sha256": "700a71ebbe03877ab8c7592e6397db804a7d66de7ab8d7efda2be8cd73da3bf5"
+            },
+            {
+              "case": "water",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 11863
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6244
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": false,
+                  "thinking_budget": null,
+                  "ms": 1683
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 20189
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 4831
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 10801
+                }
+              ],
+              "passed": true,
+              "first_ms": 16039,
+              "total_ms": 16066,
+              "answer_chars": 373,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 15,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 9,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 15635,
+                "first_useful_ms": 5218,
+                "end_to_end_total_ms": 16040,
+                "end_to_end_ttft_ms": 10490
+              },
+              "answer_sha256": "a42745826c1f0439114ee64e10dfe040bf2e59d9b53a81345a391cf071150efd"
+            },
+            {
+              "case": "water",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 8984
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 3419
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": false,
+                  "enable_thinking": false,
+                  "thinking_budget": null,
+                  "ms": 2207
+                }
+              ],
+              "passed": false,
+              "error_type": "BenchmarkStopped",
+              "total_ms": 15012
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5344
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 12305
+                }
+              ],
+              "passed": true,
+              "first_ms": 18044,
+              "total_ms": 18070,
+              "answer_chars": 357,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 16,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 9,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 17586,
+                "first_useful_ms": 5720,
+                "end_to_end_total_ms": 17980,
+                "end_to_end_ttft_ms": 13217
+              },
+              "answer_sha256": "7837df295aef2d6720a2c030d22b9c710cf6e915aed41a75a62e5ce127f6cc7e"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-simple-lookup-candidate.json",
+        "sha256": "f47fa4e24ddbb98e9313b978bdbda1681a717a8f9ff5c51106ee9159f904c820",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9153
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 10538
+                }
+              ],
+              "passed": true,
+              "first_ms": 20446,
+              "total_ms": 20516,
+              "answer_chars": 425,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 85,
+                "pre_llm_ms": 204,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 2,
+                  "opener_ms": 2,
+                  "system_prompt_ms": 146,
+                  "kb_ms": 2,
+                  "inspect_ms": 0,
+                  "history_ms": 22,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 19698,
+                "first_useful_ms": 9785,
+                "end_to_end_total_ms": 20448,
+                "end_to_end_ttft_ms": 14658
+              },
+              "answer_sha256": "e05c4949d20cb830061dfe1e2172e5d6782cef9cfb8a0237ef047408a1210bcf"
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 7296
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 11206
+                }
+              ],
+              "passed": true,
+              "first_ms": 18826,
+              "total_ms": 18850,
+              "answer_chars": 368,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 16,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 9,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 18506,
+                "first_useful_ms": 7594,
+                "end_to_end_total_ms": 18826,
+                "end_to_end_ttft_ms": 13681
+              },
+              "answer_sha256": "4ccb34eb25e0ad7cee73d33b813bfd325c9f69811790c6c2fac97148d1844449"
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 20631
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 12507
+                }
+              ],
+              "passed": true,
+              "first_ms": 33446,
+              "total_ms": 33471,
+              "answer_chars": 392,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 2,
+                "pre_llm_ms": 15,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 8,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 33140,
+                "first_useful_ms": 20920,
+                "end_to_end_total_ms": 33447,
+                "end_to_end_ttft_ms": 27474
+              },
+              "answer_sha256": "13626e80dd358e9efc111ea33b36135b8ebcee8fa6e128ed4c49e5c0150fd866"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-simple-lookup-mobile-baseline.json",
+        "sha256": "db4a1df3f6e9d4406805762383e74821229d404763f130f6c92f45c42c7c8a73",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 9559
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 14524
+                }
+              ],
+              "passed": true,
+              "first_ms": 25173,
+              "total_ms": 25285,
+              "answer_chars": 490,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 136,
+                "pre_llm_ms": 215,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 3,
+                  "opener_ms": 5,
+                  "system_prompt_ms": 65,
+                  "kb_ms": 36,
+                  "inspect_ms": 0,
+                  "history_ms": 49,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 24099,
+                "first_useful_ms": 10420,
+                "end_to_end_total_ms": 25176,
+                "end_to_end_ttft_ms": 17362
+              },
+              "answer_sha256": "66a39b38dc3b2f91720d840b026ac462dc95e5e4d3b7e39c2f59e72c5641cc2e"
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 5308
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 26843
+                }
+              ],
+              "passed": true,
+              "first_ms": 32539,
+              "total_ms": 32565,
+              "answer_chars": 570,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 14,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 7,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 32154,
+                "first_useful_ms": 5681,
+                "end_to_end_total_ms": 32540,
+                "end_to_end_ttft_ms": 24841
+              },
+              "answer_sha256": "73d1df786480372608924984e618498a0b5d33abaf6ff349f2bbd932b917d003"
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 6155
+                },
+                {
+                  "model": "qwen3.8-max",
+                  "has_tools": true,
+                  "enable_thinking": null,
+                  "thinking_budget": null,
+                  "ms": 15318
+                }
+              ],
+              "passed": true,
+              "first_ms": 21879,
+              "total_ms": 21907,
+              "answer_chars": 512,
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 2,
+                "pre_llm_ms": 12,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 6,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 21479,
+                "first_useful_ms": 6537,
+                "end_to_end_total_ms": 21880,
+                "end_to_end_ttft_ms": 14415
+              },
+              "answer_sha256": "385bd2f9a651ac2ef6d3d2b7c77862d5785a4bb55a1bf7c92073605ec5add907"
+            }
+          ]
+        }
+      },
+      {
+        "path": "/private/tmp/reva-simple-lookup-mobile-candidate.json",
+        "sha256": "85e022518a77855812f8d535b3a59f95b91ed95cca74b5e934a00d82b2b7cbca",
+        "data": {
+          "synthetic_only": true,
+          "engine": "disposable_sqlite",
+          "rows": [
+            {
+              "case": "sleep",
+              "repeat": 0,
+              "calls": [],
+              "passed": true,
+              "first_ms": 672,
+              "total_ms": 749,
+              "answer_chars": 144,
+              "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 70,
+                "pre_llm_ms": 101,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 2,
+                  "opener_ms": 1,
+                  "system_prompt_ms": 44,
+                  "kb_ms": 7,
+                  "inspect_ms": 0,
+                  "history_ms": 22,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 0,
+                "first_useful_ms": 573,
+                "end_to_end_total_ms": 673,
+                "end_to_end_ttft_ms": 671
+              }
+            },
+            {
+              "case": "sleep",
+              "repeat": 1,
+              "calls": [],
+              "passed": true,
+              "first_ms": 313,
+              "total_ms": 341,
+              "answer_chars": 144,
+              "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 3,
+                "pre_llm_ms": 13,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 6,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 0,
+                "first_useful_ms": 302,
+                "end_to_end_total_ms": 313,
+                "end_to_end_ttft_ms": 312
+              }
+            },
+            {
+              "case": "sleep",
+              "repeat": 2,
+              "calls": [],
+              "passed": true,
+              "first_ms": 288,
+              "total_ms": 316,
+              "answer_chars": 144,
+              "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7小时；评分80。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+              "outcome": "complete",
+              "segments": {
+                "turn_setup_ms": 2,
+                "pre_llm_ms": 12,
+                "pre_llm_stages": {
+                  "routing_ms": 0,
+                  "conv_ms": 1,
+                  "opener_ms": 0,
+                  "system_prompt_ms": 6,
+                  "kb_ms": 0,
+                  "inspect_ms": 0,
+                  "history_ms": 0,
+                  "vision_ms": 0
+                },
+                "model_wait_ms": 0,
+                "first_useful_ms": 276,
+                "end_to_end_total_ms": 288,
+                "end_to_end_ttft_ms": 287
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "limits": [
+      "Three-second App acceptance remains unverified; Mac is locked; no GUI bypass.",
+      "Telemetry ingestion window is not runtime/request-start binding. Aggregate milestones are not paired by turn.",
+      "Executor probes use disposable SQLite, saved synthetic Qwen preference, real model transport, decision mode off, no HTTP or native paint.",
+      "First calendar and capability probes have domain_prompt_optimization off. The final mobile comparison explicitly sets it on in both arms and supplies the sleep-summary capability.",
+      "Water call-budget failures and unparsed restriction failures are retained. They are not performance successes.",
+      "Single-day sleep lookup uses existing owner/date binding and verified deterministic facts; only fresh conversations avoid the planner. Existing histories retain it.",
+      "No raw health data or tokens exported; answer text retained only for synthetic protocol and deterministic fixture review."
+    ],
+    "comparison_script": {
+      "path": "/private/tmp/reva-simple-lookup-mobile-benchmark.py",
+      "sha256": "5f78cf3ec2cdba5c37827d450e1fbc98a2a2d5d10e575cc19e1f4aa393988dd4"
+    }
   }
 }
