@@ -3729,7 +3729,7 @@
     }
   },
   "other_prompts_followup": {
-    "status": "local_candidate_measured_pending_review_and_release",
+    "status": "released_acceptance_partial",
     "baseline": {
       "synthetic_only": true,
       "engine": "disposable_sqlite",
@@ -6919,9 +6919,9 @@
     "validation": {
       "red": "5 failed before deterministic implementation",
       "initial_regression": "476 passed",
-      "final_regression": "503 passed, 6 existing deprecation warnings; 62.59s",
+      "final_regression": "503 passed plus owner/date follow-up3 and corrected contract suites97; final full CI32/32 including PostgreSQL passed",
       "native_visible_latency": "unverified: GUI locked; no bypass attempted",
-      "production_post_deploy_latency": "pending",
+      "production_post_deploy_latency": "not measured; independent production SHA/services/public+local health and OTA manifest verified",
       "owner_date_followup": "3 passed, 53 deselected",
       "system_map": "regenerated canonical graph; full shell check passed",
       "ruff": "new renderer and changed lookup tests pass; existing large executor has pre-existing lint debt; no global formatting"
@@ -6991,6 +6991,236 @@
       "raw_job_log_sha256": "7e3c543a137e0f3c4ed648d7105db0c7a98836972f25e6fc218c51cffce0fdc6",
       "local_revalidation": "97 passed, 6 existing deprecation warnings; 19.19s",
       "release_attempted": false
+    },
+    "final_review": {
+      "base_sha": "1e79e3ded7dfac4774b112fa1c1c9ebacba62c2c",
+      "blockers": [],
+      "candidate_sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+      "file_sha256": {
+        "backend/app/services/agent_executor.py": "df47e4ffc0d60cf614529670ea7a14459f9d185061a8ad5e12b10220e404589c",
+        "backend/app/services/agent_public_task.py": "d7c9d077aec3739b21d07e669569fe6a271a8aeb17d059280b448689ac562d0f",
+        "backend/app/services/agent_record_lookup_render.py": "5f0bfa2ea6ff97b3e35386164da092609bcf3f5f6528c364f63f11caa0913ca2",
+        "backend/tests/test_agent_prompt_budget_execution.py": "ed5c7f8e4d060b32c6a94c88e13d9b49cd9fce2340beb06b84fe5b41441d9331",
+        "backend/tests/test_agent_public_task.py": "02f40131878756513351d2c3e772d8e53e880cc8069d0864da69effc1b19c072",
+        "backend/tests/test_agent_record_lookup_render.py": "78838014a1d2b694238bc8c1d14bdf831d88b3c6e5ce1df50c5e0792b692574d",
+        "backend/tests/test_public_task_completion_isolation.py": "fbfb916bc1127b630cbc17265a7fe2650eb1c4dd782fa0725d5a0010f2aa3d5d",
+        "backend/tests/test_simple_lookup_latency.py": "2a034949c5241490018c9600c1cf09e087b1fc6880921f7b90a6aaafc5a8b9ee",
+        "docs/_generated/system-map.json": "fd810dfd3cbc2d4d775811fd5077fceceae03220e7f44092b89f81d699996015",
+        "docs/dossiers/2026-11-02-explicit-model-latency.md": "7c40ec58a20ee5b737309d0a43650993a50f69b2348d2e2bec005aca289fa1cc",
+        "docs/reviews/2026-11-02-selected-model-latency.json": "9463434114411d2f146db7388a3031346c6441d0ff012411cb71d65f8a7a93ec"
+      },
+      "findings": [
+        "No production/runtime code changes relative to reviewed a93.",
+        "Original personal-query-not-public assertion retained for all three cases. Exact single-day diet lookup now requires zero provider calls, complete outcome, preplanned verified rendering and no write receipts.",
+        "Added multi-day and analysis cases explicitly require provider calls; no timeout/skip/mocked success introduced. Existing real Pi/Gateway lookup safety tests remain unchanged.",
+        "Original failed CI job log raw SHA matches 7e3c543a137e0f3c4ed648d7105db0c7a98836972f25e6fc218c51cffce0fdc6; failure is obsolete provider-call assertion, retained as failure evidence."
+      ],
+      "gate": "G4 independent test-contract follow-up",
+      "independent_validation": {
+        "log": "/private/tmp/reva-other-prompts-741feaf1-independent-tests.log",
+        "log_sha256": "e6265ef941f8703586dc0844ed3f78cec63d5b61c17b24cb46a4b6f3b723bb70",
+        "result": "83 passed, 6 existing deprecation warnings, 16.56s",
+        "suites": [
+          "test_agent_prompt_budget_execution.py",
+          "test_simple_lookup_latency.py"
+        ]
+      },
+      "limits": [
+        "Code/test G4 only; previous failed CI does not become green. New exact SHA requires fresh live gate and complete CI.",
+        "No deployment/OTA/native acceptance or universal three-second claim."
+      ],
+      "previous_review_report_sha256": "edd11ef4e409d0afa54ef5245344a61525602e42ced6a1aa479715125d49984c",
+      "previous_reviewed_sha": "a93fbec31ecc62df5143e351a04275e04c1fb29e",
+      "reviewer": "diet_detail_safety_review",
+      "verdict": "GO"
+    },
+    "final_live_gate": {
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 66.19,
+      "exit_code": 0,
+      "log_sha256": "782174373cf51da27f01cacd2a08f3a4c542571b7e1354b6a0902bab2354ec47",
+      "synthetic_only": true,
+      "candidate_sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+      "suites": {
+        "invariants": 12,
+        "core": 50,
+        "live": 5,
+        "trajectories": 12,
+        "goldens": 9
+      }
+    },
+    "final_candidate_release": {
+      "candidate_sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+      "ci": {
+        "run_id": 41412927951,
+        "conclusion": "success",
+        "jobs": 32,
+        "job_roster_sha256": "da1506b6f42b23c55d29de31ce9dd0196a4a0f592169ddaafad57de66a1eab84"
+      },
+      "validate": {
+        "run_id": 41414311748,
+        "conclusion": "success"
+      },
+      "backend": {
+        "run_id": 41417330281,
+        "conclusion": "success",
+        "readback": {
+          "authorization_matches": true,
+          "backend_completed": {
+            "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+            "state": "SUCCEEDED"
+          },
+          "backend_completed_sha256": "547e896810b1d92121a9e9177e74cff1deb9e87d524ad4f01fb94bbb9dfbc47b",
+          "business_lease_absent": true,
+          "local_health": "healthy",
+          "production_clean": true,
+          "public_health": "healthy",
+          "services": {
+            "celery-beat": "active/running",
+            "celery-worker": "active/running",
+            "health-backend": "active/running",
+            "reva-laya": "active/running"
+          },
+          "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+          "state": "BACKEND_READONLY_VERIFIED"
+        }
+      },
+      "ota_validate": {
+        "run_id": 41418326357,
+        "conclusion": "success"
+      },
+      "ota_publish": {
+        "run_id": 41418760453,
+        "conclusion": "success",
+        "server": {
+          "artifact": {
+            "assets": [
+              "-iq30lV4GbK_5QCeRoRO-nFwzxd753NdQ6oqwSlfHVQ",
+              "0Dpc16Zu8QxRR5FvnVh4stCgpa1G9AWjHNmWfvqlWv0",
+              "0FydMNefRaeOVYWi5-xnxqBqiD3ZE34dUFnoyHszznY",
+              "0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb-LCkA",
+              "3Fa5dr1FY44RJfZol0NSXmiGrgvvLI9GUZlIM2hagx8",
+              "3Y7kA7vL9eWLd9ykrAPrr6E6KEo9h9jqnKSQQ1qG-kg",
+              "78edo8TJffsVcb_2IClYqwUpxaox6DkmAFeLPjWdFEc",
+              "7xP8DfxS7COBdYX9fhCfvfWTo7JUnEDOcaybDtoSzCw",
+              "7xSfCL3S_wmk4shXNHa3sPP7sVtiOVSt5ZiZ5xdb7do",
+              "AriOrZGt5XENfKGO20Omllpx2TcywG8pDMB6bdJJ6Yc",
+              "BvTQCSPqJGl99d8LkphBdZkdi9JXdqAtUxu0AeOT7EI",
+              "CKnVtRPPlH4i7egemoQ72Nd2OmNETNIUhL_edmLMZUM",
+              "FvkimFh7qytGm8E8DfxtXRcbyhC60MkFOtFrwCO_cX0",
+              "GZbLuodu68L0o3kUlVL3movAjfgAWW98KjpH6XRhsBE",
+              "IyXFOnPlTEOMu8YN_92LUT1HG6QuL1ZxPvQEuV4Mofw",
+              "J_TSKdRAklv3IS1d__pF1Zayx7O7KQXJa4ObIIGh2-s",
+              "K3RDqaWOksoRpXW9wRWYYVpX3eMFzYznDWAmBrMCzZg",
+              "LN_rjlzN55dvcBL7jM5zryIpAp7iHU8VCf7RFIccbNg",
+              "MfCZwT9uS6BfG0cb8XDLVJMklHQiKRc3LePKXPKeaho",
+              "P1Ad2wXHCCm7tRz-nKn_9X854GBFfCV7PM8l33Z_CHA",
+              "PQavHzHNg6znomWgFLj7Xe4Vdw7KyPelVVUZDmJ-A8I",
+              "Pd0Hc-0n4j0leJ8wFzGzrEVa2L5aonoKG4OPicbSciU",
+              "VwohI4CsLEQxbZlLKr6PvwztC0aXZNClgSa9buvFrp0",
+              "YeirpaTpgf4iz3yOi82-oAR251xiw38Bv37jM2HWhCg",
+              "ZPn7YjaB8RImHpovl4JngkOfOSXeqPRKV9Hk25W6bP0",
+              "ajQS8FjH2N_ZFwxB6FreSOUVbsuJNWEQylegonc0r0Y",
+              "beyjK1a5f6H6h_rNaZa0bMRRkKVTQA5_698dIJMJm1c",
+              "cIp5z1YbiipIUM4CVFhNOlIxBGvgj7f630tu39sxF4s",
+              "fh3QPdTOkLZYBSVUzXRZ3xZxZxc4mlUvpMbVal-JM-Y",
+              "ku2BdqyMtENipfxqNwNiagAGrGt8snLumfWFAmLsBw4",
+              "lNq58dWxPqB2nRJKLaDQJDPzuZ1t6loHwERqdxWBAMA",
+              "m8TZ9emU53S9w--amofadJr19QuGFHPvfRzD1vgikmc",
+              "mtuMXvypMuK3MrKT2oE70uMZUiYwVrzp4lF_7A8LanY",
+              "pcrrTTlcXjLx1aMKyzgq68Zk8brf0UkxmQfyIV5OPiY",
+              "ppou21tsYLhDPVttI8afUgzNimAvP2DnmW5Ilxi8F1w",
+              "q1YT0s5w-mfFkm6DE1NmSUUZn8GV-m_nbF_jzsRS4xo",
+              "qbTEm7KZ4FtfbEgef7XniUPSeTJJoMiHSrV0otHqZ1U",
+              "qljzPyOaD7AvXHpsRcBD16msmgkzNYBmlOzW1O3A1qg",
+              "rPaRlXo7zOfRlYVtzpilzxTc4QvqKKpcELNVDAeOI7U",
+              "sbwYEMoj4sOM12lxxDWR1yYWEGEkDYt5KwV1cZbdtSg",
+              "tDSnzxjC1M50fHCULqL-4tRBLZOWftkrNy-BC7kmHqU",
+              "vIRLWwLT862rtRTeTgwCCCUtMSNBO9A_Yof6RGrO6Fk",
+              "wV7HKnTROVchGAgxPVw13rf3YGxtItvdzrAADU4FR60",
+              "xOVOagp95jaqFTN4-8YupKQWlb_t-Af5Dfexj_1zP2c",
+              "xlG4pn0xkyBvYiw8Ow-8pKLycnEIxCErUsHiouhMmzE",
+              "y9-SE-VfZcSNB2rNhCO3ya7k8bgRAf9slaOMTNioZGE",
+              "yGu0he7mh-BsUA_EI09RpnhLRTDCrhHQx2SBEQvOMQU"
+            ],
+            "launch": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE"
+          },
+          "business_lease_absent": true,
+          "completed": {
+            "intent_sha256": "2391a2921a8d156c404f76e369b1c5632f9005643043a18130a7c04446d8ae02",
+            "receipt_sha256": "535c69521b0f070c341ffcd2700909d7bccbeda320dc36074491c57e0b9eaf7c",
+            "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+            "state": "SUCCEEDED"
+          },
+          "completed_raw_sha256": "3eea85be86613c2fde17fc668c0ba2846e58d0b64ed237b4c59e7ec96f126a62",
+          "receipt": {
+            "group_id": "46c03706-0d29-4d01-8b94-36862aaa5f3e",
+            "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+            "update_id": "01a19b8e-811d-799e-a76b-178600758324"
+          },
+          "runtime": "1.3.6",
+          "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+          "state": "OTA_SERVER_READONLY_VERIFIED"
+        },
+        "public_manifest": {
+          "asset_count": 47,
+          "channel": "production",
+          "created_at": "2026-11-02T09:19:30.077Z",
+          "group_id": "46c03706-0d29-4d01-8b94-36862aaa5f3e",
+          "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+          "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+          "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+          "runtime": "1.3.6",
+          "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+          "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+          "update_id": "01a19b8e-811d-799e-a76b-178600758324"
+        }
+      },
+      "mobile_boundary": {
+        "baseline_sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "candidate_sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+        "mobile_shared_trees_unchanged": true,
+        "trees": [
+          "040000 tree 61fd57ce121cf01bbacad55d56dbcfbf9cc72417\tmobile",
+          "040000 tree 4bfc7001affb763d9fa08dced80111a92aec83d9\tpackages/shared"
+        ],
+        "publication_reason": "Explicit user instruction to publish and OTA in ongoing task; performance changes are backend-only"
+      },
+      "stage_receipt_sha256": "35058025d62241cbd1ba2130411b2f63361ce8710f78d25aacfb52e47575d962",
+      "refresh_receipt_sha256": "ded5879cddab4f6354bb8bae45e8c5c045569c4b9393f99cb26b77fad658479e",
+      "rotation_receipt": {
+        "retired_sha": "ddb7b7796e450105acdcdf755f74fc4a3c25b735",
+        "sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+        "state": "INSTALLED"
+      },
+      "rotation_g4_sha256": "3f096dd4068984792d614b3add71171be3b76530a8f62c2cbda10ff13beb0d29",
+      "rotation_draft_no_go": {
+        "initial_script_sha256": "520d389a994104f2788df9ae2c64474a144592cfec93740ba84de0daad8e3b92",
+        "verdict": "NO-GO",
+        "reason": "Old short name in local PREFIX and APPROVAL paths; fixed before any attempt.",
+        "corrected_script_sha256": "584217c784577ca02a56c43dfca2e3ba97dff23b80ee39ce2e8a1749cbe6752c",
+        "executed": false
+      },
+      "temporary_live_marker_cleanup": {
+        "name": "HARNESS_LIVE_LLM_EVAL_CONFIRMED",
+        "owned_sha": "741feaf11a3d2e08d2dafa765e8c3039d1572329",
+        "before_matched": true,
+        "absent_after": true
+      },
+      "runtime_flag": {
+        "key": "DOMAIN_PROMPT_OPTIMIZATION",
+        "enabled": true,
+        "service_pid_active": true,
+        "process_override_present": true,
+        "file_matches": 1,
+        "working_directory": "/opt/health-app/backend"
+      },
+      "g6_automatic": "PASS",
+      "device_ota_received": "UNVERIFIED",
+      "native_visible_latency": "UNVERIFIED; Mac locked; no GUI bypass attempted",
+      "production_request_latency": "UNVERIFIED; synthetic Agent benchmark is not production end-to-end latency",
+      "all_requests_under_3_seconds": false
     }
   }
 }
