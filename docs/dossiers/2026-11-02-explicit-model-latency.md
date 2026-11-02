@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | released_acceptance_partial |
-| 当前阶段 | 第四轮已合入 main、部署后端并发布 OTA；App 三秒与设备接收验收仍未完成 |
+| 当前阶段 | 第五轮已合入 main、部署后端并发布 OTA；App 三秒与设备接收验收仍未完成 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 5806a685d880cb258f2733fe40cef0a9849cc195 |
 
@@ -448,7 +448,7 @@ G6仅线上发布证据通过；真实用户请求分布、HTTP发送至接收�
 `docs/reviews/2026-11-02-common-prompt-latency.json`。后续文档提交只收尾证据，不重部署同一运行时代码。
 
 
-## 第五轮：周饮食与睡眠记录查询（进行中）
+## 第五轮：周饮食与睡眠记录查询（过程记录，发布结果见下）
 
 基线主干 `dd69f76f19696a86f34b2c9789a6c0a949fde49b`。用户要求继续优化其他链路；
 沿用已授权隔离工作区、发布与 OTA。常见场景补测 6 类 × 两种保存模型偏好，使用真实
@@ -489,3 +489,26 @@ System Map、diff、定向 Ruff 通过。最初夹具冲突、旧单日 renderer
 修订仅同步预期行为、添加该文件并更新全量策略摘要。保留旧 r-other deadline 校准原始
 选择摘要，不把新增测试冒充历史计时；超时、重试、分片数量和已有测试均不变。
 本地修订验证 178 passed / 3 skipped（15.96 秒）。旧失败 CI 保留，新 SHA 重新完整验证。
+
+
+### 第五轮发布收尾（最新状态）
+
+本轮最终候选 `3f5e768ea48ce71232a3e43579e11a355752b370` 已合入 main、部署后端并发布 OTA。
+以上待验证、未发布状态均为过程记录；失败 CI 与 NO-GO 保留，不替代最终版本证据。
+运行代码与独立审查的 `302347fd0` 一致，最终窄审 G4 GO；完整过程与可复现测量脚本快照见
+`docs/reviews/2026-11-02-range-record-latency.json` 的 `release_evidence`。
+
+- [完整 CI 41457300197](https://github.com/itsoso/health-llm-driven/actions/runs/41457300197) 第一次运行 32/32 成功，真实 PostgreSQL 两分片通过，新增范围查询 44 项全部通过、无跳过。
+- 最终精确 SHA 真实模型 Harness 闸通过（64.31 秒）；最终八次查询均完整返回七天记录、0 模型调用，首条有效内容 **237–711ms**，完整 **267–825ms**。这是合成账号、临时 SQLite、真实 Pi/Gateway 的进程内测量，不含 HTTP、原生绘制或生产长尾。
+- [发布预检 41459191517](https://github.com/itsoso/health-llm-driven/actions/runs/41459191517) 与 [后端发布 41463012474](https://github.com/itsoso/health-llm-driven/actions/runs/41463012474) 成功。独立回读确认生产 HEAD 为最终候选、工作树干净、授权一致、服务运行、内外 health 正常、发布锁已释放；实际运行进程 `DOMAIN_PROMPT_OPTIMIZATION=true`。
+- [OTA validate 41464329385](https://github.com/itsoso/health-llm-driven/actions/runs/41464329385) 与 [OTA publish 41464644742](https://github.com/itsoso/health-llm-driven/actions/runs/41464644742) 成功。发布只执行一次；服务器回执与公开 Expo manifest 独立核验通过，production/iOS/runtime `1.3.6`，group `42660e1b-1a7d-404b-898d-e0b528041e49`，update `01a19cbd-e13d-7406-aaa6-9626afac834c`，47 个资源与制品匹配。
+
+后端 completed 回执 SHA256 为 `cf0b5218f47c0c75e4276ae923570719fcc39ac6159317a6c94cc76062230485`；
+OTA completed 为 `f28a2177383228c79a8f3b1396dd245bcec8408596c17029513b2e9750a8c0f3`；
+OTA verified 为 `100eb7ac5313586147a6eae0f811698ee91063fedd5eaa4ac52512065062ed5a`。
+准备阶段的 staging、只读凭据刷新、工作区授权轮换均保留独立 GO 和一次执行回执；没有备份、恢复演练或重发。
+本轮性能改动来自后端，Mobile/shared 运行代码未改；按用户持续明确授权发布同候选 OTA。
+
+G5 发布完成、G6 自动线上发布核验通过。App 点击至实际显示、模拟器交互、设备 OTA 接收、
+生产 P95/P99 仍未验证，不能宣称所有请求已达三秒。提速仅覆盖新会话完整匹配的周/日期范围事实查询，
+历史纠正、分析与临床判断仍保留模型路径。基线中的饮食评价、综合分析和睡眠趋势图问题尚未修复，继续保留待办。

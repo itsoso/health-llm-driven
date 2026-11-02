@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "status": "in_progress",
+  "status": "released_acceptance_partial",
   "baseline_sha": "dd69f76f19696a86f34b2c9789a6c0a949fde49b",
   "synthetic_only": true,
   "environment": "ephemeral SQLite; real providers and Pi/Gateway; saved preference; seven App capabilities; no HTTP/native rendering timing",
@@ -991,5 +991,1140 @@
     "omitted records or fabricated health claims",
     "increased errors or worse tail latency"
   ],
-  "cost": "No provider token billing estimate; record actual call count only"
+  "cost": "No provider token billing estimate; record actual call count only",
+  "release_evidence": {
+    "candidate_sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+    "reviewed_runtime_sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+    "measurement_runs": [
+      {
+        "sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+        "raw_sha256": "848a9e3d30e5aed973ef35aa4c5c04cffd762a22da07e6c4a3d6a6a9a601afba",
+        "rows": [
+          {
+            "case": "diet_week__qwen3.8-max",
+            "repeat": 0,
+            "first_ms": 584,
+            "total_ms": 687,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 106,
+              "pre_llm_ms": 76,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 2,
+                "opener_ms": 2,
+                "system_prompt_ms": 15,
+                "kb_ms": 7,
+                "inspect_ms": 0,
+                "history_ms": 22,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 476,
+              "end_to_end_total_ms": 617,
+              "end_to_end_ttft_ms": 583,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__deepseek-v4.1-flash",
+            "repeat": 0,
+            "first_ms": 251,
+            "total_ms": 281,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 1
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 3,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 247,
+              "end_to_end_total_ms": 258,
+              "end_to_end_ttft_ms": 250,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__qwen3.8-max",
+            "repeat": 0,
+            "first_ms": 246,
+            "total_ms": 277,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 3,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 243,
+              "end_to_end_total_ms": 255,
+              "end_to_end_ttft_ms": 245,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__deepseek-v4.1-flash",
+            "repeat": 0,
+            "first_ms": 242,
+            "total_ms": 273,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 239,
+              "end_to_end_total_ms": 251,
+              "end_to_end_ttft_ms": 242,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__qwen3.8-max",
+            "repeat": 1,
+            "first_ms": 243,
+            "total_ms": 272,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 239,
+              "end_to_end_total_ms": 250,
+              "end_to_end_ttft_ms": 242,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__deepseek-v4.1-flash",
+            "repeat": 1,
+            "first_ms": 220,
+            "total_ms": 249,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 217,
+              "end_to_end_total_ms": 227,
+              "end_to_end_ttft_ms": 219,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__qwen3.8-max",
+            "repeat": 1,
+            "first_ms": 238,
+            "total_ms": 267,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 234,
+              "end_to_end_total_ms": 246,
+              "end_to_end_ttft_ms": 237,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__deepseek-v4.1-flash",
+            "repeat": 1,
+            "first_ms": 245,
+            "total_ms": 274,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 242,
+              "end_to_end_total_ms": 253,
+              "end_to_end_ttft_ms": 244,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          }
+        ]
+      },
+      {
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "raw_sha256": "328fcc2e4ea05bbbf1d577e81f8b6316b42dccafc94428d9e6513197988fd074",
+        "rows": [
+          {
+            "case": "diet_week__qwen3.8-max",
+            "repeat": 0,
+            "first_ms": 711,
+            "total_ms": 825,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 76,
+              "pre_llm_ms": 70,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 2,
+                "opener_ms": 2,
+                "system_prompt_ms": 14,
+                "kb_ms": 6,
+                "inspect_ms": 0,
+                "history_ms": 20,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 634,
+              "end_to_end_total_ms": 759,
+              "end_to_end_ttft_ms": 710,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__deepseek-v4.1-flash",
+            "repeat": 0,
+            "first_ms": 247,
+            "total_ms": 278,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 1
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 3,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 243,
+              "end_to_end_total_ms": 254,
+              "end_to_end_ttft_ms": 246,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__qwen3.8-max",
+            "repeat": 0,
+            "first_ms": 250,
+            "total_ms": 281,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 3
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 247,
+              "end_to_end_total_ms": 259,
+              "end_to_end_ttft_ms": 250,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__deepseek-v4.1-flash",
+            "repeat": 0,
+            "first_ms": 238,
+            "total_ms": 267,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 235,
+              "end_to_end_total_ms": 246,
+              "end_to_end_ttft_ms": 237,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__qwen3.8-max",
+            "repeat": 1,
+            "first_ms": 237,
+            "total_ms": 267,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 1
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 233,
+              "end_to_end_total_ms": 244,
+              "end_to_end_ttft_ms": 236,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "diet_week__deepseek-v4.1-flash",
+            "repeat": 1,
+            "first_ms": 242,
+            "total_ms": 271,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮食记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"meal\",\"label\":\"餐次\"},{\"key\":\"food\",\"label\":\"内容\"},{\"key\":\"nutrition\",\"label\":\"营养\"}],\"rows\":[{\"date\":\"2026-10-27\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-28\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-29\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-30\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-10-31\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-01\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"},{\"date\":\"2026-11-02\",\"meal\":\"晚餐\",\"food\":\"合成番茄\",\"nutrition\":\"热量 200 kcal\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-10-27；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n2. 2026-10-28；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n3. 2026-10-29；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n4. 2026-10-30；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n5. 2026-10-31；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n6. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n7. 2026-11-02；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "diet",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 1
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 238,
+              "end_to_end_total_ms": 249,
+              "end_to_end_ttft_ms": 241,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__qwen3.8-max",
+            "repeat": 1,
+            "first_ms": 245,
+            "total_ms": 275,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 7,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 0,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 242,
+              "end_to_end_total_ms": 253,
+              "end_to_end_ttft_ms": 244,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          },
+          {
+            "case": "sleep_week__deepseek-v4.1-flash",
+            "repeat": 1,
+            "first_ms": 249,
+            "total_ms": 279,
+            "outcome": "complete",
+            "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27；睡眠时长 450 分钟；评分 74 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-28；睡眠时长 445 分钟；评分 75 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-29；睡眠时长 440 分钟；评分 76 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-30；睡眠时长 435 分钟；评分 77 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-10-31；睡眠时长 430 分钟；评分 78 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-01；睡眠时长 425 分钟；评分 79 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知\n\n2026-11-02；睡眠时长 420 分钟；评分 80 分；深睡未知；REM未知；浅睡未知；清醒未知；入睡时间未知；醒来时间未知",
+            "tools": [
+              {
+                "name": "health_query",
+                "args": {
+                  "dimension": "sleep",
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                "ms": 2
+              }
+            ],
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 8,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 2,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 0,
+              "first_useful_ms": 246,
+              "end_to_end_total_ms": 257,
+              "end_to_end_ttft_ms": 249,
+              "model_call_count": 0,
+              "tool_total_ms": null,
+              "prompt_context_profile": null,
+              "composed_synthesis_used": null
+            },
+            "quality": {
+              "fallback_reasons": [],
+              "finish_reason": "stop",
+              "output_quality_flags": [],
+              "medical_boundary_flags": []
+            },
+            "model_call_count": 0
+          }
+        ]
+      }
+    ],
+    "reviews": [
+      {
+        "sha256": "359d9fbf07f3ce1bc3aadf3237e86e6f279c8cff10959d4ca063d15053b7aa6c",
+        "report": {
+          "base_sha": "dd69f76f19696a86f34b2c9789a6c0a949fde49b",
+          "candidate_sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+          "file_sha256": {
+            "backend/app/services/agent_executor.py": "4b08287aa7d4b20669f514381b5c219a7ef460a808795473782d4a1473d2c91e",
+            "backend/app/services/agent_kernel/read_task_scope.py": "a97adae5617cf031816aec583739b4a07bfbe547443f80a3d0f425defca3c41b",
+            "backend/app/services/agent_record_lookup_render.py": "88ed921a0388fe19ee58e97cc92135c70ccecb66c6d59d02a2c6537f6f64b259",
+            "backend/tests/test_agent_record_lookup_render.py": "1ca013fd57433aeb880531e2945033bc351f34da661f6733582ef7c640489251",
+            "backend/tests/test_range_record_lookup.py": "c1ffe851bea31cf4e9898697e4871f513335c5393d3ae69df32c9f135efadcae",
+            "backend/tests/test_simple_lookup_latency.py": "a3ea29af624a1861a809f8fc26149352ae65cccc1ca5a96042f006146fdde9c3",
+            "docs/dossiers/2026-11-02-explicit-model-latency.md": "29ae6a95c8de69b09f0dfe00e6c3d36e92fe80958360fc741c19bffb9b73cba1",
+            "docs/reviews/2026-11-02-range-record-latency.json": "7b32251ea40ae0d67e98145b695f716803482485f1b5f34ce98d21613d3d613d",
+            "scripts/run_postgres_ci.py": "c1fdf8eeaed06da28ff53ac7a1fcd9338735d37cbf08190d150df3e64c9c539d",
+            "scripts/test_run_postgres_ci.py": "071ed7ef3ef4e8f796d10d92e9f7d9dd4881859ebc7f4170013aa3d2d29c7dca"
+          },
+          "findings": [],
+          "limits": [
+            "Code G4 GO only; exact full CI including PostgreSQL, release and OTA approvals remain separate. Independent tests used ephemeral SQLite; no local PostgreSQL acceptance claim.",
+            "Synthetic latency and model count evidence do not establish phone rendering, production load or universal three-second SLA. Other common-prompt slow/failed cases remain unresolved.",
+            "No staging/credential/rotation/deployment action or approval in this report."
+          ],
+          "review_scope": "Only this fixed range-record followup against dd69; no repository edits or production operation.",
+          "reviewer": "diet_detail_safety_review",
+          "validation": {
+            "artifact_sha256": {
+              "/private/tmp/reva-range-302347fd0-independent-tests.log": "ee72b878302d8e3664f33a3377edef860a1b36472cd2634aa0f303cffc86abd8",
+              "/private/tmp/reva-range-302347fd0-panel-probe.log": "1a38f27c36cbf14b2d7469b352dc2b4fe81161712a9a1cbbb498cdaf07247cff",
+              "/private/tmp/reva-range-302347fd0-panel-probe.py": "43cd4d10c1acd8a5aa4e78c3ccb658fcb082829f0fe88721892afd3d24ee1482",
+              "/private/tmp/reva-range-302347fd0-scope-probe.log": "05ce274b478b688634c5a87146e226bcf286799dc1ce8c68a958b2c56fcbac8b"
+            },
+            "independent_panel_flagoff_probe": "1 passed, 6 warnings, 1.87s; four scenarios: diet/sleep each ordinary two model calls and Panel five calls, bounded facts and identical stream/saved output",
+            "independent_scope_probe": "30 cases passed: Asia/Shanghai, America/Los_Angeles and UTC, 1/7/31-day bounds, owner mismatch, material and mixed intent",
+            "targeted_tests": "173 passed, 6 warnings, 27.81s: range lookup, record render, simple lookup latency"
+          },
+          "verdict": "GO",
+          "verified_boundaries": [
+            "Closed range grammar fullmatches original current-turn text. Quoted, fenced, indented or mixed/clinical/write text does not gain the new range scope. Existing single-day and water semantics preserved.",
+            "Owner/context/envelope agreement and server-resolved business calendar/timezone supply the query. Model days cannot expand frozen date bounds; owner and explicit conflicting dates/timezones are rejected.",
+            "New conversation alone may skip planner/synthesis after Pi/Gateway and successful attested completion. History keeps model planning and correction; pending/attachment/quality/failure guards remain.",
+            "Diet preserves individual records and duplicate names across dates; sleep preserves each returned wake date, zero versus unknown fields, safe display precision and escaped stored strings. Unsupported evidence falls back rather than becoming deterministic facts.",
+            "Shared result validation protects early and final cards; exceptions/truncation/wrong-window results cannot complete or expose cards. Existing source merger and bounded adapter remain unchanged.",
+            "Flag-off and Panel preserve attested range summaries with normal model path and stream/persistence equality. PostgreSQL coverage selector added without removing prior coverage."
+          ]
+        }
+      },
+      {
+        "sha256": "98c76d908f4511e37951ba390f04543b506ba88e9188a3b9e86bae842b3cd433",
+        "report": {
+          "base_sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+          "candidate_sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+          "file_sha256": {
+            ".github/ci/backend-pytest-shards.json": "2093855bd3face6ae094683c502a9dee8cb450c1ce0481448be4aac4ecc7034e",
+            "backend/tests/test_agent_prompt_budget_execution.py": "3497fdbe21ccacd955b3fd39e48dee81fc0ce4147e3ae797b68d33bb08921290",
+            "docs/dossiers/2026-11-02-explicit-model-latency.md": "1a62bbee26f2f1a2c5233c8e23c71809bd42d2d6373e4d092d7c835b1a101f18",
+            "scripts/test_ci_timing_refresh.py": "b2b51a1e17b6c0ac204b072d19277c0b77a794c93fb89f32121a4ee7ad7bcc25"
+          },
+          "findings": [],
+          "limits": [
+            "Code G4 GO only. New exact candidate full CI/PostgreSQL/live evidence and release approvals remain separate; no staging approval issued.",
+            "Earlier synthetic timing/native acceptance limits remain. No repository or production writes by reviewer."
+          ],
+          "reviewer": "diet_detail_safety_review",
+          "scope": "Narrow four-file CI/test/documentation repair. Retains fixed 302347fd0 runtime code review as basis.",
+          "validation": {
+            "artifact_sha256": {
+              "/private/tmp/reva-range-3f5e768ea-budget-tests.log": "6a8bab10d4ecc4ef44077ddc2b40477a743938abd2662e95267135d552010ab4",
+              "/private/tmp/reva-range-3f5e768ea-contract-tests.log": "979ce6d8efd6595d29ab9165995207ea2a3cad273650707c975ddbdbed8ed576",
+              "/private/tmp/reva-range-3f5e768ea-coverage-test.log": "f3b1c8644b7f934dbb9abed02def2c11d867a11bf4f2bfe0ba4f9488f881d7d1",
+              "/private/tmp/reva-range-3f5e768ea-timing-tests.log": "4fd17dbd3829b07b50372e2385828e7d19517bc64fc0d2d32b4e53cf6cba33cc"
+            },
+            "coverage_contract": "1 passed, 0.14s",
+            "prompt_budget_contract": "3 passed, 2.27s",
+            "reviewer_command_error": "Initial combined invocation referenced coverage test in wrong file and exited 4 without running cases; retained log. Correct file and budget selector subsequently passed. Not a candidate test failure.",
+            "timing_contract": "46 passed, 0.48s"
+          },
+          "verdict": "GO",
+          "verified": [
+            "Production runtime byte-identical to approved 302347fd0.",
+            "Weekly factual diet expected-model flag now false, while complete/preplanned/rendered/no-write assertions remain and analysis still requires a model.",
+            "Shard catalog adds exactly one range test path; no existing selector removed and no timeout/attempt/estimate/scheduling changes.",
+            "Current full-policy digest binds new selection. Historical calibration removes only that exact new path, asserts it occurs once, and validates the unchanged prior evidence hash and worker limits.",
+            "Original failed CI retained; documentation requires fresh exact-SHA CI."
+          ]
+        }
+      }
+    ],
+    "ci_runs": [
+      {
+        "id": 41455673857,
+        "sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+        "status": "failure",
+        "causes": [
+          "obsolete model-required assertion",
+          "range test omitted from explicit r-other shard"
+        ],
+        "postgres": "success"
+      },
+      {
+        "id": 41457300197,
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "status": "success",
+        "jobs_passed": 32
+      }
+    ],
+    "live_gates": [
+      {
+        "sha": "302347fd01564912f11325c81b65eeefa85b5f92",
+        "configuration": "existing_provider_allowlist",
+        "database": "sqlite_memory",
+        "elapsed_seconds": 70.69,
+        "exit_code": 0,
+        "log_sha256": "e1d64b4e13b8e75f7153c9d495a2b9050e895492e586f5c586cbe885f45f826f",
+        "synthetic_only": true
+      },
+      {
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "configuration": "existing_provider_allowlist",
+        "database": "sqlite_memory",
+        "elapsed_seconds": 64.31,
+        "exit_code": 0,
+        "log_sha256": "0cf233f6ac8b9cec18aa520ee5a738e7c9d496780b688260510d63a4d06687e2",
+        "synthetic_only": true
+      }
+    ],
+    "postgres": {
+      "ci_run": 41457300197,
+      "attempt": 1,
+      "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+      "range_tests": 44,
+      "all_passed": true,
+      "summary": {
+        "databases": [
+          "reva_ci_test_596d2f29ec1f4f11837a075c53d4d5f8_01",
+          "reva_ci_test_596d2f29ec1f4f11837a075c53d4d5f8_02"
+        ],
+        "elapsed_seconds": 460.033,
+        "exit_codes": [
+          0,
+          0
+        ],
+        "state": "passed"
+      },
+      "junit_sha256": {
+        "shard-1.xml": "70915b8d0c58195d23d5f209192547a820c62e64ea17c54faaa9800344dc5c3e",
+        "shard-2.xml": "56095e2b5bc4c2f04b64dc1e0b8c6106474f2d23a00d7563978126f51e6a6260"
+      }
+    },
+    "release_validate": {
+      "run_id": 41459191517,
+      "state": "success"
+    },
+    "stage_approval_sha256": "a327eb68f0e20e9fe9bd53c25089548147e691df9bb8b31ae450ee7c1fa7a49b",
+    "staging": {
+      "receipt": {
+        "original_ota_preserved": true,
+        "production_objects": "/opt/health-app/.git/objects",
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "source": "/var/lib/reva-release/bootstrap/3f5e768ea48ce71232a3e43579e11a355752b370/source",
+        "state": "CANONICAL_STAGED"
+      },
+      "receipt_sha256": "87da3f55aa0fd8c8c2ba000f091f0526797a3a6f71643f2ec631ebe91cf9248a"
+    },
+    "credential_refresh": {
+      "state": "READ_CREDENTIAL_REFRESHED",
+      "receipt_sha256": "3f8d04eae438938503e90c42b0694fa36c4e0f5dea711750ee95429678236699",
+      "attempt": "range-3f5e768ea-read-credential-v1"
+    },
+    "local_preflight_rejections": [
+      {
+        "step": "refresh invocation",
+        "reason": "missing --apply rejected at first main guard; no audit or remote action",
+        "corrected": "single business invocation with --apply succeeded"
+      },
+      {
+        "step": "rotation static review",
+        "rejected_sha256": "8b49090e7aa2dd98cf8cb5feb9f9eaa3467eeb429961a2ad76d3e07f0d3b39f9",
+        "reason": "old short SHA in local audit and approval paths",
+        "corrected_sha256": "0f9509706572f3ae21bca21a6505d217fde9d1e00e9bfbf07798daa09f769995",
+        "verdict": "GO before execution"
+      }
+    ],
+    "rotation_approval_sha256": "63505c674ee611311e4f2f034aa7b03065b591bde933d017bf7d4baca81b6d33",
+    "rotation": {
+      "receipt": {
+        "retired_sha": "cb6b698d033c5aa1fe8edcca13a4f720899b66c4",
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "state": "INSTALLED"
+      },
+      "receipt_sha256": "f219a4e39ddc1b66d43e568d01372de90928d7be71dc4b52942e6b1d85b11bcc"
+    },
+    "backend_release": {
+      "run_id": 41463012474,
+      "state": "success",
+      "acceptance": {
+        "authorization_matches": true,
+        "backend_completed": {
+          "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+          "state": "SUCCEEDED"
+        },
+        "backend_completed_sha256": "cf0b5218f47c0c75e4276ae923570719fcc39ac6159317a6c94cc76062230485",
+        "business_lease_absent": true,
+        "local_health": "healthy",
+        "production_clean": true,
+        "public_health": "healthy",
+        "services": {
+          "celery-beat": "active/running",
+          "celery-worker": "active/running",
+          "health-backend": "active/running",
+          "reva-laya": "active/running"
+        },
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "state": "BACKEND_READONLY_VERIFIED"
+      },
+      "runtime_flag": {
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "DOMAIN_PROMPT_OPTIMIZATION": true
+      }
+    },
+    "ota_validate": {
+      "run_id": 41464329385,
+      "state": "success"
+    },
+    "reproduction": {
+      "note": "Runner snapshots use synthetic accounts and disposable SQLite. Paths identify the measured workspace; a replay must bind an isolated checkout to the recorded SHA and supply provider credentials privately. Do not substitute these for production or native acceptance.",
+      "runner_snapshots": [
+        {
+          "name": "reva-other-chain-baseline.py",
+          "sha256": "c2618f0d656638538ab458cd377b628ad0ae767492e05612236b3ad52b46c028",
+          "source": "import os\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path('/private/tmp/reva-diet-record-release-20261101')\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nif len(sys.argv)>2:\n for name,path in [('app.services.llm.model_registry','backend/app/services/llm/model_registry.py'),('app.services.agent_executor','backend/app/services/agent_executor.py')]:\n  parent=importlib.import_module(name.rsplit('.',1)[0])\n  source=subprocess.check_output(['git','show',sys.argv[2]+':'+path],cwd=ROOT)\n  spec=importlib.util.spec_from_loader(name,loader=None);module=importlib.util.module_from_spec(spec);module.__file__=str(ROOT/path)\n  sys.modules[name]=module;setattr(parent,name.rsplit('.',1)[1],module);exec(compile(source,str(ROOT/path),'exec'),module.__dict__)\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nMODELS=['qwen3.8-max','deepseek-v4.1-flash']\nPROMPTS=[('diet_week','查询我最近7天的饮食记录'),('sleep_week','查询我最近7天的睡眠记录'),('diet_review','评价我昨天的饮食记录'),('combined_analysis','分析我最近7天的睡眠和饮食记录。'),('sleep_chart','绘制本周睡眠时长趋势图'),('spo2_chart','绘制本周血氧饱和度数据')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip() == 'dd69f76f19696a86f34b2c9789a6c0a949fde49b'\n assert not subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(1):\n   for case,prompt,model in CASES:\n    calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'selected_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=model;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured((actual:=original_user(uid,db,**kw)).model,actual)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(90):\n        async for e in ex.run_stream(user.id,prompt,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':ex._prompt_context_profile}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','baseline_sha':'dd69f76f19696a86f34b2c9789a6c0a949fde49b','decision_mode':'off','domain_prompt_optimization':True,'saved_preference':True,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n"
+        },
+        {
+          "name": "reva-range-3f5e768ea-latency.py",
+          "sha256": "9ced5646ba0c44cc7e3a8da3ed7a87ff3bbd2c61d55a047cd3eddfcff552ad9a",
+          "source": "import os\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path('/private/tmp/reva-diet-record-release-20261101')\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nif len(sys.argv)>2:\n for name,path in [('app.services.llm.model_registry','backend/app/services/llm/model_registry.py'),('app.services.agent_executor','backend/app/services/agent_executor.py')]:\n  parent=importlib.import_module(name.rsplit('.',1)[0])\n  source=subprocess.check_output(['git','show',sys.argv[2]+':'+path],cwd=ROOT)\n  spec=importlib.util.spec_from_loader(name,loader=None);module=importlib.util.module_from_spec(spec);module.__file__=str(ROOT/path)\n  sys.modules[name]=module;setattr(parent,name.rsplit('.',1)[1],module);exec(compile(source,str(ROOT/path),'exec'),module.__dict__)\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nMODELS=['qwen3.8-max','deepseek-v4.1-flash']\nPROMPTS=[('diet_week','查询我最近7天的饮食记录'),('sleep_week','查询我最近7天的睡眠记录')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n assert subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip() == '3f5e768ea48ce71232a3e43579e11a355752b370'\n assert not subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip()\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(2):\n   for case,prompt,model in CASES:\n    calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'selected_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=model;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured((actual:=original_user(uid,db,**kw)).model,actual)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(90):\n        async for e in ex.run_stream(user.id,prompt,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':ex._prompt_context_profile}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','baseline_sha':'3f5e768ea48ce71232a3e43579e11a355752b370','decision_mode':'off','domain_prompt_optimization':True,'saved_preference':True,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n"
+        }
+      ]
+    },
+    "ota_publish": {
+      "run_id": 41464644742,
+      "state": "success",
+      "server_proof": {
+        "artifact": {
+          "assets": [
+            "-iq30lV4GbK_5QCeRoRO-nFwzxd753NdQ6oqwSlfHVQ",
+            "0Dpc16Zu8QxRR5FvnVh4stCgpa1G9AWjHNmWfvqlWv0",
+            "0FydMNefRaeOVYWi5-xnxqBqiD3ZE34dUFnoyHszznY",
+            "0GOb5F0K8255gXJBnXvRc8S9Tynit2y7adsdEb-LCkA",
+            "3Fa5dr1FY44RJfZol0NSXmiGrgvvLI9GUZlIM2hagx8",
+            "3Y7kA7vL9eWLd9ykrAPrr6E6KEo9h9jqnKSQQ1qG-kg",
+            "78edo8TJffsVcb_2IClYqwUpxaox6DkmAFeLPjWdFEc",
+            "7xP8DfxS7COBdYX9fhCfvfWTo7JUnEDOcaybDtoSzCw",
+            "7xSfCL3S_wmk4shXNHa3sPP7sVtiOVSt5ZiZ5xdb7do",
+            "AriOrZGt5XENfKGO20Omllpx2TcywG8pDMB6bdJJ6Yc",
+            "BvTQCSPqJGl99d8LkphBdZkdi9JXdqAtUxu0AeOT7EI",
+            "CKnVtRPPlH4i7egemoQ72Nd2OmNETNIUhL_edmLMZUM",
+            "FvkimFh7qytGm8E8DfxtXRcbyhC60MkFOtFrwCO_cX0",
+            "GZbLuodu68L0o3kUlVL3movAjfgAWW98KjpH6XRhsBE",
+            "IyXFOnPlTEOMu8YN_92LUT1HG6QuL1ZxPvQEuV4Mofw",
+            "J_TSKdRAklv3IS1d__pF1Zayx7O7KQXJa4ObIIGh2-s",
+            "K3RDqaWOksoRpXW9wRWYYVpX3eMFzYznDWAmBrMCzZg",
+            "LN_rjlzN55dvcBL7jM5zryIpAp7iHU8VCf7RFIccbNg",
+            "MfCZwT9uS6BfG0cb8XDLVJMklHQiKRc3LePKXPKeaho",
+            "P1Ad2wXHCCm7tRz-nKn_9X854GBFfCV7PM8l33Z_CHA",
+            "PQavHzHNg6znomWgFLj7Xe4Vdw7KyPelVVUZDmJ-A8I",
+            "Pd0Hc-0n4j0leJ8wFzGzrEVa2L5aonoKG4OPicbSciU",
+            "VwohI4CsLEQxbZlLKr6PvwztC0aXZNClgSa9buvFrp0",
+            "YeirpaTpgf4iz3yOi82-oAR251xiw38Bv37jM2HWhCg",
+            "ZPn7YjaB8RImHpovl4JngkOfOSXeqPRKV9Hk25W6bP0",
+            "ajQS8FjH2N_ZFwxB6FreSOUVbsuJNWEQylegonc0r0Y",
+            "beyjK1a5f6H6h_rNaZa0bMRRkKVTQA5_698dIJMJm1c",
+            "cIp5z1YbiipIUM4CVFhNOlIxBGvgj7f630tu39sxF4s",
+            "fh3QPdTOkLZYBSVUzXRZ3xZxZxc4mlUvpMbVal-JM-Y",
+            "ku2BdqyMtENipfxqNwNiagAGrGt8snLumfWFAmLsBw4",
+            "lNq58dWxPqB2nRJKLaDQJDPzuZ1t6loHwERqdxWBAMA",
+            "m8TZ9emU53S9w--amofadJr19QuGFHPvfRzD1vgikmc",
+            "mtuMXvypMuK3MrKT2oE70uMZUiYwVrzp4lF_7A8LanY",
+            "pcrrTTlcXjLx1aMKyzgq68Zk8brf0UkxmQfyIV5OPiY",
+            "ppou21tsYLhDPVttI8afUgzNimAvP2DnmW5Ilxi8F1w",
+            "q1YT0s5w-mfFkm6DE1NmSUUZn8GV-m_nbF_jzsRS4xo",
+            "qbTEm7KZ4FtfbEgef7XniUPSeTJJoMiHSrV0otHqZ1U",
+            "qljzPyOaD7AvXHpsRcBD16msmgkzNYBmlOzW1O3A1qg",
+            "rPaRlXo7zOfRlYVtzpilzxTc4QvqKKpcELNVDAeOI7U",
+            "sbwYEMoj4sOM12lxxDWR1yYWEGEkDYt5KwV1cZbdtSg",
+            "tDSnzxjC1M50fHCULqL-4tRBLZOWftkrNy-BC7kmHqU",
+            "vIRLWwLT862rtRTeTgwCCCUtMSNBO9A_Yof6RGrO6Fk",
+            "wV7HKnTROVchGAgxPVw13rf3YGxtItvdzrAADU4FR60",
+            "xOVOagp95jaqFTN4-8YupKQWlb_t-Af5Dfexj_1zP2c",
+            "xlG4pn0xkyBvYiw8Ow-8pKLycnEIxCErUsHiouhMmzE",
+            "y9-SE-VfZcSNB2rNhCO3ya7k8bgRAf9slaOMTNioZGE",
+            "yGu0he7mh-BsUA_EI09RpnhLRTDCrhHQx2SBEQvOMQU"
+          ],
+          "launch": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE"
+        },
+        "business_lease_absent": true,
+        "completed": {
+          "intent_sha256": "24a70f1365ad23e2cf3b1fff8017d06ee365817abbe528ede0dff188bc03d207",
+          "receipt_sha256": "100eb7ac5313586147a6eae0f811698ee91063fedd5eaa4ac52512065062ed5a",
+          "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+          "state": "SUCCEEDED"
+        },
+        "completed_raw_sha256": "f28a2177383228c79a8f3b1396dd245bcec8408596c17029513b2e9750a8c0f3",
+        "receipt": {
+          "group_id": "42660e1b-1a7d-404b-898d-e0b528041e49",
+          "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+          "update_id": "01a19cbd-e13d-7406-aaa6-9626afac834c"
+        },
+        "runtime": "1.3.6",
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "state": "OTA_SERVER_READONLY_VERIFIED"
+      },
+      "public_manifest_proof": {
+        "asset_count": 47,
+        "channel": "production",
+        "created_at": "2026-11-02T14:50:52.093Z",
+        "group_id": "42660e1b-1a7d-404b-898d-e0b528041e49",
+        "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+        "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+        "runtime": "1.3.6",
+        "sha": "3f5e768ea48ce71232a3e43579e11a355752b370",
+        "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+        "update_id": "01a19cbd-e13d-7406-aaa6-9626afac834c"
+      }
+    },
+    "acceptance_limits": [
+      "Eight synthetic in-process samples are not production P95/P99.",
+      "New-conversation closed factual diet/sleep range queries only; history retains model planning.",
+      "HTTP timing, native rendering, simulator interaction and device OTA reception remain unverified.",
+      "Diet review, combined analysis and sleep-chart baseline failures remain unresolved."
+    ]
+  }
 }
