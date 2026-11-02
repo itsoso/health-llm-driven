@@ -2069,7 +2069,7 @@ def _validated_genui_read_calls(tool_calls):
     result shapes keep their original builders; they cannot replace a bound
     query with an unbound summary.
     """
-    from app.services.agent_composed_read_completion import _validate
+    from app.services.agent_composed_read_completion import _TERMINAL, _terminal, _validate
     from app.services.genui import load_tool_result_json
 
     calls = []
@@ -2103,7 +2103,7 @@ def _validated_genui_read_calls(tool_calls):
                 calls.append((name, args, result))
                 continue
             if (not isinstance(queries, list) or not isinstance(results, list)
-                    or result_declares_explicit_failure(payload)
+                    or not _terminal(payload) or payload.get("status") not in _TERMINAL
                     or any(payload.get(k) for k in ("truncated", "has_more", "next_cursor"))
                     or any(not isinstance(q, dict) for q in queries)):
                 continue

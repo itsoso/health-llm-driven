@@ -23,7 +23,7 @@ def payload():
 def project(data=None, *, batch=False, chart_on=True, args=None):
     args = args or ARGS
     data = payload() if data is None else data
-    calls = [("health_query_batch", {"queries": [args]}, json.dumps({"results": [data]}))] if batch else [("health_query", args, json.dumps(data))]
+    calls = [("health_query_batch", {"queries": [args]}, json.dumps({"status": "success", "results": [data]}))] if batch else [("health_query", args, json.dumps(data))]
     return _genui_readout_fences(calls, table_on=False, diet_summary_on=False,
                                sleep_summary_on=False, medication_list_on=False, chart_on=chart_on)
 

@@ -2,7 +2,6 @@
 import json
 
 import pytest
-
 from app.services.agent_executor import _genui_readout_fences
 
 
@@ -45,7 +44,7 @@ def test_batch_keeps_verified_sibling_and_rejects_shifted_result():
     bad['window'].update(start_date='2026-09-14', end_date='2026-09-14')
     bad['records'][0].update(record_date='2026-09-14', total_sleep_duration=123456)
     text = '\n'.join(fences([('health_query_batch', {'queries': [sleep, diet]},
-                              json.dumps({'results': [bad, good]}))]))
+                              json.dumps({'status': 'success', 'results': [bad, good]}))]))
     assert 'Synthetic meal' in text
     assert '123456' not in text and '2026-09-14' not in text
 
@@ -62,7 +61,7 @@ def test_bound_payload_cannot_smuggle_legacy_unbound_sleep_summary():
 def test_batch_truncation_never_relabels_partial_envelope_as_complete(marker):
     query, payload = call()
     assert fences([('health_query_batch', {'queries': [query]},
-                   json.dumps({'results': [payload], marker: True}))]) == []
+                   json.dumps({'status': 'success', 'results': [payload], marker: True}))]) == []
 
 
 def test_bound_query_cannot_accept_legacy_daily_summary_without_window():
@@ -70,3 +69,12 @@ def test_bound_query_cannot_accept_legacy_daily_summary_without_window():
     payload = {'record_date': query['end_date'], 'total_calories': 123456,
                'meals': [{'food_items': 'Unverified meal', 'calories': 123456}]}
     assert fences([('health_query', query, json.dumps(payload))]) == []
+
+
+@pytest.mark.parametrize('status', ['pending', 'processing', 'unknown', None, False, {}])
+def test_nonterminal_batch_cannot_promote_children_to_completed_reads(status):
+    query, payload = call()
+    envelope = {'results': [payload]}
+    if status is not None:
+        envelope['status'] = status
+    assert fences([('health_query_batch', {'queries': [query]}, json.dumps(envelope))]) == []

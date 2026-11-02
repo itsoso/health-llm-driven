@@ -3233,6 +3233,11 @@
       "case": "sleep_analysis__qwen3.8-max",
       "verdict": "FAIL",
       "reason": "Visible answer misstated end date and inferred individual sleep sufficiency from sparse daily records."
+    },
+    {
+      "case": "mobile_caps_ccfc_candidate/deepseek/repeat2",
+      "verdict": "nonblocking_coherence_issue",
+      "reason": "Existing daily coverage filter removes an unsupported clause and leaves a dangling reference to two changes. Preserve as quality debt; six complete outcomes are not universal quality acceptance."
     }
   ],
   "mobile_caps_baseline": {
@@ -4265,5 +4270,631 @@
       "broad_regression": "1198 collected; interrupted intentionally after blocker reproduced, incomplete, not a pass claim"
     },
     "verdict": "NO-GO"
+  },
+  "mobile_caps_ccfc_candidate": {
+    "source_sha256": "0e09c7ecfc9a33e1a09d5ae8018a73cc0dfb35d910e908640c3a0f218d729eae",
+    "candidate_sha": "ccfc513917b83e2163faf184e4b4296f532c8e91",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 22683,
+            "synthetic_visible_text": "10/27–11/02 的 7 条 Garmin 睡眠记录显示：总睡眠时长从 450 分钟逐日降至 420 分钟；睡眠评分从 74 逐日升至 80。时长下降与评分上升同时出现，只能说明记录趋势，不能据此判断睡眠质量、恢复或是否达标。本次仅覆盖总时长和评分，且每日记录不代表完整睡眠区间。",
+            "finish_reason": "stop",
+            "ms": 24325
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 1106,
+        "total_ms": 25527,
+        "answer_chars": 916,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n10/27–11/02 的 7 条 Garmin 睡眠记录显示：总睡眠时长从 450 分钟逐日降至 420 分钟；睡眠评分从 74 逐日升至 80。时长下降与评分上升同时出现，只能说明记录趋势，不能据此判断睡眠质量、恢复或是否达标。本次仅覆盖总时长和评分，且每日记录不代表完整睡眠区间。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 103,
+          "pre_llm_ms": 475,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 2,
+            "system_prompt_ms": 26,
+            "kb_ms": 416,
+            "inspect_ms": 0,
+            "history_ms": 5,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 24328,
+          "first_useful_ms": 1001,
+          "end_to_end_total_ms": 25467,
+          "end_to_end_ttft_ms": 1105,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4209,
+            "synthetic_visible_text": "这7晚（10月27日至11月2日，Garmin来源）出现了一个值得注意的情况：睡眠评分从74逐日升到80，而记录的总时长同期从约7.5小时逐步缩到约7小时，两者方向相反，说明评分并非只随睡眠时长上升。就这组样本而言，不能据此判断你的睡眠在变好还是变差。\n\n记录只有日汇总的评分和总时长，缺深睡、REM、清醒时长和入睡、醒来时间，同步状态也未知；每日汇总不等于整夜连续监测，无法判断睡眠结构或作息是否规律。\n\n下一步：如果近期有白天明显困倦、晨起不解乏或夜间频繁醒来，建议就医评估；若没有这类感受，保持观察即可，具体判断以医生意见为准。",
+            "finish_reason": "stop",
+            "ms": 5346
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 541,
+        "total_ms": 5933,
+        "answer_chars": 1040,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n这7晚（10月27日至11月2日，Garmin来源）出现了一个值得注意的情况：睡眠评分从74逐日升到80，而记录的总时长同期从约7.5小时逐步缩到约7小时，两者方向相反，说明评分并非只随睡眠时长上升。就这组样本而言，不能据此判断你的睡眠在变好还是变差。\n\n记录只有日汇总的评分和总时长，缺深睡、REM、清醒时长和入睡、醒来时间，同步状态也未知；每日汇总不等于整夜连续监测，无法判断睡眠结构或作息是否规律。\n\n下一步：如果近期有白天明显困倦、晨起不解乏或夜间频繁醒来，建议就医评估；若没有这类感受，保持观察即可，具体判断以医生意见为准。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 19,
+          "pre_llm_ms": 69,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 0,
+            "system_prompt_ms": 16,
+            "kb_ms": 38,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 5346,
+          "first_useful_ms": 519,
+          "end_to_end_total_ms": 5904,
+          "end_to_end_ttft_ms": 539,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 32524,
+            "synthetic_visible_text": "最近7天（10/27–11/02，Garmin，按醒来日期）可见两条观察：总睡眠时长从450分钟逐日降至420分钟；睡眠评分从74逐日升至80。评分量表未核实，不能由数值判断睡眠好坏；时长与评分变化方向不一致，也不能据此推断作息、睡眠质量或恢复情况。若你有明显白天困倦、入睡困难或夜间频繁醒来，建议咨询医生。",
+            "finish_reason": "stop",
+            "ms": 34376
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 302,
+        "total_ms": 34713,
+        "answer_chars": 927,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10/27–11/02，Garmin，按醒来日期）可见两条观察：总睡眠时长从450分钟逐日降至420分钟；睡眠评分从74逐日升至80。评分量表未核实，不能由数值判断睡眠好坏；时长与评分变化方向不一致，也不能据此推断作息、睡眠质量或恢复情况。若你有明显白天困倦、入睡困难或夜间频繁醒来，建议咨询医生。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 31,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 34376,
+          "first_useful_ms": 293,
+          "end_to_end_total_ms": 34689,
+          "end_to_end_ttft_ms": 301,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3335,
+            "synthetic_visible_text": "最近7天（10-27 至 11-02）共有 7 条睡眠记录，来源都是 Garmin，每条只包含睡眠分数和总睡眠时长两项。\n\n**两条观察**\n- 睡眠分数在这 7 天里逐日小幅上升（74→80 分），而总睡眠时长逐日小幅缩短（450→420 分钟，约 7.5 小时→7 小时）。睡眠分数和总睡眠时长这两项的变化方向相反，目前仅能从记录中看到这一现象，不能说明原因。\n- 缺少入睡/醒来时间，也缺少深睡、REM、浅睡和清醒时长，因此无法判断睡眠结构、作息规律性或夜间中断情况；睡眠分数使用的量表和等级阈值尚未核实，所以不能由分数推断睡眠好坏。\n\n**下一步**：如果这与你白天精力感受不一致，可以在设备完整同步出睡眠分期与起止时间后，再结合医生意见看趋势，因为穿戴设备的日汇总数据不等于临床睡眠评估。",
+            "finish_reason": "stop",
+            "ms": 4780
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 493,
+        "total_ms": 5314,
+        "answer_chars": 1122,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10-27 至 11-02）共有 7 条睡眠记录，来源都是 Garmin，每条只包含睡眠分数和总睡眠时长两项。\n\n**两条观察**\n- 睡眠分数在这 7 天里逐日小幅上升（74→80 分），而总睡眠时长逐日小幅缩短（450→420 分钟，约 7.5 小时→7 小时）。睡眠分数和总睡眠时长这两项的变化方向相反，目前仅能从记录中看到这一现象，不能说明原因。\n- 缺少入睡/醒来时间，也缺少深睡、REM、浅睡和清醒时长，因此无法判断睡眠结构、作息规律性或夜间中断情况；睡眠分数使用的量表和等级阈值尚未核实，所以不能由分数推断睡眠好坏。\n\n**下一步**：如果这与你白天精力感受不一致，可以在设备完整同步出睡眠分期与起止时间后，再结合医生意见看趋势，因为穿戴设备的日汇总数据不等于临床睡眠评估。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4780,
+          "first_useful_ms": 484,
+          "end_to_end_total_ms": 5291,
+          "end_to_end_ttft_ms": 493,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 14218,
+            "synthetic_visible_text": "10月27日至11月2日查到7条 Garmin 睡眠记录：睡眠评分从74升至80；记录到的总睡眠时长从450分钟降至420分钟。评分没有已核实的等级阈值，不能判定好坏；时长变化仅为记录趋势。深睡、REM、浅睡、清醒及入睡/醒来时间未覆盖，同步状态未知，不能分析睡眠结构或具体入睡情况。",
+            "finish_reason": "stop",
+            "ms": 16151
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 306,
+        "total_ms": 16495,
+        "answer_chars": 915,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n10月27日至11月2日查到7条 Garmin 睡眠记录：睡眠评分从74升至80；记录到的总睡眠时长从450分钟降至420分钟。评分没有已核实的等级阈值，不能判定好坏；时长变化仅为记录趋势。深睡、REM、浅睡、清醒及入睡/醒来时间未覆盖，同步状态未知，不能分析睡眠结构或具体入睡情况。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 16151,
+          "first_useful_ms": 297,
+          "end_to_end_total_ms": 16473,
+          "end_to_end_ttft_ms": 305,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1334,
+            "synthetic_visible_text": "从 10月27日到11月2日，这7天每天都有睡眠数据，均来自 Garmin。可以看出一个比较稳定的模式：睡眠评分从 74 分逐日升到 80 分，而记录的睡眠总时长从 450 分钟逐日缩短到 420 分钟，也就是每天大约少 5 分钟，睡眠变短的同时评分反而升高。这两件事只是同时变化，不能认为缩短睡眠改善了评分。\n\n另外，这7天的记录里没有深睡、浅睡、REM、清醒时长，也没有入睡和醒来的时间点；因此目前还无法判断睡眠结构，也无法评估你睡眠的规律性。\n\n目前能做的下一步是：如果你想了解睡眠时长变短是否影响白天状态，可以先留意自己白天的困倦感和精力变化；评分本身属于哪个量表的哪个等级，还没有核实，所以不能据此说你的睡眠“良好”或“不达标”。",
+            "finish_reason": "stop",
+            "ms": 2801
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 304,
+        "total_ms": 3144,
+        "answer_chars": 1026,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n从 10月27日到11月2日，这7天每天都有睡眠数据，均来自 Garmin。这两件事只是同时变化，不能认为缩短睡眠改善了评分。\n\n另外，这7天的记录里没有深睡、浅睡、REM、清醒时长，也没有入睡和醒来的时间点；因此目前还无法判断睡眠结构，也无法评估你睡眠的规律性。\n\n目前能做的下一步是：如果你想了解睡眠时长变短是否影响白天状态，可以先留意自己白天的困倦感和精力变化；评分本身属于哪个量表的哪个等级，还没有核实，所以不能据此说你的睡眠“良好”或“不达标”。\n\n部分描述缺少记录依据，未展示；已核验记录见上。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [
+            "unsupported_daily_coverage_removed"
+          ],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 28,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 2801,
+          "first_useful_ms": 295,
+          "end_to_end_total_ms": 3122,
+          "end_to_end_ttft_ms": 303,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "safety_review_ccfc": {
+    "base_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+    "candidate_sha": "ccfc513917b83e2163faf184e4b4296f532c8e91",
+    "file_sha256": {
+      "backend/app/services/agent_executor.py": "bd0cfc17d153039d4b8e55483b05a61918febc703de6e3ec225ce9fbfffc9d76",
+      "backend/tests/test_agent_composed_synthesis_projection.py": "e4a858ee665383ac09588ffa369fd344cf62885ce83105393d100883e76a94fa",
+      "backend/tests/test_genui_bound_read_results.py": "af290781c22f94b6a3a564d2575609495223ae7de233c122f323c7f8b7d19467",
+      "backend/tests/test_genui_table.py": "97a27fc48e4659d856a7c034b3d96c45ee6298f7048bf3222b628dbf279d6b4a",
+      "backend/tests/test_simple_lookup_latency.py": "f8bbdd2f512fbf4c5baf8fe2ba057adf946a304a9eb4a2c2f40d19cbfd0e3b1d",
+      "docs/dossiers/2026-11-02-explicit-model-latency.md": "e6c310336aec17b5a0ea2ad3fb9e9a116dc3e064208a12fb99c3d0c637eefb85",
+      "docs/reviews/2026-11-02-common-prompt-latency.json": "c6837e0acb528ca50aa6aaa87ba96e6b0a64432ad06ad43da5462679d960edcc"
+    },
+    "findings": [
+      {
+        "cause": "result_declares_explicit_failure deliberately excludes pending/processing; filtering root failures alone is weaker than existing batch completion terminal contract. Flattening children discards root status.",
+        "location": "backend/app/services/agent_executor.py:2105-2115",
+        "reproduction": "Authorized bound sleep child with matching window and records renders a metric_table when batch root status is pending, processing, unknown, or absent. Existing evaluate_composed_read_completion rejects each root because batch status must explicitly belong to _TERMINAL. Independent probe exits 1 for all four cases; success control renders normally.",
+        "required_fix": "Require existing batch terminal contract before flattening: _terminal(payload) and explicit status in _TERMINAL; preserve valid siblings only under a successful terminal root. Cover missing/pending/processing/unknown and valid-success siblings.",
+        "severity": "blocking",
+        "title": "Nonterminal batch envelope is promoted to completed single-query card input"
+      }
+    ],
+    "limits": [
+      "No repository modification, paid benchmark, or production action.",
+      "No new owner/consent/medical bypass found in the cumulative reviewed path; this does not supersede the explicit batch blocker."
+    ],
+    "nonblocking_observations": [
+      "Latest six synthetic App-capability samples all complete, but complete-answer latency remains 3.144-34.713s; early-card latency is not complete-answer or device acceptance.",
+      "DeepSeek final sample retains dangling phrase 这两件事 after evidence-bound removal. This is a visible coherence defect, not additional clinical inference in the inspected sample. Preserve prior two blocked samples; six successes do not establish universal quality."
+    ],
+    "resolved_prior_findings": [
+      "Original shifted-window real Pi/Gateway streaming probe now passes: invalid data no longer released.",
+      "Calendar payload cannot smuggle legacy daily_data summary.",
+      "Bound legacy diet summary is rejected; unbounded fixture adjustment matches existing adapter dispatch and retains separate negative bound coverage."
+    ],
+    "reviewer": "diet_detail_safety_review",
+    "validation": {
+      "artifact_sha256": {
+        "/private/tmp/reva-common-prompts-ccfc513-mobile.json": "0e09c7ecfc9a33e1a09d5ae8018a73cc0dfb35d910e908640c3a0f218d729eae",
+        "/private/tmp/reva-common-prompts-ccfc5139-batch-probe.log": "cb4402f0f93aa4e14b1d2a57fe581f638fb56b953445371fc2bc4c6c21304bba",
+        "/private/tmp/reva-common-prompts-ccfc5139-batch-probe.py": "51962895ed3be9006abc39776497042da662f973cd9d6b28ac2a46ff6817c56a",
+        "/private/tmp/reva-common-prompts-ccfc5139-card-probe.log": "8f8220f0307f787a1e5c16a560a808dc89b6701e80d2efaa1ec5501237e39963",
+        "/private/tmp/reva-common-prompts-ccfc5139-independent-tests.log": "ab7aef944c8daaeab3c56d01775565d1cfdfee0554c198484d12537da17f696f"
+      },
+      "new_batch_fault_probe": "exit 1; four rejected-by-canonical root states still render cards",
+      "original_fault_probe": "1 passed, 6 warnings, 1.08s",
+      "targeted_tests": "149 passed, 6 warnings, 22.89s"
+    },
+    "verdict": "NO-GO"
+  },
+  "mobile_caps_ccfc_sample_stats": {
+    "qwen3.8-max": {
+      "first_card": {
+        "n": 3,
+        "p50_ms": 306.0,
+        "p95_ms_nearest_rank": 1106,
+        "p99_ms_nearest_rank": 1106,
+        "interpretation": "exploratory small-sample order statistics, not production percentiles"
+      },
+      "whole_answer": {
+        "n": 3,
+        "p50_ms": 25527.0,
+        "p95_ms_nearest_rank": 34713,
+        "p99_ms_nearest_rank": 34713,
+        "interpretation": "exploratory small-sample order statistics, not production percentiles"
+      }
+    },
+    "deepseek-v4.1-flash": {
+      "first_card": {
+        "n": 3,
+        "p50_ms": 493.0,
+        "p95_ms_nearest_rank": 541,
+        "p99_ms_nearest_rank": 541,
+        "interpretation": "exploratory small-sample order statistics, not production percentiles"
+      },
+      "whole_answer": {
+        "n": 3,
+        "p50_ms": 5314.0,
+        "p95_ms_nearest_rank": 5933,
+        "p99_ms_nearest_rank": 5933,
+        "interpretation": "exploratory small-sample order statistics, not production percentiles"
+      }
+    }
   }
 }
