@@ -102,9 +102,11 @@ def test_real_catalog_retains_all_shards_and_process_policies():
         {key: value for key, value in shard.items() if key != "scheduling_seconds"}
         for shard in shards
     ]
+    # Includes the three closed-sleep regressions added to the explicit fourth
+    # synthesis shard; execution deadlines, attempts and scheduling stay fixed.
     assert hashlib.sha256(json.dumps(
         policy, sort_keys=True, separators=(",", ":"),
-    ).encode()).hexdigest() == "53c3ead6686f4816b71f64ca5c19dcd611d117172784df7c9a4e14af8ec28425"
+    ).encode()).hexdigest() == "139b9f58442db0a431499282bce61c0cba447fc31d092da9fb146b041657dbd7"
 
 
 def _refresh_module():
