@@ -106,7 +106,7 @@ function readingDocument(text: string, title: string) {
   const allBlocks = readingBlocks(text, title);
   const appendixStart = allBlocks.findIndex((_, index) => index > 0
     && /^(?:dedao|xiaoyuzhou|wechat|telegram) · (?:partial|available|unavailable|failed|success|not_configured|auth_required|empty) · /.test(allBlocks[index - 1].body)
-    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(allBlocks[index + 1]?.body ?? ''));
+    && /^(?:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}|发布日期未知$)/.test(allBlocks[index + 1]?.body ?? ''));
   return { blocks: appendixStart < 0 ? allBlocks : allBlocks.slice(0, appendixStart),
     appendix: appendixStart < 0 ? [] : allBlocks.slice(appendixStart) };
 }
