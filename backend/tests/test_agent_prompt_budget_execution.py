@@ -547,7 +547,7 @@ async def test_deterministic_weather_invalid_facts_fail_done_and_persist(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message,model_required", [
     ("查询我今天的饮食记录", False),
-    ("查询我最近7天的饮食记录", True),
+    ("查询我最近7天的饮食记录", False),
     ("查询我今天的饮食记录并分析", True),
 ])
 async def test_personal_query_is_not_public_and_only_closed_lookup_skips_model(

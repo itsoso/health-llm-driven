@@ -103,10 +103,10 @@ def test_real_catalog_retains_all_shards_and_process_policies():
         for shard in shards
     ]
     # Includes the three closed-sleep regressions added to the explicit fourth
-    # synthesis shard; execution deadlines, attempts and scheduling stay fixed.
+    # synthesis shard and the range lookup file; deadlines, attempts and scheduling stay fixed.
     assert hashlib.sha256(json.dumps(
         policy, sort_keys=True, separators=(",", ":"),
-    ).encode()).hexdigest() == "139b9f58442db0a431499282bce61c0cba447fc31d092da9fb146b041657dbd7"
+    ).encode()).hexdigest() == "2931ace5cf9063f407a2104e0142e449da098fd79cbc424670a916427ae8bfe7"
 
 
 def _refresh_module():
@@ -292,6 +292,12 @@ def test_reviewed_r_other_baseline_retains_selection_and_worker_limits(monkeypat
     assert evidence['attempt'] == 1 and evidence['return_code'] == 0
     assert row['estimated_seconds'] == evidence['process_wall_seconds'] == 191.127
     selection = {key: row[key] for key in ('paths', 'exclude_paths', 'extra_args', 'process_groups') if key in row}
+    # The old timing attests the old selection only. Preserve it rather than
+    # inventing a measurement for the new range lookup regressions; the full
+    # policy digest above and coverage test bind the expanded current scope.
+    added = 'tests/test_range_record_lookup.py'
+    assert selection['paths'].count(added) == 1
+    selection['paths'] = [path for path in selection['paths'] if path != added]
     assert hashlib.sha256(json.dumps(selection, sort_keys=True).encode()).hexdigest() == evidence['selection_sha256']
     assert 'timeout_seconds' not in row and 'max_attempts' not in row
     assert worker.MIN_SHARD_TIMEOUT_SECONDS == 180
