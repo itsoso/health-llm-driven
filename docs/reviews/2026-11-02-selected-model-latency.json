@@ -3443,12 +3443,18 @@
       "Executor probes use disposable SQLite, saved synthetic Qwen preference, real model transport, decision mode off, no HTTP or native paint.",
       "First calendar and capability probes have domain_prompt_optimization off. The final mobile comparison explicitly sets it on in both arms and supplies the sleep-summary capability.",
       "Water call-budget failures and unparsed restriction failures are retained. They are not performance successes.",
-      "Single-day sleep lookup uses existing owner/date binding and verified deterministic facts; only fresh conversations avoid the planner. Existing histories retain it.",
+      "Single-day sleep lookup uses existing owner/date binding and verified deterministic facts; only fresh conversations avoid the planner. Existing histories retain both planner and synthesis.",
       "No raw health data or tokens exported; answer text retained only for synthetic protocol and deterministic fixture review."
     ],
     "comparison_script": {
       "path": "/private/tmp/reva-simple-lookup-mobile-benchmark.py",
       "sha256": "5f78cf3ec2cdba5c37827d450e1fbc98a2a2d5d10e575cc19e1f4aa393988dd4"
+    },
+    "first_review": {
+      "candidate_sha": "474423b026daf78b6f410d95fca1a1d322dd94b9",
+      "verdict": "NO-GO",
+      "finding": "History corrections lost by deterministic synthesis bypass; limit all lookup shortcuts to new conversations and assert released/persisted correction text.",
+      "pushed": false
     }
   }
 }

@@ -121,7 +121,15 @@ async def test_existing_conversation_keeps_model_planner_and_history(
     )
     db.add(AgentMessage(conversation_id=conv.id, role="assistant", content="已了解。"))
     db.commit()
-    trace = script_executor(db, monkeypatch, [("health_query", {"dimension": "sleep"})])
+    correction = "这条记录已被本人否认，不能当作实际睡眠。"
+    trace = script_executor(
+        db,
+        monkeypatch,
+        [
+            ("health_query", {"dimension": "sleep"}),
+            correction,
+        ],
+    )
     events = [
         event
         async for event in trace.executor.run_stream(
@@ -131,9 +139,15 @@ async def test_existing_conversation_keeps_model_planner_and_history(
             conversation_id=conv.id,
         )
     ]
-    assert not trace.unexpected and len(trace.calls) == 1
+    assert not trace.unexpected and len(trace.calls) == 2
     assert any("记录有误" in str(m.get("content")) for m in trace.calls[0][0])
     assert not events[-1]["data"]["perf"]["owned_read_preplanned"]
+    assert not events[-1]["data"]["perf"]["simple_lookup_rendered"]
+    saved = db.get(AgentMessage, events[-1]["data"]["message_id"])
+    assert correction in saved.content
+    assert correction in "".join(
+        event["data"]["content"] for event in events if event.get("event") == "token"
+    )
 
 
 @pytest.mark.asyncio

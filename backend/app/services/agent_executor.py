@@ -13948,8 +13948,10 @@ class AgentExecutor:
             return None
         return scope
 
-    def _verified_simple_lookup_reply(self, *, sealed: bool = False) -> Optional[str]:
-        if sealed or self._simple_record_lookup_scope() is None:
+    def _verified_simple_lookup_reply(
+        self, *, sealed: bool = False, history_free: bool = False,
+    ) -> Optional[str]:
+        if sealed or not history_free or self._simple_record_lookup_scope() is None:
             return None
         completion = self._composed_read_completion()
         if (completion is None or not completion.complete
@@ -13959,6 +13961,7 @@ class AgentExecutor:
 
     def _preplanned_owned_read_calls(
         self, round_index: int, messages: list[dict], tools: list[dict], *, sealed: bool = False,
+        new_conversation: bool = False,
     ) -> list[dict]:
         """Skip only the planner for a new, closed, already-bound owned read.
 
@@ -13968,7 +13971,7 @@ class AgentExecutor:
         snapshot = self._agent_kernel_snapshot
         message = self._current_turn_user_message or ""
         simple_scope = self._simple_record_lookup_scope()
-        if (simple_scope is not None and round_index == 0 and not sealed
+        if (new_conversation and simple_scope is not None and round_index == 0 and not sealed
                 and sum(m.get("role") == "user" for m in messages) == 1
                 and not any(m.get("role") in {"tool", "assistant"} or m.get("tool_calls") for m in messages)
                 and any((tool.get("function") or {}).get("name") == "health_query" for tool in tools)):
@@ -18136,7 +18139,8 @@ class AgentExecutor:
                     exc,
                 )
         simple_lookup_route_skipped = bool(
-            not health_advice_buffered and not staged_preclassification_failed
+            conversation_id is None
+            and not health_advice_buffered and not staged_preclassification_failed
             and staged_preclassified_tier in {"casual", "balanced"}
             and self._simple_record_lookup_scope() is not None
         )
@@ -20422,7 +20426,11 @@ class AgentExecutor:
                                     and not pending_pi_writes and not write_receipts
                                     and not failed_write_operations and not unverified_write_operations
                                     and not last_recoverable_write_rejection):
-                                lookup_reply = self._verified_simple_lookup_reply(sealed=health_advice_buffered)
+                                lookup_reply = self._verified_simple_lookup_reply(
+                                    sealed=health_advice_buffered,
+                                    history_free=(conversation_id is None and len(initial_dialogue) == 1
+                                                  and initial_dialogue[0].get("role") == "user"),
+                                )
                                 if lookup_reply is not None:
                                     # Attested facts only; Pi termination, output guards,
                                     # receipts and persistence remain on their usual path.
@@ -20544,6 +20552,7 @@ class AgentExecutor:
                             self._composed_synthesis_retry_eligible = composed_messages is not None
                             proposed_calls = self._preplanned_owned_read_calls(
                                 round_idx, messages, round_tools, sealed=health_advice_buffered,
+                                new_conversation=conversation_id is None,
                             )
                             if proposed_calls:
                                 owned_read_preplanned = True
