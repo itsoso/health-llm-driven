@@ -1,7 +1,7 @@
 {
   "schema_version": "common-agent-latency-screen.v1",
   "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
-  "status": "local_followup_requiring_independent_review_and_fresh_performance_acceptance",
+  "status": "water_correctness_followup_pending_review_and_release",
   "environment": {
     "synthetic_only": true,
     "database": "ephemeral SQLite",
@@ -4896,5 +4896,931 @@
         "interpretation": "exploratory small-sample order statistics, not production percentiles"
       }
     }
+  },
+  "water_followup": {
+    "baseline": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "client_capabilities": "mobile/services/clientCaps.ts current enabled seven caps",
+      "rows": [
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9273,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 2674
+            },
+            {
+              "prompt_chars": 9561,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1244,
+              "synthetic_visible_text": "今天饮水目前 **500ml**，只有 1 条记录，完成目标（2000ml）的 25%，还差 1500ml。\n\n几点说明：\n- 这条 500ml 的饮用时间没有标注，所以看不到是何时喝的。\n- 现在是 19:30，如果要在睡前补足 1500ml，建议分 3–4 次小量补，每次 200–300ml；不要一次性猛喝，以免夜里频繁起夜打断睡眠。你昨晚睡了 7.0 小时，睡眠本身已经接近目标，夜里频繁醒容易把分数拉低。\n- 如果接下来会运动或出汗、或者所处环境偏热，需求会相应增加，可以按口渴程度和尿液颜色（淡黄为宜）微调。\n\n关于一般成人日常补水建议，可参考英国 NHS《饮水与补水建议》；不过炎热、运动、妊娠、哺乳或疾病状态下需求可能不同。以上用于健康管理，不替代诊断，做医疗决定前请咨询医生。\n\n需要我把后面的饮水也记录下来吗？直接告诉我喝了多少毫升，我就逐次记上。",
+              "finish_reason": "stop",
+              "ms": 2951
+            }
+          ],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "days": 1
+              },
+              "ms": 15
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 4953,
+          "total_ms": 8032,
+          "answer_chars": 645,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"今日饮水明细\",\"columns\":[{\"key\":\"time\",\"label\":\"时间\"},{\"key\":\"amount\",\"label\":\"水量\"}],\"rows\":[{\"time\":\"—\",\"amount\":\"500 ml\"}],\"footnote\":\"今日 500/2000 ml · 数据来自你的设备与体检记录 · 参考值非诊断\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n今天饮水目前 **500ml**，只有 1 条记录，完成目标（2000ml）的 25%，还差 1500ml。\n\n几点说明：\n- 这条 500ml 的饮用时间没有标注，所以看不到是何时喝的。\n- 现在是 19:30，如果要在睡前补足 1500ml，建议分 3–4 次小量补，每次 200–300ml；不要一次性猛喝，以免夜里频繁起夜打断睡眠。你昨晚睡了 7.0 小时，睡眠本身已经接近目标，夜里频繁醒容易把分数拉低。\n- 如果接下来会运动或出汗、或者所处环境偏热，需求会相应增加，可以按口渴程度和尿液颜色（淡黄为宜）微调。\n\n关于一般成人日常补水建议，可参考英国 NHS《饮水与补水建议》；不过炎热、运动、妊娠、哺乳或疾病状态下需求可能不同。以上用于健康管理，不替代诊断，做医疗决定前请咨询医生。\n\n需要我把后面的饮水也记录下来吗？直接告诉我喝了多少毫升，我就逐次记上。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 82,
+            "pre_llm_ms": 114,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 2,
+              "opener_ms": 5,
+              "system_prompt_ms": 28,
+              "kb_ms": 6,
+              "inspect_ms": 0,
+              "history_ms": 31,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5636,
+            "first_useful_ms": 4870,
+            "end_to_end_total_ms": 7953,
+            "end_to_end_ttft_ms": 4952,
+            "model_call_count": 2,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9276,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1336
+            },
+            {
+              "prompt_chars": 9612,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1683
+            },
+            {
+              "prompt_chars": 9948,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1085
+            }
+          ],
+          "tools": [],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": false,
+          "error_type": "BenchmarkStopped",
+          "stop_reason": "call_budget",
+          "total_ms": 4430,
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9273,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1042
+            },
+            {
+              "prompt_chars": 9609,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1370
+            },
+            {
+              "prompt_chars": 9898,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1112,
+              "synthetic_visible_text": "今天饮水记录如下：\n\n- 已记录 **1 笔，共 500 ml**，目标 2000 ml，完成 **25%**（这笔记录是 500 ml，未标注饮品类型和时间）。\n\n现在是 19:30，距离目标还差约 1500 ml。如果想在今天内补足，接下来的几个小时可以分 2–3 次喝，每次 300–500 ml；不必一次性大量喝。需要注意：睡前 1 小时内不要大量喝水，以免影响夜间睡眠。\n\n以上饮水目标依据英国 NHS《饮水与补水建议》的一般成人参考：如果天气炎热、运动、孕期哺乳或患有疾病，需求会不同。这些信息用于健康管理，不替代诊断；做医疗决定前请咨询医生。",
+              "finish_reason": "stop",
+              "ms": 2206
+            }
+          ],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "days": 1
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": false,
+          "first_ms": 2695,
+          "total_ms": 4936,
+          "answer_chars": 343,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"今日饮水明细\",\"columns\":[{\"key\":\"time\",\"label\":\"时间\"},{\"key\":\"amount\",\"label\":\"水量\"}],\"rows\":[{\"time\":\"—\",\"amount\":\"500 ml\"}],\"footnote\":\"今日 500/2000 ml · 数据来自你的设备与体检记录 · 参考值非诊断\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n本轮数据查询未完成，不能用其他日期的汇总或历史背景代替本次查询结果。请明确要查看的数据类别和日期，例如“查询昨天的饮食和睡眠”；如果只需要通用建议，也可以直接说明。",
+          "outcome": "blocked",
+          "turn_outcome": {
+            "status": "blocked",
+            "category": "tool_blocked",
+            "reason_code": "health_query_calendar_window_unsupported",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 1,
+            "tool_failure_count": 0,
+            "confirmation_required": false
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 4621,
+            "first_useful_ms": 2690,
+            "end_to_end_total_ms": 4913,
+            "end_to_end_ttft_ms": 2694,
+            "model_call_count": 3,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9276,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1780
+            },
+            {
+              "prompt_chars": 9612,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1582
+            },
+            {
+              "prompt_chars": 9948,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1299
+            }
+          ],
+          "tools": [],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": false,
+          "error_type": "BenchmarkStopped",
+          "stop_reason": "call_budget",
+          "total_ms": 4967,
+          "semantic_quality": "not_accepted"
+        }
+      ]
+    },
+    "before_fix": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "client_capabilities": "mobile/services/clientCaps.ts current enabled seven caps",
+      "rows": [
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9273,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 2626
+            },
+            {
+              "prompt_chars": 9609,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1228
+            },
+            {
+              "prompt_chars": 9945,
+              "tool_count": 0,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1374
+            }
+          ],
+          "tools": [],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": false,
+          "error_type": "BenchmarkStopped",
+          "stop_reason": "call_budget",
+          "total_ms": 5841,
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [
+            {
+              "prompt_chars": 9276,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1224
+            },
+            {
+              "prompt_chars": 9564,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1262,
+              "synthetic_visible_text": "**查询结果：近7天只有今天有饮水记录**\n\n- 今天（11月2日）：1 次，合计 **500ml**，目标 2000ml，完成 25%。\n- 10月27日至11月1日这 6 天：没有查询到任何饮水记录。\n\n需要说明的是，“没有记录”和“没有喝水”是两件事：如果你这几天确实喝了水但没记，实际摄水量可能更高；如果确实没记，这 6 天就没有可用饮水数据，我不做推测填充。\n\n**当下可以做的**\n现在 19:31，距离睡前还有一段时间，而今天只完成了目标的四分之一。建议你在睡前 1–2 小时内分次补 500–800ml，不要一次大量灌下；晚间分几次小口喝，比一口气喝完更利于吸收，也能减少夜间起夜对睡眠的影响。全天剩下的缺口如果现在补不完，不必强行补足。\n\nNHS 的一般成人补水建议可作为参照：日常以白水为主，感到口渴或尿色偏深时及时补水；炎热、运动、妊娠、哺乳或患病时需求会不同。这些信息仅用于健康管理，不替代诊断，做医疗决定前请咨询医生。\n\n如果想让我看得出趋势，接下来几天在喝水后就顺手记一下（大概毫升数加一句“记一下”即可），7 天后就能给你一个真实的对比。",
+              "finish_reason": "stop",
+              "ms": 3418
+            }
+          ],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "days": 7
+              },
+              "ms": 6
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 1590,
+          "total_ms": 5115,
+          "answer_chars": 747,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"今日饮水明细\",\"columns\":[{\"key\":\"time\",\"label\":\"时间\"},{\"key\":\"amount\",\"label\":\"水量\"}],\"rows\":[{\"time\":\"—\",\"amount\":\"500 ml\"}],\"footnote\":\"今日 500/2000 ml · 数据来自你的设备与体检记录 · 参考值非诊断\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**查询结果：近7天只有今天有饮水记录**\n\n- 今天（11月2日）：1 次，合计 **500ml**，目标 2000ml，完成 25%。\n- 10月27日至11月1日这 6 天：没有查询到任何饮水记录。\n\n需要说明的是，“没有记录”和“没有喝水”是两件事：如果你这几天确实喝了水但没记，实际摄水量可能更高；如果确实没记，这 6 天就没有可用饮水数据，我不做推测填充。\n\n**当下可以做的**\n现在 19:31，距离睡前还有一段时间，而今天只完成了目标的四分之一。建议你在睡前 1–2 小时内分次补 500–800ml，不要一次大量灌下；晚间分几次小口喝，比一口气喝完更利于吸收，也能减少夜间起夜对睡眠的影响。全天剩下的缺口如果现在补不完，不必强行补足。\n\nNHS 的一般成人补水建议可作为参照：日常以白水为主，感到口渴或尿色偏深时及时补水；炎热、运动、妊娠、哺乳或患病时需求会不同。这些信息仅用于健康管理，不替代诊断，做医疗决定前请咨询医生。\n\n如果想让我看得出趋势，接下来几天在喝水后就顺手记一下（大概毫升数加一句“记一下”即可），7 天后就能给你一个真实的对比。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 8,
+            "pre_llm_ms": 11,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 4,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 4646,
+            "first_useful_ms": 1580,
+            "end_to_end_total_ms": 5048,
+            "end_to_end_ttft_ms": 1589,
+            "model_call_count": 2,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9273,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1200
+            },
+            {
+              "prompt_chars": 9562,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1813,
+              "synthetic_visible_text": "今天饮水只有 1 笔、共 500ml，目标 2000ml，完成了 25%——现在 19:31，离目标还差 1500ml。\n\n几点参考：\n- 目前进度偏慢，但不用一次补足：睡前 6 点后一次喝太多，容易夜尿、影响睡眠质量。可以按「每次 200–300ml、间隔 30–60 分钟」分几次喝，同时控制好睡前 1 小时的总量。\n- 一般成人日常补水量可以参考 NHS 的饮水建议（注意炎热、运动、妊娠或疾病时需求会不同）。你有运动或出汗、环境干燥时，会需要更多；这部分要靠体感和尿色（淡黄为宜）来判断。\n- 如果觉得单喝水乏味，淡茶、无糖饮品也可以算入总量；含糖或含咖啡因的饮品不宜大量替代。\n\n这些信息用于日常补水管理，不替代诊断；若有限水需求（如心、肾功能问题）或出现明显不适，请以医生意见为准。",
+              "finish_reason": "stop",
+              "ms": 3701
+            }
+          ],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "days": 1
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 1471,
+          "total_ms": 5211,
+          "answer_chars": 610,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"今日饮水明细\",\"columns\":[{\"key\":\"time\",\"label\":\"时间\"},{\"key\":\"amount\",\"label\":\"水量\"}],\"rows\":[{\"time\":\"—\",\"amount\":\"500 ml\"}],\"footnote\":\"今日 500/2000 ml · 数据来自你的设备与体检记录 · 参考值非诊断\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n今天饮水只有 1 笔、共 500ml，目标 2000ml，完成了 25%——现在 19:31，离目标还差 1500ml。\n\n几点参考：\n- 目前进度偏慢，但不用一次补足：睡前 6 点后一次喝太多，容易夜尿、影响睡眠质量。可以按「每次 200–300ml、间隔 30–60 分钟」分几次喝，同时控制好睡前 1 小时的总量。\n- 一般成人日常补水量可以参考 NHS 的饮水建议（注意炎热、运动、妊娠或疾病时需求会不同）。你有运动或出汗、环境干燥时，会需要更多；这部分要靠体感和尿色（淡黄为宜）来判断。\n- 如果觉得单喝水乏味，淡茶、无糖饮品也可以算入总量；含糖或含咖啡因的饮品不宜大量替代。\n\n这些信息用于日常补水管理，不替代诊断；若有限水需求（如心、肾功能问题）或出现明显不适，请以医生意见为准。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 3,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 4,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 4905,
+            "first_useful_ms": 1467,
+            "end_to_end_total_ms": 5188,
+            "end_to_end_ttft_ms": 1471,
+            "model_call_count": 2,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "not_accepted"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [
+            {
+              "prompt_chars": 9276,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "finish_reason": "tool_calls",
+              "ms": 1621
+            },
+            {
+              "prompt_chars": 9565,
+              "tool_count": 4,
+              "model": "deepseek-v4.1-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1782,
+              "synthetic_visible_text": "**结果：最近 7 天里，只有今天（11月2日）有一条饮水记录，共 500ml；10月27日至11月1日这 6 天没有饮水记录。**\n\n解读与建议：\n\n- 今天 500ml，只完成了 2000ml 目标的 25%。现在是 19:31，离睡前还有一段时间，还可以补 700–1000ml，但建议分次小口喝，睡前 1 小时内不要一次喝太多，以免夜里起夜影响睡眠。\n- 过去 6 天没有记录，可能是当时没有记录，而不是实际没喝；如果想看出真实的趋势，接下来几天每次喝水后都顺手打个卡，过 7 天再看会更有参考意义。\n- 一般成人的日常补水建议可参考 NHS《饮水与补水建议》；不过天气炎热、运动、出汗较多或身体不适时，实际需求会更高。\n\n以上用于健康管理，不替代诊断；如有肾脏、心脏等需要限制饮水的疾病，具体摄入量请遵医嘱。",
+              "finish_reason": "stop",
+              "ms": 3424
+            }
+          ],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "days": 7
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 1893,
+          "total_ms": 5356,
+          "answer_chars": 622,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"今日饮水明细\",\"columns\":[{\"key\":\"time\",\"label\":\"时间\"},{\"key\":\"amount\",\"label\":\"水量\"}],\"rows\":[{\"time\":\"—\",\"amount\":\"500 ml\"}],\"footnote\":\"今日 500/2000 ml · 数据来自你的设备与体检记录 · 参考值非诊断\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**结果：最近 7 天里，只有今天（11月2日）有一条饮水记录，共 500ml；10月27日至11月1日这 6 天没有饮水记录。**\n\n解读与建议：\n\n- 今天 500ml，只完成了 2000ml 目标的 25%。现在是 19:31，离睡前还有一段时间，还可以补 700–1000ml，但建议分次小口喝，睡前 1 小时内不要一次喝太多，以免夜里起夜影响睡眠。\n- 过去 6 天没有记录，可能是当时没有记录，而不是实际没喝；如果想看出真实的趋势，接下来几天每次喝水后都顺手打个卡，过 7 天再看会更有参考意义。\n- 一般成人的日常补水建议可参考 NHS《饮水与补水建议》；不过天气炎热、运动、出汗较多或身体不适时，实际需求会更高。\n\n以上用于健康管理，不替代诊断；如有肾脏、心脏等需要限制饮水的疾病，具体摄入量请遵医嘱。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 4,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 4,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 5050,
+            "first_useful_ms": 1888,
+            "end_to_end_total_ms": 5334,
+            "end_to_end_ttft_ms": 1892,
+            "model_call_count": 2,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "not_accepted"
+        }
+      ]
+    },
+    "fixed": {
+      "synthetic_only": true,
+      "engine": "disposable_sqlite",
+      "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+      "decision_mode": "off",
+      "domain_prompt_optimization": true,
+      "saved_preference": true,
+      "client_capabilities": "mobile/services/clientCaps.ts current enabled seven caps",
+      "rows": [
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 2
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 455,
+          "total_ms": 714,
+          "answer_chars": 348,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-11-02 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-11-02，Asia/Shanghai。\n\n饮水：已记录1条，记录合计500 ml。\n2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 43,
+            "pre_llm_ms": 73,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 3,
+              "opener_ms": 2,
+              "system_prompt_ms": 19,
+              "kb_ms": 6,
+              "inspect_ms": 0,
+              "history_ms": 20,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 410,
+            "end_to_end_total_ms": 490,
+            "end_to_end_ttft_ms": 454,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_dates_and_amounts"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 0,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-10-27",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 2
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 249,
+          "total_ms": 286,
+          "answer_chars": 708,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-10-27\",\"amount\":\"800 ml\"},{\"date\":\"2026-10-28\",\"amount\":\"750 ml\"},{\"date\":\"2026-10-29\",\"amount\":\"700 ml\"},{\"date\":\"2026-10-30\",\"amount\":\"650 ml\"},{\"date\":\"2026-10-31\",\"amount\":\"600 ml\"},{\"date\":\"2026-11-01\",\"amount\":\"550 ml\"},{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮水：已记录7条，记录合计4550 ml。\n2026-10-27：800 ml；2026-10-28：750 ml；2026-10-29：700 ml；2026-10-30：650 ml；2026-10-31：600 ml；2026-11-01：550 ml；2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 6,
+            "pre_llm_ms": 8,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 2,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 242,
+            "end_to_end_total_ms": 257,
+            "end_to_end_ttft_ms": 248,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_dates_and_amounts"
+        },
+        {
+          "case": "water_lookup__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-11-02",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 1
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 281,
+          "total_ms": 310,
+          "answer_chars": 348,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-11-02 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-11-02，Asia/Shanghai。\n\n饮水：已记录1条，记录合计500 ml。\n2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 9,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 3,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 277,
+            "end_to_end_total_ms": 287,
+            "end_to_end_ttft_ms": 280,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_dates_and_amounts"
+        },
+        {
+          "case": "water_week__deepseek-v4.1-flash",
+          "repeat": 1,
+          "calls": [],
+          "tools": [
+            {
+              "name": "health_query",
+              "args": {
+                "dimension": "water",
+                "start_date": "2026-10-27",
+                "end_date": "2026-11-02",
+                "timezone": "Asia/Shanghai"
+              },
+              "ms": 2
+            }
+          ],
+          "cards": [],
+          "selected_model": "deepseek-v4.1-flash",
+          "passed": true,
+          "first_ms": 248,
+          "total_ms": 279,
+          "answer_chars": 708,
+          "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"饮水记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"amount\",\"label\":\"已记录饮水量\"}],\"rows\":[{\"date\":\"2026-10-27\",\"amount\":\"800 ml\"},{\"date\":\"2026-10-28\",\"amount\":\"750 ml\"},{\"date\":\"2026-10-29\",\"amount\":\"700 ml\"},{\"date\":\"2026-10-30\",\"amount\":\"650 ml\"},{\"date\":\"2026-10-31\",\"amount\":\"600 ml\"},{\"date\":\"2026-11-01\",\"amount\":\"550 ml\"},{\"date\":\"2026-11-02\",\"amount\":\"500 ml\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai）\"}\n```\n\n查询范围：饮水，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮水：已记录7条，记录合计4550 ml。\n2026-10-27：800 ml；2026-10-28：750 ml；2026-10-29：700 ml；2026-10-30：650 ml；2026-10-31：600 ml；2026-11-01：550 ml；2026-11-02：500 ml。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。",
+          "outcome": "complete",
+          "turn_outcome": {
+            "status": "complete",
+            "category": "success",
+            "reason_code": "completed",
+            "retryable": false,
+            "dispatch_started": false,
+            "verified_receipt_count": 0,
+            "actions": [],
+            "refusal_detected": false,
+            "capability_block_count": 0,
+            "tool_failure_count": 0,
+            "confirmation_required": false,
+            "goals": [
+              {
+                "goal_id": "water",
+                "kind": "query",
+                "status": "verified",
+                "evidence_kind": "read_result",
+                "reason_code": "query_verified"
+              }
+            ]
+          },
+          "quality": {
+            "fallback_reasons": [],
+            "finish_reason": "stop",
+            "output_quality_flags": [],
+            "medical_boundary_flags": []
+          },
+          "segments": {
+            "turn_setup_ms": 2,
+            "pre_llm_ms": 7,
+            "pre_llm_stages": {
+              "routing_ms": 0,
+              "conv_ms": 1,
+              "opener_ms": 0,
+              "system_prompt_ms": 2,
+              "kb_ms": 0,
+              "inspect_ms": 0,
+              "history_ms": 0,
+              "vision_ms": 0
+            },
+            "model_wait_ms": 0,
+            "first_useful_ms": 245,
+            "end_to_end_total_ms": 256,
+            "end_to_end_ttft_ms": 248,
+            "model_call_count": 0,
+            "tool_total_ms": null,
+            "prompt_context_profile": null,
+            "composed_synthesis_used": null
+          },
+          "semantic_quality": "verified_seeded_dates_and_amounts"
+        }
+      ]
+    },
+    "findings": [
+      "Before fix, days=7 was ignored by the legacy daily-water adapter; complete responses falsely reported six seeded days as absent. Runtime complete is not quality PASS.",
+      "Fixed: closed current-turn owner/date scope, bounded calendar records, verified table and factual totals; no inferred hydration goal or advice. Four samples: first content 248-455ms, complete 279-714ms; zero model calls. Local disposable SQLite only; no HTTP, PostgreSQL performance or native rendering acceptance.",
+      "Water followup tool boundary additionally permits health_manage only for operation=list and record_type=water. Baseline/candidate budget stops are retained; no production success-rate claim."
+    ]
   }
 }

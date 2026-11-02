@@ -455,7 +455,7 @@ def test_water_parity_via_testclient(db, client):
     assert inproc["records_count"] == 2
 
 
-def test_water_killswitch_false_uses_http(db, monkeypatch):
+def test_water_unbound_request_does_not_use_today_http_fallback(db, monkeypatch):
     user = _make_user(db)
     monkeypatch.setattr(settings, "reads_in_process", False, raising=False)
     ex = AgentExecutor(db)
@@ -467,9 +467,9 @@ def test_water_killswitch_false_uses_http(db, monkeypatch):
         return "{}"
 
     ex._api_get = fake_api_get
-    _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "water"}))
-    today = datetime.now(BEIJING_TZ).strftime("%Y-%m-%d")
-    assert calls["url"].endswith(f"/water/records/me/date/{today}")
+    result = _run(ex._exec_health_query("http://x/api/v1", {}, {"dimension": "water"}))
+    assert result.startswith("Error:") and "明确日期范围" in result
+    assert calls == {}
 
 
 # ── diet ─────────────────────────────────────────────────────────────────────────

@@ -178,13 +178,13 @@ def read_calendar_health_query(
         raise ValueError('calendar_query_period_unsupported')
     # Heart-rate access is bound by the closed post-record recovery scope;
     # do not broaden the generic natural-language calendar resolver.
-    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate', 'weight', 'waist'}:
+    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate', 'weight', 'waist', 'water'}:
         raise ValueError("calendar_query_dimension_unsupported")
-    from app.models.daily_health import DietRecord, GarminData
+    from app.models.daily_health import DietRecord, GarminData, WaterIntake
 
     from app.models.weight import WeightRecord
     from app.models.waist import WaistRecord
-    model = {'diet': DietRecord, 'weight': WeightRecord, 'waist': WaistRecord}.get(dimension, GarminData)
+    model = {'diet': DietRecord, 'weight': WeightRecord, 'waist': WaistRecord, 'water': WaterIntake}.get(dimension, GarminData)
     rows = (db.query(model).filter(model.user_id == user_id,
                                   model.record_date >= window.start_date,
                                   model.record_date <= window.end_date)
@@ -195,6 +195,16 @@ def read_calendar_health_query(
         "dimension": dimension, "window": window.as_dict(), "records": [],
         "availability": "no_data", "limitations": [],
     }
+    if dimension == 'water':
+        result['source_scope'] = 'owned_recorded_water_intakes'
+        result['limitations'] = ['recorded_intakes_only_not_total_hydration']
+        result['records'] = [
+            {'record_kind': 'water_intake', **{key: _serial(getattr(row, key))
+             for key in ('id', 'record_date', 'amount_ml', 'intake_time', 'drink_type')}} for row in rows
+        ]
+        if rows:
+            result['availability'] = 'available'
+        return _bounded_result(result)
     if dimension in {'weight', 'waist'}:
         keys = ('id', 'record_date', 'source', 'weight') if dimension == 'weight' else (
             'id', 'record_date', 'source', 'waist_cm')

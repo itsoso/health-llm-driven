@@ -22,8 +22,9 @@ from app.services.agent_write_outcome import result_declares_explicit_failure
 from app.services.genui.table_builder import load_tool_result_json
 from app.utils.number_format import format_display_number
 
-_LABELS = {"weight": "体重", "waist": "腰围", "conversation": "原始输入", "medication": "用药", "heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
+_LABELS = {"water": "饮水", "weight": "体重", "waist": "腰围", "conversation": "原始输入", "medication": "用药", "heart_rate": "心率", "diet": "饮食", "sleep": "睡眠", "workout": "运动", "supplements": "补剂", "spo2": "血氧"}
 _ACTUAL_SOURCES = {
+    "water": ("owned_recorded_water_intakes", {"water_intake"}),
     "workout": ("owned_actual_workout_records", {"workout_record", "exercise_record"}),
     "supplements": (
         "owned_actual_supplement_intake_logs",
@@ -56,6 +57,7 @@ class ComposedReadCompletion:
 # These fields mirror the bounded calendar and actual-intake adapters. Extra
 # record metadata never enters the answer model; source identity stays data.
 _EVIDENCE_FIELDS = {
+    "water": ("id", "record_kind", "record_date", "amount_ml", "intake_time", "drink_type"),
     "weight": ("id", "record_date", "source", "weight"),
     "waist": ("id", "record_date", "source", "waist_cm"),
     "conversation": ("id", "conversation_id", "record_date", "reported_at", "content"),
@@ -74,6 +76,7 @@ _EVIDENCE_FIELDS = {
                     "supplement_name", "dosage", "unit", "intake_time"),
 }
 _NUMERIC_FIELDS = frozenset({
+    "amount_ml",
     "weight", "waist_cm",
     "quantity", "calories", "protein", "carbs", "fat", "fiber", "sleep_score",
     "total_sleep_duration", "deep_sleep_duration", "rem_sleep_duration",
@@ -81,6 +84,7 @@ _NUMERIC_FIELDS = frozenset({
     "avg_heart_rate", "max_heart_rate", "min_heart_rate", "resting_heart_rate", "dosage",
 })
 _FIELD_UNITS = {
+    "water": {"amount_ml": "ml"},
     "weight": {"weight": "kg"},
     "waist": {"waist_cm": "cm"},
     "conversation": {},
@@ -177,6 +181,7 @@ def _verified_evidence(bounds, verified, limitations):
 # Only clinically relevant returned fields become deterministic disclosures.
 # Names, arbitrary payload keys, and model requests never supply this vocabulary.
 _GAP_LABELS = {
+    "water": {"amount_ml": "饮水量"},
     "weight": {"weight": "体重"},
     "waist": {"waist_cm": "腰围"},
     "conversation": {},
@@ -949,6 +954,8 @@ def _validate(bound: dict, payload) -> str | None:
             or row["record_kind"] not in actual_source[1]
         ):
             return "query_result_source_conflict"
+        if bound['dimension'] == 'water' and (type(row.get('amount_ml')) is not int or row['amount_ml'] <= 0):
+            return 'query_result_unavailable'
         if bound["dimension"] == "supplements" and row.get("taken") is not True:
             return "query_result_source_conflict"
         if bound['dimension'] == 'workout' and (
@@ -998,6 +1005,7 @@ def _facts(dimension: str, payload: dict) -> str:
                 '未查询结构化症状记录，不据此确认症状或药物因果关系。')
     if not rows:
         absence = {
+            "water": "，不代表没有喝水。",
             "weight": "，不能据此判断体重趋势。",
             "waist": "，不能据此判断腰围趋势。",
             "heart_rate": "，不能据此判断恢复程度或心率正常与否。",
@@ -1011,6 +1019,13 @@ def _facts(dimension: str, payload: dict) -> str:
             return '血氧：已查询目标日期，但缺少可定位的睡眠时段；未用全天汇总替代所选夜间血氧，暂不能判断。'
         return f"{label}：目标日期没有可用记录" + absence[dimension]
     count = format_display_number(len(rows))
+    if dimension == 'water':
+        by_day = {}
+        for row in rows:
+            by_day[row['record_date']] = by_day.get(row['record_date'], 0) + row['amount_ml']
+        daily = '；'.join(f"{day}：{format_display_number(amount)} ml" for day, amount in sorted(by_day.items()))
+        return (f"饮水：已记录{count}条，记录合计{format_display_number(sum(by_day.values()))} ml。\n"
+                + daily + '。\n仅统计已保存记录，未记录不代表没有喝水；不据此判断补水是否充足。')
     if dimension in {'weight', 'waist'}:
         field, unit = ('weight', 'kg') if dimension == 'weight' else ('waist_cm', 'cm')
         latest = max(rows, key=lambda row: (row['record_date'], row.get('id', 0)))

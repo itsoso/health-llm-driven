@@ -13967,15 +13967,15 @@ class AgentExecutor:
         """Recognize a complete factual lookup, never infer extra read authority.
 
         Only the existing owner/date binder supplies query arguments. Keep the
-        factual sleep/diet record shapes narrow: analysis, modifiers,
+        factual sleep/diet/water record shapes narrow: analysis, modifiers,
         references, attachments and all mutation/clinical goals stay model-led.
         """
         snapshot = self._agent_kernel_snapshot
         message = self._current_turn_user_message or ""
         match = re.fullmatch(
             r"(?:请)?(?:查询|查看)(?:我(?:的)?)?"
-            r"(?:今天|今日|昨天|昨日|前天)"
-            r"(?:的)?(?P<domain>睡眠|饮食)(?:记录|数据)[。.!！?？]?", message.strip(),
+            r"(?:今天|今日|昨天|昨日|前天|本周|上周|最近(?:[1-9]|[12][0-9]|3[01])天)"
+            r"(?:的)?(?P<domain>睡眠|饮食|饮水)(?:记录|数据)[。.!！?？]?", message.strip(),
         )
         if (
             not getattr(settings, "domain_prompt_optimization", False)
@@ -14000,10 +14000,16 @@ class AgentExecutor:
         scope = self._owned_read_scope_for(snapshot)
         if (scope is None or len(scope.queries) != 1 or scope.composite_advice
                 or scope.weather_city is not None or scope.workout_selection is not None
-                or scope.queries[0].get("dimension") != {"睡眠": "sleep", "饮食": "diet"}[match["domain"]]):
+                or scope.queries[0].get("dimension") != {"睡眠": "sleep", "饮食": "diet", "饮水": "water"}[match["domain"]]):
             return None
         query = scope.queries[0]
-        if not query.get("start_date") or query.get("start_date") != query.get("end_date"):
+        if query.get("dimension") != "water" and not re.fullmatch(
+            r"(?:请)?(?:查询|查看)(?:我(?:的)?)?(?:今天|今日|昨天|昨日|前天)"
+            r"(?:的)?(?:睡眠|饮食)(?:记录|数据)[。.!！?？]?", message.strip(),
+        ):
+            return None
+        if not query.get("start_date") or (query.get("dimension") != "water"
+                                         and query.get("start_date") != query.get("end_date")):
             return None
         return scope
 
@@ -14011,9 +14017,10 @@ class AgentExecutor:
         self, *, sealed: bool = False, history_free: bool = False,
     ) -> Optional[str]:
         scope = self._simple_record_lookup_scope()
-        if (sealed or not history_free or scope is None
+        water_lookup = bool(scope and 'water_record_lookup' in scope.limitations)
+        if (sealed or (not history_free and not water_lookup) or scope is None
                 or not scope.queries[0].get("start_date")
-                or scope.queries[0]["start_date"] != scope.queries[0]["end_date"]):
+                or (not water_lookup and scope.queries[0]["start_date"] != scope.queries[0]["end_date"])):
             return None
         completion = self._composed_read_completion()
         if (completion is None or not completion.complete
@@ -16671,6 +16678,8 @@ class AgentExecutor:
         # All model and terminal branches converge before any prose is emitted.
         panel_completion = self._composed_read_completion()
         if panel_completion is not None and not panel_completion.complete:
+            full_reply = panel_completion.trusted_fact_summary
+        elif panel_completion is not None and panel_read_scope is not None and 'water_record_lookup' in panel_read_scope.limitations:
             full_reply = panel_completion.trusted_fact_summary
         elif (panel_synthesis_messages is not None or self._focused_read_scopes()[1] is not None
               or (panel_read_scope is not None and panel_read_scope.workout_selection is not None)) and panel_completion is not None:
@@ -21788,6 +21797,8 @@ class AgentExecutor:
             full_reply = composed_completion.trusted_fact_summary
             if final_finish_reason != "stop":
                 full_reply += "\n\n本轮没有生成有效回答，请稍后重试。"
+        elif composed_completion is not None and read_scope is not None and 'water_record_lookup' in read_scope.limitations:
+            full_reply = composed_completion.trusted_fact_summary
         elif (composed_synthesis_used or self._focused_read_scopes()[1] is not None
               or (read_scope is not None and read_scope.workout_selection is not None)) and composed_completion is not None:
             if final_finish_reason != "stop":
@@ -28766,6 +28777,16 @@ class AgentExecutor:
         supplied_args = dict(args)
         args = _normalize_health_query_args(args)
         dim = args.get("dimension", "comprehensive")
+        if dim == 'water':
+            snapshot = self._ensure_agent_kernel_turn()
+            scope = self._owned_read_scope_for(snapshot)
+            query = scope.query('water') if scope is not None else None
+            if (query is None or supplied_args != query
+                    or type(self._current_user_id) is not int
+                    or snapshot.context.user_id != self._current_user_id
+                    or snapshot.envelope.user_id != self._current_user_id
+                    or snapshot.envelope.text != self._current_turn_user_message):
+                return 'Error: 饮水查询需要明确日期范围，例如“查询今天的饮水记录”或“查询我最近7天的饮水记录”；未用今天的数据替代。'
         if dim == 'age':
             from zoneinfo import ZoneInfo
             from app.services.personal_diet_read import read_age

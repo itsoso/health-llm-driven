@@ -58,6 +58,7 @@ SHARDS = (
         "tests/test_health_week_navigation.py",
         "tests/test_lifenav_grants.py",
         "tests/test_agent_record_contract_postgres.py",
+        "tests/test_water_record_lookup.py",
     ),
 )
 OWN_NAME = re.compile(r"reva_ci_test_[0-9a-f]{32}_0[12]\Z")

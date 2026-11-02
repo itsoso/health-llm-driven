@@ -456,7 +456,12 @@ def _table_from_calendar_query(payload: dict, dimension: str) -> Optional[dict]:
         return _fmt_num(value, unit) or ""
 
     rows: List[Dict[str, str]] = []
-    if dimension == "sleep":
+    if dimension == "water":
+        columns = [("date", "日期"), ("amount", "已记录饮水量")]
+        rows = [{"date": row['record_date'], "amount": number(row.get('amount_ml'), 'ml')}
+                for row in records if number(row.get('amount_ml'), 'ml')]
+        title = "饮水记录"
+    elif dimension == "sleep":
         columns = [("date", "日期")]
         for key, label, field, unit in (("dur", "时长", "total_sleep_duration", "分钟"),
                                        ("deep", "深睡", "deep_sleep_duration", "分钟"),
@@ -618,7 +623,7 @@ def build_table_from_tool_call(
     if tool_name == "health_query":
         dim = str((args or {}).get("dimension") or "").strip().lower()
         if isinstance(payload, dict) and "window" in payload:
-            if dim not in {"sleep", "diet"}:
+            if dim not in {"sleep", "diet", "water"}:
                 return None
             return _table_from_calendar_query(payload, dim)
         builder = _SINGLE_QUERY_TABLE.get(dim)
