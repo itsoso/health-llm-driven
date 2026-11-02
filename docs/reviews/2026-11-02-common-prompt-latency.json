@@ -1,7 +1,7 @@
 {
   "schema_version": "common-agent-latency-screen.v1",
   "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
-  "status": "local_candidate_under_verification",
+  "status": "local_followup_requiring_independent_review_and_fresh_performance_acceptance",
   "environment": {
     "synthetic_only": true,
     "database": "ephemeral SQLite",
@@ -28,7 +28,8 @@
     "Small synthetic samples do not prove production P95/P99, PostgreSQL semantics, native rendering or device acceptance.",
     "Concurrent local regression tests may affect timing; no CPU-attribution or production-tail claim.",
     "Model output, tokens and price are not estimated when provider evidence is absent.",
-    "Writes, actual photo capture, external hardware and full deep-analysis tool chain are not measured by this read-only screen."
+    "Writes, actual photo capture, external hardware and full deep-analysis tool chain are not measured by this read-only screen.",
+    "Mobile-capability 713 candidate: 6/6 early cards in 290–995ms, but 2/6 final answers blocked; not six successful requests. Separate 3/3 complete diagnostics do not erase those failures. No production success-rate acceptance yet."
   ],
   "limited_caps_screen": {
     "source_sha256": "d2beebe399fcd10a7b5903291de74b0ae3872391e10bcf6df9bb247874a76ed2",
@@ -3233,5 +3234,1036 @@
       "verdict": "FAIL",
       "reason": "Visible answer misstated end date and inferred individual sleep sufficiency from sparse daily records."
     }
-  ]
+  ],
+  "mobile_caps_baseline": {
+    "source_sha256": "1b4478622777847ac8a023887f1a1c7550a9658896755c09a694e42bf2fb9bd8",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 12375
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 37805,
+            "finish_reason": "stop",
+            "ms": 54013
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 13364,
+        "total_ms": 67423,
+        "answer_chars": 1538,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n## 关键结论\n\n**1. 时长在缓慢缩短，评分却在上升——两者方向相反。**\n10月27日到11月2日这7天都有记录（按醒来日归属）。总睡眠时长从450分钟逐日递减到420分钟，7天累计少了30分钟，平均约每天缩短5分钟；7天均值435分钟，约7小时15分。同期睡眠评分从74逐日升到80。评分是设备的综合打分，并不只由时长决定，所以这两个指标背离时，不能只看其中一个就下结论。\n\n**2. 最新一晚正好压在参考下限的边缘。**\n11月2日这一晚记录为420分钟，即整7.0小时。按美国CDC的成人睡眠建议，成年人每晚需要7小时或以上；这一晚刚好在下限线上，没有低于它，但也没有余量。如果按当前每天约5分钟的缩短速度继续走下去，会走到这个参考值以下。\n\n**3. 睡眠结构和作息规律这次无法判断。**\n本批记录里只有评分和总时长两项，深睡/REM/浅睡/清醒时长、入睡与起床时间点都没有覆盖，数据可用性标记为部分可用、同步状态未知。这属于覆盖范围的限制，不能反过来说明你的睡眠结构有问题或恢复不好。\n\n## 解读\n\n真正值得留意的是趋势本身，而不是任何单天的数值：连续7天单调递减、每天差不多5分钟，这种规律性更像是就寝时间逐日后移或起床时间逐日提前造成的，而不是偶发的一两晚失眠。评分同步上升说明主观或设备判定的睡眠质量并没有跟着变差，所以现阶段这更像是一个\"作息漂移\"的信号，而不是质量恶化。\n\n需要说明的是，以上只是对已记录样本的分布与走向的描述，不构成对你睡眠健康或恢复状态的分级评价。\n\n## 可以做的下一步\n\n- **如果白天有困倦、注意力下降或情绪变差**：优先把这30分钟补回来，按你固定的起床时间往前倒推7小时作为上床时间。现在是18:41，今晚还有充足的操作空间，不需要现在就上床。\n- **如果白天状态没有变化**：可以先只观察，不必强行调整；缩短的30分钟是否对你有影响，你自己的日间感受比评分更可靠。\n- **如果缩短趋势继续、或出现入睡困难、夜间频繁醒来、白天嗜睡影响工作**：建议找医生做一次正式评估，而不是继续依赖手表评分。\n\n以上信息用于健康管理，不替代诊断；做医疗决定前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 103,
+          "pre_llm_ms": 479,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 2,
+            "system_prompt_ms": 20,
+            "kb_ms": 425,
+            "inspect_ms": 0,
+            "history_ms": 6,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 66407,
+          "first_useful_ms": 13260,
+          "end_to_end_total_ms": 67406,
+          "end_to_end_ttft_ms": 13363,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2214
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2167,
+            "finish_reason": "stop",
+            "ms": 4836
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 2528,
+        "total_ms": 7399,
+        "answer_chars": 1256,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**睡眠记录结果（2026-10-27 至 11-02，共 7 天，数据来源为佳明）**\n\n- **两个指标变化方向相反**：睡眠评分从 74 分逐日上升到 80 分，但同期总睡眠时长从 7 小时 30 分逐步缩短到 7 小时 0 分。因此评分上升与时长减少同时出现，不能只看评分就认为整体睡眠在变好。\n- **数据覆盖**：这 7 天都有记录，但只包含睡眠评分和总时长；深睡、REM、入睡与醒来时刻、夜醒时长均未返回。因此本轮无法判断睡眠结构、入睡规律，也无法判断各阶段与时长之间的关系，这些项目属于未知，而非异常或正常。\n- **同步状态**：本轮查询的同步状态为未知，记录数量看起来完整，但不能据此保证数据完整。\n\n解读依据：美国 CDC《睡眠时长、质量与健康》将成人睡眠时长与质量（包括睡眠连续性和规律性）作为整体来看。单看时长，这 7 天在 7.0–7.5 小时区间内；但仅有日汇总，无法判断睡眠连续性，也无法判断作息是否稳定。\n\n**可执行的下一步（按需选择）：**\n1. 如果你希望判断是“变短”还是“变稳”，需要查看设备的入睡、醒来时刻和阶段明细；本轮读取不包含这些字段。\n2. 时长和评分同时变化的这段时间，如果白天有困倦、注意力下降，值得记录下来，供医生或睡眠评估时参考。\n3. 若持续出现入睡困难或夜醒增多，或白天功能受明显影响，建议就医评估，不建议仅靠设备评分自我判断。\n\n以上用于健康管理参考，不替代诊断；做医疗决定前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 10,
+          "pre_llm_ms": 35,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 19,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 7054,
+          "first_useful_ms": 2517,
+          "end_to_end_total_ms": 7375,
+          "end_to_end_ttft_ms": 2527,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 10966
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "stop_reason": "unexpected_tool:health_analysis",
+        "total_ms": 11282
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1744
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3531,
+            "finish_reason": "stop",
+            "ms": 6437
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 2121,
+        "total_ms": 8594,
+        "answer_chars": 812,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n部分建议或推断缺少已核验证据，暂不提供执行方案。可与医生或药师核对依据及适用条件。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 10,
+          "pre_llm_ms": 38,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 20,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 8185,
+          "first_useful_ms": 2110,
+          "end_to_end_total_ms": 8571,
+          "end_to_end_ttft_ms": 2120,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 13790,
+            "finish_reason": "tool_calls",
+            "ms": 17656
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "stop_reason": "unexpected_tool:health_analysis",
+        "total_ms": 17964
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1709
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 6544,
+            "finish_reason": "stop",
+            "ms": 10110
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 2005,
+        "total_ms": 12153,
+        "answer_chars": 1423,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**本轮查到的 7 天睡眠记录（10月27日–11月2日，来源：佳明）**\n\n**三个要点**\n\n1. **记录完整性较好，但这只是日汇总数据**：7 天里每天都有睡眠评分和总睡眠时长；不过深睡、REM、浅睡、觉醒时长，以及入睡和起床时间全部缺失。因此，这次只能评估“时长和评分”，无法评估睡眠结构、夜间连续性和作息是否规律。缺失不代表异常，只是没有覆盖到。\n2. **趋势是“时长逐日减少、评分逐日上升”**：从 10/27 到 11/02，总睡眠时长每天减少 5 分钟，整条变化很平滑；睡眠评分则连续每天上升 1 分。这两条变化方向相反，仅凭评分和时长本身无法解释原因，因为评分通常还受其他信号影响，比如心率、呼吸等；这些字段本次没有覆盖，所以我不做推测。\n3. **时长落在成人常见参考范围内**：按美国 CDC 的说明，成年人一般每晚需要 7 小时及以上。这 7 天的记录都在这条参考线上。但要注意，这只是设备日汇总，不等于完整整夜监测，也不能据此判断“睡得够”或“恢复得好”。睡眠是否充足还要看白天的主观状态。\n\n**需要保留的边界**\n\n本次数据可用性为部分可用，同步状态未知。这些记录是可信的已存数据，但不能把它理解为“7 天完整睡眠档案”。评分只是设备算法给出的相对指标，不适合单独当作睡眠质量的结论；也不要把它和每晚时长直接比较、判断好坏。\n\n**可考虑的下一步**\n\n- 把这段时间的记录和主观感受对照：如果这 7 天里白天精神状态是稳定的，可以把设备数值当作参考，不用为评分波动做调整。\n- 如果出现持续入睡困难、夜间频繁醒、醒来不解乏，或白天明显困倦超过两周，建议就诊睡眠门诊或找医生评估，不要仅靠设备评分自行判断。\n- 以上信息用于健康管理，不能替代诊断；做任何医疗决定前请咨询医生。\n\n如果你希望我另外看某一天或某个具体指标，请告诉我是哪一天或哪一项，我再去查。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 31,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 11823,
+          "first_useful_ms": 1996,
+          "end_to_end_total_ms": 12128,
+          "end_to_end_ttft_ms": 2004,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "mobile_caps_713_candidate": {
+    "source_sha256": "880d29bf3f8847c1b3dfdd108bcfba62bb3112b9bdc802a7c4a82e379e86b7ac",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 24940,
+            "finish_reason": "stop",
+            "ms": 26361
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 995,
+        "total_ms": 27407,
+        "answer_chars": 913,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天（10/27–11/02，Garmin，按醒来日期）睡眠分数逐日上升，但记录的总睡眠时长逐日下降，趋势不一致；仅凭每日汇总不能判断睡眠质量、恢复或是否睡眠不足。深睡、REM、清醒时长及入睡/醒来时间未返回，且同步状态未知，无法评估睡眠结构和完整区间。以上仅为已返回记录观察。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 104,
+          "pre_llm_ms": 472,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 2,
+            "system_prompt_ms": 21,
+            "kb_ms": 418,
+            "inspect_ms": 0,
+            "history_ms": 4,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 26362,
+          "first_useful_ms": 890,
+          "end_to_end_total_ms": 27379,
+          "end_to_end_ttft_ms": 994,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4090,
+            "finish_reason": "stop",
+            "ms": 4885
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 290,
+        "total_ms": 5210,
+        "answer_chars": 983,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n10月27日至11月2日共7条睡眠记录（来源Garmin），每天一条。样本里睡眠评分逐日从74升到80，而记录的总睡眠时长逐日从450分钟降到420分钟，两个方向相反；这只是这7天记录中的分布，不能推出睡眠质量或恢复状态变好或变差。入睡时间、醒来时间以及深睡、REM、夜间觉醒都未返回，每日汇总也不能证明整夜连续监测，因此无法判断变化原因。若你近期有入睡困难或白天困倦，建议结合医生意见评估，而不是只凭可穿戴设备的评分。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 9,
+          "pre_llm_ms": 33,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4885,
+          "first_useful_ms": 280,
+          "end_to_end_total_ms": 5187,
+          "end_to_end_ttft_ms": 289,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 17622,
+            "finish_reason": "stop",
+            "ms": 19915
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 298,
+        "total_ms": 20257,
+        "answer_chars": 959,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近 7 天（10/27–11/02，Garmin，按醒来日期归属）已记录睡眠总时长从 450 分钟逐日降至 420 分钟，7 天平均约 435 分钟；睡眠评分从 74 逐日升至 80。\n\n总时长呈缓慢下降，而评分上升，两者方向不一致。评分未核实具体量表，不能据此判断睡眠质量好坏或恢复状态。本批数据只能观察总时长和评分趋势，不能扩展到睡眠结构、入睡时间或整夜连续性结论。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 19915,
+          "first_useful_ms": 289,
+          "end_to_end_total_ms": 20231,
+          "end_to_end_ttft_ms": 297,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 5512,
+            "finish_reason": "stop",
+            "ms": 6218
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 331,
+        "total_ms": 6622,
+        "answer_chars": 800,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 33,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 18,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6220,
+          "first_useful_ms": 322,
+          "end_to_end_total_ms": 6581,
+          "end_to_end_ttft_ms": 330,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 32486,
+            "finish_reason": "stop",
+            "ms": 33561
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 335,
+        "total_ms": 33932,
+        "answer_chars": 877,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n10月27日至11月2日的7条 Garmin 记录显示，睡眠评分逐日上升，总睡眠时长逐日下降，二者呈相反变化。仅凭这两个记录指标不能判断睡眠好坏或恢复情况。若你近期白天精力受影响，可先关注规律作息和主观感受。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 39,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 9,
+            "kb_ms": 23,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 33562,
+          "first_useful_ms": 325,
+          "end_to_end_total_ms": 33908,
+          "end_to_end_ttft_ms": 334,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2525,
+            "finish_reason": "stop",
+            "ms": 3434
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 350,
+        "total_ms": 3820,
+        "answer_chars": 800,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 9,
+          "pre_llm_ms": 35,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 9,
+            "kb_ms": 19,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 3434,
+          "first_useful_ms": 340,
+          "end_to_end_total_ms": 3796,
+          "end_to_end_ttft_ms": 349,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "deepseek_diagnostic_followup": {
+    "source_sha256": "bb8e0526667a81a2f24479e13e372970b6318a75e7053f0eefee20d050503010",
+    "rows": [
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4898,
+            "synthetic_visible_text": "这7天（10月27日–11月2日）每天各有一条 Garmin 记录，可以看到睡眠分数和总睡眠时长。分数从74分逐日升到80分，同期总睡眠时长却从450分钟逐日降到420分钟，两个方向在同一批记录中同时出现。由于没有入睡和醒来的时间，也没有睡眠分期（深睡、REM、清醒等），所以无法判断是作息变化，还是设备记录差异造成的。而评分本身没有可核对的等级阈值，因此也不能仅凭分数就判断睡眠属于良好还是正常。此外，单看分数上升，不足以说明睡眠质量在改善，建议结合你自己的主观感受来判断。",
+            "finish_reason": "stop",
+            "ms": 5908
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 1164,
+        "total_ms": 7129,
+        "answer_chars": 1011,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n这7天（10月27日–11月2日）每天各有一条 Garmin 记录，可以看到睡眠分数和总睡眠时长。分数从74分逐日升到80分，同期总睡眠时长却从450分钟逐日降到420分钟，两个方向在同一批记录中同时出现。由于没有入睡和醒来的时间，也没有睡眠分期（深睡、REM、清醒等），所以无法判断是作息变化，还是设备记录差异造成的。而评分本身没有可核对的等级阈值，因此也不能仅凭分数就判断睡眠属于良好还是正常。此外，单看分数上升，不足以说明睡眠质量在改善，建议结合你自己的主观感受来判断。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 130,
+          "pre_llm_ms": 624,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 2,
+            "system_prompt_ms": 37,
+            "kb_ms": 547,
+            "inspect_ms": 0,
+            "history_ms": 5,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 5909,
+          "first_useful_ms": 1032,
+          "end_to_end_total_ms": 7095,
+          "end_to_end_ttft_ms": 1163,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 5792,
+            "synthetic_visible_text": "最近7天（10月27日—11月2日）睡眠记录共7条，数据来自 Garmin。就记录本身看：\n\n1. 睡眠评分一周内从70多分小幅升至80分，整体呈缓升；\n2. 记录的总睡眠时长则逐日略微缩短，与评分方向相反。\n\n这两项只是设备记录到的变化，评分用的量表和等级阈值尚未核实，因此不能据此判断睡眠好坏或恢复水平；相关观察只是数据相关性，并非因果。如果白天明显困倦、打鼾或夜间憋醒，建议就医评估。",
+            "finish_reason": "stop",
+            "ms": 6541
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 347,
+        "total_ms": 6924,
+        "answer_chars": 968,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10月27日—11月2日）睡眠记录共7条，数据来自 Garmin。就记录本身看：\n\n1. 睡眠评分一周内从70多分小幅升至80分，整体呈缓升；\n2. 记录的总睡眠时长则逐日略微缩短，与评分方向相反。\n\n这两项只是设备记录到的变化，评分用的量表和等级阈值尚未核实，因此不能据此判断睡眠好坏或恢复水平；相关观察只是数据相关性，并非因果。如果白天明显困倦、打鼾或夜间憋醒，建议就医评估。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 9,
+          "pre_llm_ms": 37,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 9,
+            "kb_ms": 19,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6541,
+          "first_useful_ms": 336,
+          "end_to_end_total_ms": 6899,
+          "end_to_end_ttft_ms": 346,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 2,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3601,
+            "synthetic_visible_text": "这 7 天（10/27–11/02）每天各有 1 条 Garmin 睡眠汇总：睡眠评分从 74 连续小幅升至 80，同日总睡眠时长则从 450 分钟逐日降到 420 分钟（7 小时），两者走势相反，幅度都不大。\n\n这只能说明记录本身的分布，不能说明睡眠质量改善或恢复变好：评分的量表与等级阈值我未核实，日汇总也不等于整夜监测。入睡与醒来时点未覆盖，因此无法判断作息是否后移或提前。\n\n若想判断这个趋势，建议结合白天精力、困倦感的主观记录一起看，单看这批数字不足以支持任何结论。",
+            "finish_reason": "stop",
+            "ms": 4556
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 289,
+        "total_ms": 4879,
+        "answer_chars": 929,
+        "answer": "```reva-ui\n{\"type\":\"metric_table\",\"v\":1,\"title\":\"睡眠记录\",\"columns\":[{\"key\":\"date\",\"label\":\"日期\"},{\"key\":\"dur\",\"label\":\"时长\"},{\"key\":\"score\",\"label\":\"评分\"}],\"rows\":[{\"date\":\"2026-10-27\",\"dur\":\"450 分钟\",\"score\":\"74\"},{\"date\":\"2026-10-28\",\"dur\":\"445 分钟\",\"score\":\"75\"},{\"date\":\"2026-10-29\",\"dur\":\"440 分钟\",\"score\":\"76\"},{\"date\":\"2026-10-30\",\"dur\":\"435 分钟\",\"score\":\"77\"},{\"date\":\"2026-10-31\",\"dur\":\"430 分钟\",\"score\":\"78\"},{\"date\":\"2026-11-01\",\"dur\":\"425 分钟\",\"score\":\"79\"},{\"date\":\"2026-11-02\",\"dur\":\"420 分钟\",\"score\":\"80\"}],\"footnote\":\"查询日期 2026-10-27 至 2026-11-02（Asia/Shanghai） · 部分数据缺失，空值不代表正常或异常\"}\n```\n\n信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n这只能说明记录本身的分布，不能说明睡眠质量改善或恢复变好：评分的量表与等级阈值我未核实，日汇总也不等于整夜监测。入睡与醒来时点未覆盖，因此无法判断作息是否后移或提前。\n\n若想判断这个趋势，建议结合白天精力、困倦感的主观记录一起看，单看这批数字不足以支持任何结论。\n\n部分描述缺少记录依据，未展示；已核验记录见上。",
+        "outcome": "complete",
+        "turn_outcome": {
+          "status": "complete",
+          "category": "success",
+          "reason_code": "completed",
+          "retryable": false,
+          "dispatch_started": false,
+          "verified_receipt_count": 0,
+          "actions": [],
+          "refusal_detected": false,
+          "capability_block_count": 0,
+          "tool_failure_count": 0,
+          "confirmation_required": false,
+          "goals": [
+            {
+              "goal_id": "sleep",
+              "kind": "query",
+              "status": "verified",
+              "evidence_kind": "read_result",
+              "reason_code": "query_verified"
+            }
+          ]
+        },
+        "quality": {
+          "fallback_reasons": [],
+          "finish_reason": "stop",
+          "output_quality_flags": [
+            "unsupported_daily_coverage_removed"
+          ],
+          "medical_boundary_flags": []
+        },
+        "segments": {
+          "turn_setup_ms": 8,
+          "pre_llm_ms": 31,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4556,
+          "first_useful_ms": 279,
+          "end_to_end_total_ms": 4856,
+          "end_to_end_ttft_ms": 288,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "safety_review_713": {
+    "base_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+    "candidate_sha": "71357e2b9e78b6cc5b90b51fe543d2bdd3009d6e",
+    "file_sha256": {
+      "backend/app/services/agent_executor.py": "b48dcd0d8f17e0342d7246e5dcec95b10166a55fae1f0670b7110d2bd2092af0",
+      "backend/tests/test_agent_composed_synthesis_projection.py": "e4a858ee665383ac09588ffa369fd344cf62885ce83105393d100883e76a94fa",
+      "backend/tests/test_simple_lookup_latency.py": "27377c9b1fecae5f61508e38e2e1d95494d050e954da4b65c9dead1fc584e439",
+      "docs/dossiers/2026-11-02-explicit-model-latency.md": "a804439628f630219b938f7e0f57cbac1eabcfa32d7f265f2ee2983d7ee722ef",
+      "docs/reviews/2026-11-02-common-prompt-latency.json": "43cb3fd335b6254c915f448af6bb9e3d166106b6783688b1912e94acc31f6f7d"
+    },
+    "findings": [
+      {
+        "cause": "read_result_succeeded only excludes Error/explicit failure; shared GenUI builders validate payload internal window consistency, not authorized query-bound equality/truncation. New route reuses existing shared gap; not an authorization-parser expansion.",
+        "location": "backend/app/services/agent_executor.py:19900,20188; backend/app/services/genui/table_builder.py:430,620",
+        "reproduction": "New conversation: 分析我最近7天的睡眠记录 with App table/sleep caps. Inject adapter payload window2026-09-08..2026-09-14 and matching row2026-09-14/123456min while authorized scope is2026-09-07..2026-09-13. Outcome is failed/query_result_scope_conflict but live token stream contains a metric_table exposing injected wrong-date data.",
+        "required_fix": "Apply existing bound-result validation before both early and final GenUI projection; reject invalid window/truncated/failed rows, preserve independently verified batch children. Add valid-but-wrong-window full-stream regression.",
+        "severity": "blocking",
+        "title": "Unverified window-conflicting tool data is emitted as an early card despite a failed final read outcome"
+      }
+    ],
+    "limits": [
+      "No repository edit or production action.",
+      "Provider-latency and native acceptance not reviewed as pass; early card speed cannot promote a failed/blocked final response."
+    ],
+    "reviewer": "diet_detail_safety_review",
+    "validation": {
+      "adversarial_probe": "1 failed as expected, 1.22s; definite RED on candidate",
+      "artifacts_sha256": {
+        "/private/tmp/reva-common-prompts-71357e2b9-card-probe.log": "f3d8737fa997478a3ce751dfacb0026b5e018478c2e0b5c6098a0d6ea724e084",
+        "/private/tmp/reva-common-prompts-71357e2b9-card-probe.py": "3bff77fb826f95d3a480ecc6aadd45457771808b6db2b4da850fb0c3301b3e8e",
+        "/private/tmp/reva-common-prompts-71357e2b9-independent-tests.log": "7791447d59f52f8fc5bbd8a1abc4b244c6b731207667ee69f210df9a4bf40acc"
+      },
+      "broad_regression": "1198 collected; interrupted intentionally after blocker reproduced, incomplete, not a pass claim"
+    },
+    "verdict": "NO-GO"
+  }
 }

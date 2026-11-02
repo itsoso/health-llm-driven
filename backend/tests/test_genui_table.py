@@ -1023,7 +1023,7 @@ async def test_cap_off_no_carveout(db, auth_user_and_headers, monkeypatch):
 # ---------------------------------------------------------------------------
 
 def _diet_summary_result():
-    """read_daily_diet 的 DailyDietSummary 形状 (逐餐 + 宏量合计)。"""
+    """Legacy unbounded read_daily_diet shape; explicit-day reads return a calendar envelope."""
     return json.dumps({
         "record_date": "2026-07-16",
         "total_calories": 980, "total_protein": 55, "total_carbs": 66,
@@ -1068,7 +1068,7 @@ async def test_diet_cap_on_emits_diet_summary_card(db, auth_user_and_headers, mo
     monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
 
-    events = await _run(executor, "我今天吃了啥",
+    events = await _run(executor, "看看我的饮食",
                         client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
     rendered = _tokens(events)
 
@@ -1121,7 +1121,7 @@ async def test_diet_cap_off_falls_back_to_metric_table(db, auth_user_and_headers
     monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
 
-    events = await _run(executor, "我今天吃了啥", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
+    events = await _run(executor, "看看我的饮食", client_caps=[GENUI_TABLE_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert '"type":"metric_table"' in rendered and "今日饮食" in rendered
     assert "diet_daily_summary" not in rendered
@@ -1139,7 +1139,7 @@ async def test_diet_kill_switch_off_falls_back_to_metric_table(db, auth_user_and
     monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
 
-    events = await _run(executor, "我今天吃了啥",
+    events = await _run(executor, "看看我的饮食",
                         client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert "diet_daily_summary" not in rendered
@@ -1156,7 +1156,7 @@ async def test_diet_cap_only_emits_diet_summary_card(db, auth_user_and_headers, 
     monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(_diet_summary_result()))
 
-    events = await _run(executor, "我今天吃了啥",
+    events = await _run(executor, "看看我的饮食",
                         client_caps=[GENUI_DIET_SUMMARY_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert '"type":"diet_daily_summary"' in rendered
@@ -1178,7 +1178,7 @@ async def test_diet_cap_on_empty_meals_falls_through_no_card(db, auth_user_and_h
     monkeypatch.setattr(executor, "_call_llm_stream", _diet_round_stream(captured))
     monkeypatch.setattr(executor, "_execute_tool", _exec_returns(empty))
 
-    events = await _run(executor, "我今天吃了啥",
+    events = await _run(executor, "看看我的饮食",
                         client_caps=[GENUI_TABLE_CAP, GENUI_DIET_SUMMARY_CAP], user_id=user.id)
     rendered = _tokens(events)
     assert "结论：今天蛋白质" in rendered      # 叙事仍在

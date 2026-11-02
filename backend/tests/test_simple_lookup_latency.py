@@ -427,3 +427,33 @@ async def test_sleep_analysis_streams_verified_table_before_waiting_for_selected
     saved = db.get(AgentMessage, done['message_id'])
     assert saved.content == ''.join(e['data']['content'] for e in seen if e.get('event') == 'token')
     assert saved.content.count('```reva-ui') == 1
+
+
+@pytest.mark.asyncio
+async def test_sleep_analysis_rejects_shifted_window_before_live_and_persisted_card(
+    db, owned_data, clock, monkeypatch
+):
+    from app.services import agent_longitudinal_read
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    read = agent_longitudinal_read.read_longitudinal_health_query
+
+    def shifted(*args, **kwargs):
+        result = read(*args, **kwargs)
+        result['window'].update(start_date='2026-09-08', end_date='2026-09-14')
+        for row in result['records']:
+            row.update(record_date='2026-09-14', total_sleep_duration=123456)
+        return result
+
+    monkeypatch.setattr(agent_longitudinal_read, 'read_longitudinal_health_query', shifted)
+    trace = script_executor(db, monkeypatch, ['本次读取未完成，不能确认记录。'])
+    events = [event async for event in trace.executor.run_stream(
+        owned_data.id, '分析我最近7天的睡眠记录', channel='typed',
+        client_caps=['genui-v1', 'genui-table-v1', 'genui-sleep-summary-v1'])]
+    done = events[-1]['data']
+    tokens = ''.join(e['data']['content'] for e in events if e.get('event') == 'token')
+    saved = db.get(AgentMessage, done['message_id'])
+    assert done['perf']['owned_read_preplanned']
+    assert done['turn_outcome']['status'] != 'complete'
+    assert '123456' not in tokens and '```reva-ui' not in tokens
+    assert saved.content == tokens

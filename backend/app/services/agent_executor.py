@@ -2062,6 +2062,62 @@ def _strip_xml_tool_markers(text: str) -> str:
 _GENUI_TABLE_TOOLS = frozenset({"health_query", "health_query_batch", "query_lab_indicators"})
 
 
+def _validated_genui_read_calls(tool_calls):
+    """Bind early and final cards to the executed query, not payload claims.
+
+    Calendar batches retain independently verified siblings. Legacy unbounded
+    result shapes keep their original builders; they cannot replace a bound
+    query with an unbound summary.
+    """
+    from app.services.agent_composed_read_completion import _validate
+    from app.services.genui import load_tool_result_json
+
+    calls = []
+
+    def append_read(query, payload, original):
+        bound = isinstance(query, dict) and any(k in query for k in ("start_date", "end_date"))
+        windowed = isinstance(payload, dict) and "window" in payload
+        if not bound and not windowed:
+            calls.append(original)
+            return
+        try:
+            reason = _validate(query, payload)
+        except (KeyError, TypeError, ValueError):
+            reason = "query_result_scope_conflict"
+        if reason is None:
+            calls.append(("health_query", query, json.dumps(payload, ensure_ascii=False)))
+        else:
+            logger.warning("genui_read_projection_rejected reason=%s", reason)
+
+    for name, args, result in tool_calls:
+        payload = load_tool_result_json(result)
+        if name == "health_query":
+            append_read(args, payload, (name, args, result))
+        elif name == "health_query_batch":
+            queries = (args or {}).get("queries")
+            results = payload.get("results") if isinstance(payload, dict) else None
+            bounded = (isinstance(queries, list) and any(
+                isinstance(q, dict) and any(k in q for k in ("start_date", "end_date")) for q in queries
+            )) or (isinstance(results, list) and any(isinstance(r, dict) and "window" in r for r in results))
+            if not bounded:
+                calls.append((name, args, result))
+                continue
+            if (not isinstance(queries, list) or not isinstance(results, list)
+                    or result_declares_explicit_failure(payload)
+                    or any(payload.get(k) for k in ("truncated", "has_more", "next_cursor"))
+                    or any(not isinstance(q, dict) for q in queries)):
+                continue
+            for query in queries:
+                matching = [r for r in results if isinstance(r, dict)
+                            and r.get("dimension") == query.get("dimension")]
+                if len(matching) == 1:
+                    item = matching[0]
+                    append_read(query, item, ("health_query", query, json.dumps(item, ensure_ascii=False)))
+        else:
+            calls.append((name, args, result))
+    return calls
+
+
 def _genui_readout_fences(
     tool_calls: List[Tuple[str, Optional[dict], str]],
     *,
@@ -2089,7 +2145,7 @@ def _genui_readout_fences(
 
     fences: List[str] = []
     table_calls: List[Tuple[str, Optional[dict], str]] = []
-    for tool_name, args, result in tool_calls:
+    for tool_name, args, result in _validated_genui_read_calls(tool_calls):
         if chart_on and tool_name in {"health_query", "health_query_batch"}:
             payload = load_tool_result_json(result)
             queries = [args] if tool_name == "health_query" else (args or {}).get("queries", [])
@@ -2104,7 +2160,7 @@ def _genui_readout_fences(
             payload = load_tool_result_json(result)
             descriptor = (
                 build_diet_daily_summary(payload)
-                if isinstance(payload, dict)
+                if isinstance(payload, dict) and "window" not in payload
                 else None
             )
             if descriptor:
@@ -2114,7 +2170,7 @@ def _genui_readout_fences(
             payload = load_tool_result_json(result)
             descriptor = (
                 build_sleep_summary(payload)
-                if isinstance(payload, dict)
+                if isinstance(payload, dict) and "window" not in payload
                 else None
             )
             if descriptor:
