@@ -545,8 +545,13 @@ async def test_deterministic_weather_invalid_facts_fail_done_and_persist(
 
 
 @pytest.mark.asyncio
-async def test_personal_health_query_still_uses_model(
-    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+@pytest.mark.parametrize("message,model_required", [
+    ("查询我今天的饮食记录", False),
+    ("查询我最近7天的饮食记录", True),
+    ("查询我今天的饮食记录并分析", True),
+])
+async def test_personal_query_is_not_public_and_only_closed_lookup_skips_model(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport, message, model_required,
 ):
     from tests.test_agent_executor_fast_routing import _wire_common
     user, _ = auth_user_and_headers
@@ -557,6 +562,12 @@ async def test_personal_health_query_still_uses_model(
     monkeypatch.setattr(ae, "get_health_tools", get_health_tools)
     monkeypatch.setattr(ae.settings, "domain_prompt_optimization", True)
     monkeypatch.setattr(ae.settings, "decision_mode", "off")
-    _ = [event async for event in executor.run_stream(user_id=user.id, message="查询我今天的饮食记录")]
+    events = [event async for event in executor.run_stream(user_id=user.id, message=message)]
     assert executor._public_task is None
-    assert provider.calls
+    assert bool(provider.calls) is model_required
+    if not model_required:
+        done = events[-1]["data"]
+        assert done["turn_outcome"]["status"] == "complete"
+        assert done["perf"]["simple_lookup_rendered"] is True
+        assert done["perf"]["owned_read_preplanned"] is True
+        assert done["write_receipts"] == []

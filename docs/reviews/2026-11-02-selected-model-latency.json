@@ -6980,6 +6980,17 @@
         "trajectories": 12,
         "goldens": 9
       }
+    },
+    "ci_contract_correction": {
+      "failed_candidate_sha": "a93fbec31ecc62df5143e351a04275e04c1fb29e",
+      "run_id": 41411702376,
+      "failed_job": "backend-test-balanced-13",
+      "job_id": 125166051362,
+      "failed_test": "test_personal_health_query_still_uses_model",
+      "reason": "Old test asserted a provider call for the exact new deterministic single-day diet lookup. Updated contract to require complete preplanned verified lookup without model, while multi-day and analysis queries still require model. Production code unchanged.",
+      "raw_job_log_sha256": "7e3c543a137e0f3c4ed648d7105db0c7a98836972f25e6fc218c51cffce0fdc6",
+      "local_revalidation": "97 passed, 6 existing deprecation warnings; 19.19s",
+      "release_attempted": false
     }
   }
 }
