@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | in_progress |
-| 当前阶段 | G3 本地回归，G4/G5/G6 待验证 |
+| 当前阶段 | G5 已发布；G6 发布回读通过，三秒性能与设备验收未完成 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 5806a685d880cb258f2733fe40cef0a9849cc195 |
 
@@ -58,7 +58,7 @@ tool_choice、thinking budget、显式缓存或临床质量档位。该小样本
 - 初版定向 54 passed。最终 CI-mode 合跑 310 passed（58.94 秒），验证管理员权限变化、
   跨轮清理、默认路由、工具门控、临床质量升级与失败回退。内存 SQLite、TZ=Asia/Shanghai；
   不将其称为 PostgreSQL 或生产负载证据。System Map、秘密扫描、diff 检查通过。
-- G4 独立安全审查、精确 SHA 真实模型闸、主干完整 CI、后端与用户已授权 OTA 均待执行。
+- 后续修订的 G4、精确 SHA 真实模型闸、完整 CI、后端和 OTA 结果见下文发布记录。
 - 无原生、schema、API 契约变化。共享 dirty checkout 未改动，沿用用户已授权隔离工作区。
 - 设备收到 OTA、模拟器真实界面与三秒性能目标均未验证。
 
@@ -67,7 +67,8 @@ tool_choice、thinking budget、显式缓存或临床质量档位。该小样本
 独立审查对 1c90fe99747f9fd62da1ccd733c6cc8b77357d5a 给出 NO-GO：
 实际手机选择器通过 `/me/llm-preference` 保存偏好，未必带 `extra_context.model_id`；
 而新增人工来源字段只在单模型路径清理，panel 提前分支可能继承上一轮来源。
-该候选未推送或发布。其 12 invariants、50 health core、5 live orchestrator 真实
+该候选未单独作为主干目标推送或发布，随后与整改同批进入 main，唯一发布候选为
+70d318d7168534694539dd65990748eb6e7528d7。其 12 invariants、50 health core、5 live orchestrator 真实
 Harness 闸虽通过，不能替代修订候选评测。
 
 修订在 `run_stream` 入口、任何 replay/panel 提前分支之前清空人工来源。单模型路径
@@ -84,3 +85,62 @@ Harness 闸虽通过，不能替代修订候选评测。
 出行两边均走既有确定性本地回复（约6–7毫秒），不归因为本次提速。
 故事小样本 P50 从5.96到1.5秒，P95/P99经验最大值从6.41到3.31秒；仍未达全量三秒。
 机器证据中的 saved_preference_followup 保留全部样本与来源摘要，非生产或手机验收。
+
+## 请求计时边界补测
+
+前两组计时包含合成账户初始化。补测将起点移至合成 owner/profile/consent 已建立、
+调用 `run_stream` 之前，终点包含输出审查和 done 事件；不含 HTTP 与手机渲染。
+同一故事、出行场景各三次，基线和最终候选均六次完成，所有样本保留在机器证据
+`request_boundary_followup` 中，原批次未被覆盖。
+
+故事基线完整耗时 12.92、4.37、4.13 秒，每次 Qwen→DeepSeek 两次调用；最终候选
+4.16、1.16、1.31 秒，每次仅 DeepSeek。冷启动样本仍超过三秒，其中模型调用约
+3.53 秒。出行回复两边均为既有本地路径，约 3–4 毫秒，不计为本次收益。
+内部 first_useful/end_to_end_ttft 可能包含尚未释放的缓冲内容，此处采用外部观察到
+的首个 token 计时；它仍不是手机点击到展示耗时。三次重复不能证明生产 P95/P99。
+原始计时证明摘要：`bb3b9b21987752dfd00c7e4d3238781c4be0629a13d6257f7cc2157a8bfbef21`。
+
+## 最终候选验证与发布记录
+
+唯一发布候选：`70d318d7168534694539dd65990748eb6e7528d7`。
+
+- G4：独立 reviewer 对固定 SHA 给出 GO，独立 266 项通过（56.87 秒），记录在本次
+  审查线程；未生成单独代码报告，不以运维 stage/rotation 批准代替代码审查。
+- G3：最终本地集成 318 项通过；精确 SHA 真实 Harness：12 invariants、50 health core、
+  5 live orchestrator 全通过，trajectory contract 12、goldens 9 通过。
+  真实模型整套平均耗时约 7.59 秒，这也是不能声称所有场景三秒完成的证据。
+  Harness 结果文件摘要 `06675e7e95c4ab82ff94a6762822c3e9c891bfbc78ad29838304336caa2a724e`。
+- 精确 main 完整 [CI 41374864498](https://github.com/itsoso/health-llm-driven/actions/runs/41374864498)：32/32 成功。
+- G5：后端 [validate 41376237799](https://github.com/itsoso/health-llm-driven/actions/runs/41376237799) 与
+  [deploy 41378345363](https://github.com/itsoso/health-llm-driven/actions/runs/41378345363) 成功。
+  OTA [validate 41377711126](https://github.com/itsoso/health-llm-driven/actions/runs/41377711126) 后执行
+  [publish 41378948456](https://github.com/itsoso/health-llm-driven/actions/runs/41378948456)，均成功。
+  仅发布一次；最初 validate CLI 在查询工作流元数据时 TLS 超时，确认无 run 后才提交实际 dispatch，
+  不涉及重复 publication claim。后端状态读取超时也未触发重复部署。
+- 无备份、旧配置恢复、恢复演练；保留原始锁、授权、回执和审计。独立批准的 stage、
+  短期只读凭证刷新及授权轮换后才部署。临时精确 SHA Harness 确认变量已删除并回读为空。
+
+## 发布回读与未完成验收
+
+后端只读回读通过：干净生产 HEAD 为候选 SHA，授权与实际执行器摘要一致，原始完成
+回执 SUCCEEDED，无占用业务租约，health-backend、celery-worker、celery-beat、reva-laya
+四服务 active/running，内外网健康检查 healthy。独立 reviewer 已复核证据。
+
+| 证据 | 值 |
+| --- | --- |
+| 后端 completed 原始摘要 | `0c44be3a7f9f0911f0ccf564c38de0f07a28ea90b1998fcdf3c7d50eed903b63` |
+| OTA completed 原始摘要 | `4465d55f7beb58fcbccea8cbc0129c19e7b171c02acdbcece8fb2027e207dfb9` |
+| OTA verified 原始摘要 | `4a7897fa5bf233f2aa17887973d4d18220ee24919db8900f30b4c75d96b2e62d` |
+| OTA group | `f0aa4e3e-e1b7-4839-b6ef-9142f334a77a` |
+| OTA update | `01a19a27-20ed-7693-bb4b-fcf04bc5ac52` |
+| iOS runtime / channel | `1.3.6` / `production` |
+| 公开 manifest launch hash | `4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE` |
+
+公开 Expo manifest 的更新 ID、runtime、启动资源和 47 个资源的摘要与发布制品一致；
+未另行下载全部资源字节，未宣称手机已获取或应用更新。本批没有 Mobile 运行时代码变化，
+按用户持续授权发布同一移动端代码树；响应提速发生在后端。
+
+三秒目标仍未完成：冷启动样本 4.16 秒、复杂 Harness 平均约 7.59 秒，手机端端到端和
+生产负载下的长尾未测。不得把这次发布写成性能全面验收通过。后续应先补网络连接、
+供应商等待、生成与实际输出释放的分段证据，再选择下一项优化；不得靠空泛确认、
+超时截断健康处理或降低安全/质量约束达标。

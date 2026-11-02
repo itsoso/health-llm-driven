@@ -1075,5 +1075,400 @@
       "A cold story task still exceeds 3 seconds",
       "Saved-preference provider label in this probe is the configured choice; no claim that raw vendor response model metadata was captured"
     ]
+  },
+  "request_boundary_followup": {
+    "candidate_sha": "70d318d7168534694539dd65990748eb6e7528d7",
+    "baseline_sha": "5806a685d880cb258f2733fe40cef0a9849cc195",
+    "counter_boundary": "Immediately after creating AgentExecutor with already seeded synthetic owner/profile/consent; before run_stream call; excludes fixture provisioning; includes full production-output guards and done event. Does not include HTTP/mobile render latency.",
+    "script_sha256": "9eb67c6250a6fb0f2ab0e26186b46336b35e2faef2934836cadbc07097902a97",
+    "samples": {
+      "baseline": {
+        "synthetic_only": true,
+        "engine": "disposable_sqlite",
+        "rows": [
+          {
+            "case": "story",
+            "repeat": 0,
+            "calls": [
+              {
+                "model": "qwen3.6-flash",
+                "ms": 9054
+              },
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 1305
+              }
+            ],
+            "passed": true,
+            "first_ms": 12812,
+            "total_ms": 12916,
+            "answer_chars": 33,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 117,
+              "pre_llm_ms": 289,
+              "pre_llm_stages": {
+                "routing_ms": 1,
+                "conv_ms": 2,
+                "opener_ms": 4,
+                "system_prompt_ms": 117,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 110,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 10376,
+              "first_useful_ms": 11190,
+              "end_to_end_total_ms": 12818,
+              "end_to_end_ttft_ms": 11308
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 0,
+            "calls": [],
+            "passed": true,
+            "first_ms": 4,
+            "total_ms": 4,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          },
+          {
+            "case": "story",
+            "repeat": 1,
+            "calls": [
+              {
+                "model": "qwen3.6-flash",
+                "ms": 3006
+              },
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 1078
+              }
+            ],
+            "passed": true,
+            "first_ms": 4349,
+            "total_ms": 4373,
+            "answer_chars": 43,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 13,
+              "pre_llm_stages": {
+                "routing_ms": 1,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 7,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 4093,
+              "first_useful_ms": 3046,
+              "end_to_end_total_ms": 4350,
+              "end_to_end_ttft_ms": 3049
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 1,
+            "calls": [],
+            "passed": true,
+            "first_ms": 3,
+            "total_ms": 3,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          },
+          {
+            "case": "story",
+            "repeat": 2,
+            "calls": [
+              {
+                "model": "qwen3.6-flash",
+                "ms": 2814
+              },
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 1034
+              }
+            ],
+            "passed": true,
+            "first_ms": 4107,
+            "total_ms": 4128,
+            "answer_chars": 46,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 12,
+              "pre_llm_stages": {
+                "routing_ms": 1,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 6,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 3855,
+              "first_useful_ms": 2895,
+              "end_to_end_total_ms": 4107,
+              "end_to_end_ttft_ms": 2897
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 2,
+            "calls": [],
+            "passed": true,
+            "first_ms": 3,
+            "total_ms": 3,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          }
+        ]
+      },
+      "candidate": {
+        "synthetic_only": true,
+        "engine": "disposable_sqlite",
+        "rows": [
+          {
+            "case": "story",
+            "repeat": 0,
+            "calls": [
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 3529
+              }
+            ],
+            "passed": true,
+            "first_ms": 4096,
+            "total_ms": 4158,
+            "answer_chars": 56,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 67,
+              "pre_llm_ms": 154,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 2,
+                "opener_ms": 2,
+                "system_prompt_ms": 102,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 20,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 3534,
+              "first_useful_ms": 3730,
+              "end_to_end_total_ms": 4097,
+              "end_to_end_ttft_ms": 3798
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 0,
+            "calls": [],
+            "passed": true,
+            "first_ms": 4,
+            "total_ms": 4,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          },
+          {
+            "case": "story",
+            "repeat": 1,
+            "calls": [
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 887
+              }
+            ],
+            "passed": true,
+            "first_ms": 1140,
+            "total_ms": 1163,
+            "answer_chars": 34,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 12,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 1,
+                "opener_ms": 0,
+                "system_prompt_ms": 7,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 890,
+              "first_useful_ms": 967,
+              "end_to_end_total_ms": 1140,
+              "end_to_end_ttft_ms": 970
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 1,
+            "calls": [],
+            "passed": true,
+            "first_ms": 3,
+            "total_ms": 3,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          },
+          {
+            "case": "story",
+            "repeat": 2,
+            "calls": [
+              {
+                "model": "deepseek-v4.1-flash",
+                "ms": 1015
+              }
+            ],
+            "passed": true,
+            "first_ms": 1291,
+            "total_ms": 1314,
+            "answer_chars": 36,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": 2,
+              "pre_llm_ms": 12,
+              "pre_llm_stages": {
+                "routing_ms": 0,
+                "conv_ms": 0,
+                "opener_ms": 0,
+                "system_prompt_ms": 7,
+                "kb_ms": 0,
+                "inspect_ms": 0,
+                "history_ms": 0,
+                "vision_ms": 0
+              },
+              "model_wait_ms": 1018,
+              "first_useful_ms": 1055,
+              "end_to_end_total_ms": 1291,
+              "end_to_end_ttft_ms": 1058
+            }
+          },
+          {
+            "case": "travel",
+            "repeat": 2,
+            "calls": [],
+            "passed": true,
+            "first_ms": 3,
+            "total_ms": 3,
+            "answer_chars": 23,
+            "outcome": "complete",
+            "segments": {
+              "turn_setup_ms": null,
+              "pre_llm_ms": null,
+              "pre_llm_stages": null,
+              "model_wait_ms": null,
+              "first_useful_ms": null,
+              "end_to_end_total_ms": null,
+              "end_to_end_ttft_ms": null
+            }
+          }
+        ]
+      }
+    },
+    "limits": [
+      "Follow-up measurement protocol; retains original provisioning-inclusive batches separately.",
+      "Only three repeats per scenario; no production p95/p99 claim.",
+      "Cold candidate story 4158ms exceeds 3-second target; do not discard it.",
+      "Local travel response existed before this patch; no attributed gain.",
+      "Internal first_useful/end_to_end_ttft may reflect pre-release buffered content; use externally observed first token here."
+    ]
+  },
+  "release": {
+    "candidate_sha": "70d318d7168534694539dd65990748eb6e7528d7",
+    "ci_run_id": 41374864498,
+    "backend_validate_run_id": 41376237799,
+    "backend_deploy_run_id": 41378345363,
+    "ota_validate_run_id": 41377711126,
+    "ota_publish_run_id": 41378948456,
+    "backend_readback": {
+      "authorization_matches": true,
+      "backend_completed": {
+        "sha": "70d318d7168534694539dd65990748eb6e7528d7",
+        "state": "SUCCEEDED"
+      },
+      "backend_completed_sha256": "0c44be3a7f9f0911f0ccf564c38de0f07a28ea90b1998fcdf3c7d50eed903b63",
+      "business_lease_absent": true,
+      "local_health": "healthy",
+      "production_clean": true,
+      "public_health": "healthy",
+      "services": {
+        "celery-beat": "active/running",
+        "celery-worker": "active/running",
+        "health-backend": "active/running",
+        "reva-laya": "active/running"
+      },
+      "sha": "70d318d7168534694539dd65990748eb6e7528d7",
+      "state": "BACKEND_READONLY_VERIFIED"
+    },
+    "ota_public_manifest_readback": {
+      "asset_count": 47,
+      "channel": "production",
+      "created_at": "2026-11-02T02:46:58.029Z",
+      "group_id": "f0aa4e3e-e1b7-4839-b6ef-9142f334a77a",
+      "launch_hash": "4viQ983bfb4Yl60ajYrTwOlfX6kWXIwOlyYOjIny9cE",
+      "project_id": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "public_origin": "https://u.expo.dev/911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtime": "1.3.6",
+      "sha": "70d318d7168534694539dd65990748eb6e7528d7",
+      "state": "PUBLIC_OTA_MANIFEST_VERIFIED",
+      "update_id": "01a19a27-20ed-7693-bb4b-fcf04bc5ac52"
+    },
+    "three_second_target_accepted": false,
+    "device_update_accepted": false,
+    "full_asset_bytes_downloaded_in_independent_readback": false
   }
 }
