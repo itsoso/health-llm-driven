@@ -22,7 +22,7 @@ from tests.test_agent_read_repair_round_budget import (
 async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", partial=False,
                          answer=ANSWER, rogue_tool=False, finish_reason="stop", query=QUERY, conversation_id=None,
                          stage_reply=None, omit_finish_event=False, stage_result=None, use_base_stream=False,
-                         correction_result=None, prior_timeout_retry=False):
+                         correction_result=None, prior_timeout_retry=False, preplanned=False):
     _context_sentinels(monkeypatch)
     executor = AgentExecutor(db)
     monkeypatch.setattr(executor, "_build_system_knowledge_prompt_context", lambda *a, **k: "OLD_KNOWLEDGE_SENTINEL")
@@ -50,7 +50,7 @@ async def run_projection(db, user, monkeypatch, *, panel=False, layout="batch", 
 
         def response(self, kwargs):
             calls.append({"provider_model": self.model, **copy.deepcopy(kwargs)})
-            if len(calls) == 1:
+            if len(calls) == 1 and not preplanned:
                 return {"content": "", "finish_reason": "tool_calls", "tool_calls": [
                     {"id": f"projection-{i}", "type": "function", "function": {
                         "name": name, "arguments": json.dumps(args)}}
@@ -1780,3 +1780,84 @@ async def test_buffered_partial_timeout_is_replaced_once_and_finally_checked(
     assert "每天服用500mg" not in saved.content
     assert not done.get("write_receipts")
     assert all(request.tool_name != "health_record" for request in dispatches)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('empty', [False, True])
+async def test_new_closed_sleep_analysis_projects_attested_evidence_without_more_tools(
+    db, four_domain_user, clock, monkeypatch, empty,
+):
+    from app.config import settings
+    from app.models.daily_health import GarminData
+    import tests.test_agent_composed_synthesis_projection as module
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    monkeypatch.setattr(module, 'QUERIES', [{'dimension': 'sleep', 'days': 7}])
+    monkeypatch.setattr(module, 'BAD', [])
+    if empty:
+        db.query(GarminData).filter(GarminData.user_id == four_domain_user.id).delete()
+        db.commit()
+    _, calls, dispatched, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch,
+        query='分析我最近7天的睡眠记录', preplanned=True,
+        answer='仅凭本次日汇总记录不能判断个人恢复状态。',
+    )
+    assert done['turn_outcome']['status'] == 'complete'
+    assert len(calls) == 1 and len(dispatched) == 1
+    assert not calls[-1].get('tools')
+    data = json.loads(calls[-1]['messages'][1]['content'])
+    assert len(data['read_evidence']['queries']) == 1
+    evidence = data['read_evidence']['queries'][0]
+    assert evidence['query']['start_date'] == '2026-09-07'
+    assert evidence['query']['end_date'] == '2026-09-13'
+    assert evidence['record_count'] == (0 if empty else 1)
+    assert '800字' not in calls[-1]['messages'][0]['content']
+    assert '不超过200字' in calls[-1]['messages'][0]['content']
+    assert '查询范围：睡眠' in saved.content
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
+async def test_closed_sleep_analysis_still_rejects_unverified_health_conclusions(
+    db, four_domain_user, clock, monkeypatch,
+):
+    from app.config import settings
+    import tests.test_agent_composed_synthesis_projection as module
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    monkeypatch.setattr(module, 'QUERIES', [{'dimension': 'sleep', 'days': 7}])
+    monkeypatch.setattr(module, 'BAD', [])
+    unsafe = '你的睡眠充足，恢复良好，没有健康异常。'
+    _, _, _, done, saved = await run_projection(
+        db, four_domain_user, monkeypatch,
+        query='分析我最近7天的睡眠记录', answer=unsafe, preplanned=True,
+    )
+    assert unsafe not in saved.content
+    assert '查询范围：睡眠' in saved.content
+    assert not done['write_receipts']
+
+
+@pytest.mark.asyncio
+async def test_existing_sleep_analysis_keeps_prior_correction_context(
+    db, four_domain_user, clock, monkeypatch,
+):
+    from app.config import settings
+    from app.models.agent_conversation import AgentConversation
+    import tests.test_agent_composed_synthesis_projection as module
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    monkeypatch.setattr(module, 'QUERIES', [{'dimension': 'sleep', 'days': 7}])
+    monkeypatch.setattr(module, 'BAD', [])
+    conv = AgentConversation(user_id=four_domain_user.id)
+    db.add(conv)
+    db.flush()
+    db.add(AgentMessage(conversation_id=conv.id, role='user', content='我的睡眠记录有误，不要据此判断恢复。'))
+    db.add(AgentMessage(conversation_id=conv.id, role='assistant', content='已了解。'))
+    db.commit()
+    _, calls, _, done, _ = await run_projection(
+        db, four_domain_user, monkeypatch, conversation_id=conv.id,
+        query='分析我最近7天的睡眠记录',
+    )
+    assert calls[-1].get('tools')
+    assert '睡眠记录有误' in str(calls[-1]['messages'])
+    assert not done['write_receipts']

@@ -13971,6 +13971,45 @@ class AgentExecutor:
             return render_verified_diet_lookup(scope.queries[0], completion)
         return completion.trusted_fact_summary or None
 
+    def _closed_sleep_analysis_scope(self):
+        """Only propose an existing, fully bound fresh-turn sleep read.
+
+        No parser/authority change: clinical, historical, mixed and failed turns
+        retain their original planner. This scope is also used by synthesis.
+        """
+        snapshot = self._agent_kernel_snapshot
+        message = self._current_turn_user_message or ""
+        if (
+            not getattr(settings, "domain_prompt_optimization", False)
+            or snapshot is None or snapshot.intent.is_write
+            or snapshot.envelope.text != message
+            or type(self._current_user_id) is not int
+            or snapshot.envelope.user_id != self._current_user_id
+            or snapshot.context.user_id != self._current_user_id
+            or snapshot.actionable_references or snapshot.envelope.media
+            or self._current_turn_has_attachment or self._read_only_turn
+            or self._turn_selected_exam_id is not None
+            or self._turn_selected_notification_id is not None
+            or self._agent_kernel_pending_confirmation_tools
+            or self._agent_kernel_capability_block_reasons
+            or self._agent_kernel_tool_failure_tools
+            or self._turn_sync_attempted or self._read_repair_failures
+            or self._force_no_tools_synthesis or self._requires_quality_floor()
+            or self._turn_invoked_deep_analysis
+            or not re.fullmatch(
+                r"(?:请)?分析我最近(?:[1-9]|[12][0-9]|3[01])天的睡眠记录[。.!！]?",
+                message.strip(),
+            )
+        ):
+            return None
+        scope = self._owned_read_scope_for(snapshot)
+        if (scope is None or len(scope.queries) != 1
+                or scope.queries[0].get("dimension") != "sleep"
+                or scope.composite_advice or scope.weather_city is not None
+                or scope.workout_selection is not None):
+            return None
+        return scope
+
     def _preplanned_owned_read_calls(
         self, round_index: int, messages: list[dict], tools: list[dict], *, sealed: bool = False,
         new_conversation: bool = False,
@@ -13983,6 +14022,8 @@ class AgentExecutor:
         snapshot = self._agent_kernel_snapshot
         message = self._current_turn_user_message or ""
         simple_scope = self._simple_record_lookup_scope()
+        if simple_scope is None:
+            simple_scope = self._closed_sleep_analysis_scope()
         if (new_conversation and simple_scope is not None and round_index == 0 and not sealed
                 and sum(m.get("role") == "user" for m in messages) == 1
                 and not any(m.get("role") in {"tool", "assistant"} or m.get("tool_calls") for m in messages)
@@ -14085,7 +14126,7 @@ class AgentExecutor:
 
     def _composed_synthesis_messages(
         self, user_id: int, conv_id: int, user_auth_token: Optional[str],
-        message: str, *, sealed: bool = False,
+        message: str, *, sealed: bool = False, history_free: bool = False,
     ) -> Optional[List[Dict[str, Any]]]:
         """Provider-only input; never replace Pi's transcript or permission state."""
         snapshot = self._agent_kernel_snapshot
@@ -14120,7 +14161,11 @@ class AgentExecutor:
         scope = self._owned_read_scope_for(snapshot)
         # Even one bounded oxygen read needs the verified evidence projection;
         # daily summaries/sparse samples cannot authorize free-form diagnoses.
-        if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None):
+        closed_sleep_analysis = bool(
+            history_free and self._closed_sleep_analysis_scope() is not None
+        )
+        if scope is None or (len(scope.queries) < 2 and scope.query("spo2") is None
+                             and not closed_sleep_analysis):
             return None
         static_rules = self._build_system_prompt(
             user_id, conv_id, user_auth_token, intent_query=message, static_rules_only=True, synthesis_only=True,
@@ -20478,10 +20523,18 @@ class AgentExecutor:
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,
+                                history_free=(conversation_id is None and len(initial_dialogue) == 1
+                                              and initial_dialogue[0].get("role") == "user"),
                             )
                             if composed_messages is not None:
                                 messages = composed_messages
                                 composed_synthesis_used = True
+                                if (read_scope is not None and len(read_scope.queries) == 1
+                                        and read_scope.queries[0].get("dimension") == "sleep"):
+                                    # The new single-domain projection retains the
+                                    # same evidence limits as multi-domain analysis.
+                                    # Apply them to both streamed and stored prose.
+                                    composite_advice = True
                             diet_synthesis_round = bool(
                                 round_idx > 0 and daily_diet_evaluation
                                 and not health_advice_buffered
@@ -22022,7 +22075,9 @@ class AgentExecutor:
             if early_genui_fences and "protocol_leak" not in output_quality.flags:
                 prefix = "\n\n".join(early_genui_fences)
                 if release_text.startswith(prefix):
-                    release_text = release_text[len(prefix):].lstrip("\n")
+                    # Keep the card/body separator identical in the live stream
+                    # and persisted message; the fence was already sent alone.
+                    release_text = release_text[len(prefix):]
             if first_token_at is None:
                 first_token_at = time.time()
             for i in range(0, len(release_text), 24):

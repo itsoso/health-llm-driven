@@ -69,14 +69,16 @@ async def test_closed_lookup_uses_verified_read_without_planner_or_synthesis(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["exception", "truncated", "wrong_date"])
-@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录"])
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录"])
 async def test_unverified_result_cannot_finish_as_fast_lookup(
     db, owned_data, clock, monkeypatch, failure, query
 ):
-    from app.services import agent_query_window
+    from app.services import agent_query_window, agent_longitudinal_read
 
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
-    read = agent_query_window.read_calendar_health_query
+    module = agent_longitudinal_read if query.startswith("分析") else agent_query_window
+    function = "read_longitudinal_health_query" if query.startswith("分析") else "read_calendar_health_query"
+    read = getattr(module, function)
 
     def broken(*args, **kwargs):
         if failure == "exception":
@@ -88,7 +90,7 @@ async def test_unverified_result_cannot_finish_as_fast_lookup(
             result["window"]["start_date"] = "2000-01-01"
         return result
 
-    monkeypatch.setattr(agent_query_window, "read_calendar_health_query", broken)
+    monkeypatch.setattr(module, function, broken)
     trace = script_executor(db, monkeypatch, ["本次读取未完成，不能确认记录。"])
     events = [
         event
@@ -214,6 +216,14 @@ async def test_closed_lookup_skips_optional_router_only_without_quality_floor(
         "查询昨天的饮食记录，我头晕",
         "查询昨天的饮食记录并删除重复的",
         "查询妈妈昨天的饮食记录",
+        "分析我最近7天的睡眠记录，只看深睡",
+        "分析我最近7天的睡眠记录，我胸痛",
+        "分析我最近7天的睡眠记录并同步佳明",
+        "不要分析我最近7天的睡眠记录",
+        "例句：分析我最近7天的睡眠记录",
+        "分析妈妈最近7天的睡眠记录",
+        "分析我最近32天的睡眠记录",
+        "分析我最近0天的睡眠记录",
         "不要查询昨天的饮食记录",
         "查询昨天的饮食记录，只看午餐",
     ],
@@ -228,6 +238,7 @@ def test_lookup_does_not_erase_other_goals_or_qualifiers(
         user_id=owned_data.id, message=message, channel="typed"
     )
     assert executor._simple_record_lookup_scope() is None
+    assert executor._closed_sleep_analysis_scope() is None
 
 
 @pytest.mark.parametrize(
@@ -244,7 +255,7 @@ def test_lookup_does_not_erase_other_goals_or_qualifiers(
         "floor",
     ],
 )
-@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录"])
+@pytest.mark.parametrize("query", [QUERY, "查询昨天的饮食记录", "分析我最近7天的睡眠记录"])
 def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary, query):
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
     executor = script_executor(db, monkeypatch, []).executor
@@ -275,6 +286,7 @@ def test_lookup_shortcut_fails_closed(db, owned_data, monkeypatch, boundary, que
     if boundary == "floor":
         executor._staged_answer_task_tier = "high_stakes"
     assert executor._simple_record_lookup_scope() is None
+    assert executor._closed_sleep_analysis_scope() is None
 
 
 @pytest.mark.asyncio
@@ -351,3 +363,67 @@ async def test_greeting_in_existing_conversation_preserves_unfinished_context(
     assert trace.executor._public_task is None
     assert any("记录有误" in str(m.get("content")) for m in trace.calls[0][0])
     assert events[-1]["data"]["turn_outcome"]["status"] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_closed_sleep_analysis_reads_before_first_model_request(
+    db, owned_data, clock, monkeypatch,
+):
+    from app.models.agent_conversation import AgentMessage
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    trace = script_executor(db, monkeypatch, ['仅凭本次日汇总不能判断个人恢复状态。'])
+    events = [event async for event in trace.executor.run_stream(
+        owned_data.id, '分析我最近7天的睡眠记录', channel='typed',
+    )]
+    done = events[-1]['data']
+    assert not trace.unexpected and len(trace.calls) == 1
+    assert len(trace.dispatches) == 1
+    assert trace.dispatches[0].tool_name == 'health_query'
+    assert trace.dispatches[0].arguments == {
+        'dimension': 'sleep', 'days': 7,
+        'start_date': '2026-09-07', 'end_date': '2026-09-13', 'timezone': 'Asia/Shanghai',
+    }
+    assert not trace.calls[0][1]
+    assert 'read_evidence' in str(trace.calls[0][0])
+    assert done['turn_outcome']['status'] == 'complete'
+    assert not done['write_receipts']
+    saved = db.get(AgentMessage, done['message_id'])
+    assert '查询范围：睡眠' in saved.content
+    assert '599' not in saved.content and '111' not in saved.content
+
+
+@pytest.mark.asyncio
+async def test_sleep_analysis_streams_verified_table_before_waiting_for_selected_model(
+    db, owned_data, clock, monkeypatch,
+):
+    import json
+
+    monkeypatch.setattr(settings, 'domain_prompt_optimization', True)
+    trace = script_executor(db, monkeypatch, ['仅凭记录不能判断个人恢复状态。'])
+    stream = trace.executor._call_llm_stream
+    seen = []
+
+    async def answer_after_read(messages, tools):
+        fences = [e['data']['content'] for e in seen if e.get('event') == 'token'
+                  and '```reva-ui' in e['data'].get('content', '')]
+        assert len(fences) == 1
+        descriptor = json.loads(fences[0].split('```reva-ui\n')[1].split('\n```')[0])
+        assert descriptor['type'] == 'metric_table'
+        assert '420' in fences[0] and '599' not in fences[0] and '111' not in fences[0]
+        assert '睡眠时长充足' not in fences[0]
+        assert not tools
+        async for event in stream(messages, tools):
+            yield event
+
+    monkeypatch.setattr(trace.executor, '_call_llm_stream', answer_after_read)
+    async for event in trace.executor.run_stream(
+        owned_data.id, '分析我最近7天的睡眠记录', channel='typed',
+        client_caps=['genui-v1', 'genui-table-v1', 'genui-sleep-summary-v1'],
+    ):
+        seen.append(event)
+    done = seen[-1]['data']
+    assert done['turn_outcome']['status'] == 'complete'
+    saved = db.get(AgentMessage, done['message_id'])
+    assert saved.content == ''.join(e['data']['content'] for e in seen if e.get('event') == 'token')
+    assert saved.content.count('```reva-ui') == 1

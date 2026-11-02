@@ -1,0 +1,3237 @@
+{
+  "schema_version": "common-agent-latency-screen.v1",
+  "baseline_sha": "0ddf52a348feb5078e15b3333911907486cec7b2",
+  "status": "local_candidate_under_verification",
+  "environment": {
+    "synthetic_only": true,
+    "database": "ephemeral SQLite",
+    "live_providers": true,
+    "decision_mode": "off",
+    "domain_prompt_optimization": true,
+    "saved_model_preferences": [
+      "qwen3.8-max",
+      "deepseek-v4.1-flash"
+    ],
+    "concurrency": 1,
+    "sample_limit_seconds": 90,
+    "sample_model_call_limit": 3,
+    "tool_allowlist": [
+      "health_query",
+      "health_query_batch",
+      "knowledge_search"
+    ]
+  },
+  "limitations": [
+    "The first screen sends only sleep-summary capability, not full App capabilities. It ranks backend text paths, not App visible timing.",
+    "BenchmarkStopped is a harness budget/tool-boundary stop, not evidence that production failed.",
+    "Outcome complete only records runtime status; it is not a semantic quality pass.",
+    "Small synthetic samples do not prove production P95/P99, PostgreSQL semantics, native rendering or device acceptance.",
+    "Concurrent local regression tests may affect timing; no CPU-attribution or production-tail claim.",
+    "Model output, tokens and price are not estimated when provider evidence is absent.",
+    "Writes, actual photo capture, external hardware and full deep-analysis tool chain are not measured by this read-only screen."
+  ],
+  "limited_caps_screen": {
+    "source_sha256": "d2beebe399fcd10a7b5903291de74b0ae3872391e10bcf6df9bb247874a76ed2",
+    "rows": [
+      {
+        "case": "greeting__qwen3.8-max",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 2625,
+        "total_ms": 2699,
+        "answer_chars": 14,
+        "answer": "你好，有什么我可以帮你的吗？",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 168,
+          "pre_llm_ms": 84,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 5,
+            "system_prompt_ms": 0,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 2457,
+          "end_to_end_total_ms": 2684,
+          "end_to_end_ttft_ms": 2625,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "greeting__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 242,
+        "total_ms": 246,
+        "answer_chars": 14,
+        "answer": "你好，有什么我可以帮你的吗？",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 1,
+          "pre_llm_ms": 3,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 0,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 239,
+          "end_to_end_total_ms": 242,
+          "end_to_end_ttft_ms": 241,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "introduction__qwen3.8-max",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 262,
+        "total_ms": 273,
+        "answer_chars": 77,
+        "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 4,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 0,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 259,
+          "end_to_end_total_ms": 264,
+          "end_to_end_ttft_ms": 261,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "introduction__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 244,
+        "total_ms": 248,
+        "answer_chars": 77,
+        "answer": "我是小气候，可以协助你整理和查询自己的健康记录、解读已有资料，并跟进健康计划。记录或修改信息需要你的授权，并以实际保存结果为准。我的帮助不能替代医生诊断。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 5,
+          "pre_llm_ms": 6,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 0,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 238,
+          "end_to_end_total_ms": 244,
+          "end_to_end_ttft_ms": 243,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "travel_chat__qwen3.8-max",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 5,
+        "total_ms": 5,
+        "answer_chars": 23,
+        "answer": "收到，已上车，正在往酒店方向走。路上注意安全。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": null,
+          "pre_llm_ms": null,
+          "pre_llm_stages": null,
+          "model_wait_ms": null,
+          "first_useful_ms": null,
+          "end_to_end_total_ms": null,
+          "end_to_end_ttft_ms": null,
+          "model_call_count": null,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "travel_chat__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 3,
+        "total_ms": 3,
+        "answer_chars": 23,
+        "answer": "收到，已上车，正在往酒店方向走。路上注意安全。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": null,
+          "pre_llm_ms": null,
+          "pre_llm_stages": null,
+          "model_wait_ms": null,
+          "first_useful_ms": null,
+          "end_to_end_total_ms": null,
+          "end_to_end_ttft_ms": null,
+          "model_call_count": null,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "rewrite__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9438,
+            "tool_count": 9,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 7728,
+            "finish_reason": "stop",
+            "ms": 9856
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 10266,
+        "total_ms": 10366,
+        "answer_chars": 122,
+        "answer": "几个更简洁的版本：\n\n1. **今天的计划已全部完成。**（最简，8字）\n2. 今天计划的工作都做完了。（口语一些）\n3. 今日待办已清零。（适合打卡、日志风格）\n\n原句的冗余主要在“我已经”和“所有计划中的”——去掉后意思不变，读起来更利落。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 4,
+          "pre_llm_ms": 148,
+          "pre_llm_stages": {
+            "routing_ms": 1,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 131,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 10,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 9879,
+          "first_useful_ms": 8121,
+          "end_to_end_total_ms": 10270,
+          "end_to_end_ttft_ms": 8125,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "rewrite__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9438,
+            "tool_count": 9,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1424,
+            "finish_reason": "stop",
+            "ms": 1805
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 2167,
+        "total_ms": 2282,
+        "answer_chars": 84,
+        "answer": "**今天计划的工作都完成了。**\n\n如果想更短：**今天的活全干完了。**\n\n两者都保留了原句的“全部完成”和“今天”两个关键信息，去掉了“我已经”“中”这类冗余成分。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 4,
+          "pre_llm_ms": 16,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 9,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 1810,
+          "first_useful_ms": 1767,
+          "end_to_end_total_ms": 2168,
+          "end_to_end_ttft_ms": 1772,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "story__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9426,
+            "tool_count": 11,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2719,
+            "finish_reason": "stop",
+            "ms": 5462
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 5725,
+        "total_ms": 5749,
+        "answer_chars": 131,
+        "answer": "月亮每晚都从海的那一头爬上来，把碎银一样的光撒在渔村的屋顶上。\n\n有个小女孩总担心它会累，于是每晚在窗台放一盏小灯，说是给月亮照路。\n\n许多年后她长大了，那盏灯还亮着，只是照路的变成了她自己。\n\n月亮从不说话，可它一直记得——每个认真等它的人，都被它悄悄照亮过。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 5467,
+          "first_useful_ms": 2962,
+          "end_to_end_total_ms": 5726,
+          "end_to_end_ttft_ms": 2965,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "story__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9426,
+            "tool_count": 11,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 976,
+            "finish_reason": "stop",
+            "ms": 1814
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 2082,
+        "total_ms": 2106,
+        "answer_chars": 159,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n月亮今晚从云后面慢慢探出头，把整条街的屋顶都涂上一层薄薄的银。\n\n楼下便利店的灯还亮着，一个刚下夜班的人抬头看了看它，忽然想起小时候在院子里数星星的夜晚。\n\n月亮没说话，只是把光铺在他回家的路上，一直铺到单元门口。\n\n等他关了门，它才悄悄挪到窗边，替他守着这一晚的睡眠。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 1818,
+          "first_useful_ms": 1222,
+          "end_to_end_total_ms": 2083,
+          "end_to_end_ttft_ms": 1225,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "diet_lookup__qwen3.8-max",
+        "repeat": 0,
+        "calls": [],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 315,
+        "total_ms": 337,
+        "answer_chars": 236,
+        "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 24,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 302,
+          "end_to_end_total_ms": 315,
+          "end_to_end_ttft_ms": 314,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "diet_lookup__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 371,
+        "total_ms": 394,
+        "answer_chars": 236,
+        "answer": "已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-11-01，Asia/Shanghai。\n\n饮食：已记录1条。已记录热量合计200千卡。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n1. 2026-11-01；晚餐；食物：\"合成番茄\"；食物明细：\"合成番茄\"；热量 200 kcal；蛋白质未知；碳水未知；脂肪未知；膳食纤维未知\n\n以上仅为本次返回的记录；未知字段不代表零，未返回记录不代表未进食。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 11,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 6,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 360,
+          "end_to_end_total_ms": 371,
+          "end_to_end_ttft_ms": 370,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_lookup__qwen3.8-max",
+        "repeat": 0,
+        "calls": [],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 270,
+        "total_ms": 293,
+        "answer_chars": 147,
+        "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7.08小时；评分79。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 260,
+          "end_to_end_total_ms": 270,
+          "end_to_end_ttft_ms": 269,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_lookup__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 267,
+        "total_ms": 289,
+        "answer_chars": 147,
+        "answer": "信息来源：工具读取结果、已检索证据（未逐句核验）。\n查询范围：睡眠，2026-11-01，Asia/Shanghai。\n\n睡眠：时长7.08小时；评分79。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 11,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 6,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 0,
+          "first_useful_ms": 257,
+          "end_to_end_total_ms": 267,
+          "end_to_end_ttft_ms": 266,
+          "model_call_count": 0,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "water_lookup__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9273,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 7929
+          },
+          {
+            "prompt_chars": 9609,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 4098
+          },
+          {
+            "prompt_chars": 9945,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": false,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1407
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 13723
+      },
+      {
+        "case": "water_lookup__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9273,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2200
+          },
+          {
+            "prompt_chars": 9609,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1743
+          },
+          {
+            "prompt_chars": 9945,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1302
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 5544
+      },
+      {
+        "case": "diet_week__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9009,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 4042
+          },
+          {
+            "prompt_chars": 9620,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 8088,
+            "finish_reason": "stop",
+            "ms": 12438
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 20
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 16795,
+        "total_ms": 16818,
+        "answer_chars": 238,
+        "answer": "最近7天（10月27日—11月2日）的饮食记录只有1条：\n\n- **11月2日 晚餐**：合成番茄，约200千卡（蛋白质、碳水、脂肪、纤维均未填写）\n\n也就是说，10月27日到11月1日这6天没有任何饮食记录，今天的记录也才刚补上晚餐这一餐。\n\n两点提示：\n1. 目前记录的200千卡明显低于一天的正常摄入，如果早餐、午餐确实吃过，建议补录，否则后续的能量平衡和营养结构判断都会失真。\n2. 这条晚餐记录缺少蛋白质和三大营养素数据，如果你知道大致内容，可以告诉我，我帮你补全。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 7,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 16486,
+          "first_useful_ms": 4334,
+          "end_to_end_total_ms": 16796,
+          "end_to_end_ttft_ms": 12432,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "diet_week__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9009,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1026
+          },
+          {
+            "prompt_chars": 9620,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1704,
+            "finish_reason": "stop",
+            "ms": 2798
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 4126,
+        "total_ms": 4150,
+        "answer_chars": 253,
+        "answer": "最近 7 天里，只有今天（11 月 2 日）有 1 条饮食记录：晚餐「合成番茄」，估算 200 千卡。其余 6 天（10 月 27 日至 11 月 1 日）都没有任何饮食记录。\n\n这条记录只填了热量，蛋白质、碳水、脂肪、膳食纤维都是空的，所以这 7 天的营养结构其实算不出来；如果后面要看趋势，得先把这几项补上。\n\n另外，今天到目前为止只记录了这一餐、合计 200 千卡，和常见的晚餐需求相比明显偏低，可能还有没记的部分，比如早餐、午餐或加餐。如果需要，你可以告诉我吃了什么，我按份量把营养估算一起补进去。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 12,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 3830,
+          "first_useful_ms": 1310,
+          "end_to_end_total_ms": 4127,
+          "end_to_end_ttft_ms": 3019,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_week__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9175,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 3335
+          },
+          {
+            "prompt_chars": 10583,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 14473,
+            "finish_reason": "stop",
+            "ms": 26760
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 9
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 3637,
+        "total_ms": 30437,
+        "answer_chars": 1551,
+        "answer": "```reva-ui\n{\"type\":\"sleep_summary\",\"v\":1,\"data\":{\"range_label\":\"近7天\",\"nights\":[{\"date\":\"2026-11-02\",\"score\":80,\"duration_h\":7.0,\"deep_min\":null},{\"date\":\"2026-11-01\",\"score\":79,\"duration_h\":7.1,\"deep_min\":null},{\"date\":\"2026-10-31\",\"score\":78,\"duration_h\":7.2,\"deep_min\":null},{\"date\":\"2026-10-30\",\"score\":77,\"duration_h\":7.2,\"deep_min\":null},{\"date\":\"2026-10-29\",\"score\":76,\"duration_h\":7.3,\"deep_min\":null},{\"date\":\"2026-10-28\",\"score\":75,\"duration_h\":7.4,\"deep_min\":null},{\"date\":\"2026-10-27\",\"score\":74,\"duration_h\":7.5,\"deep_min\":null}],\"averages\":{\"score\":77,\"duration_h\":7.2,\"deep_min\":0},\"observations\":[{\"severity\":\"normal\",\"label\":\"睡眠时长充足\",\"detail\":\"平均 7.2h,一般建议 7–9h。\"},{\"severity\":\"normal\",\"label\":\"睡眠评分\",\"detail\":\"近期平均 77(设备评分)。\"}],\"duration\":{\"current_h\":7.2,\"target_h\":8.0}}}\n```信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n已经查到你最近7天（10月27日—11月2日）的完整睡眠记录，7天都有数据，没有缺日。\n\n**三个关键要点**\n\n1. **整体达标但贴着下限**：7天平均睡眠时长7.2小时，平均评分77分（良好区间）。按美国CDC对成人的建议，每晚7小时或以上才算充足，你目前刚好在线上，没有富余。\n2. **时长在往下走，评分在往上走**：从10月27日的7.5小时逐日缩短到今天的7.0小时，累计少了30分钟；同期评分却从74升到80。这说明近几晚睡得\"更实\"但睡得更短——短期靠压缩时长换质量是可以的，但如果继续往下掉到7小时以下，恢复能力会开始吃亏。\n3. **深睡/REM分段数据全部缺失**：这7天的深睡、REM、夜间清醒时长都没有采集到。系统给出的\"深度睡眠不足\"标签是在没有分段数据的情况下生成的，**不能当作确诊结论**，我不建议据此判断你深睡真的不够。更可能的原因是手表夜间佩戴松动、未开启连续监测或同步不完整。\n\n**接下来可以做的**\n\n- **先把数据采集补上**：今晚睡觉时确认手表贴合佩戴、电量充足，明早同步后再看是否出现深睡/REM分段。有了分段数据，才能真正评估睡眠质量，而不只是看总时长。\n- **把入睡时间固定住，目标回到7.5小时**：现在是18:27，如果你明早7:00起床，倒推需要在23:30前入睡；建议22:30开始睡前准备（调暗灯光、放下电子设备），给身体留出1小时的降速时间。\n- **别再继续压缩**：这周已经少了30分钟，接下来几天优先保证时长不再下滑，比追求更高评分更重要。\n\n以上信息用于健康管理参考，不替代医生诊断；如果长期存在入睡困难、夜间频繁醒来或白天明显嗜睡，做进一步评估前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 12,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 30101,
+          "first_useful_ms": 3634,
+          "end_to_end_total_ms": 30415,
+          "end_to_end_ttft_ms": 3636,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_week__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9175,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1034
+          },
+          {
+            "prompt_chars": 9511,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1370
+          },
+          {
+            "prompt_chars": 9847,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1563
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 4309
+      },
+      {
+        "case": "water_week__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9276,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 3146
+          },
+          {
+            "prompt_chars": 9612,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 5709
+          },
+          {
+            "prompt_chars": 9948,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": false,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1813
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 10962
+      },
+      {
+        "case": "water_week__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9276,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1138
+          },
+          {
+            "prompt_chars": 9567,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1864,
+            "finish_reason": "stop",
+            "ms": 3728
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 8
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 5151,
+        "total_ms": 5175,
+        "answer_chars": 465,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询结果：近 7 天（10-27 至 11-02）只有今天一条饮水记录，500 ml，目标 2000 ml，完成 25%；前面 6 天没有记录，可能是没打卡，也可能是确实没喝，系统无法区分这两种情况。\n\n要点：\n- 现在 18:28，距今天结束还有约 5.5 小时，若要达成 2000 ml 目标，还需补约 1500 ml。\n- 可执行的做法是：今晚分 3 次喝，每次 400–500 ml，比如现在一次、晚饭时一次、睡前 1–2 小时一次；避免睡前一次性灌大量水，以免增加夜尿影响睡眠。\n- 你今天睡眠 7.0 小时，略低于 7.5 小时的档案目标；晚间也别因为补水把入睡时间往后推。\n\n如果前面几天确实喝了不少，只是没记，可以跟我说一下大致情况，我帮你补录，这样 7 天统计才真实。\n\n补充说明：一般成人日常补水建议参考英国 NHS 的饮水与补水建议；炎热、运动、妊娠、哺乳或患病时需求会不同。这些信息用于健康管理，不替代诊断；做医疗决定前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 10,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 4,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4870,
+          "first_useful_ms": 1404,
+          "end_to_end_total_ms": 5151,
+          "end_to_end_ttft_ms": 3274,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "diet_review__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9007,
+            "tool_count": 4,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 10291
+          }
+        ],
+        "tools": [
+          {
+            "name": "knowledge_search",
+            "ms": 296
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "first_ms": 10854,
+        "total_ms": 10874,
+        "answer_chars": 24,
+        "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 8,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 0,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 10293,
+          "first_useful_ms": 10851,
+          "end_to_end_total_ms": 10854,
+          "end_to_end_ttft_ms": 10853,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "diet_review__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9007,
+            "tool_count": 4,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 3188
+          }
+        ],
+        "tools": [
+          {
+            "name": "knowledge_search",
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 3468,
+        "total_ms": 3489,
+        "answer_chars": 24,
+        "answer": "这次查询未执行。只能查询当前登录用户本人的记录。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 8,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 3190,
+          "first_useful_ms": 3465,
+          "end_to_end_total_ms": 3469,
+          "end_to_end_ttft_ms": 3468,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 10050
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 42649,
+            "finish_reason": "stop",
+            "ms": 56552
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 66918,
+        "total_ms": 66943,
+        "answer_chars": 823,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n## 关键要点\n\n**1. 评分在稳步上升，时长在同步下滑——两者方向相反。**\n10月27日到11月22日这7天，睡眠评分从74分逐日升到80分（共+6分），而总睡眠时长从450分钟（7小时30分）逐日降到420分钟（7小时整），共减少30分钟。变化幅度非常规整：每天评分+1分、时长−5分钟。7天均值约为7小时15分、77分。\n\n**2. 最新一晚正好落在成人参考下限上。**\n按美国CDC的成人睡眠建议，每晚7小时及以上为参考线。你11月2日这条记录（按醒来日归属，对应的是昨晚）是7小时整，刚好在下限；周初的7.5小时则留有余量。也就是说，这一周的睡眠时长余量在被逐日消耗。\n\n**3. 评分上升不等于睡得更多。**\n这组数据里评分和时长是反向走的，说明单看评分无法反映睡眠量是否充足，两个指标需要一起看。\n\n## 边界说明\n\n本窗口的记录只包含评分和总时长两项。深睡/REM/浅睡的阶段构成、夜间清醒时间、以及入睡和起床的具体时刻都未覆盖，因此无法判断你的作息规律性和睡眠结构——这是数据未覆盖，不代表这些方面存在异常。另外，本次同步状态未知，且这些是按日汇总的行记录，不是整夜的逐段原始数据。\n\n## 可执行的下一步\n\n- **倒推今晚的上床窗口**：现在是18:28，如果你希望把时长稳在7小时以上，需要按明早的实际起床时间往前推至少7小时（含入睡所需时间）。这个时点取决于你自己的起床安排，越早确定越有余量。\n- **优先止住时长下滑，而不是追评分**：这一周评分已经在升，真正在退的是睡眠量。若近期有连续早起或晚睡的安排，把上床时间前移比延长卧床更直接。\n- **观察是否继续等幅下降**：如果接下来几天时长继续每天减少，7小时的下限很快会被突破；若已稳定在7小时左右，则属于可维持状态。\n\n以上信息用于健康管理，不替代诊断；如需做医疗决定，请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 66609,
+          "first_useful_ms": 10343,
+          "end_to_end_total_ms": 66919,
+          "end_to_end_ttft_ms": 52999,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2067
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2924,
+            "finish_reason": "stop",
+            "ms": 6799
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 9328,
+        "total_ms": 9351,
+        "answer_chars": 812,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**先说结论（2026-10-27 至 11-02，7 个睡眠日全有记录，来源佳明）**\n\n1. **睡眠时长：略呈缓降**——7 天从 7.5 小时逐日小幅缩到 7.0 小时，平均约 7.2 小时，仍落在成人常见的 7 小时以上区间（CDC 对成人的建议是每晚至少 7 小时，多数成人 7–9 小时）。就“够不够时间”而言，这 7 天没有被记录到明显不足。\n2. **睡眠评分：小幅上行**——从 74 缓升到 80，7 天内没有出现大起大落，属于平稳区间的小幅改善，不是显著跃升。\n3. **关键局限**：这 7 天只有评分和总时长两项，深睡、REM、夜间清醒、入睡与起床时刻都没有覆盖。因此我无法判断：作息是否规律、睡眠结构是否合理、夜间醒来是否偏多；这些日汇总也不能当作整夜的连续监测结果。评分小幅上行、时长小幅下行同时出现，说明仅凭这两项指标不足以判断“睡得更好还是更短”，也不能据此推断任何因果关系。\n\n**解读**\n这 7 天记录支持的一句话是：睡眠时长稳定在 7 小时上下并略微缩短，评分稳定在 74–80 之间并略微上升；没有可供识别的异常波动。真正影响恢复质量的维度（睡眠阶段、夜间觉醒、固定作息）本轮数据未覆盖，属于“未记录”，不等于“不好”。\n\n**可做的下一步（不多于三条）**\n- 想看清趋势，可以继续让手表把每晚的入睡和起床时刻同步完整，这样才有基础判断作息是否稳定；这属于记录完善，不是健康结论。\n- 今晚入睡时间安排在接近你通常的时点，避免在已经略微缩短的时长上继续压缩睡眠时间。\n- 若你主观感觉白天精力下降或夜间易醒，可以带着这段时间的记录去问医生，让医生结合你的实际情况判断；本段信息用于健康管理，不替代诊断。\n\n心率变异性、静息心率、活动量等不在本次查询范围内，本轮没有相应数据可读，因此不对恢复状态下判断。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 8873,
+          "first_useful_ms": 2506,
+          "end_to_end_total_ms": 9328,
+          "end_to_end_ttft_ms": 5436,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 7987
+          },
+          {
+            "prompt_chars": 14113,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 34226,
+            "finish_reason": "stop",
+            "ms": 36179
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 44589,
+        "total_ms": 44614,
+        "answer_chars": 483,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天（10/27–11/02，Garmin按醒来日期）：总睡眠时长呈逐日下降趋势，睡眠评分呈逐日上升趋势；评分未核实量表阈值，且日汇总不等于完整睡眠区间，不能据此判断睡眠质量好坏。\n\n饮食：7天均只有一条晚餐“合成番茄”，记录高度重复；已记录合计只代表这些条目，不能推断全天实际摄入或营养充足。\n\n若出现明显日间困倦、体重下降或持续不适，请就医评估。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 28,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 15,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 44168,
+          "first_useful_ms": 8388,
+          "end_to_end_total_ms": 44590,
+          "end_to_end_ttft_ms": 42619,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2031
+          },
+          {
+            "prompt_chars": 14113,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 6286,
+            "finish_reason": "stop",
+            "ms": 7411
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 9861,
+        "total_ms": 9886,
+        "answer_chars": 568,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n已读取 10 月 27 日至 11 月 2 日的记录。饮食记录 7 条，全部为晚餐、同一食物且热量一致，没有早、午餐记录；这只能说明已记录的部分，不能代表全天摄入，蛋白质、脂肪、纤维等字段未覆盖，营养是否充足无法判断。睡眠记录 7 条均来自 Garmin，按醒来日期归属；样本里评分逐日小幅上升，总睡眠时长逐日小幅收窄，变化都落在较窄区间。评分没有可核验的量表或等级阈值，不能据此评断睡得好或差；入睡与醒来时间未返回，每日汇总也不等于整夜连续监测。两份数据的同步状态均未知，若明细与你体感不符，以设备重新同步后的数据为准。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 9444,
+          "first_useful_ms": 2428,
+          "end_to_end_total_ms": 9861,
+          "end_to_end_ttft_ms": 8718,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_chart__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9174,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 12075
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "first_ms": 12358,
+        "total_ms": 12379,
+        "answer_chars": 25,
+        "answer": "这次查询未执行。当前请求没有授权读取这些个人记录。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 23,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 12076,
+          "first_useful_ms": 12355,
+          "end_to_end_total_ms": 12358,
+          "end_to_end_ttft_ms": 12357,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "sleep_chart__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9174,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 4546
+          }
+        ],
+        "tools": [],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": false,
+        "first_ms": 4829,
+        "total_ms": 4851,
+        "answer_chars": 25,
+        "answer": "这次查询未执行。当前请求没有授权读取这些个人记录。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 1,
+          "pre_llm_ms": 23,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 3,
+            "kb_ms": 15,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4547,
+          "first_useful_ms": 4827,
+          "end_to_end_total_ms": 4830,
+          "end_to_end_ttft_ms": 4829,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "spo2_chart__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9864,
+            "tool_count": 11,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 5778
+          },
+          {
+            "prompt_chars": 6204,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 11738,
+            "finish_reason": "stop",
+            "ms": 12816
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 5
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 18889,
+        "total_ms": 18915,
+        "answer_chars": 180,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：血氧，2026-11-02，Asia/Shanghai。\n\n血氧：目标日期没有可用记录，不能判断血氧正常或异常；已排除不用于血氧判断的来源。\n\n解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 13,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 0,
+            "opener_ms": 0,
+            "system_prompt_ms": 9,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 18595,
+          "first_useful_ms": 6056,
+          "end_to_end_total_ms": 18890,
+          "end_to_end_ttft_ms": 18877,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      },
+      {
+        "case": "spo2_chart__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 9864,
+            "tool_count": 11,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 11430
+          },
+          {
+            "prompt_chars": 6204,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 22661,
+            "finish_reason": "stop",
+            "ms": 23657
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 36612,
+        "total_ms": 36637,
+        "answer_chars": 180,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：血氧，2026-11-02，Asia/Shanghai。\n\n血氧：目标日期没有可用记录，不能判断血氧正常或异常；已排除不用于血氧判断的来源。\n\n解读范围：仅可比较相同来源、相同口径的观测，不能据此判断整夜低氧、睡眠阶段关联，或确诊及排除睡眠呼吸暂停。若有持续不适，请就医评估。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 19,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 5,
+            "opener_ms": 0,
+            "system_prompt_ms": 10,
+            "kb_ms": 0,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 35089,
+          "first_useful_ms": 12936,
+          "end_to_end_total_ms": 36612,
+          "end_to_end_ttft_ms": 36599,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null
+        }
+      }
+    ]
+  },
+  "focused_baseline": {
+    "source_sha256": "dc0520e35fac974881cba9054062cd61d93e84ba517e77d135bea7787ed34024",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 16572
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 18122
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2633
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3950,
+            "finish_reason": "stop",
+            "ms": 7469
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 11750,
+        "total_ms": 11784,
+        "answer_chars": 735,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**近7天睡眠记录概览（10/27–11/02）**\n\n- 7天都有记录，覆盖完整：睡眠时长稳定在7.0–7.5小时之间，均值约7.2小时，每天都在7小时以上，符合美国CDC对成人的一般建议（每晚7小时以上）。\n- 睡眠评分整体呈小幅上升（从74分升到80分，最新80分）。不过同一时期记录到的睡眠时长是缓慢减少的（从450分钟减少到420分钟）。因此“分数在涨”并不等于睡眠在变长，这两点要分开看。\n- 数据可用但不完整：目前只有评分和总睡眠时长，深睡、REM、清醒时长，以及入睡和起床时刻都没有记录。所以这7天里睡眠是否连续、结构是否合理、作息是否稳定，仅凭这些记录没法判断。\n\n**怎么理解这组数字**\n\n各天记录是规律上升或下降，但只有7个样本，而且缺少阶段数据。因此只能描述记录样本的分布（时长齐整、评分略升），不能把它当作睡眠质量改善或恢复良好的证据。分数来源是佳明设备的估算，不是临床睡眠评估。另外，这些记录按醒来日期归属，因此显示的是“某天醒来前那段睡眠”，不能替代整夜的连续监测。\n\n**可以做的三件事**\n\n1. 如果留意到评分与时长走向不一致，优先确认评分口径——有些设备评分更侧重静息心率、睡眠规律性等，而不是时长本身；这能在设备端看到构成说明。\n2. 想让分析更可靠，关键是让手表完整采集：佩戴入睡、保证深睡/REM 阶段数据被记录；阶段数据缺失时，任何“深睡够不够”的讨论都没有依据。\n3. 若近期有主观感受（如入睡费劲、夜醒、白天困倦），那比评分更值得关注；持续存在时建议就医评估，而不是只调整设备设置。\n\n以上用于健康管理参考，不替代诊断；做医疗决定前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 4,
+          "pre_llm_ms": 33,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 18,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 10106,
+          "first_useful_ms": 4261,
+          "end_to_end_total_ms": 11753,
+          "end_to_end_ttft_ms": 8218,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 5931
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 23582,
+            "finish_reason": "stop",
+            "ms": 25019
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 31337,
+        "total_ms": 31362,
+        "answer_chars": 450,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天可见记录里：睡眠评分逐日小幅上升，但记录的总睡眠时长逐日小幅下降，二者方向不一致，只能说明记录趋势，不能判断睡眠质量好坏。饮食记录连续7天均为晚餐“合成番茄”，未见其他餐次，只能反映记录集中，不能推断全天摄入是否足够。若这与实际不符，建议核对原始记录；若有明显不适，请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 36,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 13,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 30952,
+          "first_useful_ms": 6297,
+          "end_to_end_total_ms": 31338,
+          "end_to_end_ttft_ms": 29884,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1710
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4074,
+            "finish_reason": "stop",
+            "ms": 5169
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 7188,
+        "total_ms": 7212,
+        "answer_chars": 520,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n**睡眠**：7天均有 Garmin 记录，睡眠评分逐日小幅上升，而总睡眠时长逐日略减。\n\n**饮食**：7天每天都只有一条晚餐记录，且是同一食物；蛋白质、碳水、脂肪、膳食纤维都未覆盖。已记录合计只反映录入部分，不代表全天实际摄入，还无法判断营养是否充足。\n\n两者变化同时出现并不代表存在因果；若要进一步判断，需要有更完整的睡眠区间或营养明细作依据，目前的数据不足以支持结论。\n\n部分描述缺少记录依据，未展示；已核验记录见上。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 28,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 6,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6880,
+          "first_useful_ms": 1999,
+          "end_to_end_total_ms": 7188,
+          "end_to_end_ttft_ms": 6077,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 13237
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 13552
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2791
+          },
+          {
+            "prompt_chars": 13204,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2799,
+            "finish_reason": "stop",
+            "ms": 5879
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 9023,
+        "total_ms": 9047,
+        "answer_chars": 691,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n**近7天睡眠记录已查完（10/27–11/02，每天都有数据）。**\n\n**要点**\n1. 记录到的睡眠时长在7.5小时到7.0小时之间，逐日小幅缩短，7天合计约43.5小时；睡眠评分则从74分逐日升到80分，今天是80分。\n2. 一个值得注意的现象是：评分在上升，而记录的总睡眠时长在下降，两者方向相反。现有记录里缺少深睡、REM、清醒时长和入睡、起床时间，所以无法判断评分变化来自睡眠结构还是其他因素；这里的评分和时长变化只能说是同时出现，不能说二者有因果关系。\n3. 7天全部有记录，覆盖完整（这是按醒来日期归属的日汇总，不是整夜逐段监测记录）。如果按 CDC 的成人睡眠健康参考（一般成人每晚睡7小时及以上），最近的时长已接近这条参考线的下缘，前几天的时长更宽裕。\n\n**边界**\n- 深睡、REM、清醒时长、入睡和起床时间均未覆盖，所以做不了睡眠阶段分析，也不能据此判断恢复质量。\n- 这份数据来源的同步状态未知，但数值本身是由记录返回的。\n\n**可做的下一步（最多三条，按需选）**\n- 如果你在意“时长在缩短”，可以在接下来的几个晚上固定入睡时间，观察记录是否回稳；固定入睡时间只是常规作息管理，不是治疗方案。\n- 如果想知道评分上升的原因，需要在设备端补上睡眠阶段数据（也就是让设备记录深睡、REM 等阶段），有了阶段记录才能做进一步解读。\n- 持续感觉白天困倦、打鼾或晨起头痛，建议就医评估，这属于临床判断，不在记录解读范围内。\n\n以上为健康管理参考，不替代诊断；做医疗决定前请咨询医生。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 8676,
+          "first_useful_ms": 3124,
+          "end_to_end_total_ms": 9024,
+          "end_to_end_ttft_ms": 5929,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 6568
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 33869,
+            "finish_reason": "stop",
+            "ms": 35492
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 42400,
+        "total_ms": 42425,
+        "answer_chars": 454,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10/27–11/2）：睡眠为 Garmin 日汇总，总时长在420–450分钟，评分74–80，按醒来日期归属；饮食每天都有1条晚餐“合成番茄”，每条约200 kcal，已记录合计1400 kcal。这些只能反映已记录样本的分布，不能代表全天实际摄入，也不能据此判断睡眠质量或恢复。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 42062,
+          "first_useful_ms": 6889,
+          "end_to_end_total_ms": 42401,
+          "end_to_end_ttft_ms": 40763,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2109
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 6190,
+            "finish_reason": "stop",
+            "ms": 7307
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          },
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "diet",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 1
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 9746,
+        "total_ms": 9771,
+        "answer_chars": 600,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n**睡眠**（10-27 至 11-02，Garmin，按醒来日归属）：这 7 天中，睡眠分数在 74–80 分之间逐日小幅上升，总睡眠时长在 420–450 分钟之间逐日小幅下降，两者走势相反。这些是每日汇总，不能代表整夜的完整监测区间；同步状态未知。因此，不能据此判断睡眠质量或恢复情况。\n\n**饮食**：这 7 天每天各一条记录，全部为晚餐、同一食物名称，每条记录的热量相同；没有其他餐次的记录。因此，全天食物摄入和营养是否充足都无法判断。\n\n**下一步**：如果睡眠时长持续走低的同时，白天出现持续困倦或睡后不解乏，建议就医评估，不必仅凭设备分数紧张。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 28,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 6,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 9418,
+          "first_useful_ms": 2400,
+          "end_to_end_total_ms": 9747,
+          "end_to_end_ttft_ms": 8621,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "synthesis_only_candidate": {
+    "source_sha256": "7fe289856c8425442eda66bb2d6f6fab676c7544bcfda9f09c44de20bd9a6cee",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 9363,
+            "finish_reason": "tool_calls",
+            "ms": 12233
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 13320
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2374
+          },
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 5540,
+            "finish_reason": "stop",
+            "ms": 6294
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 8994,
+        "total_ms": 9024,
+        "answer_chars": 372,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近 7 天共 7 条睡眠记录（Garmin，按醒来日期归入）。两个可核验的观察：总睡眠时长从 450 分钟逐日小幅下降到 420 分钟；同期睡眠评分从 74 升到 80，与时长方向相反，说明该评分并非只随时长变化。这只是已记录样本呈现的分布和趋势，不是整夜监测，评分标尺也未核实，不能据此判断睡得好或不够。当前证据只能支持上述描述。若白天明显困倦或主观睡眠质量持续偏差，建议就医评估。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 5,
+          "pre_llm_ms": 35,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 19,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 8670,
+          "first_useful_ms": 2675,
+          "end_to_end_total_ms": 8994,
+          "end_to_end_ttft_ms": 8227,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 8635
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 29140,
+            "finish_reason": "stop",
+            "ms": 30838
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 39814,
+        "total_ms": 39838,
+        "answer_chars": 465,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天睡眠（Garmin，按醒来日期）呈现：睡眠评分连续上升，总睡眠时长连续小幅下降；两者方向相反，单看日汇总不能判断睡眠是否足够或恢复情况。饮食方面，7天均只有一条晚餐“合成番茄”记录，内容一致；这只能说明记录重复，不能代表全天实际摄入，也无法判断营养是否充足。\n\n部分描述缺少记录依据，未展示；已核验记录见上。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 33,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 20,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 39476,
+          "first_useful_ms": 8962,
+          "end_to_end_total_ms": 39815,
+          "end_to_end_ttft_ms": 38108,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2381
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3192,
+            "finish_reason": "stop",
+            "ms": 4083
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 6770,
+        "total_ms": 6797,
+        "answer_chars": 495,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n这些只有按醒来日归属的日汇总，没有入睡、醒来时间和睡眠分期，因此不能据此判断睡眠结构或恢复情况。\n\n饮食这7天只有晚餐记录，食物都是“合成番茄”，每条热量200千卡，合计1400千卡；蛋白质、碳水、脂肪、膳食纤维尚无数据，这不代表全天实际摄入。\n\n如果想了解更细的睡眠分期，可以对照设备端的原始分期数据，其解读以医生意见为准。\n\n部分描述缺少记录依据，未展示；已核验记录见上。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6466,
+          "first_useful_ms": 2673,
+          "end_to_end_total_ms": 6770,
+          "end_to_end_ttft_ms": 5870,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 8400
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "error_type": "BenchmarkStopped",
+        "total_ms": 8725
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10433,
+            "tool_count": 5,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 3045
+          },
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3518,
+            "finish_reason": "stop",
+            "ms": 4787
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 8138,
+        "total_ms": 8163,
+        "answer_chars": 441,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天（10月27日至11月2日）7晚均有睡眠记录，来源为同一设备。\n\n观察一：睡眠评分逐日上升，从74分到80分，每天增加1分左右。\n观察二：同期记录的总睡眠时长从450分钟递减到420分钟，变化方向与评分相反。由于评分和时长各自的换算标准尚未核实，所以不能据此判断睡眠结构；这两条只能说明记录样本本身的变化方向，不能代表你的睡眠质量趋势。\n\n本次返回的数据中未包含深睡、REM、清醒时长以及入睡和醒来时间，因此无法评估睡眠连续性和实际监测覆盖度。\n\n如果关注睡眠结构问题，可携带设备原始报告，请医生或睡眠专科协助解读。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 32,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 7834,
+          "first_useful_ms": 3336,
+          "end_to_end_total_ms": 8138,
+          "end_to_end_ttft_ms": 6860,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 13330
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 29517,
+            "finish_reason": "stop",
+            "ms": 31703
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          },
+          {
+            "name": "knowledge_search",
+            "args": {
+              "query": "成人睡眠时长与睡眠质量建议 饮食规律",
+              "n_results": 5
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 45413,
+        "total_ms": 45441,
+        "answer_chars": 481,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天（10/27–11/2）可观察到：\n\n1. 饮食记录每天只有一条晚餐“合成番茄”，记录内容重复；这只是已记录样本，不能代表全天实际摄入或营养是否充足。  \n2. Garmin 睡眠记录显示总睡眠时长逐日下降、睡眠评分逐日上升；但现有数据不足以判断睡眠质量、恢复情况或是否异常。\n\n目前只能描述记录趋势，不作健康结论。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 35,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 19,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 45035,
+          "first_useful_ms": 13672,
+          "end_to_end_total_ms": 45414,
+          "end_to_end_ttft_ms": 43218,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 2112
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4170,
+            "finish_reason": "stop",
+            "ms": 5303
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 7737,
+        "total_ms": 7766,
+        "answer_chars": 562,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n**饮食**：这7天每天都有一条晚餐记录，食物与热量完全相同（每次200千卡，记录合计1400千卡）。记录只覆盖晚餐一项，蛋白质、碳水、脂肪、纤维均未覆盖，所以无法判断全天摄入是否充足，也不能据此推定其他餐次没有吃。\n\n**睡眠**：7天都是Garmin来源，评分从74逐日升到80，记录时长从450分钟逐日小幅降到420分钟。记录按醒来日期归属，缺少入睡和醒来时间，属于日汇总，不能当作整夜完整监测，也不能作为临床判断的依据。\n\n这两组数据都没有出现需要紧急处理的信号；但覆盖有限，只能说明记录本身上述情况。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 33,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 18,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 7417,
+          "first_useful_ms": 2419,
+          "end_to_end_total_ms": 7738,
+          "end_to_end_ttft_ms": 6595,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "preplanned_candidate_limited_caps": {
+    "source_sha256": "76e606295e0d337f771ecfb24014bd0325559a10dd7d9e7e894641d852e5118c",
+    "rows": [
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 28834,
+            "finish_reason": "stop",
+            "ms": 30327
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 31759,
+        "total_ms": 31796,
+        "answer_chars": 321,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10/27–11/02，按醒来日期）已记录样本显示：Garmin 睡眠评分逐日上升，但总睡眠时长呈逐日小幅下降，二者趋势不一致；评分上升不能直接等同于睡眠质量改善。\n\n这组数据为每日汇总，不能判断睡眠结构、入睡规律或是否满足个人需要。今晚可维持固定就寝安排，继续观察趋势。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 131,
+          "pre_llm_ms": 746,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 4,
+            "system_prompt_ms": 60,
+            "kb_ms": 617,
+            "inspect_ms": 0,
+            "history_ms": 11,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 30329,
+          "first_useful_ms": 1272,
+          "end_to_end_total_ms": 31762,
+          "end_to_end_ttft_ms": 30247,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 4177,
+            "finish_reason": "stop",
+            "ms": 5004
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 5318,
+        "total_ms": 5342,
+        "answer_chars": 389,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10月27日至11月2日）有7条睡眠记录，来源均为 Garmin。以下分析基于每一条记录：\n\n- 睡眠评分从74分逐日升到80分，趋势连续；\n- 同期已记录的睡眠总时长从450分钟逐日降到420分钟，与评分呈相反方向；两者放在一起看，变化方向不一致，只能说明这7天样本的变化趋势，不能推断实际睡眠质量。\n\n建议：如果你的白天精神状态与夜间时长一样在持续变差，可以带着这份记录去咨询医生，而不是只参考设备评分。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 32,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 5004,
+          "first_useful_ms": 299,
+          "end_to_end_total_ms": 5318,
+          "end_to_end_ttft_ms": 4482,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 9995
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 23547,
+            "finish_reason": "stop",
+            "ms": 24809
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 3
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 35121,
+        "total_ms": 35146,
+        "answer_chars": 432,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n近7天（10/27–11/02）睡眠记录显示：睡眠评分逐日上升，但总睡眠时长逐日略降，二者趋势不一致；这些为每日汇总，不能代表整夜结构或恢复结论。饮食方面，查询到的记录均为晚餐条目且食物名称相同，只能说明记录重复，不能判断全天实际摄入或营养是否充足。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 34812,
+          "first_useful_ms": 10297,
+          "end_to_end_total_ms": 35121,
+          "end_to_end_ttft_ms": 33849,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 0,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1930
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 1670,
+            "finish_reason": "stop",
+            "ms": 3028
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 5270,
+        "total_ms": 5294,
+        "answer_chars": 606,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天的记录情况如下：\n\n**睡眠**：7天都有Garmin来源的时长和评分。睡眠时长从450分钟逐日减少到420分钟，评分从74分升到80分，两项走势方向相反；入睡和醒来时间、深睡/REM分段均未覆盖。按醒来日期归属，单日汇总不能当作整夜监测，因此无法据此评价睡眠质量或恢复状态。\n\n**饮食**：7天各有一条晚餐记录，食物名称相同，每餐记200千卡，已记录合计1400千卡；蛋白质、碳水、脂肪、膳食纤维均未覆盖。这只是已填写的记录，不能代表全天实际摄入，也无法判断营养是否充足。\n\n下一步建议：若想看清饮食结构，可在记录时补上食物份量和主要营养素；睡眠方面可在设备端确认是否开放睡眠阶段数据。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 35,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 2,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 18,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 4960,
+          "first_useful_ms": 2228,
+          "end_to_end_total_ms": 5270,
+          "end_to_end_ttft_ms": 3903,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 16978,
+            "finish_reason": "stop",
+            "ms": 18566
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": true,
+        "first_ms": 18867,
+        "total_ms": 18890,
+        "answer_chars": 317,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n最近7天（10/27–11/2）查到7条 Garmin 睡眠记录：睡眠评分从74逐日升至80；总睡眠时长从450分钟逐日降至420分钟，整体在420–450分钟之间。缺少深睡、REM、浅睡、清醒及入睡/醒来时间，无法判断睡眠结构或具体作息；记录按醒来日期归属，同步状态未知。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 18566,
+          "first_useful_ms": 287,
+          "end_to_end_total_ms": 18867,
+          "end_to_end_ttft_ms": 17271,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "sleep_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10824,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 2553,
+            "finish_reason": "stop",
+            "ms": 3216
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query",
+            "args": {
+              "dimension": "sleep",
+              "days": 7,
+              "start_date": "2026-10-27",
+              "end_date": "2026-11-02",
+              "timezone": "Asia/Shanghai"
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 3524,
+        "total_ms": 3548,
+        "answer_chars": 361,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n2026-10-27 至 11-02 共 7 条 Garmin 睡眠记录：已记录睡眠时长从 450 分钟逐日递减到 420 分钟，睡眠分数同期从 74 升到 80。两项走势相反，以上只是记录本身的分布；分数体系和等级阈值没有核实，不能据此判断睡眠质量。\n\n这些是每日汇总，不是整夜监测结果。如果实际感到日间困倦或疲劳持续，建议就医评估；设备评分不能替代临床判断。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 2,
+          "pre_llm_ms": 29,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 8,
+            "kb_ms": 16,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 3215,
+          "first_useful_ms": 294,
+          "end_to_end_total_ms": 3525,
+          "end_to_end_ttft_ms": 2853,
+          "model_call_count": 1,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__qwen3.8-max",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "qwen3.8-max",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 11397
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "qwen3.8-max",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 35394,
+            "finish_reason": "stop",
+            "ms": 36756
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 4
+          },
+          {
+            "name": "knowledge_search",
+            "args": {
+              "query": "成人睡眠时长建议 睡眠质量 与饮食记录 健康管理",
+              "n_results": 5
+            },
+            "ms": 5
+          }
+        ],
+        "cards": [],
+        "selected_model": "qwen3.8-max",
+        "passed": false,
+        "first_ms": 48559,
+        "total_ms": 48582,
+        "answer_chars": 347,
+        "answer": "信息来源：上下文信息（未逐项核验）、已检索证据（未逐句核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n本轮记录不能证明当前恢复质量、训练安全或没有健康异常。",
+        "outcome": "blocked",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 30,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 0,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 48155,
+          "first_useful_ms": 11745,
+          "end_to_end_total_ms": 48559,
+          "end_to_end_ttft_ms": 47188,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      },
+      {
+        "case": "combined_analysis__deepseek-v4.1-flash",
+        "repeat": 1,
+        "calls": [
+          {
+            "prompt_chars": 10432,
+            "tool_count": 3,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": true,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "finish_reason": "tool_calls",
+            "ms": 1726
+          },
+          {
+            "prompt_chars": 14106,
+            "tool_count": 0,
+            "model": "deepseek-v4.1-flash",
+            "has_tools": false,
+            "enable_thinking": null,
+            "thinking_budget": null,
+            "first_content_ms": 3743,
+            "finish_reason": "stop",
+            "ms": 5053
+          }
+        ],
+        "tools": [
+          {
+            "name": "health_query_batch",
+            "args": {
+              "queries": [
+                {
+                  "dimension": "sleep",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                },
+                {
+                  "dimension": "diet",
+                  "days": 7,
+                  "start_date": "2026-10-27",
+                  "end_date": "2026-11-02",
+                  "timezone": "Asia/Shanghai"
+                }
+              ]
+            },
+            "ms": 2
+          }
+        ],
+        "cards": [],
+        "selected_model": "deepseek-v4.1-flash",
+        "passed": true,
+        "first_ms": 7104,
+        "total_ms": 7128,
+        "answer_chars": 627,
+        "answer": "信息来源：上下文信息（未逐项核验）、模型推断。\n已记录饮食不代表全天完整摄入，未记录不等于没有发生；全天营养是否充足无法判断。\n\n查询范围：饮食，2026-10-27至2026-11-02，Asia/Shanghai。\n\n饮食：已记录7条。已记录热量合计1400千卡。\n\n查询范围：睡眠，2026-10-27至2026-11-02，Asia/Shanghai。\n\n睡眠：查询到7条记录，未合并为单一读数，请查看明细。部分日期或指标缺失，不能视为完整数据。按醒来日期归属；每日记录不能证明完整睡眠区间。同步状态未知。\n\n饮食字段未覆盖：蛋白质、碳水化合物、脂肪、膳食纤维。\n\n睡眠字段未覆盖：入睡时间、醒来时间。\n\n**睡眠（10月27日–11月2日，Garmin 来源，按醒来日期归属）**\n\n7 天都有记录，但这只是每日汇总，不代表整夜的完整记录，同步状态也未知；入睡时间和醒来时间都没有记录。在记录数据中，睡眠评分逐日走高，而总睡眠时长的记录值逐日走低，两者方向相反。这只能说明这 7 条样本的分布，不能推断你的睡眠质量或恢复状态。\n\n**饮食（同期，共 7 条）**\n\n7 条记录都是晚餐、同一种食物，并记录了热量；蛋白质、碳水、脂肪、膳食纤维都没有记录，因此无法判断全天摄入是否充足。已记录的热量合计只是已填部分的合计，不等于全天实际摄入。\n\n**下一步**：目前没有发现需要处理的异常信号；如果白天出现明显困倦，或夜间有伴随症状，建议就医评估。",
+        "outcome": "complete",
+        "segments": {
+          "turn_setup_ms": 3,
+          "pre_llm_ms": 31,
+          "pre_llm_stages": {
+            "routing_ms": 0,
+            "conv_ms": 1,
+            "opener_ms": 0,
+            "system_prompt_ms": 7,
+            "kb_ms": 17,
+            "inspect_ms": 0,
+            "history_ms": 1,
+            "vision_ms": 0
+          },
+          "model_wait_ms": 6781,
+          "first_useful_ms": 2037,
+          "end_to_end_total_ms": 7105,
+          "end_to_end_ttft_ms": 5786,
+          "model_call_count": 2,
+          "tool_total_ms": null,
+          "prompt_context_profile": null,
+          "composed_synthesis_used": null
+        }
+      }
+    ]
+  },
+  "quality_findings": [
+    {
+      "case": "diet_week__qwen3.8-max",
+      "verdict": "FAIL",
+      "reason": "Visible answer described one day and inferred missing meals despite seven seeded days; do not count as speed success."
+    },
+    {
+      "case": "sleep_week__qwen3.8-max",
+      "verdict": "FAIL",
+      "reason": "Visible answer inferred sleep quality/recovery and unverified causes from sparse metrics."
+    },
+    {
+      "case": "sleep_analysis__qwen3.8-max",
+      "verdict": "FAIL",
+      "reason": "Visible answer misstated end date and inferred individual sleep sufficiency from sparse daily records."
+    }
+  ]
+}
