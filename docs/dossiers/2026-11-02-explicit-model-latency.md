@@ -108,7 +108,7 @@ Harness 闸虽通过，不能替代修订候选评测。
   审查线程；未生成单独代码报告，不以运维 stage/rotation 批准代替代码审查。
 - G3：最终本地集成 318 项通过；精确 SHA 真实 Harness：12 invariants、50 health core、
   5 live orchestrator 全通过，trajectory contract 12、goldens 9 通过。
-  真实模型整套平均耗时约 7.59 秒，这也是不能声称所有场景三秒完成的证据。
+  5 个 live orchestrator 用例平均耗时约 7.59 秒，这也是不能声称所有场景三秒完成的证据。
   Harness 结果文件摘要 `06675e7e95c4ab82ff94a6762822c3e9c891bfbc78ad29838304336caa2a724e`。
 - 精确 main 完整 [CI 41374864498](https://github.com/itsoso/health-llm-driven/actions/runs/41374864498)：32/32 成功。
 - G5：后端 [validate 41376237799](https://github.com/itsoso/health-llm-driven/actions/runs/41376237799) 与
@@ -140,7 +140,7 @@ Harness 闸虽通过，不能替代修订候选评测。
 未另行下载全部资源字节，未宣称手机已获取或应用更新。本批没有 Mobile 运行时代码变化，
 按用户持续授权发布同一移动端代码树；响应提速发生在后端。
 
-三秒目标仍未完成：冷启动样本 4.16 秒、复杂 Harness 平均约 7.59 秒，手机端端到端和
+三秒目标仍未完成：冷启动样本 4.16 秒、5 个 live orchestrator 用例平均约 7.59 秒，手机端端到端和
 生产负载下的长尾未测。不得把这次发布写成性能全面验收通过。后续应先补网络连接、
 供应商等待、生成与实际输出释放的分段证据，再选择下一项优化；不得靠空泛确认、
 超时截断健康处理或降低安全/质量约束达标。
