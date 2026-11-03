@@ -67,7 +67,14 @@ async def test_noneligible_record_requests_keep_full_provider_material(db, auth_
     assert provider.calls[0]['tools'] == tools
 
 
-async def test_full_pi_initial_request_preserves_authoritative_schema(db, auth_user_and_headers, monkeypatch):
+@pytest.mark.parametrize('preplanning_enabled,channel', [
+    (False, 'typed'),
+    (True, 'typed'),
+    (True, 'voice'),
+])
+async def test_full_pi_initial_request_preserves_authoritative_schema(
+    db, auth_user_and_headers, monkeypatch, preplanning_enabled, channel,
+):
     from app.services.pi_kernel import PiKernelSession
     from tests.test_agent_executor_fast_routing import _wire_common
 
@@ -76,7 +83,7 @@ async def test_full_pi_initial_request_preserves_authoritative_schema(db, auth_u
     provider = CaptureProvider()
     _wire_common(executor, monkeypatch, lambda _: provider)
     monkeypatch.setattr(ae, 'get_health_tools', get_health_tools)
-    monkeypatch.setattr(ae.settings, 'domain_prompt_optimization', True)
+    monkeypatch.setattr(ae.settings, 'domain_prompt_optimization', preplanning_enabled)
     monkeypatch.setattr(executor, '_resolve_chat_provider', lambda tools: (provider, tools))
     actual_start = PiKernelSession.start
     pi_tools = []
@@ -84,10 +91,18 @@ async def test_full_pi_initial_request_preserves_authoritative_schema(db, auth_u
         pi_tools.extend(deepcopy(kwargs['tools']))
         return await actual_start(self, **kwargs)
     monkeypatch.setattr(PiKernelSession, 'start', start)
-    events = [e async for e in executor.run_stream(user.id, '记录喝水500ml', channel='typed', client_turn_id='record-projection-initial')]
-    assert any(e.get('event') == 'done' for e in events)
-    assert provider.calls
+    events = [e async for e in executor.run_stream(user.id, '记录喝水500ml', channel=channel, client_turn_id='record-projection-initial')]
+    done = next(e['data'] for e in events if e.get('event') == 'done')
     original = next(t['function'] for t in pi_tools if t['function']['name'] == 'health_record')
-    sent = next(t['function'] for t in provider.calls[0]['tools'] if t['function']['name'] == 'health_record')
-    assert sent == original
     assert original == next(t['function'] for t in get_health_tools() if t['function']['name'] == 'health_record')
+    if not preplanning_enabled or channel != 'typed':
+        # Disabled/ineligible paths still use the full schema with the model.
+        assert provider.calls
+        sent = next(t['function'] for t in provider.calls[0]['tools'] if t['function']['name'] == 'health_record')
+        assert sent == original
+    else:
+        # A closed proposal skips the model, never Pi's authoritative schema.
+        assert not provider.calls
+        assert done['turn_outcome']['status'] == 'complete'
+        assert len(done['write_receipts']) == 1
+        assert done['write_receipts'][0]['verified'] is True

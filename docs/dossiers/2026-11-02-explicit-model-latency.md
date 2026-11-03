@@ -565,3 +565,10 @@ RED 路由/生成 9 failed、128 passed；最初缺 Pi runtime 的环境失败�
 独立 G4 对 `d88f0b4ca` 判定 NO-GO，未 push：原文四空格/Tab 缩进的记录语句被 strip 提升为闭合提案，真实 Pi 两例均新增一条水记录；“请帮我喝水/请喝水”仅证明误入路由快捷判断，后续原授权阻断落盘，不能误写为已证实越权写入。父流程补充六个真实流反例全部 RED。修复保留原始输入、拒绝缩进/多行/Tab，要求明确记录动词或已完成的“喝了”事实，且原有 compiled goal 与全部运行边界仍为必要条件。初次候选真实模型闸虽通过，不能覆盖该安全 BLOCK；修复后重新验证及独立审查。
 
 修复后的 PostgreSQL 17 全部 34 项快捷路径/拒绝边界/幂等/失败用例通过，包含真实 count 断言证明非闭合输入不产生新增水记录。独立 SafetyGuardian critical 与筛查异常两例均验证流式及保存正文存在安全提示，零模型且回执完整。
+
+
+第七轮修复候选 `147eef28f03d38e1c41fc42f8c2735828ad063c6` 的 CI-mode 集成 901 passed，最终 PostgreSQL 34 passed，精确候选真实模型质量闸通过。新独立 G4 判定 GO：135 项原套件、40 项独立边界/安全探针、3627 项权限/同意/计划/补记测试通过；SQLite 下三项既有 PostgreSQL 锁语义测试跳过，不以其证明并发。最终配对饮水复测 854/291ms，均零模型调用并有 verified 回执，对照 3893/1607ms；两样本中位数 2.75s→0.57s，不是生产长尾或设备显示验收。
+
+该候选已推主干，完整 [CI 41613609960](https://github.com/itsoso/health-llm-driven/actions/runs/41613609960) 的 balanced-09 在 `test_full_pi_initial_request_preserves_authoritative_schema` 失败：旧断言要求闭合饮水请求必须调用模型。原失败保留，未进入 staging、授权刷新/轮换、后端或 OTA。修订该测试覆盖优化关闭、开启 typed、开启 voice 三种实际 Pi 路径：均核验 authoritative schema 完整；需模型时保留 provider schema 一致断言；闭合 typed 路径要求零模型、完成状态及一条核验回执。最终该文件 28 passed，独立审查确认未削弱工具 schema 边界。早期复合请求测试夹具未经过含 health_record 的 Pi 工具选择，出现 StopIteration，已保留并以真实开关/通道边界替换；未修改应用实现以迎合旧断言。
+
+修订测试后的 CI-mode 四文件集成 385 passed；新增 voice 变体另行连同整文件 28 passed。原 GitHub CI 已终止：29 项成功，分片09及其两个汇总门失败，未发现第二个独立失败。新候选须重新经过精确主干完整 CI 与发布门，不重跑原失败回执冒充交付。
