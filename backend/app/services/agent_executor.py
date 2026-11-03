@@ -4705,13 +4705,16 @@ def _write_receipt_from_tool_result(
     )
     if payload is None:
         return None
-    from app.services.record_capabilities import record_capability
+    from app.services.record_capabilities import (
+        canonical_record_payload_json,
+        record_capability,
+    )
     capability = record_capability(normalized_record_type) if tool_name == "health_record" else None
     if capability is not None:
         if not has_structured_args:
             return None
         try:
-            canonical = capability.schema.model_validate(args.get("data")).model_dump_json()
+            canonical = canonical_record_payload_json(capability, args.get("data"))
         except ValueError:
             return None
         expected_proof = {"record_type": normalized_record_type,
@@ -29673,7 +29676,9 @@ class AgentExecutor:
                 return json.dumps({"status": "reconciliation_required", "dispatch_started": True,
                                    "error_code": "record_capability_readback_failed"})
             return json.dumps({"id": result["id"], "resource_type": capability.resource_type,
-                               "checkin_date": payload["record_date"], "operation_id": event_id,
+                               "user_id": readback["user_id"],
+                               "record_date": readback["checkin_date"],
+                               "checkin_date": readback["checkin_date"], "operation_id": event_id,
                                "record_capability_proof": {"record_type": rtype,
                                    "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()}},
                               ensure_ascii=False)

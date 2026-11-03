@@ -151,15 +151,28 @@ def resolve_record_capability(text: str, now: datetime) -> BoundRecord | None:
     for capability in RECORD_CAPABILITIES:
         payload = capability.parse(str(text or ''), now)
         if payload is not None:
-            values = payload.model_dump(mode='json')
-            for optional_key in ('type', 'mask_worn'):
-                if values.get(optional_key) is None:
-                    values.pop(optional_key, None)
             matches.append(BoundRecord(
                 capability,
-                json.dumps(values, ensure_ascii=False, separators=(',', ':')),
+                canonical_record_payload_json(capability, payload),
             ))
     return matches[0] if len(matches) == 1 else None
+
+
+def canonical_record_payload_json(
+    capability: RecordCapability,
+    payload: BaseModel | dict,
+) -> str:
+    """Serialize one capability payload identically for dispatch and receipts."""
+    validated = (
+        payload
+        if isinstance(payload, capability.schema)
+        else capability.schema.model_validate(payload)
+    )
+    values = validated.model_dump(mode='json')
+    for optional_key in ('type', 'mask_worn'):
+        if values.get(optional_key) is None:
+            values.pop(optional_key, None)
+    return json.dumps(values, ensure_ascii=False, separators=(',', ':'))
 
 
 def record_capability(record_type: str) -> RecordCapability | None:

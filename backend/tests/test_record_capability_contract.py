@@ -1,4 +1,5 @@
 from datetime import datetime
+import hashlib
 from zoneinfo import ZoneInfo
 import pytest
 
@@ -82,3 +83,49 @@ def test_registered_capability_needs_value_proof_not_just_row_identity(response)
     from app.services.record_capabilities import resolve_record_capability
     bound = resolve_record_capability('我洗鼻一次', NOW)
     assert _write_receipt_from_tool_result('health_record', bound.arguments(), response) is None
+
+
+def test_registered_capability_receipt_accepts_canonical_proof_and_verified_date():
+    from app.services.agent_executor import _write_receipt_from_tool_result
+    from app.services.agent_kernel.goal_spec import compile_goal_spec
+    from app.services.agent_kernel.intent_frame import build_intent_frame
+    from app.services.agent_kernel.types import AgentEnvelope, ExecutionContext
+    from app.services.record_capabilities import resolve_record_capability
+
+    message = '记录，我洗鼻一次，使用了一支10毫升的生理盐水'
+    context = ExecutionContext(
+        current_time=NOW,
+        timezone='Asia/Taipei',
+        user_id=1,
+        channel='typed',
+    )
+    envelope = AgentEnvelope(user_id=1, channel='typed', text=message)
+    goal = compile_goal_spec(
+        envelope=envelope,
+        context=context,
+        intent=build_intent_frame(envelope, context),
+    )
+    bound = resolve_record_capability(message, NOW)
+    proof = {
+        'record_type': 'nasal_wash',
+        'payload_sha256': hashlib.sha256(bound.payload_json.encode()).hexdigest(),
+    }
+
+    receipt = _write_receipt_from_tool_result(
+        'health_record',
+        bound.arguments(),
+        {
+            'id': 123,
+            'resource_type': 'health_checkin',
+            'user_id': 1,
+            'record_date': '2026-10-31',
+            'checkin_date': '2026-10-31',
+            'operation_id': 'event-1',
+            'record_capability_proof': proof,
+        },
+        obligation_goal=goal,
+    )
+
+    assert receipt is not None
+    assert receipt['record_capability_proof'] == proof
+    assert receipt['date'] == '2026-10-31'
