@@ -572,3 +572,16 @@ RED 路由/生成 9 failed、128 passed；最初缺 Pi runtime 的环境失败�
 该候选已推主干，完整 [CI 41613609960](https://github.com/itsoso/health-llm-driven/actions/runs/41613609960) 的 balanced-09 在 `test_full_pi_initial_request_preserves_authoritative_schema` 失败：旧断言要求闭合饮水请求必须调用模型。原失败保留，未进入 staging、授权刷新/轮换、后端或 OTA。修订该测试覆盖优化关闭、开启 typed、开启 voice 三种实际 Pi 路径：均核验 authoritative schema 完整；需模型时保留 provider schema 一致断言；闭合 typed 路径要求零模型、完成状态及一条核验回执。最终该文件 28 passed，独立审查确认未削弱工具 schema 边界。早期复合请求测试夹具未经过含 health_record 的 Pi 工具选择，出现 StopIteration，已保留并以真实开关/通道边界替换；未修改应用实现以迎合旧断言。
 
 修订测试后的 CI-mode 四文件集成 385 passed；新增 voice 变体另行连同整文件 28 passed。原 GitHub CI 已终止：29 项成功，分片09及其两个汇总门失败，未发现第二个独立失败。新候选须重新经过精确主干完整 CI 与发布门，不重跑原失败回执冒充交付。
+
+
+### 第七轮发布收尾（最新状态）
+
+最终候选 `2dddb4c560db5c04315bdae2f7d95fcccd421bad` 与已测 `147eef` 的整个 `backend/app` tree 相同，增量只有测试和证据。独立 G4 再次绑定新 SHA 判定 GO；精确候选真实模型质量门全部通过（live orchestrator 5/5，均分 0.90），未使用 waiver。先前失败 CI 与负例日志保留，没有部署失败候选。
+
+- [完整 CI 41615158481](https://github.com/itsoso/health-llm-driven/actions/runs/41615158481)：32/32 成功。
+- [发布预检 41616754692](https://github.com/itsoso/health-llm-driven/actions/runs/41616754692)：成功。canonical staging、只读凭据刷新和授权轮换分别经过独立固定脚本审查并单次完成；无备份、无旧配置恢复。
+- [后端发布 41619395908](https://github.com/itsoso/health-llm-driven/actions/runs/41619395908)：成功。独立读回精确生产 SHA、干净工作区、`SUCCEEDED` 回执、backend / worker / beat / Laya active/running、内外网健康与 lease 已释放。backend 回执 SHA256 `6c945f2bed933be1b5efb7767fb2d6b6aca3124f0249f8ac6f53e4cc40717f47`。本次 runtime **journal** 为 `COMMITTED / code-only-no-backup`；独立 terminal 文件仍保留前次记录，不将旧 terminal 冒充本次证明。
+- [OTA validate 41620191437](https://github.com/itsoso/health-llm-driven/actions/runs/41620191437) 与 [OTA publish 41620501051](https://github.com/itsoso/health-llm-driven/actions/runs/41620501051)：同一精确候选依次成功。OTA `SUCCEEDED` 回执 SHA256 `2027c6caa513ca58a0309ddf136acc9cd04e8080cb135a525184029cbf16ae18`，intent 与 verified receipt 摘要关联一致，lease 已释放。
+- 公开 iOS production 清单独立通过：runtime `1.3.6`，group `e39c4e5b-f9a9-49f0-a5ce-1dc9555fa6c6`，update `01a1a101-3792-788a-88f5-3667b222ddc9`；launch asset 与 47 项资源摘要一致。本轮业务改动仅后端，按本会话用户持续明确的发布与 OTA 指令完成同版本发布，未新增 Mobile 运行行为。
+
+G5 发布完成，G6 自动线上发布核验通过。合成饮水两次中位数 2.75s→0.57s 只证明明确完整 typed 饮水路径的提案模型调用被省去；生产长尾、模拟器实际显示、设备接收仍未验证，不能宣称所有请求三秒达标。完整样本、失败、修复及发布证据见 [本轮机器证据](../reviews/2026-11-03-closed-water-route-performance.json)。

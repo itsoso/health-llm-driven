@@ -438,5 +438,194 @@
     "final_postgresql_cases_passed": 34,
     "critical_and_unavailable_safety_notices_independent_passed": 2,
     "final_executor_sha256": "80b5794e6d8e9c4f06fa39fee2c8a9f01a98405a67068aeb6b7ebe87b6469747"
+  },
+  "final_paired_measurement": {
+    "candidate": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+    "baseline": "5e4448dc547b7366484440c7a509ff9cfa823246",
+    "before": {
+      "samples": 2,
+      "total_ms": [
+        3893,
+        1607
+      ],
+      "first_content_ms": [
+        3868,
+        1589
+      ],
+      "median_ms": 2750.0,
+      "model_call_counts": [
+        1,
+        1
+      ],
+      "all_success": true,
+      "all_receipts_verified": true
+    },
+    "after": {
+      "samples": 2,
+      "total_ms": [
+        854,
+        291
+      ],
+      "first_content_ms": [
+        827,
+        272
+      ],
+      "median_ms": 572.5,
+      "model_call_counts": [
+        0,
+        0
+      ],
+      "all_success": true,
+      "all_receipts_verified": true
+    },
+    "scope": "Paired synthetic executor runs, disposable SQLite, optional route advice off in both arms. Not app paint or production P95.",
+    "g4": "/private/tmp/reva-closed-water-independent-g4-2ddd.json",
+    "ci_run": 41615158481,
+    "measured_candidate": "147eef28f03d38e1c41fc42f8c2735828ad063c6",
+    "application_tree_identical": true,
+    "release_validate": 41616754692
+  },
+  "release_closure": {
+    "candidate_sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+    "application_tree_identical_to_measured_147eef": true,
+    "independent_g4": "GO",
+    "ci_mode": {
+      "initial_final_source_passed": 901,
+      "postgres_passed": 34,
+      "schema_followup_passed": 385,
+      "final_schema_file_passed": 28
+    },
+    "live_quality_gate": {
+      "status": "passed",
+      "llm_cost": "possible",
+      "suites": [
+        {
+          "suite": "invariants",
+          "total_cases": 12,
+          "passed": 12,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "health_agent_core",
+          "total_cases": 50,
+          "passed": 50,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "orchestrator",
+          "total_cases": 5,
+          "passed": 5,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 0.9,
+          "avg_latency_ms": 10022,
+          "regression": []
+        }
+      ],
+      "failed_suites": [],
+      "errors": [],
+      "trajectory_contract": {
+        "status": "passed",
+        "total_cases": 12,
+        "failed_cases": []
+      },
+      "trajectory_goldens": {
+        "status": "passed",
+        "fixture_version": 1,
+        "total_cases": 9,
+        "covered_scenarios": [
+          "duplicate_client_turn_side_effect",
+          "duplicate_same_record_side_effect",
+          "idempotent_client_turn_replay",
+          "meal_context_reestimate",
+          "missing_identity_receipt",
+          "read_only_delete_side_effect",
+          "simple_fruit_write",
+          "simple_water_write",
+          "uncertain_receipt_false_success"
+        ],
+        "failed_cases": []
+      }
+    },
+    "preserved_failed_ci": {
+      "run_id": 41613609960,
+      "independent_failure": "obsolete expectation of provider call on preplanned water turn",
+      "fixed_in": "2dddb4c560db5c04315bdae2f7d95fcccd421bad"
+    },
+    "workflow_runs": {
+      "full_ci": 41615158481,
+      "release_validate": 41616754692,
+      "backend": 41619395908,
+      "ota_validate": 41620191437,
+      "ota_publish": 41620501051
+    },
+    "full_ci_jobs": {
+      "success": 32,
+      "total": 32
+    },
+    "backend_readonly": {
+      "authorization_matches": true,
+      "backend_completed": {
+        "sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+        "state": "SUCCEEDED"
+      },
+      "backend_completed_sha256": "6c945f2bed933be1b5efb7767fb2d6b6aca3124f0249f8ac6f53e4cc40717f47",
+      "business_lease_absent": true,
+      "local_health": "healthy",
+      "production_clean": true,
+      "public_health": "healthy",
+      "services": {
+        "celery-beat": "active/running",
+        "celery-worker": "active/running",
+        "health-backend": "active/running",
+        "reva-laya": "active/running"
+      },
+      "sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+      "state": "BACKEND_READONLY_VERIFIED"
+    },
+    "runtime_journal": null,
+    "ota_completed": {
+      "sha256": "2027c6caa513ca58a0309ddf136acc9cd04e8080cb135a525184029cbf16ae18",
+      "value": {
+        "intent_sha256": "91c7aeff9e64fae1f3f1b22f57656ad626e1b95c1db8c5477d48f1dc5c7c4cd8",
+        "receipt_sha256": "d0c87f05040a47c9719185e6d375778c7268b73f1b34e21e7c2435b2f00f2863",
+        "sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+        "state": "SUCCEEDED"
+      }
+    },
+    "ota_verified": {
+      "sha256": "d0c87f05040a47c9719185e6d375778c7268b73f1b34e21e7c2435b2f00f2863",
+      "value": {
+        "group_id": "e39c4e5b-f9a9-49f0-a5ce-1dc9555fa6c6",
+        "sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+        "update_id": "01a1a101-3792-788a-88f5-3667b222ddc9"
+      }
+    },
+    "public_manifest": {
+      "artifact_matches": true,
+      "asset_hash_count": 47,
+      "backend_healthy": true,
+      "channel": "production",
+      "device_acceptance": "not_verified",
+      "group_id": "e39c4e5b-f9a9-49f0-a5ce-1dc9555fa6c6",
+      "launch_asset_hash": "daBz8yF2jsjoevMFVUi06R9v4o5wcORY5kKY4DLKLh8",
+      "platform": "ios",
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtime": "1.3.6",
+      "sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+      "state": "PUBLIC_MANIFEST_VERIFIED",
+      "update_id": "01a1a101-3792-788a-88f5-3667b222ddc9"
+    },
+    "device_ui_latency": "not_verified",
+    "production_latency_percentiles": "not_verified",
+    "all_requests_under_three_seconds": false
   }
 }
