@@ -242,10 +242,16 @@ async def test_latin_supplement_name_is_not_split_into_a_unit_or_partially_writt
 
 
 @pytest.mark.parametrize(
-    ("message", "contextual_names"),
     (
-        ("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。", ()),
-        ("全部已服用", ("鱼油", "NAC")),
+        "message",
+        "contextual_names",
+        "expected_calls",
+        "expected_batch_requests",
+        "expected_tap_requests",
+    ),
+    (
+        ("记录下来，吃了一粒甘氨酸镁和一粒褪黑素。", (), 1, 1, 0),
+        ("全部已服用", ("鱼油", "NAC"), 2, 0, 2),
     ),
 )
 async def test_legacy_multi_supplement_flows_keep_real_postgres_writes(
@@ -253,6 +259,9 @@ async def test_legacy_multi_supplement_flows_keep_real_postgres_writes(
     supplement_transport,
     message,
     contextual_names,
+    expected_calls,
+    expected_batch_requests,
+    expected_tap_requests,
 ):
     executor, owner, headers, requests = supplement_transport
     executor._current_user_id = owner.id
@@ -265,7 +274,7 @@ async def test_legacy_multi_supplement_flows_keep_real_postgres_writes(
         write_receipts=[],
     )
 
-    assert len(calls) == 2
+    assert len(calls) == expected_calls
     for call in calls:
         args = json.loads(call["function"]["arguments"])
         result = await executor._execute_tool(
@@ -277,7 +286,8 @@ async def test_legacy_multi_supplement_flows_keep_real_postgres_writes(
 
     assert db.query(SupplementDefinition).filter_by(user_id=owner.id).count() == 2
     assert db.query(SupplementRecord).filter_by(user_id=owner.id).count() == 2
-    assert sum(path.endswith("/tap") for _method, path in requests) == 2
+    assert sum(path.endswith("/intake-batch") for _method, path in requests) == expected_batch_requests
+    assert sum(path.endswith("/tap") for _method, path in requests) == expected_tap_requests
 
 
 def test_concurrent_same_user_batch_retries_share_postgres_rows(

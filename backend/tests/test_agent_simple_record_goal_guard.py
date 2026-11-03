@@ -577,12 +577,14 @@ def test_explicit_multiple_supplements_build_deterministic_calls():
         "甘氨酸镁",
         "褪黑素",
     ]
-    assert all(call["function"]["name"] == "health_record" for call in calls)
-    assert len(calls) == 2
-    assert all(
-        "items" not in json.loads(call["function"]["arguments"])["data"]
-        for call in calls
-    )
+    assert len(calls) == 1
+    assert calls[0]["function"]["name"] == "health_record"
+    assert json.loads(calls[0]["function"]["arguments"])["data"] == {
+        "items": [
+            {"supplement_name": "甘氨酸镁", "dosage": "1粒"},
+            {"supplement_name": "褪黑素", "dosage": "1粒"},
+        ],
+    }
 
 
 @pytest.mark.parametrize(

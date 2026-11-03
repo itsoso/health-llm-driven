@@ -29675,8 +29675,8 @@ class AgentExecutor:
             return json.dumps({"id": result["id"], "resource_type": capability.resource_type,
                                "checkin_date": payload["record_date"], "operation_id": event_id,
                                "record_capability_proof": {"record_type": rtype,
-                                   "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()},
-                               "message": _nasal_wash_confirmation(payload)}, ensure_ascii=False)
+                                   "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()}},
+                              ensure_ascii=False)
         if rtype == "diet":
             data = _normalize_diet_create_data(
                 args,
