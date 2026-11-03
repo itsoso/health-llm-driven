@@ -3,6 +3,7 @@ import { fireEvent, render } from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { DietDraftCardView } from '../DietDraftCard';
 import { revaColors as C } from '../../../../constants/revaTheme';
+import { ChatCardRevealContext } from '../../ChatCardRevealContext';
 
 const mockPush = jest.fn();
 jest.mock('expo-router', () => ({
@@ -10,6 +11,32 @@ jest.mock('expo-router', () => ({
 }));
 
 beforeEach(() => mockPush.mockClear());
+
+it('requests editor visibility only on explicit expansion and cancels on collapse', () => {
+  const cancel = jest.fn();
+  const reveal = jest.fn(() => cancel);
+  const screen = render(<ChatCardRevealContext.Provider value={reveal}>
+    <DietDraftCardView recorded record_id={42}
+      adjust_record={{ record_id: 42, food_items: '合成餐食', meal_type: 'dinner' }} />
+  </ChatCardRevealContext.Provider>);
+  expect(reveal).not.toHaveBeenCalled();
+  fireEvent.press(screen.getByRole('button', { name: '继续修正本餐' }));
+  expect(screen.getByTestId('diet-adjust-inline-editor')).toBeTruthy();
+  expect(reveal).toHaveBeenCalledTimes(1);
+  fireEvent.press(screen.getByRole('button', { name: '收起本餐修正' }));
+  expect(cancel).toHaveBeenCalledTimes(1);
+  expect(reveal).toHaveBeenCalledTimes(1);
+});
+
+it('does not steal the viewport for an already expanded historical card', () => {
+  const reveal = jest.fn();
+  const screen = render(<ChatCardRevealContext.Provider value={reveal}>
+    <DietDraftCardView recorded expanded_sections={['adjust_record']} record_id={42}
+      adjust_record={{ record_id: 42, food_items: '合成餐食' }} />
+  </ChatCardRevealContext.Provider>);
+  expect(screen.getByTestId('diet-adjust-inline-editor')).toBeTruthy();
+  expect(reveal).not.toHaveBeenCalled();
+});
 
 it.each(['text', 'chat_photo'])('uses the saved meal view and preserves personal cautions for %s', (source) => {
   const screen = render(<DietDraftCardView recorded source={source} meal_type="dinner"

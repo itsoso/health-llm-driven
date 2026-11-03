@@ -19,6 +19,7 @@ import ChatBubble from '../../components/chat/ChatBubble';
 import ConversationSheet from '../../components/chat/ConversationSheet';
 import ChatHeader from '../../components/chat/ChatHeader';
 import ChatTodayFocusCard from '../../components/chat/ChatTodayFocusCard';
+import { ChatCardRevealContext, useChatCardReveal } from '../../components/chat/ChatCardRevealContext';
 import { buildTodayFocusModel } from '../../components/chat/todayFocus';
 import {
   buildMessageTimeDividerItems,
@@ -194,6 +195,8 @@ export default function ChatScreen() {
     markAgentContentPainted,
   } = chat;
   const flatListRef = useRef<FlatList>(null);
+  const messageViewportRef = useRef<View>(null);
+  const messageScrollOffsetRef = useRef(0);
   const isNearBottom = useRef(true);
   const forceScrollPending = useRef(false);
   const userScrollInProgress = useRef(false);
@@ -461,6 +464,25 @@ export default function ChatScreen() {
     scrollTimersRef.current = [];
   }, []);
 
+  const prepareCardReveal = useCallback(() => {
+    clearChatScrollTimers();
+    forceScrollPending.current = false;
+    isNearBottom.current = false;
+    userScrollInProgress.current = false;
+    userMomentumPending.current = false;
+    setShowScrollToBottom(messages.length > 0);
+  }, [clearChatScrollTimers, messages.length]);
+  const { reveal: revealChatCard, cancel: cancelCardReveal } = useChatCardReveal({
+    listRef: flatListRef,
+    viewportRef: messageViewportRef,
+    offsetRef: messageScrollOffsetRef,
+    onReveal: prepareCardReveal,
+  });
+  useEffect(() => {
+    cancelCardReveal();
+    messageScrollOffsetRef.current = 0;
+  }, [conversationId, cancelCardReveal]);
+
   // Markdown/card/image layout can settle in several passes. Keep a forced scroll
   // pending until the final retry, while ignoring non-user initial onScroll events.
   // A real drag cancels this flag immediately so history reading is never hijacked.
@@ -468,6 +490,7 @@ export default function ChatScreen() {
     const force = options.force ?? false;
     const animated = options.animated ?? false;
     if (force) {
+      cancelCardReveal();
       forceScrollPending.current = true;
       isNearBottom.current = true;
       userScrollInProgress.current = false;
@@ -491,7 +514,7 @@ export default function ChatScreen() {
       flatListRef.current?.scrollToEnd({ animated });
       if (index === delays.length - 1) forceScrollPending.current = false;
     }, delay));
-  }, [clearChatScrollTimers]);
+  }, [clearChatScrollTimers, cancelCardReveal]);
 
   useEffect(() => {
     const previousCount = previousMessageCountRef.current;
@@ -502,6 +525,7 @@ export default function ChatScreen() {
   }, [messages.length, scheduleScrollToEnd]);
 
   const cancelForcedScrollOnUserDrag = useCallback(() => {
+    cancelCardReveal();
     clearChatScrollTimers();
     userScrollInProgress.current = true;
     userMomentumPending.current = true;
@@ -513,9 +537,10 @@ export default function ChatScreen() {
     forceScrollPending.current = state.forcePending;
     isNearBottom.current = state.isNearBottom;
     setShowScrollToBottom(messages.length > 0);
-  }, [clearChatScrollTimers, messages.length]);
+  }, [clearChatScrollTimers, messages.length, cancelCardReveal]);
 
   const updateUserScrollPosition = useCallback((e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    messageScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
     if (forceScrollPending.current) return;
     const { layoutMeasurement, contentOffset, contentSize } = e.nativeEvent;
     const nearBottom = isChatNearBottom({
@@ -540,8 +565,8 @@ export default function ChatScreen() {
   useFocusEffect(
     useCallback(() => {
       scheduleScrollToEnd();
-      return clearChatScrollTimers;
-    }, [clearChatScrollTimers, scheduleScrollToEnd])
+      return () => { clearChatScrollTimers(); cancelCardReveal(); };
+    }, [clearChatScrollTimers, scheduleScrollToEnd, cancelCardReveal])
   );
 
   const appStateRef = useRef<AppStateStatus>(AppState.currentState);
@@ -549,12 +574,13 @@ export default function ChatScreen() {
     const subscription = AppState.addEventListener('change', (nextState) => {
       const previousState = appStateRef.current;
       appStateRef.current = nextState;
+      if (nextState !== 'active') cancelCardReveal();
       if ((previousState === 'background' || previousState === 'inactive') && nextState === 'active') {
         scheduleScrollToEnd();
       }
     });
     return () => subscription.remove();
-  }, [scheduleScrollToEnd]);
+  }, [scheduleScrollToEnd, cancelCardReveal]);
 
   // 「小气候先开口」键盘礼仪 (State A, 2026-07):
   // 只在小气候没话可说时(无 opener 且无记忆)才默认唤起键盘 —— 小气候有开场消息时
@@ -1210,7 +1236,8 @@ export default function ChatScreen() {
       />
 
       <View style={{ flex: 1 }}>
-        <View testID="chat-message-list-shell" style={styles.messageListShell}>
+        <View ref={messageViewportRef} collapsable={false} testID="chat-message-list-shell" style={styles.messageListShell}>
+          <ChatCardRevealContext.Provider value={revealChatCard}>
           <FlatList
             ref={flatListRef}
             testID="chat-message-list"
@@ -1282,6 +1309,7 @@ export default function ChatScreen() {
               userScrollInProgress.current = false;
             }}
             onScroll={(e) => {
+              messageScrollOffsetRef.current = e.nativeEvent.contentOffset.y;
               // Native layout/scrollToEnd callbacks are not a request to leave
               // the latest reply, even after the opening retries have finished.
               if (userScrollInProgress.current) updateUserScrollPosition(e);
@@ -1320,6 +1348,7 @@ export default function ChatScreen() {
               ) : <AgentHomeBootstrapLoading />
             }
           />
+          </ChatCardRevealContext.Provider>
 
           {showScrollToBottom && !selectionMode && messages.length > 0 ? (
             <TouchableOpacity

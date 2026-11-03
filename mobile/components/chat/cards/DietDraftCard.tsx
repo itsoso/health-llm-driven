@@ -17,6 +17,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import { CardShell } from './CardShell';
 import { DietRecordAdjustEditor } from './RecordQualityCard';
+import { ChatCardRevealContext } from '../ChatCardRevealContext';
 import { MEAL_ICONS, MACRO_HUES, MacroBar, IngredientChips } from './mealCardVisuals';
 import { privateDietPhotoUris } from '../../diet/dietSharePresentation';
 import { formatDisplayNumber } from '../../../utils/displayNumber';
@@ -345,6 +346,13 @@ function findDietCommunityAction(
 
 export function DietDraftCardView(data: DietDraftCardViewProps) {
   const router = useRouter();
+  const revealEditor = React.useContext(ChatCardRevealContext);
+  const savedEditorRef = React.useRef<View>(null);
+  const cancelEditorReveal = React.useRef<(() => void) | null>(null);
+  const stopEditorReveal = React.useCallback(() => {
+    cancelEditorReveal.current?.();
+    cancelEditorReveal.current = null;
+  }, []);
   const [editing, setEditing] = React.useState(false);
   const [showAllIngredients, setShowAllIngredients] = React.useState(false);
   const [savedAdjustOpen, setSavedAdjustOpen] = React.useState(() => (
@@ -422,6 +430,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
     && adjustRecordId != null
     && adjustRecord != null
     && savedAdjustOpen;
+  React.useEffect(() => stopEditorReveal, [adjustRecordId, isRecorded, stopEditorReveal]);
   const receiptMessage = text(data.receipt_message);
   const canConfirmFromEditor = Boolean(data.confirmAction && data.onConfirmAction && !data.confirmAction.disabled_reason);
   const recordedNextStep = text(data.next_action) || walkText || suggestions[0] || '下一餐按目标补足蛋白和蔬菜';
@@ -1006,7 +1015,11 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
           </Pressable>
           {adjustRecord && adjustRecordId != null ? (
             <Pressable
-              onPress={() => setSavedAdjustOpen((current) => !current)}
+              onPress={() => {
+                stopEditorReveal();
+                if (!savedAdjustOpen) cancelEditorReveal.current = revealEditor(savedEditorRef);
+                setSavedAdjustOpen(!savedAdjustOpen);
+              }}
               accessibilityRole="button"
               accessibilityLabel={savedAdjustOpen ? '收起本餐修正' : '继续修正本餐'}
               accessibilityHint="修改餐次、食物或营养估算"
@@ -1043,6 +1056,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
         </View>
       ) : null}
       {isRecorded && adjustRecord && adjustRecordId != null && showSavedAdjustEditor ? (
+        <View key={adjustRecordId} ref={savedEditorRef} collapsable={false}>
         <DietRecordAdjustEditor
           recordId={adjustRecordId}
           seed={{
@@ -1055,6 +1069,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               : {}),
           }}
           onSaved={(applied) => {
+            stopEditorReveal();
             setSavedAdjustOpen(false);
             if (!data.onDraftChange) return;
             const {
@@ -1079,6 +1094,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             });
           }}
         />
+        </View>
       ) : null}
       <MealPhotoGallery
         visible={galleryVisible}

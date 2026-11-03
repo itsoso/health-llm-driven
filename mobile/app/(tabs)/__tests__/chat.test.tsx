@@ -3,6 +3,7 @@ import React from 'react';
 import { Alert, AppState, FlatList, Keyboard, StyleSheet } from 'react-native';
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 import { revaColors, revaSemantic } from '../../../constants/revaTheme';
+import * as cardReveal from '../../../components/chat/ChatCardRevealContext';
 
 const mockOpenHistory = jest.fn();
 const mockOpenHistoryPage = jest.fn();
@@ -24,6 +25,7 @@ const mockShareLocalImage = jest.fn();
 const mockShareLongImage = jest.fn();
 const mockCaptureRef = jest.fn();
 const mockReleaseCapture = jest.fn();
+const mockEditorMeasure = jest.fn();
 let mockRouteParams: Record<string, string | undefined> = {};
 let mockCanGoBack = true;
 let mockFocusEpoch = 0;
@@ -166,6 +168,7 @@ jest.mock('../../../hooks/useTheme', () => ({
 }));
 
 jest.mock('../../../components/chat/ChatBubble', () => {
+  const { ChatCardRevealContext } = require('../../../components/chat/ChatCardRevealContext');
   const React = require('react');
   const { Pressable, Text } = require('react-native');
   const MockChatBubble = ({
@@ -188,6 +191,12 @@ jest.mock('../../../components/chat/ChatBubble', () => {
         <Text>{item.content}</Text>
         <Text>{selectionMode ? (selected ? 'selected' : 'unselected') : 'normal'}</Text>
       </Pressable>
+      {item.cardType === 'diet_draft' ? (
+        <ChatCardRevealContext.Consumer>
+          {(reveal: any) => <Pressable accessibilityLabel={`reveal-editor-${item.id}`}
+            onPress={() => reveal({ current: { measureInWindow: mockEditorMeasure } })} />}
+        </ChatCardRevealContext.Consumer>
+      ) : null}
       {item.imageUris?.map((uri: string, index: number) => (
         <Pressable
           key={`${uri}-${index}`}
@@ -1644,6 +1653,48 @@ describe('ChatScreen', () => {
       expect(view.queryByTestId('chat-scroll-to-bottom')).toBeNull();
     } finally {
       scrollToEnd.mockRestore();
+      jest.useRealTimers();
+    }
+  });
+
+  it.each(['reveal', 'drag'])('coordinates an explicit editor reveal with chat scrolling (%s)', async (mode) => {
+    mockMessages = [{ id: 'old-food', role: 'assistant', content: '合成餐食', cardType: 'diet_draft' }];
+    jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    const scrollToEnd = jest.spyOn(FlatList.prototype, 'scrollToEnd');
+    const scrollToOffset = jest.spyOn(FlatList.prototype, 'scrollToOffset');
+    const useNativeReveal = cardReveal.useChatCardReveal;
+    const viewportRef = { current: { measureInWindow: (cb: any) => cb(0, 100, 300, 600) } } as any;
+    // RN's Jest host views do not implement native measurement callbacks.
+    const revealHook = jest.spyOn(cardReveal, 'useChatCardReveal')
+      .mockImplementation((options) => useNativeReveal({ ...options, viewportRef }));
+    let measured: any;
+    mockEditorMeasure.mockImplementation((cb) => { measured = cb; });
+    try {
+      const view = render(<ChatScreen />);
+      await act(async () => {});
+      act(() => jest.advanceTimersByTime(1000));
+      const list = view.getByTestId('chat-message-list');
+      act(() => {
+        list.props.onScrollBeginDrag();
+        const event = { nativeEvent: { layoutMeasurement: { height: 600 }, contentOffset: { y: 400 }, contentSize: { height: 2500 } } };
+        list.props.onScroll(event);
+        list.props.onScrollEndDrag(event);
+      });
+      scrollToEnd.mockClear();
+      scrollToOffset.mockClear();
+      fireEvent.press(view.getByLabelText('reveal-editor-old-food'));
+      act(() => { list.props.onContentSizeChange(); jest.advanceTimersByTime(0); });
+      expect(mockEditorMeasure).toHaveBeenCalled();
+      if (mode === 'drag') act(() => list.props.onScrollBeginDrag());
+      act(() => { measured(0, 760, 300, 900); jest.advanceTimersByTime(1000); });
+      expect(scrollToEnd).not.toHaveBeenCalled();
+      if (mode === 'reveal') expect(scrollToOffset).toHaveBeenCalledWith({ offset: 1048, animated: false });
+      else expect(scrollToOffset).not.toHaveBeenCalled();
+    } finally {
+      scrollToEnd.mockRestore();
+      scrollToOffset.mockRestore();
+      revealHook.mockRestore();
+      mockEditorMeasure.mockReset();
       jest.useRealTimers();
     }
   });
