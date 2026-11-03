@@ -30218,14 +30218,16 @@ export interface components {
              * Format: date
              */
             record_date: string;
-            /** Event Id */
-            event_id: string;
             /**
              * Type
              * @default wash
              * @enum {string}
              */
             type: "wash" | "soak";
+            /** Mask Worn */
+            mask_worn?: boolean | null;
+            /** Event Id */
+            event_id: string;
             /** Time */
             time?: string | null;
         };
@@ -30246,6 +30248,8 @@ export interface components {
              * @enum {string}
              */
             type: "wash" | "soak";
+            /** Mask Worn */
+            mask_worn?: boolean | null;
         };
         /** NasalWashEventResponse */
         NasalWashEventResponse: {

@@ -367,10 +367,6 @@ async def test_water_record_without_structured_call_never_writes_or_claims_succe
     ("message", "expected_names"),
     (
         (
-            "记录下来，吃了一粒甘氨酸镁和一粒褪黑素。",
-            ["甘氨酸镁", "褪黑素"],
-        ),
-        (
             "记录补剂：一粒营养素甲、一粒营养素乙和一粒两粒营养素丙。",
             ["营养素甲", "营养素乙", "营养素丙"],
         ),
@@ -642,25 +638,14 @@ async def test_multiple_supplements_partial_failure_keeps_turn_incomplete(
     async def fake_execute_tool(tool_name, args_raw, user_token):  # noqa: ARG001
         args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
         calls.append((tool_name, args))
-        name = args["data"]["supplement_name"]
-        if name == "甘氨酸镁":
-            return json.dumps(
-                {
-                    "status": "failed",
-                    "success": False,
-                    "dispatch_started": False,
-                    "error_code": "supplement_tap_failed",
-                    "message": "甘氨酸镁没有写入。",
-                },
-                ensure_ascii=False,
-            )
         return json.dumps(
             {
-                "record_id": 922,
-                "resource_type": "supplement_log",
-                "status": "verified",
-                "success": True,
-                "message": "已记录补剂：褪黑素",
+                "status": "failed",
+                "success": False,
+                "dispatch_started": False,
+                "atomic": True,
+                "error_code": "supplement_batch_failed",
+                "message": "整组补剂没有写入。",
             },
             ensure_ascii=False,
         )
@@ -683,11 +668,16 @@ async def test_multiple_supplements_partial_failure_keeps_turn_incomplete(
         if event.get("event") == "token"
     )
 
-    assert len(calls) == 2
-    assert len(done["data"]["write_receipts"]) == 1
+    assert len(calls) == 1
+    assert calls[0][1]["data"]["items"] == [
+        {"supplement_name": "甘氨酸镁", "dosage": "1粒"},
+        {"supplement_name": "褪黑素", "dosage": "1粒"},
+    ]
+    assert done["data"]["write_receipts"] == []
     assert done["data"]["completion_status"] == "error"
     assert done["data"]["turn_outcome"]["category"] != "success"
-    assert "没有全部完成" in reply
+    assert "还没记下来" in reply
+    assert "未完成记录动作" in reply or "没有完成记录动作" in reply
 
 
 async def test_historical_water_supplement_uses_one_date_bound_write(

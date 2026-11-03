@@ -10102,7 +10102,10 @@ def _simple_record_goal_arguments(
             data = capability.schema.model_validate_json(values.get("capability_payload", ""))
         except ValueError:
             return None
-        return {"record_type": capability.record_type, "data": data.model_dump(mode="json")}
+        return {
+            "record_type": capability.record_type,
+            "data": data.model_dump(mode="json", exclude_none=True),
+        }
     if goal.target_record_type == "water":
         try:
             amount_ml = int(values["amount_ml"])
@@ -10728,6 +10731,14 @@ def _simple_record_goal_completion_text(goal: GoalSpec) -> str:
             "snack": "加餐",
         }.get(str(values.get("meal_type") or ""), "饮食")
         return f"已记录{meal_label}。"
+    if goal.target_record_type == "nasal_wash":
+        try:
+            payload = json.loads(str(values.get("capability_payload") or ""))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            payload = {}
+        confirmation = _nasal_wash_confirmation(payload)
+        if confirmation:
+            return confirmation
     return "记录已完成。"
 
 
