@@ -9703,11 +9703,17 @@ def _is_closed_explicit_water_record(message: str) -> bool:
     Goal compilation also supports container defaults and mixed utterances;
     those retain ordinary model planning rather than gaining a new shortcut.
     """
+    raw = str(message or "")
+    # Preserve raw provenance: indentation, line breaks and tabs can mark
+    # quoted/example material. Do not turn it into an action with strip().
+    if raw.startswith("    ") or any(c in raw for c in "\r\n\t"):
+        return False
     return re.fullmatch(
-        r"(?:请)?(?:帮我)?(?:(?:记录|记下|记一下)(?:一下)?)?\s*"
-        r"(?:我)?(?:今天|刚才)?\s*(?:喝了|喝水|饮水)\s*"
-        r"[0-9]+(?:\.[0-9]+)?\s*(?:毫升|ml|升|l)\s*(?:的)?水?[。！! ]*",
-        str(message or "").strip(), re.IGNORECASE,
+        r"(?:(?:请)?(?:帮我)?(?:记录|记下|记一下)(?:一下)? *"
+        r"(?:我)?(?:今天|刚才)? *(?:喝了|喝水|饮水)|"
+        r"(?:我)?(?:今天|刚才)? *喝了) *"
+        r"[0-9]+(?:\.[0-9]+)? *(?:毫升|ml|升|l) *(?:的)?水?[。！! ]*",
+        raw.strip(" "), re.IGNORECASE,
     ) is not None
 
 

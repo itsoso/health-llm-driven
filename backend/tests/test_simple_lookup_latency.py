@@ -530,6 +530,8 @@ async def test_closed_action_keeps_advisory_route_outside_narrow_admission(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prompt", [
+    "请帮我喝水500ml", "请喝水500ml", "喝水500ml",
+    "    记录喝水500ml", "\t记录喝水500ml", "记录\n喝水500ml",
     "喝了一杯水", "喝了0.5升水", "不要记录喝水500ml", "把昨天的饮水改为500ml",
     "记录喝水500ml，并分析睡眠", "我胸痛，记录喝水500ml",
     "生成并执行今日计划", "给我今日计划并保存", "给我老婆今日计划",
@@ -541,10 +543,13 @@ async def test_nonclosed_requests_keep_router(db, owned_data, clock, monkeypatch
     monkeypatch.setattr(settings, "decision_mode", "on")
     monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
     seen = wire(monkeypatch, fake_result("casual"))
+    from app.models.daily_health import WaterIntake
+    before = db.query(WaterIntake).filter_by(user_id=owned_data.id).count()
     trace = script_executor(db, monkeypatch, ["当前请求需要进一步核对。"])
     events = [e async for e in trace.executor.run_stream(owned_data.id, prompt, channel="typed")]
     assert events[-1]["event"] == "done"
     assert seen
+    assert db.query(WaterIntake).filter_by(user_id=owned_data.id).count() == before
 
 
 @pytest.mark.asyncio

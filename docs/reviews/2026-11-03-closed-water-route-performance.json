@@ -426,5 +426,17 @@
     "optional live routing measured separately; timings must not be added as causal end-to-end results",
     "no native paint or device reception acceptance",
     "three-second goal across all requests remains unverified"
-  ]
+  ],
+  "safety_revision": {
+    "rejected_commit": "d88f0b4ca2f85637156174472867278648f3ca95",
+    "verdict": "NO-GO",
+    "findings": [
+      "indented instruction material promoted to write proposal; two persisted writes in disposable independent Pi tests",
+      "imperative language incorrectly admitted to shortcut; downstream authorization blocked persistence"
+    ],
+    "red_new_cases": 6,
+    "final_postgresql_cases_passed": 34,
+    "critical_and_unavailable_safety_notices_independent_passed": 2,
+    "final_executor_sha256": "80b5794e6d8e9c4f06fa39fee2c8a9f01a98405a67068aeb6b7ebe87b6469747"
+  }
 }
