@@ -1,0 +1,412 @@
+{
+  "candidate_sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+  "scope": "Recorded meal footer styles only; existing navigation and correction actions preserved",
+  "original_production_sha": "2dddb4c560db5c04315bdae2f7d95fcccd421bad",
+  "checks": {
+    "card_regressions": {
+      "passed": 132
+    },
+    "ci_mode_card_and_chat_regressions": {
+      "passed": 234
+    },
+    "typecheck": "passed",
+    "system_map": "passed",
+    "secret_scan": "passed"
+  },
+  "visual_preview": {
+    "component_sha256": "ecfd10f75c5bcb596b95fdad33f27bebd1c844c45d8059cc2529f9cfb9de1426",
+    "environment": "iOS simulator, actual candidate component with synthetic data in isolated preview app",
+    "screenshots": {
+      "reva-diet-footer-preview-ready.png": "1ecd36045f42e9d4df45eafd51ac4e3c749febdd45087d47debda0142a2c01f0",
+      "reva-diet-footer-preview-narrow-final.png": "4aec8316f9c419ba1c2949e580ef175325d2333edf6502c2f246557941cb200a"
+    },
+    "verified": [
+      "regular footer style",
+      "280-point width three actions wrap without clipping"
+    ],
+    "limitations": [
+      "Not a real account end-to-end test",
+      "Not proof of OTA installation or device uptake"
+    ]
+  },
+  "workflows": {
+    "full_ci": {
+      "databaseId": 41624178170,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41624178170",
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "conclusion": "success"
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "conclusion": "success"
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "docs-quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "conclusion": "success"
+        },
+        {
+          "name": "mac-build",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "conclusion": "success"
+        },
+        {
+          "name": "release-invariants",
+          "conclusion": "success"
+        },
+        {
+          "name": "mobile-typecheck",
+          "conclusion": "success"
+        },
+        {
+          "name": "type-drift",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-runner-startup",
+          "conclusion": "success"
+        },
+        {
+          "name": "ota-runner-startup",
+          "conclusion": "success"
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "conclusion": "success"
+        },
+        {
+          "name": "frontend-build",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "release-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "push_ci": {
+      "databaseId": 41624147709,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41624147709",
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "conclusion": "success"
+        },
+        {
+          "name": "docs-quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend-quality",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "release-invariants",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "mac-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend-test-${{ matrix.label }}",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "release-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "ota-runner-startup",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "mobile-typecheck",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "retained-runner-startup",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "frontend-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "type-drift",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    "release_validate": {
+      "databaseId": 41625792582,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41625792582",
+      "jobs": [
+        {
+          "name": "preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "build-permission",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "ios-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "release-result",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    "backend": {
+      "databaseId": 41628334841,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41628334841",
+      "jobs": [
+        {
+          "name": "preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "build-permission",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend",
+          "conclusion": "success"
+        },
+        {
+          "name": "ios-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "release-result",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    "ota_validate": {
+      "databaseId": 41629156101,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41629156101",
+      "jobs": [
+        {
+          "name": "ota",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "ota_publish": {
+      "databaseId": 41629399419,
+      "headSha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41629399419",
+      "jobs": [
+        {
+          "name": "ota",
+          "conclusion": "success"
+        }
+      ]
+    }
+  },
+  "backend_readonly_acceptance": {
+    "authorization_matches": true,
+    "backend_completed": {
+      "sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "state": "SUCCEEDED"
+    },
+    "backend_completed_sha256": "c774c050fdaf1f79b7c3bb7f726a1d8bd95419d673ead81486c2734ad9481bf2",
+    "business_lease_absent": true,
+    "local_health": "healthy",
+    "production_clean": true,
+    "public_health": "healthy",
+    "services": {
+      "celery-beat": "active/running",
+      "celery-worker": "active/running",
+      "health-backend": "active/running",
+      "reva-laya": "active/running"
+    },
+    "sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+    "state": "BACKEND_READONLY_VERIFIED"
+  },
+  "ota_completed": {
+    "sha256": "b5091ce67132dfb6b86f8aed1ba736d1697fcdf2f45fe46badf188a82c6dfa67",
+    "value": {
+      "intent_sha256": "25ccc75066ebda346c9329580b0ef2bdf505f85fecba337b564dfbf276755dd4",
+      "receipt_sha256": "c42eb82f0408d4c94b8c1c8ddc6c598ad0a66a0ed892e88ca0bc435d5801fde8",
+      "sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "state": "SUCCEEDED"
+    }
+  },
+  "ota_verified": {
+    "sha256": "c42eb82f0408d4c94b8c1c8ddc6c598ad0a66a0ed892e88ca0bc435d5801fde8",
+    "value": {
+      "group_id": "6a2504ea-e846-49cb-bb75-33b4427ea902",
+      "sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+      "update_id": "01a1a13c-e6fc-748e-b56b-7022394fad6d"
+    }
+  },
+  "public_manifest": {
+    "artifact_matches": true,
+    "asset_hash_count": 47,
+    "backend_healthy": true,
+    "channel": "production",
+    "device_acceptance": "not_verified",
+    "group_id": "6a2504ea-e846-49cb-bb75-33b4427ea902",
+    "launch_asset_hash": "pmYO4hVap3HNwuUV3_EWhWia5RAeZt-Kifsc5HKoQnE",
+    "platform": "ios",
+    "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+    "runtime": "1.3.6",
+    "sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+    "state": "PUBLIC_MANIFEST_VERIFIED",
+    "update_id": "01a1a13c-e6fc-748e-b56b-7022394fad6d"
+  },
+  "retained_failed_candidate": {
+    "sha": "9c2c75ae9354a13eea767219c04c40b441d475a9",
+    "run": 41623448887,
+    "reason": "Dossier lacked parseable status metadata; corrected in candidate and full CI rerun"
+  },
+  "device_acceptance": "not_verified"
+}
