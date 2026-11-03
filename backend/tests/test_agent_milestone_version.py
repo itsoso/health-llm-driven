@@ -11,15 +11,16 @@ def event(**extra):
     })
 
 
-def test_render_metric_v2_is_preserved():
-    assert event(metric_version=2).meta['metric_version'] == 2
+@pytest.mark.parametrize('version', [1, 2, 3])
+def test_render_metric_version_is_preserved(version):
+    assert event(metric_version=version).meta['metric_version'] == version
 
 
 def test_legacy_render_metric_remains_distinguishable():
     assert 'metric_version' not in event().meta
 
 
-@pytest.mark.parametrize('value', [True, '2', 2.0, None, 0, 3])
+@pytest.mark.parametrize('value', [True, '3', 3.0, None, 0, 4])
 def test_metric_version_is_strict(value):
     with pytest.raises(ValidationError):
         event(metric_version=value)
@@ -28,12 +29,16 @@ def test_metric_version_is_strict(value):
 def test_aggregate_never_mixes_metric_versions():
     from app.services.observability_service import _agent_turn_milestone_stats
     rows = [('agent_turn_milestone', event().meta),
-            ('agent_turn_milestone', {**event(metric_version=2).meta, 'duration_ms': 9000})]
+            ('agent_turn_milestone', {**event(metric_version=2).meta, 'duration_ms': 9000}),
+            ('agent_turn_milestone', {**event(metric_version=3).meta, 'duration_ms': 2500})]
     legacy = _agent_turn_milestone_stats(rows)
     assert legacy['by_phase']['first_key_content']['n'] == 1
     current = _agent_turn_milestone_stats(rows, metric_version=2)
     assert current['by_phase']['first_key_content']['p50'] == 9000
     assert current['by_phase']['first_key_content']['n'] == 1
+    corrected = _agent_turn_milestone_stats(rows, metric_version=3)
+    assert corrected['by_phase']['first_key_content']['p50'] == 2500
+    assert corrected['by_phase']['first_key_content']['n'] == 1
 
 
 def test_client_turn_correlation_id_is_preserved_without_content():

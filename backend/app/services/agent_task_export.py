@@ -152,7 +152,9 @@ def export_agent_task_snapshots(
         phase = meta.get('phase')
         action = meta.get('action_type')
         duration = meta.get('duration_ms')
-        if (type(version) is not int or version != 2
+        # v3 changes first_useful only. This exporter projects first_key_content,
+        # whose layout-based meaning is unchanged; it is never verified content.
+        if (type(version) is not int or version not in {2, 3}
                 or not isinstance(turn, str) or not _TURN_ID.fullmatch(turn)
                 or not isinstance(phase, str) or phase not in _PHASES
                 or not isinstance(action, str) or action not in _ACTIONS

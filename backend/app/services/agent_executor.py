@@ -18373,11 +18373,13 @@ class AgentExecutor:
                     exc,
                 )
         simple_lookup_route_skipped = bool(
-            conversation_id is None
-            and not health_advice_buffered and not staged_preclassification_failed
+            not health_advice_buffered and not staged_preclassification_failed
             and staged_preclassified_tier in {"casual", "balanced"}
             and self._simple_record_lookup_scope() is not None
         )
+        # A fully bound factual query needs no advisory routing vote, even in
+        # an existing conversation. History/planning and read verification still
+        # run below; only history-free queries qualify for deterministic output.
         if (settings.decision_mode != "off" and self._public_task is None
                 and not simple_lookup_route_skipped
                 and not _meal_photo_optional_route_unneeded(
@@ -18667,7 +18669,6 @@ class AgentExecutor:
                 streamed_answer_evidence_digest = ""
         if diet_photo_progress_turn:
             _mark_perf_milestone("first_progress_ms")
-            _mark_perf_milestone("first_useful_ms")
             yield self._progress_event("diet_photo_saved")
 
         self._current_turn_source_message_id = int(user_msg.id)
@@ -19804,7 +19805,7 @@ class AgentExecutor:
                 == "diet"
             ):
                 diet_writing_emitted = True
-                _mark_perf_milestone("first_useful_ms")
+                _mark_perf_milestone("first_progress_ms")
                 yield self._progress_event("diet_writing")
 
             # 通知前端正在执行工具
@@ -20560,6 +20561,13 @@ class AgentExecutor:
                     and not runtime_control_terminal):
                 food_photo_terminal_reason = self._unusable_food_photo_terminal(message, images or [])
 
+            verified_meal_photo_terminal = None
+            if (not file_base64 and not health_advice_buffered
+                    and retry_recovery is None and pending_choice_resolution is None
+                    and not unverified_write_operations and not failed_write_operations
+                    and not pending_pi_writes and not runtime_control_terminal):
+                verified_meal_photo_terminal = self._verified_meal_photo_terminal(message, images or [])
+
             if food_photo_terminal_reason is not None:
                 if food_photo_terminal_reason == "meal_photo_details_required":
                     full_reply = (
@@ -20586,6 +20594,10 @@ class AgentExecutor:
                     self._agent_kernel_pending_confirmation_tools.append("health_record")
                 full_reply = _contextual_diet_confirmation_reply()
                 final_finish_reason = "stop"
+            elif verified_meal_photo_terminal is not None:
+                full_reply = verified_meal_photo_terminal
+                final_finish_reason = "stop"
+                decision_route = "verified_meal_photo"
             elif deterministic_health_release:
                 full_reply = "本轮由确定性健康策略直接生成。"
                 final_finish_reason = "stop"
@@ -24953,6 +24965,16 @@ class AgentExecutor:
         # 不叠加既有整轮快路由 (那两条已把含合成的整轮降 fast)。
         if self._prefer_fast_record_model or self._fast_route_simple_turn:
             return None
+        # Merely exposing tools does not make a turn a tool task. For chat or
+        # unbound/unknown domains, let the answer model plan and answer once;
+        # otherwise a fast free-text response is discarded and generated again.
+        # Keep the same tools, gateway and quality floor on that answer model.
+        tool_intent = classify_agent_utterance(
+            getattr(self, "_current_turn_user_message", "") or ""
+        )
+        if (tool_intent.primary not in {"read", "write", "mutate", "advice"}
+                or tool_intent.domain in {"unknown", "context"}):
+            return None
         # 破坏性(删/改/撤销)/ 同步意图 → 工具决策留强模型(弱 fast 不可靠,生产实证:
         # 「帮我同步」「删除早餐」被降 fast 后反复失败;强模型 23:19 同句 status=complete)。
         # 这是 sync 簇的实际失败路径(「同步」不在 record/query 意图正则里 → 只经此工具轮快路由)。
@@ -26465,6 +26487,34 @@ class AgentExecutor:
         return tuple((str(image.get("type", "jpeg")), hashlib.sha256(
             str(image.get("base64") or "").encode("utf-8"),
         ).hexdigest()) for image in images)
+
+    def _verified_meal_photo_terminal(self, message: str, images: List[dict]) -> str | None:
+        """A closed, current photo capture can finish without a second model."""
+        snapshot = self._agent_kernel_snapshot
+        if (not getattr(settings, "domain_prompt_optimization", False)
+                or self.db is None or self._read_only_turn or self._runtime_write_block_reason
+                or self._has_isolated_report_scope() or self._requires_quality_floor()
+                or self._turn_contextual_diet_write_blocked_reason
+                or self._turn_attachment_write_receipts
+                or self._agent_kernel_pending_confirmation_tools
+                or self._agent_kernel_capability_block_reasons or self._agent_kernel_tool_failure_tools
+                or self._turn_selected_exam_id is not None or self._turn_selected_notification_id is not None
+                or len(self._current_turn_image_urls) != len(images)
+                or self._current_turn_media_source_message_id != self._current_turn_source_message_id
+                or snapshot is None or snapshot.envelope.text != message
+                or snapshot.envelope.user_id != self._current_user_id
+                or snapshot.context.user_id != self._current_user_id
+                or snapshot.actionable_references):
+            return None
+        from app.services.agent_meal_completion import verified_meal_photo_reply
+
+        return verified_meal_photo_reply(
+            self.db, message=message, user_id=self._current_user_id,
+            source_message_id=self._current_turn_source_message_id,
+            record_id=self._turn_contextual_diet_record_id, images=images,
+            receipts=self._turn_contextual_diet_receipts,
+            cards=self._turn_contextual_diet_cards,
+        )
 
     def _unusable_food_photo_terminal(self, message: str, images: List[dict]) -> str | None:
         """A current owned photo result can explain missing input, never grant a write."""

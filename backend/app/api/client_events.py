@@ -421,7 +421,7 @@ class EventIn(BaseModel):
                 raise ValueError("invalid agent turn milestone client_turn_id")
             if "metric_version" in self.meta and (
                 type(self.meta["metric_version"]) is not int
-                or self.meta["metric_version"] not in {1, 2}
+                or self.meta["metric_version"] not in {1, 2, 3}
             ):
                 raise ValueError("invalid agent turn milestone metric_version")
             if self.meta.get("phase") not in _AGENT_TURN_MILESTONE_SCHEMA["phases"]:

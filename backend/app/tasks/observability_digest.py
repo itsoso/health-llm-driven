@@ -31,7 +31,7 @@ def client_events_weekly_digest(days: int = 7) -> dict:
     by_event = stats.get("by_event", {})
     ctr: dict = stats.get("starter_ctr", {})
     cold: dict = stats.get("home_cold_start_ms", {})
-    agent_latency: dict = stats.get("agent_turn_milestones_v2_ms", {})
+    agent_latency: dict = stats.get("agent_turn_milestones_v3_ms", {})
     key_content: dict = agent_latency.get("by_phase", {}).get("first_key_content", {})
     interactive: dict = agent_latency.get("by_phase", {}).get("first_interactive", {})
     citations_painted: dict = agent_latency.get("by_phase", {}).get(
@@ -51,7 +51,7 @@ def client_events_weekly_digest(days: int = 7) -> dict:
 
     logger.info(
         "[client-events-digest %dd] total=%s events=%s | cold_start p50=%sms p95=%sms "
-        "n=%s incomplete=%s | agent_key_content p50=%sms p95=%sms p99=%sms "
+        "n=%s incomplete=%s | agent_metric_version=3 | agent_key_content p50=%sms p95=%sms p99=%sms "
         "n=%s | agent_interactive p50=%sms p95=%sms p99=%sms n=%s "
         "| citations_painted p50=%sms p95=%sms p99=%sms n=%s "
         "invalid=%s | starter dead_keys=%s top_ctr=%s",

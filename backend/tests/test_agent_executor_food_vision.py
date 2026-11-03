@@ -98,6 +98,166 @@ async def test_food_batch_failure_or_cancel_closes_siblings_without_capture(monk
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("photo_count,duplicate", [(1, False), (2, False), (1, True)])
+async def test_closed_recorded_meal_photo_finishes_without_model_synthesis(
+    db, tmp_path, monkeypatch, photo_count, duplicate,
+):
+    from app.models.agent_conversation import AgentMessage
+    from app.services.ai.food_recognition import food_recognition_service
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    recognition_results = [_food_result() for _ in range(photo_count)]
+    if photo_count == 2:
+        recognition_results[1]["foods"][0]["name"] = "西兰花"
+    monkeypatch.setattr(food_recognition_service, "recognize_food_from_base64",
+                        AsyncMock(side_effect=recognition_results))
+    monkeypatch.setattr(executor, "_build_system_prompt", lambda *a, **k: "SYS")
+    monkeypatch.setattr("app.services.agent_executor.get_health_tools", lambda subset=None: [])
+    model = AsyncMock(return_value={"content": "这餐已记录。", "finish_reason": "stop"})
+    monkeypatch.setattr(executor, "_call_llm", model)
+    monkeypatch.setattr(executor, "_call_llm_stream", _stream_from(model))
+    images = [{"base64": VALID_PNG_BASE64, "type": "png"}]
+    if photo_count == 2:
+        images.append({"base64": _png_base64((0, 255, 0)), "type": "png"})
+    if duplicate:
+        images.append(dict(images[0]))
+    events = [e async for e in executor.run_stream(
+        user.id, "记录这餐", user_auth_token="test-token", images=images,
+        client_turn_id="closed-meal-photo-complete",
+    )]
+    done = next(e["data"] for e in events if e.get("event") == "done")
+    model.assert_not_awaited()
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert done["perf"]["model_call_count"] == 0
+    assert done["perf"]["first_useful_ms"] == done["perf"]["first_card_ms"]
+    assert done["perf"]["write_verified_ms"] <= done["perf"]["first_useful_ms"]
+    record = db.query(DietRecord).filter(DietRecord.user_id == user.id).one()
+    assert len(done["write_receipts"]) == 1
+    assert done["write_receipts"][0]["resource_id"] == str(record.id)
+    cards = [e["data"]["descriptor"] for e in events if e.get("event") == "card"]
+    assert len(cards) == 1 and cards[0]["data"]["record_id"] == record.id
+    assert len(cards[0]["data"]["photo_asset_ids"]) == photo_count
+    saved = db.get(AgentMessage, done["message_id"])
+    assert saved.content == "".join(e["data"]["content"] for e in events if e.get("event") == "token")
+    assert "已记录" in saved.content
+    assert saved.meta["cards"] == cards_for_persistence(done["cards"])
+
+
+@pytest.mark.parametrize("boundary", [
+    "owner", "source", "record", "date", "receipt", "operation", "card", "image",
+    "deleted", "pending_asset", "unknown_asset", "missing_asset", "extra_image",
+    "advice", "other_owner_text", "quote", "negation", "correction", "extra_goal",
+    "malformed_card", "malformed_assets", "malformed_receipt", "malformed_image", "card_date",
+])
+def test_saved_meal_terminal_requires_closed_input_and_current_durable_evidence(
+    db, tmp_path, monkeypatch, boundary,
+):
+    from app.services.agent_meal_completion import verified_meal_photo_reply
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    capture = executor._capture_contextual_meal_photo("记录这餐", _food_result(), image_index=0)
+    assert capture.record is not None
+    kwargs = {
+        "message": "记录这餐", "user_id": user.id,
+        "source_message_id": executor._current_turn_source_message_id,
+        "record_id": capture.record.id,
+        "images": [{"base64": VALID_PNG_BASE64, "type": "png"}],
+        "receipts": executor._turn_contextual_diet_receipts,
+        "cards": executor._turn_contextual_diet_cards,
+    }
+    assert verified_meal_photo_reply(db, **kwargs) is not None
+    if boundary == "owner":
+        kwargs["user_id"] = user.id + 1
+    elif boundary == "source":
+        kwargs["source_message_id"] += 1
+    elif boundary == "record":
+        kwargs["record_id"] += 1
+    elif boundary == "date":
+        kwargs["receipts"][0]["date"] = "2000-01-01"
+    elif boundary == "receipt":
+        kwargs["receipts"][0]["verified"] = False
+    elif boundary == "operation":
+        kwargs["receipts"][0]["action"] = "update"
+    elif boundary == "card":
+        kwargs["cards"][0]["data"]["photo_asset_ids"] = ["foreign-photo"]
+    elif boundary == "malformed_card":
+        kwargs["cards"][0] = None
+    elif boundary == "malformed_assets":
+        kwargs["cards"][0]["data"]["photo_asset_ids"] = [{}]
+    elif boundary == "malformed_receipt":
+        kwargs["receipts"][0] = None
+    elif boundary == "malformed_image":
+        kwargs["images"][0]["base64"] = "not-base64"
+    elif boundary == "card_date":
+        kwargs["cards"][0]["data"]["record_date"] = "2000-01-01"
+    elif boundary == "image":
+        kwargs["images"][0]["base64"] = _png_base64((255, 0, 0))
+    elif boundary == "deleted":
+        capture.photo_asset.deleted_at = datetime.now(timezone.utc)
+    elif boundary == "pending_asset":
+        capture.photo_asset.lifecycle = "pending"
+    elif boundary == "unknown_asset":
+        capture.photo_asset.classification = "unknown"
+    elif boundary == "missing_asset":
+        db.delete(capture.photo_asset)
+    elif boundary == "extra_image":
+        kwargs["images"].append({"base64": _png_base64((255, 0, 0)), "type": "png"})
+    else:
+        kwargs["message"] = {
+            "advice": "记录这餐并分析是否健康", "other_owner_text": "记录妈妈这餐",
+            "quote": "例句：记录这餐", "negation": "不要记录这餐",
+            "correction": "修改这餐", "extra_goal": "记录这餐并查询今天的睡眠",
+        }[boundary]
+    db.commit()
+    assert verified_meal_photo_reply(db, **kwargs) is None
+
+
+@pytest.mark.parametrize("boundary", [
+    "flag_off", "read_only", "runtime", "pending", "tool_failure", "capability",
+    "quality_floor", "retry_source", "selected_exam", "selected_notification", "reference",
+])
+def test_saved_meal_terminal_keeps_executor_authority_boundaries(
+    db, tmp_path, monkeypatch, boundary,
+):
+    from dataclasses import replace
+
+    executor, user = _food_photo_executor(db, tmp_path, monkeypatch)
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    executor._start_agent_kernel_turn(user_id=user.id, message="记录这餐", channel="typed")
+    executor._current_turn_media_source_message_id = executor._current_turn_source_message_id
+    capture = executor._capture_contextual_meal_photo("记录这餐", _food_result(), image_index=0)
+    assert capture.record is not None
+    images = [{"base64": VALID_PNG_BASE64, "type": "png"}]
+    assert executor._verified_meal_photo_terminal("记录这餐", images) is not None
+    if boundary == "flag_off":
+        monkeypatch.setattr(settings, "domain_prompt_optimization", False)
+    elif boundary == "read_only":
+        executor._read_only_turn = True
+    elif boundary == "runtime":
+        executor._runtime_write_block_reason = "circuit_paused"
+    elif boundary == "pending":
+        executor._agent_kernel_pending_confirmation_tools = ["health_record"]
+    elif boundary == "tool_failure":
+        executor._agent_kernel_tool_failure_tools = ["health_record"]
+    elif boundary == "capability":
+        executor._agent_kernel_capability_block_reasons = ["blocked"]
+    elif boundary == "quality_floor":
+        monkeypatch.setattr(executor, "_requires_quality_floor", lambda: True)
+    elif boundary == "retry_source":
+        executor._current_turn_media_source_message_id += 1
+    elif boundary == "selected_exam":
+        executor._turn_selected_exam_id = 1
+    elif boundary == "selected_notification":
+        executor._turn_selected_notification_id = 1
+    elif boundary == "reference":
+        executor._agent_kernel_snapshot = replace(executor._agent_kernel_snapshot,
+                                                   actionable_references=(object(),))
+    assert executor._verified_meal_photo_terminal("记录这餐", images) is None
+
+
+@pytest.mark.asyncio
 async def test_uncertain_photo_emits_durable_confirmation_before_reply(db, tmp_path, monkeypatch):
     from app.models.agent_conversation import AgentMessage
     from app.services.ai.food_recognition import food_recognition_service

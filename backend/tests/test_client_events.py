@@ -120,8 +120,9 @@ def test_post_client_event_rejects_aigc_resource_identifiers(
     assert response.status_code == 422, response.text
 
 
+@pytest.mark.parametrize('version', [None, 1, 2, 3])
 def test_post_client_event_accepts_content_free_agent_turn_milestone(
-    client, db, auth_user_and_headers,
+    client, db, auth_user_and_headers, version,
 ):
     _, headers = auth_user_and_headers
 
@@ -135,6 +136,7 @@ def test_post_client_event_accepts_content_free_agent_turn_milestone(
                 "duration_ms": 842,
                 "action_type": "diet_record",
                 "has_image": False,
+                **({"metric_version": version} if version is not None else {}),
             },
         },
     )
@@ -147,6 +149,7 @@ def test_post_client_event_accepts_content_free_agent_turn_milestone(
         "duration_ms": 842,
         "action_type": "diet_record",
         "has_image": False,
+        **({"metric_version": version} if version is not None else {}),
     }
 
 
@@ -260,6 +263,7 @@ def test_client_events_stats_empty(db):
     stats = client_events_stats(db, since, user_id=None)
     v2 = stats.pop("agent_turn_milestones_v2_ms")
     assert v2 == stats["agent_turn_milestones_ms"]
+    assert stats.pop("agent_turn_milestones_v3_ms") == v2
     assert stats == {
         "total": 0,
         "by_event": {},

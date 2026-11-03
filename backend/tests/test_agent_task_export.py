@@ -62,13 +62,14 @@ def _export(db, owner, **kwargs):
                                       until=NOW + timedelta(minutes=1), **kwargs)
 
 
-def test_owner_exact_join_anonymous_projection_and_evaluator_compile(db):
+@pytest.mark.parametrize('metric_version', [2, 3])
+def test_owner_exact_join_anonymous_projection_and_evaluator_compile(db, metric_version):
     owner, other = _owner(db, 'owner'), _owner(db, 'other')
     run, _ = _run(db, owner, meta={'perf': {'end_to_end_total_ms': 2500},
                                  'resolution_status': 'no_data', 'content': 'PRIVATE-META',
                                  'revision': 'b' * 40, 'task_outcome': 'satisfied'})
     _run(db, other, 'other', meta={'resolution_status': 'completed'})
-    _event(db, owner)
+    _event(db, owner, metric_version=metric_version)
     _event(db, other, duration_ms=999)
     _usage(db, owner, run.run_id, token_source='api', tokenplan_cost_cny=0.02,
            tokenplan_cost_estimated=1, tokenplan_cost_source='synthetic-price-source')

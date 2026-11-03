@@ -111,8 +111,13 @@ async def test_existing_conversation_keeps_model_planner_and_history(
     db, owned_data, clock, monkeypatch, query, dimension
 ):
     from app.models.agent_conversation import AgentConversation
+    from tests.test_decision_routing import fake_result, wire
 
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_provider", "laya")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    seen = wire(monkeypatch, fake_result("casual"))
     conv = AgentConversation(user_id=owned_data.id)
     db.add(conv)
     db.flush()
@@ -147,6 +152,9 @@ async def test_existing_conversation_keeps_model_planner_and_history(
     assert any("记录有误" in str(m.get("content")) for m in trace.calls[0][0])
     assert not events[-1]["data"]["perf"]["owned_read_preplanned"]
     assert not events[-1]["data"]["perf"]["simple_lookup_rendered"]
+    # Skipping an advisory router must not skip history, planning or read proof.
+    assert not seen
+    assert events[-1]["data"]["perf"]["simple_lookup_route_skipped"]
     saved = db.get(AgentMessage, events[-1]["data"]["message_id"])
     assert correction in saved.content
     assert correction in "".join(

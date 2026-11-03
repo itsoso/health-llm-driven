@@ -538,21 +538,21 @@ describe('client reliability events', () => {
   });
 });
 
-describe('agent milestone v2 correlation transport', () => {
+describe('versioned agent milestone correlation transport', () => {
   const base = { phase: 'first_key_content', duration_ms: 120, action_type: 'generic', has_image: false };
-  it('preserves safe version and turn through the actual API payload without private fields', async () => {
+  it.each([1, 2, 3])('preserves version %s and turn through the API payload without private fields', async metricVersion => {
     mockPost.mockClear();
     await emitClientEvent('agent_turn_milestone', {
-      ...base, metric_version: 2, client_turn_id: 'turn-42-1789099200000',
+      ...base, metric_version: metricVersion, client_turn_id: 'turn-42-1789099200000',
       user_id: 99, content: 'PRIVATE-SENTINEL',
     });
     expect(mockPost).toHaveBeenCalledWith('/client-events', {
       event_name: 'agent_turn_milestone',
-      meta: { ...base, metric_version: 2, client_turn_id: 'turn-42-1789099200000' },
+      meta: { ...base, metric_version: metricVersion, client_turn_id: 'turn-42-1789099200000' },
     });
   });
   it.each([
-    { metric_version: 3 }, { metric_version: '2' },
+    { metric_version: 4 }, { metric_version: '3' }, { metric_version: true },
     { client_turn_id: 'private-name' }, { client_turn_id: 'turn-42-1789099200000\n' },
     { client_turn_id: 'turn-1234567890123-1789099200000' },
   ])('fails closed on invalid optional correlation fields %j', fields => {

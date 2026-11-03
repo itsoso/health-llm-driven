@@ -649,7 +649,7 @@ def _agent_turn_milestone_stats(rows: list[tuple[str, object]], *, metric_versio
             continue
         meta = raw_meta if isinstance(raw_meta, dict) else {}
         version = meta.get("metric_version", 1)
-        if type(version) is not int or version not in {1, 2}:
+        if type(version) is not int or version not in {1, 2, 3}:
             invalid += 1
             continue
         if version != metric_version:
@@ -984,6 +984,9 @@ def client_events_stats(db: Session, since: datetime, user_id: Optional[int]) ->
         "by_event": by_event,
         "agent_turn_milestones_ms": agent_turn_milestones_ms,
         "agent_turn_milestones_v2_ms": _agent_turn_milestone_stats(rows, metric_version=2),
+        # v3 excludes progress-only statuses from first_useful; never pool it
+        # with older clients whose apparent latency included those statuses.
+        "agent_turn_milestones_v3_ms": _agent_turn_milestone_stats(rows, metric_version=3),
         "app_update": {
             "launches": app_update_launches,
             "checks": app_update_checks,

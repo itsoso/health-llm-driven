@@ -606,7 +606,8 @@ function emitAgentMilestone(
     Math.max(0, Math.round(Date.now() - context.startedAt)),
   );
   void emitClientEvent('agent_turn_milestone', {
-    metric_version: 2,
+    // v3 separates progress labels from receipt/content-backed first_useful.
+    metric_version: 3,
     client_turn_id: context.clientTurnId,
     phase,
     duration_ms: durationMs,
@@ -2118,7 +2119,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             : undefined;
           if (dietActionType) {
             milestoneContext.actionType = dietActionType;
-            emitAgentTurnMilestone('first_useful');
+            // Status labels describe progress, including a server's "saved"
+            // label; only content/cards or a verified receipt prove a result.
+            // Native progress layout retains its separate semantic milestone.
             if (evt.statusLabel?.trim()) {
               lastDietStatusLabel = evt.statusLabel.trim();
             }
@@ -2180,6 +2183,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
                 label: evt.thought,
               });
               if (writes && toolSucceeded && evt.receipt?.verified === true) {
+                emitAgentTurnMilestone('first_useful');
                 emitAgentTurnMilestone('write_verified');
                 try {
                   await rememberVerifiedWriteReceipt(evt.receipt);
@@ -2284,6 +2288,9 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
             settleAcceptance(false);
           }
           if (evt.writeReceipts?.length) {
+            if (evt.writeReceipts.some(receipt => receipt.verified === true)) {
+              emitAgentTurnMilestone('first_useful');
+            }
             emitAgentTurnMilestone('write_verified');
             const latestReceipt = evt.writeReceipts[evt.writeReceipts.length - 1];
             dispatchAgentTurn({

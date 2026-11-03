@@ -3669,6 +3669,9 @@ describe('useChatEngine', () => {
     const { result } = renderHook(() => useChatEngine());
     await act(async () => { await result.current.sendMessage('记录喝水 1200 毫升'); });
     expect(result.current.activeTurn).toMatchObject({ phase: 'running', hadWrite: true, writeVerified: false });
+    expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+      'agent_turn_milestone', expect.objectContaining({ phase: 'first_useful' }),
+    );
     expect(result.current.activeTurn.retryMode).toBeUndefined();
     mockGetConversationMessages.mockResolvedValue({ total_messages: 1, messages: [{
       id: 92, role: 'assistant', content: '缺少写入回执', meta: {
@@ -4298,6 +4301,37 @@ describe('useChatEngine', () => {
     });
   });
 
+  it.each(['diet_photo_saved', 'diet_photo_recognizing', 'diet_parsed', 'diet_estimating', 'diet_writing', 'diet_verified'])(
+    'does not count the %s status as a useful result before content arrives',
+    async (statusStage) => {
+      mockStreamChat.mockImplementation(async function* () {
+        yield { type: 'start', conversationId: 777 };
+        yield { type: 'status', statusStage, statusLabel: '餐食处理进度' };
+        await new Promise<void>((resolve) => { finishStream = resolve; });
+        yield { type: 'token', content: '本次餐食识别需要补充份量。' };
+        yield { type: 'done', conversationId: 777, messageId: 2 };
+      });
+      const { result } = renderHook(() => useChatEngine());
+      act(() => { void result.current.sendMessage('记录这餐'); });
+      await waitFor(() => {
+        expect(result.current.messages.find(message => message.role === 'assistant')?.currentStatus)
+          .toBe('餐食处理进度');
+      });
+      expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+        'agent_turn_milestone', expect.objectContaining({ phase: 'first_useful' }),
+      );
+      expect(mockEmitClientEvent).not.toHaveBeenCalledWith(
+        'agent_turn_milestone', expect.objectContaining({ phase: 'write_verified' }),
+      );
+      await act(async () => { finishStream?.(); await Promise.resolve(); });
+      await waitFor(() => {
+        expect(mockEmitClientEvent).toHaveBeenCalledWith(
+          'agent_turn_milestone', expect.objectContaining({ phase: 'first_useful' }),
+        );
+      });
+    },
+  );
+
   it('keeps progressive diet stages in one assistant progress panel', async () => {
     mockStreamChat.mockImplementation(streamDietProgressThenWait);
 
@@ -4331,6 +4365,7 @@ describe('useChatEngine', () => {
     expect(milestoneCalls.every(([, meta]) => (
       meta.action_type === 'diet_record'
       && meta.has_image === false
+      && meta.metric_version === 3
       && Number.isInteger(meta.duration_ms)
       && !('content' in meta)
     ))).toBe(true);
@@ -4480,6 +4515,11 @@ describe('useChatEngine', () => {
     await act(async () => { await result.current.sendMessage('记录补剂和豆浆'); });
     expect(result.current.messages.find(message => message.role === 'assistant')?.writeReceipts)
       .toEqual([verifiedDietReceipt]);
+    // A verified partial result is useful even when another operation failed;
+    // it must not imply the whole turn succeeded.
+    expect(mockEmitClientEvent).toHaveBeenCalledWith(
+      'agent_turn_milestone', expect.objectContaining({ phase: 'first_useful' }),
+    );
     expect(result.current.activeTurn.resultLabel).toBe(terminalStatus === 'reconciliation_required'
       ? '部分已保存，其余记录状态待核对' : '部分已保存，请查看未完成事项');
     if (terminalStatus === 'reconciliation_required') {

@@ -135,7 +135,30 @@ def test_client_events_stats_aggregates_agent_turn_milestone_percentiles(db):
     }
 
 
-def test_client_events_weekly_digest_task_runs(db, monkeypatch):
+def test_client_events_stats_separates_corrected_v3_from_historical_progress(db):
+    from app.models.user import User
+    from app.services.observability_service import client_events_stats, utc_now
+
+    user = User(username="metric-version", email="metric-version@example.test", hashed_password="x", name="synthetic")
+    db.add(user)
+    db.flush()
+    for version, duration in ((1, 50), (2, 100), (3, 2500)):
+        _seed(db, user.id, "agent_turn_milestone", {
+            "metric_version": version, "phase": "first_useful", "duration_ms": duration,
+            "action_type": "diet_photo", "has_image": True,
+        })
+    db.commit()
+    stats = client_events_stats(db, utc_now() - timedelta(days=7), user_id=user.id)
+    for key, expected in (("agent_turn_milestones_ms", 50),
+                          ("agent_turn_milestones_v2_ms", 100),
+                          ("agent_turn_milestones_v3_ms", 2500)):
+        assert stats[key]["invalid"] == 0
+        assert stats[key]["by_phase"]["first_useful"] == {
+            "n": 1, "p50": expected, "p95": expected, "p99": expected,
+        }
+
+
+def test_client_events_weekly_digest_task_runs(db, monkeypatch, caplog):
     """The scheduled digest task computes + logs without error and flags dead generators."""
     from app.models.user import User
     from app.tasks import observability_digest
@@ -149,6 +172,11 @@ def test_client_events_weekly_digest_task_runs(db, monkeypatch):
     from app.models.client_event import ClientEvent
     for _ in range(25):
         db.add(ClientEvent(user_id=user.id, event_name="starter_chips_shown", meta={"keys": ["deadgen"]}))
+    for version, duration in ((2, 100), (3, 900)):
+        _seed(db, user.id, "agent_turn_milestone", {
+            "metric_version": version, "phase": "first_key_content", "duration_ms": duration,
+            "action_type": "diet_photo", "has_image": True,
+        })
     db.commit()
 
     # the task opens its own `with SessionLocal() as db:` — feed it the test session
@@ -161,9 +189,12 @@ def test_client_events_weekly_digest_task_runs(db, monkeypatch):
 
     monkeypatch.setattr(observability_digest, "SessionLocal", _fake_session)
 
-    result = observability_digest.client_events_weekly_digest(days=7)
+    with caplog.at_level("INFO", logger="app.tasks.observability_digest"):
+        result = observability_digest.client_events_weekly_digest(days=7)
     assert "deadgen" in result["dead_starter_keys"]
     assert result["starter_ctr"]["deadgen"]["clicks"] == 0
+    assert "agent_metric_version=3" in caplog.text
+    assert "agent_key_content p50=900ms" in caplog.text
 
 
 def test_client_events_stats_computes_diet_capture_latency_and_failures(db):

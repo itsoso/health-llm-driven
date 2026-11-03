@@ -1,0 +1,287 @@
+{
+  "baseline_sha": "3c438e8362e3ce3dc11e845b80d22c98a506be0b",
+  "environment": "Disposable SQLite, synthetic consenting owners, real Pi and provider API; automatic answer model fixed to qwen3.7-plus; advisory router off in both chat timing arms",
+  "limits": [
+    "4 requests per arm; not production P95/P99",
+    "No HTTP, upload or native display timing",
+    "No raw production prompt replay",
+    "No claimed first-card vision speedup",
+    "All arms use same two synthetic prompts, twice each; retain all failures"
+  ],
+  "budget": {
+    "max_calls_per_request": 3,
+    "timeout_seconds": 60,
+    "requests_per_arm": 4
+  },
+  "arms": {
+    "baseline": {
+      "source_sha256": "9fd3a1db0aab65c0430e38884a9554f088b0c52fc4fe46a48a68a8dc1ff328ac",
+      "rows": [
+        {
+          "case": "short_story__qwen3.7-plus",
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 20459,
+          "total_ms": 20587,
+          "answer_chars": 74,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 654,
+              "tool_count": 11,
+              "model": "qwen3.6-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 9881,
+              "finish_reason": "stop",
+              "ms": 10241
+            },
+            {
+              "prompt_chars": 9418,
+              "tool_count": 0,
+              "model": "qwen3.7-plus",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 7982,
+              "finish_reason": "stop",
+              "ms": 8755
+            }
+          ]
+        },
+        {
+          "case": "short_joke__qwen3.7-plus",
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 14561,
+          "total_ms": 14585,
+          "answer_chars": 33,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 655,
+              "tool_count": 11,
+              "model": "qwen3.6-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 2337,
+              "finish_reason": "stop",
+              "ms": 2442
+            },
+            {
+              "prompt_chars": 9419,
+              "tool_count": 0,
+              "model": "qwen3.7-plus",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 11527,
+              "finish_reason": "stop",
+              "ms": 11827
+            }
+          ]
+        },
+        {
+          "case": "short_story__qwen3.7-plus",
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 15507,
+          "total_ms": 15531,
+          "answer_chars": 100,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 654,
+              "tool_count": 11,
+              "model": "qwen3.6-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 7031,
+              "finish_reason": "stop",
+              "ms": 7448
+            },
+            {
+              "prompt_chars": 9418,
+              "tool_count": 0,
+              "model": "qwen3.7-plus",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 6817,
+              "finish_reason": "stop",
+              "ms": 7766
+            }
+          ]
+        },
+        {
+          "case": "short_joke__qwen3.7-plus",
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 18976,
+          "total_ms": 19003,
+          "answer_chars": 41,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 655,
+              "tool_count": 11,
+              "model": "qwen3.6-flash",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1721,
+              "finish_reason": "stop",
+              "ms": 1799
+            },
+            {
+              "prompt_chars": 9419,
+              "tool_count": 0,
+              "model": "qwen3.7-plus",
+              "has_tools": false,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 16510,
+              "finish_reason": "stop",
+              "ms": 16914
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "n": 4,
+        "passed": 4,
+        "total_ms_p50": 17267.0,
+        "total_ms_p95_nearest_rank": 20587,
+        "total_ms_p99_nearest_rank": 20587,
+        "calls": 8,
+        "within_3s": 0
+      }
+    },
+    "candidate": {
+      "source_sha256": "4dec6dff9da5a5604e3ebc46a8731e100f0b328f257df874b9a97276ded53ea9",
+      "rows": [
+        {
+          "case": "short_story__qwen3.7-plus",
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 6423,
+          "total_ms": 6485,
+          "answer_chars": 134,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 9418,
+              "tool_count": 11,
+              "model": "qwen3.7-plus",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4091,
+              "finish_reason": "stop",
+              "ms": 5852
+            }
+          ]
+        },
+        {
+          "case": "short_joke__qwen3.7-plus",
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 3570,
+          "total_ms": 3596,
+          "answer_chars": 98,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 9419,
+              "tool_count": 11,
+              "model": "qwen3.7-plus",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 1997,
+              "finish_reason": "stop",
+              "ms": 3320
+            }
+          ]
+        },
+        {
+          "case": "short_story__qwen3.7-plus",
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 7626,
+          "total_ms": 7654,
+          "answer_chars": 258,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 9418,
+              "tool_count": 11,
+              "model": "qwen3.7-plus",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 4255,
+              "finish_reason": "stop",
+              "ms": 7353
+            }
+          ]
+        },
+        {
+          "case": "short_joke__qwen3.7-plus",
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 3265,
+          "total_ms": 3288,
+          "answer_chars": 57,
+          "outcome": "complete",
+          "error_type": null,
+          "stop_reason": null,
+          "calls": [
+            {
+              "prompt_chars": 9419,
+              "tool_count": 11,
+              "model": "qwen3.7-plus",
+              "has_tools": true,
+              "enable_thinking": null,
+              "thinking_budget": null,
+              "first_content_ms": 2462,
+              "finish_reason": "stop",
+              "ms": 2974
+            }
+          ]
+        }
+      ],
+      "summary": {
+        "n": 4,
+        "passed": 4,
+        "total_ms_p50": 5040.5,
+        "total_ms_p95_nearest_rank": 7654,
+        "total_ms_p99_nearest_rank": 7654,
+        "calls": 4,
+        "within_3s": 0
+      }
+    }
+  },
+  "reproduction": {
+    "source": "import os\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path(os.environ['REVA_BENCH_ROOT'])\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nMODELS=['qwen3.7-plus']\nPROMPTS=[('short_story','讲一个很短的故事'),('short_joke','讲一个两句话的笑话')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(2):\n   for case,prompt,model in CASES:\n    calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'automatic_answer_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=None;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured(model)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(60):\n        async for e in ex.run_stream(user.id,prompt,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':ex._prompt_context_profile}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','baseline_sha':'3c438e8362e3ce3dc11e845b80d22c98a506be0b','decision_mode':'off','domain_prompt_optimization':True,'saved_preference':False,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n",
+    "source_sha256": "dbde36f1795a539bbdf8c2f30f42aa30f834a2f05c87863005e1f321f7930e0e",
+    "usage": "REVA_BENCH_ROOT=<baseline-or-candidate-clean-checkout> TZ=Asia/Shanghai backend/venv/bin/python <source.py> <result.json>"
+  }
+}

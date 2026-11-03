@@ -34,7 +34,50 @@ def _executor():
     ex._prefer_fast_record_model = False
     ex._fast_route_simple_turn = False
     ex._tool_round_fast_routed = False
+    ex._current_turn_user_message = "分析我的睡眠趋势"
     return ex
+
+
+@pytest.mark.parametrize("message", [
+    "讲一个很短的故事", "上车了 往酒店方向", "谢谢你的回复",
+    "帮我把这句话改得自然一点：今天下班了", "给我一些提高专注力的建议",
+])
+def test_without_a_known_tool_task_answer_model_owns_first_generation(monkeypatch, message):
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+    monkeypatch.setattr("app.services.llm.factory.create_provider_for_model_id", lambda mid: MagicMock())
+    ex = _executor()
+    ex._current_turn_user_message = message
+    assert ex._maybe_fast_route_tool_round("qwen3.7-max") is None
+    assert not ex._tool_round_fast_routed
+
+
+@pytest.mark.asyncio
+async def test_automatic_story_answer_is_generated_once(db, auth_user_and_headers, monkeypatch):
+    user, _ = auth_user_and_headers
+    executor = AgentExecutor(db)
+    calls = []
+    monkeypatch.setattr("app.services.agent_executor.settings.task_tiered_routing", True)
+    monkeypatch.setattr(reg, "pick_reliable_tool_model_id", lambda **k: "qwen3.6-flash")
+
+    class Provider:
+        def __init__(self, model):
+            self.model = model
+
+        async def chat_stream(self, **kwargs):
+            calls.append(self.model)
+            yield {"type": "content", "text": "一只小猫找到了一把雨伞，陪迷路的小狗回了家。"}
+            yield {"type": "finish", "finish_reason": "stop"}
+
+        async def chat(self, **kwargs):
+            calls.append(self.model)
+            return {"content": "一只小猫找到了一把雨伞，陪迷路的小狗回了家。", "finish_reason": "stop"}
+
+    _wire(executor, monkeypatch, Provider, user_provider=Provider("qwen3.7-max"), tool_name="knowledge_search")
+    events = await _run(executor, "讲一个很短的故事", user.id)
+    assert calls == ["qwen3.7-max"]
+    assert "fast_tool_round_direct_answer_resynthesized" not in events[-1]["data"]["fallback_reasons"]
+    assert any(e.get("event") == "token" and "小猫" in e["data"]["content"] for e in events)
 
 
 def test_flag_off_never_fast_routes_tool_round(monkeypatch):
