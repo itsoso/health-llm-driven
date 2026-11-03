@@ -191,6 +191,30 @@ async def test_unknown_record_obligation_cannot_be_completed_by_prose(db, record
     assert "重发" not in persisted.content and "再发一次" not in persisted.content
 
 
+async def test_natural_nasal_soak_reaches_owned_postgres_with_context(
+    db,
+    record_transport,
+):
+    trace = record_transport
+    trace.script()
+
+    done, persisted = await trace.run(
+        "记录生理盐水洗鼻一次，用掉10毫升，泡鼻法，带上了口罩"
+    )
+
+    assert done["completion_status"] == "complete", done["turn_outcome"]
+    assert len(done["write_receipts"]) == 1
+    row = db.query(HealthCheckin).filter_by(
+        user_id=trace.owner.id,
+        checkin_date=DAY,
+    ).one()
+    assert row.nasal_wash_count == 1
+    assert len(row.nasal_wash_times) == 1
+    assert row.nasal_wash_times[0]["type"] == "soak"
+    assert row.nasal_wash_times[0]["mask_worn"] is True
+    assert "已记录洗鼻：1次、生理盐水、10毫升、泡鼻法、已戴口罩" in persisted.content
+
+
 @pytest.mark.parametrize("message", [
     "记录，我洗鼻一次，另外喝水300ml",
     "记录我喝水300ml，再记录光照适应一次",

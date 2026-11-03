@@ -3328,6 +3328,27 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
         rid = record.get("id")
         rid_part = f"记录号 {rid},说「撤销」可删除" if rid else "说「撤销」可删除"
         return f"已记录症状：{record.get('description')}（{rid_part}）"
+    # Atomic supplement batch: echo every persisted name and dose so the user
+    # can spot a parser mismatch immediately instead of seeing a generic success.
+    items = record.get("items")
+    if isinstance(items, list) and items and all(
+        isinstance(item, dict)
+        and str(item.get("supplement_name") or "").strip()
+        and str(item.get("dosage") or "").strip()
+        for item in items
+    ):
+        summary = "、".join(
+            f"{str(item['supplement_name']).strip()} {str(item['dosage']).strip()}"
+            for item in items
+        )
+        return f"已记录补剂：{summary}"
+    # Nasal wash endpoint returns the owning check-in with an append-only event
+    # list. Echo only the latest verified event and only fields actually stored.
+    nasal_events = record.get("nasal_wash_times")
+    if isinstance(nasal_events, list) and nasal_events and isinstance(nasal_events[-1], dict):
+        confirmation = _nasal_wash_confirmation(nasal_events[-1])
+        if confirmation:
+            return confirmation
     # blood pressure
     if s("systolic") is not None and s("diastolic") is not None:
         return f"已记录血压 {record.get('systolic')}/{record.get('diastolic')} mmHg"
@@ -3359,6 +3380,26 @@ def _friendly_record_confirmation(record: Dict[str, Any]) -> str:
     if s("illness_name") is not None or (s("name") is not None and "start_date" in record):
         return f"已记录：{record.get('illness_name') or record.get('name')}"
     return "✅ 已记录"
+
+
+def _nasal_wash_confirmation(event: Dict[str, Any]) -> str:
+    """Echo only the exact nasal-wash facts that crossed the write boundary."""
+    count = event.get("count")
+    if type(count) is not int or count <= 0:
+        return ""
+    details = [f"{count}次"]
+    solution = str(event.get("solution") or "").strip()
+    volume = event.get("volume_ml")
+    if solution:
+        details.append(solution)
+    if type(volume) in (int, float) and not isinstance(volume, bool):
+        from app.utils.number_format import format_display_number
+        details.append(f"{format_display_number(volume)}毫升")
+    if event.get("type") == "soak":
+        details.append("泡鼻法")
+    if event.get("mask_worn") is True:
+        details.append("已戴口罩")
+    return "已记录洗鼻：" + "、".join(details)
 
 
 # A4: 每回合系统知识库证据卡 memo 的未命中哨兵 (区别于 None = "算过, 无卡")。
@@ -6238,7 +6279,8 @@ def _record_intent_needs_detail_message(
     if any(str(reason).strip() for reason in reason_codes):
         return (
             "这条请求还没记下来，这轮没有完成记录动作。"
-            "请先说明要新增记录，还是更新已有记录；如果要更新，请说明是哪一条及需要修改的内容。"
+            "系统未能逐项对应待保存内容；"
+            "请只补充未明确的目标或数值，无需重填已经明确的内容。本轮没有写入。"
         )
     # 例子跨多领域(饮食/饮水/体测/档案属性/血压), 不再只给饮食/运动 —— 否则记鞋码却被要求
     # 补早餐(founder 2026-07-17 实测)。档案属性/个人事实(鞋码/衣码/喜好)现在走 remember,
@@ -8433,6 +8475,14 @@ _SYMPTOM_BODY_PART_MARKERS = (
     )),
 )
 
+_COMPOUND_NASAL_STATUS_RE = re.compile(
+    r"(?:(?:我|本人|自己)?(?:刚才|刚刚|今天|现在)?"
+    r"(?:打|连打|连续打)(?:了)?"
+    r"(?:\d+|零|一|两|二|三|四|五|六|七|八|九|十)(?:个|次)?喷嚏)"
+    r"(?:，|,|、)?(?:我)?鼻翼(?:有|出现|感觉)?"
+    r"(?:一点点|一点|有点|轻微)?(?:发炎|发红|红|肿|疼|痛|痒)"
+)
+
 _SYMPTOM_NEGATION_MARKERS = (
     "没有",
     "没",
@@ -8509,7 +8559,11 @@ _SYMPTOM_EXPLICIT_CLOCK_RE = re.compile(
 )
 _SYMPTOM_EXPLICIT_CN_CLOCK_RE = re.compile(
     r"[零〇一二两三四五六七八九十]{1,3}点"
-    r"(?:半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
+    r"(?!点)(?:半|一刻|三刻|[零〇一二两三四五六七八九十]{1,3}分)?(?:钟)?"
+)
+_SYMPTOM_DEGREE_PHRASE_RE = re.compile(
+    r"(?:有一点(?:点)?|一点点|有点|轻微)"
+    r"(?=发炎|发红|红|肿|疼|痛|痒)"
 )
 _SYMPTOM_EXPLICIT_SEVERITY_RE = re.compile(
     r"(?:严重程度|严重度|程度|强度)?\s*(?P<value>10|[1-9])\s*"
@@ -8764,6 +8818,11 @@ def _explicit_symptom_selectors(message: Any) -> Dict[str, Any]:
     clock = _SYMPTOM_EXPLICIT_CLOCK_RE.search(raw)
     if clock is None:
         clock = _SYMPTOM_EXPLICIT_CN_CLOCK_RE.search(raw)
+    if clock is not None and any(
+        degree.start() <= clock.start() and clock.end() <= degree.end()
+        for degree in _SYMPTOM_DEGREE_PHRASE_RE.finditer(raw)
+    ):
+        clock = None
     if clock is not None:
         selectors["occurred_at"] = clock.group(0)
     severity = _SYMPTOM_EXPLICIT_SEVERITY_RE.search(raw)
@@ -8829,6 +8888,10 @@ def _is_proven_pure_symptom_record_request(message: Any) -> bool:
         symptom_start=symptom_start,
     ):
         return False
+    if _COMPOUND_NASAL_STATUS_RE.fullmatch(
+        normalized[symptom_search_start:]
+    ):
+        return True
     suffix = normalized[symptom_end:].strip("。！？!?；;，, ")
     if suffix not in {"", "的症状"}:
         return False
@@ -9854,8 +9917,32 @@ def _build_deterministic_supplement_record_tool_calls(
         _parse_tool_arguments_for_telemetry(call["function"]["arguments"])["data"]
         for call in calls
     ]
+    natural_batch_candidate = bool(
+        not contextual_supplement_names
+        and len(items) >= 2
+        and intent.primary == "write"
+        and intent.domain == "supplement"
+        and intent.operation == "create"
+        and intent.is_write
+        and len(expected.get("dosages") or {}) == len(items)
+    )
+    natural_batch_authorized = natural_batch_candidate
+    if natural_batch_candidate:
+        from app.services.write_intent_scope import authorized_health_record_clauses
+        authorized_scope = _normalized_supplement_reference("".join(
+            authorized_health_record_clauses(normalized_message)
+        ))
+        natural_batch_authorized = bool(
+            authorized_scope
+            and all(
+                _normalized_supplement_reference(name) in authorized_scope
+                for name in names
+            )
+        )
+        if not natural_batch_authorized:
+            return []
     if (
-        not atomic_batch_authorized
+        not (atomic_batch_authorized or natural_batch_authorized)
         or len(items) < 2
         or any(not item.get("dosage") for item in items)
     ):
@@ -29577,7 +29664,8 @@ class AgentExecutor:
             return json.dumps({"id": result["id"], "resource_type": capability.resource_type,
                                "checkin_date": payload["record_date"], "operation_id": event_id,
                                "record_capability_proof": {"record_type": rtype,
-                                   "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()}}, ensure_ascii=False)
+                                   "payload_sha256": hashlib.sha256(bound.payload_json.encode()).hexdigest()},
+                               "message": _nasal_wash_confirmation(payload)}, ensure_ascii=False)
         if rtype == "diet":
             data = _normalize_diet_create_data(
                 args,

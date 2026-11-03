@@ -4593,6 +4593,63 @@ def authorized_intake_item_index(
     return match[0] if match is not None else None
 
 
+def _authorized_supplement_batch(
+    snapshot: TurnSnapshot,
+    args: dict[str, Any],
+) -> bool:
+    """Bind an exact multi-item intake without requiring UI-shaped wording."""
+    if not (
+        snapshot.intent.primary == "write"
+        and snapshot.intent.domain == "supplement"
+        and snapshot.intent.operation == "create"
+        and snapshot.intent.is_write
+    ):
+        return False
+    data = args.get("data") if isinstance(args.get("data"), dict) else {}
+    requested_items = data.get("items")
+    if not isinstance(requested_items, list) or len(requested_items) < 2:
+        return False
+
+    from app.services.write_intent_scope import authorized_health_record_clauses
+
+    expected = _deterministic_target_values(snapshot.envelope.text, "supplement")
+    names = tuple(expected.get("names") or ())
+    dosages = expected.get("dosages") or {}
+    if len(names) != len(requested_items) or len(dosages) != len(names):
+        return False
+    authorized_scope = _normalize_entity_name("".join(
+        authorized_health_record_clauses(snapshot.envelope.text)
+    ))
+    if not authorized_scope or any(
+        _normalize_entity_name(name) not in authorized_scope for name in names
+    ):
+        return False
+
+    canonical_items: list[dict[str, str]] = []
+    for requested_item, name in zip(requested_items, names):
+        if not isinstance(requested_item, dict) or set(requested_item) != {
+            "supplement_name",
+            "dosage",
+        }:
+            return False
+        dosage = dosages.get(name)
+        if (
+            _normalize_entity_name(requested_item.get("supplement_name"))
+            != _normalize_entity_name(name)
+            or normalize_supplement_dosage(requested_item.get("dosage"))
+            != normalize_supplement_dosage(dosage)
+        ):
+            return False
+        canonical_items.append({"supplement_name": name, "dosage": dosage})
+
+    args.clear()
+    args.update({
+        "record_type": "supplement",
+        "data": {"items": canonical_items},
+    })
+    return True
+
+
 def _health_record_target_status(
     snapshot: TurnSnapshot,
     args: dict[str, Any],
@@ -4706,6 +4763,11 @@ def _health_record_target_status(
             )
             else "match"
         )
+    if requested_type == "supplement" and _authorized_supplement_batch(
+        snapshot,
+        args,
+    ):
+        return "match"
     if requested_type == "illness":
         normalized_turn = "".join(str(snapshot.envelope.text or "").split()).strip(
             "，,。.!！；;：: "

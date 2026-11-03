@@ -660,6 +660,10 @@ async def test_record_turn_routes_to_fast_model(db, auth_user_and_headers, monke
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("message,items", [
+    ("记录吃了一粒叶酸，两粒NAC", [
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "2粒"},
+    ]),
     ("打卡补剂：2粒Mitoq 1粒叶酸 1粒NAC", [
         {"supplement_name": "Mitoq", "dosage": "2粒"},
         {"supplement_name": "叶酸", "dosage": "1粒"},

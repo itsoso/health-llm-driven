@@ -30,6 +30,8 @@ from app.services.agent_executor import (
     _build_deterministic_named_knowledge_tool_call,
     _build_deterministic_symptom_tool_call,
     _extract_clear_rhinitis_record,
+    _extract_clear_symptom_record,
+    _explicit_symptom_selectors,
     _symptom_write_authorized_by_current_turn,
     _tool_status_label,
 )
@@ -566,6 +568,59 @@ def test_retracted_symptom_does_not_receive_server_write_authorization(message):
 )
 def test_clear_rhinitis_record_extracts_only_explicit_user_fields(message, expected):
     assert _extract_clear_rhinitis_record(message) == expected
+
+
+def test_compound_nasal_status_preserves_all_user_stated_facts():
+    message = "记录打了两个喷嚏 鼻翼有一点点发炎"
+
+    assert _extract_clear_symptom_record(message) == {
+        "body_part": "respiratory",
+        "description": message,
+    }
+    assert _extract_clear_rhinitis_record(message) == {"sneezing": 2}
+    call = _build_deterministic_symptom_tool_call(message, write_receipts=[])
+    assert call is not None
+    assert json.loads(call["function"]["arguments"]) == {
+        "record_type": "symptom",
+        "data": {
+            "body_part": "respiratory",
+            "description": message,
+        },
+    }
+
+
+def test_compound_nasal_degree_word_is_not_a_clock_but_real_clock_is_preserved():
+    for message in (
+        "记录打了两个喷嚏 鼻翼有一点发炎",
+        "记录打了两个喷嚏 鼻翼有一点点发炎",
+        "记录打了两个喷嚏 鼻翼有点发炎",
+    ):
+        assert _explicit_symptom_selectors(message) == {}
+
+    assert _explicit_symptom_selectors("记录下午一点鼻翼发炎") == {
+        "occurred_at": "一点",
+    }
+    assert _explicit_symptom_selectors("记录下午一点半鼻翼发炎") == {
+        "occurred_at": "一点半",
+    }
+    assert _explicit_symptom_selectors("记录下午一点疼") == {
+        "occurred_at": "一点",
+    }
+    assert _explicit_symptom_selectors("记录下午一点发炎") == {
+        "occurred_at": "一点",
+    }
+
+
+@pytest.mark.parametrize(
+    "message",
+    (
+        "记录我爸打了两个喷嚏，鼻翼有一点点发炎",
+        "请解释‘记录打了两个喷嚏，鼻翼有一点点发炎’",
+        "明天记录打了两个喷嚏，鼻翼有一点点发炎",
+    ),
+)
+def test_compound_nasal_status_does_not_expand_owner_or_time_authority(message):
+    assert _extract_clear_symptom_record(message) is None
 
 
 def test_authorized_rhinitis_payload_discards_model_inference():

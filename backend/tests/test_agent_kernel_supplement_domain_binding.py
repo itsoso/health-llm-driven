@@ -140,6 +140,101 @@ def test_name_first_batch_authorizes_each_exact_supplement(name, dosage):
     assert decision.action == "allow"
 
 
+def test_natural_multi_supplement_intake_authorizes_one_exact_batch():
+    decision = _decision(
+        "记录吃了一粒叶酸，两粒NAC",
+        "supplement",
+        items=[
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "2粒"},
+        ],
+    )
+
+    assert decision.action == "allow"
+    assert decision.normalized_args == {
+        "record_type": "supplement",
+        "data": {
+            "items": [
+                {"supplement_name": "叶酸", "dosage": "1粒"},
+                {"supplement_name": "NAC", "dosage": "2粒"},
+            ],
+        },
+    }
+
+
+@pytest.mark.parametrize("items", [
+    [
+        {"supplement_name": "叶酸", "dosage": "2粒"},
+        {"supplement_name": "NAC", "dosage": "1粒"},
+    ],
+    [
+        {"supplement_name": "叶酸", "dosage": "1粒"},
+        {"supplement_name": "NAC", "dosage": "2粒", "note": "睡前"},
+    ],
+    [{"supplement_name": "叶酸", "dosage": "1粒"}],
+])
+def test_natural_multi_supplement_intake_rejects_changed_or_partial_batch(items):
+    decision = _decision(
+        "记录吃了一粒叶酸，两粒NAC",
+        "supplement",
+        items=items,
+    )
+
+    assert decision.action == "block"
+
+
+@pytest.mark.parametrize("message", [
+    "替我妈妈记录吃了一粒叶酸，两粒NAC",
+    "妈妈吃了一粒叶酸，两粒NAC，帮我记录",
+    "请解释‘记录吃了一粒叶酸，两粒NAC’",
+    "不要记录吃了一粒叶酸，两粒NAC",
+    "明天记录吃一粒叶酸，两粒NAC",
+])
+def test_natural_multi_supplement_batch_requires_current_self_authority(message):
+    from app.services.agent_executor import (
+        _build_deterministic_supplement_record_tool_calls,
+    )
+
+    decision = _decision(
+        message,
+        "supplement",
+        items=[
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "2粒"},
+        ],
+    )
+
+    assert decision.action == "block"
+    assert _build_deterministic_supplement_record_tool_calls(
+        message,
+        write_receipts=[],
+    ) == []
+
+
+def test_natural_multi_supplement_intake_compiles_one_atomic_tool_call():
+    import json
+    from app.services.agent_executor import (
+        _build_deterministic_supplement_record_tool_calls,
+    )
+
+    calls = _build_deterministic_supplement_record_tool_calls(
+        "记录吃了一粒叶酸，两粒NAC",
+        write_receipts=[],
+    )
+
+    assert len(calls) == 1
+    assert calls[0]["function"]["name"] == "health_record"
+    assert json.loads(calls[0]["function"]["arguments"]) == {
+        "record_type": "supplement",
+        "data": {
+            "items": [
+                {"supplement_name": "叶酸", "dosage": "1粒"},
+                {"supplement_name": "NAC", "dosage": "2粒"},
+            ],
+        },
+    }
+
+
 @pytest.mark.parametrize(("name", "dosage"), [("A-B", "1粒"), ("AB", "2粒")])
 def test_colliding_gateway_names_are_not_independently_authorized(name, dosage):
     decision = _decision(

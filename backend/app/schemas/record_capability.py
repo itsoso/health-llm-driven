@@ -23,6 +23,8 @@ class NasalWashValues(BaseModel):
 
 class NasalWashRecord(NasalWashValues):
     record_date: date
+    type: Literal['wash', 'soak'] | None = None
+    mask_worn: bool | None = Field(default=None, strict=True)
 
 
 class NasalWashCreate(NasalWashRecord):
@@ -44,6 +46,7 @@ class NasalWashEvent(NasalWashValues):
     event_id: str
     time: str
     type: Literal['wash', 'soak']
+    mask_worn: bool | None = None
 
 
 class NasalWashEventResponse(BaseModel):

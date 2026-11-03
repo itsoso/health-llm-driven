@@ -16,6 +16,29 @@ def test_contract_resolves_action_payload_and_schema(text):
     assert bound.arguments() == {'record_type': 'nasal_wash', 'data': {
         'count': 1, 'volume_ml': 10.0, 'solution': '生理盐水', 'record_date': '2026-10-31'}}
 
+
+def test_natural_nasal_wash_preserves_method_and_mask_context():
+    from app.services.record_capabilities import resolve_record_capability
+
+    bound = resolve_record_capability(
+        '记录生理盐水洗鼻一次，用掉10毫升，泡鼻法，带上了口罩', NOW,
+    )
+
+    assert bound is not None
+    assert bound.arguments() == {'record_type': 'nasal_wash', 'data': {
+        'count': 1,
+        'volume_ml': 10.0,
+        'solution': '生理盐水',
+        'record_date': '2026-10-31',
+        'type': 'soak',
+        'mask_worn': True,
+    }}
+    assert bound.accepts(bound.arguments()) is True
+    assert bound.accepts({'record_type': 'nasal_wash', 'data': {'mask_worn': False}}) is False
+    assert bound.accepts({'record_type': 'nasal_wash', 'data': {'mask_worn': 1}}) is False
+    assert bound.accepts({'record_type': 'nasal_wash', 'data': {'count': True}}) is False
+
+
 @pytest.mark.parametrize('text', [
     '我爸洗鼻一次，使用生理盐水10ml', '不要记录，我洗鼻一次',
     '如果我洗鼻一次，使用生理盐水10ml，请记录',

@@ -39,6 +39,31 @@ def test_nasal_wash_append_replay_and_exact_readback(client, db, auth_user_and_h
     assert read.json() == {'id': body['id'], 'user_id': user.id, 'checkin_date': '2026-10-31', 'event': event}
 
 
+def test_nasal_soak_persists_method_and_mask_context(client, auth_user_and_headers):
+    user, headers = auth_user_and_headers
+    response = client.post('/api/v1/checkin/nasal-wash', headers=headers, json=payload(
+        event_id='natural-soak', type='soak', mask_worn=True,
+    ))
+
+    assert response.status_code == 200, response.text
+    event = response.json()['nasal_wash_times'][-1]
+    assert event['type'] == 'soak'
+    assert event['mask_worn'] is True
+    read = client.get(
+        f"/api/v1/checkin/{response.json()['id']}/nasal-wash/natural-soak",
+        headers=headers,
+    )
+    assert read.status_code == 200
+    assert read.json()['user_id'] == user.id
+    assert read.json()['event']['type'] == 'soak'
+    assert read.json()['event']['mask_worn'] is True
+
+    conflict = client.post('/api/v1/checkin/nasal-wash', headers=headers, json=payload(
+        event_id='natural-soak', type='wash', mask_worn=False,
+    ))
+    assert conflict.status_code == 409
+
+
 def test_event_id_conflict_cannot_change_quantity_or_date(client, db, auth_user_and_headers):
     user, headers = auth_user_and_headers
     first = client.post('/api/v1/checkin/nasal-wash', headers=headers, json=payload())
@@ -54,7 +79,7 @@ def test_event_id_conflict_cannot_change_quantity_or_date(client, db, auth_user_
     {'count': True}, {'count': '1'}, {'count': 1.5}, {'count': 0}, {'count': 21},
     {'volume_ml': True}, {'volume_ml': 0}, {'volume_ml': 5001}, {'volume_ml': 'NaN'},
     {'volume_ml': 'Infinity'}, {'solution': 'x' * 81}, {'event_id': '../other'},
-    {'event_id': ''}, {'time': '24:00'}, {'user_id': 999},
+    {'event_id': ''}, {'time': '24:00'}, {'mask_worn': 'true'}, {'user_id': 999},
 ])
 def test_nasal_wash_contract_rejects_invalid_and_foreign_fields(client, db, auth_user_and_headers, change):
     _, headers = auth_user_and_headers

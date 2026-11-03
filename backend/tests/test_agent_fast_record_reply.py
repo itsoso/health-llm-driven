@@ -54,6 +54,31 @@ def test_friendly_confirmation_covers_common_record_shapes():
     assert _friendly_record_confirmation({"id": 1, "foo": "bar"}) == "✅ 已记录"
 
 
+def test_friendly_confirmation_echoes_atomic_supplement_batch():
+    reply = _friendly_record_confirmation({
+        "items": [
+            {"supplement_name": "叶酸", "dosage": "1粒"},
+            {"supplement_name": "NAC", "dosage": "2粒"},
+        ],
+    })
+
+    assert reply == "已记录补剂：叶酸 1粒、NAC 2粒"
+
+
+def test_friendly_confirmation_echoes_nasal_wash_context():
+    reply = _friendly_record_confirmation({
+        "nasal_wash_times": [{
+            "count": 1,
+            "volume_ml": 10.0,
+            "solution": "生理盐水",
+            "type": "soak",
+            "mask_worn": True,
+        }],
+    })
+
+    assert reply == "已记录洗鼻：1次、生理盐水、10毫升、泡鼻法、已戴口罩"
+
+
 def test_reminder_confirmation_includes_honest_watch_delivery_boundary():
     reply = _friendly_record_confirmation({
         "id": 7,

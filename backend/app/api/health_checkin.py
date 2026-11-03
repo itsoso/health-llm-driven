@@ -37,7 +37,13 @@ def create_nasal_wash(
         or_(HealthCheckin.checkin_date == record.record_date,
             HealthCheckin.nasal_wash_times.isnot(None)),
     ).populate_existing().all()
-    expected = {"count": record.count, "volume_ml": record.volume_ml, "solution": record.solution, "type": record.type}
+    expected = {
+        "count": record.count,
+        "volume_ml": record.volume_ml,
+        "solution": record.solution,
+        "type": record.type,
+        "mask_worn": record.mask_worn,
+    }
     matches = [(row, event) for row in rows for event in (row.nasal_wash_times or [])
                if isinstance(event, dict) and event.get("event_id") == record.event_id]
     if matches:

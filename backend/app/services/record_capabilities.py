@@ -48,8 +48,15 @@ class BoundRecord:
         data = arguments['data']
         expected = json.loads(self.payload_json)
         # Omitted values are filled from the user's statement, never the model.
-        return all(k in expected and not isinstance(v, bool) and v == expected[k]
-                   for k, v in data.items())
+        return all(
+            k in expected
+            and (
+                expected[k] is v
+                if isinstance(v, bool)
+                else not isinstance(expected[k], bool) and v == expected[k]
+            )
+            for k, v in data.items()
+        )
 
     def event_id(self, source: str) -> str:
         return hashlib.sha256((source + '\0' + self.capability.record_type).encode()).hexdigest()
@@ -57,12 +64,13 @@ class BoundRecord:
     def verifies(self, row: dict, *, owner_id: int, event_id: str) -> bool:
         expected = json.loads(self.payload_json)
         event = row.get('event')
+        expected_type = expected.get('type', self.capability.event_type)
         return bool(
             type(row.get('user_id')) is int and row['user_id'] == owner_id
             and type(row.get('id')) is int and row['id'] > 0
             and row.get('checkin_date') == expected['record_date']
             and isinstance(event, dict) and event.get('event_id') == event_id
-            and event.get('type') == self.capability.event_type
+            and event.get('type') == expected_type
             and type(event.get('count')) is int
             and (event.get('volume_ml') is None or type(event.get('volume_ml')) in (int, float))
             and all(event.get(k) == v for k, v in expected.items() if k != 'record_date')
@@ -80,9 +88,23 @@ _WASH = re.compile(
     r'(?P<after>\d+(?:\.\d+)?)(?:毫升|ml)))?[。.!！]*$', re.IGNORECASE,
 )
 
+_NATURAL_WASH = re.compile(
+    rf'^{_PREFIX}{_DAY}[，,:：]*(?:我)?'
+    r'(?P<solution_first>生理盐水|盐水|清水)?'
+    r'(?:洗鼻|冲洗鼻腔|鼻腔冲洗)(?:了)?'
+    rf'(?P<count>{_NUM})次[，,。;；]*'
+    r'(?:(?:使用|用|用掉)(?:了)?(?:一支|一瓶)?'
+    r'(?P<after>\d+(?:\.\d+)?)(?:毫升|ml)(?:的)?'
+    r'(?P<solution>生理盐水|盐水|清水)?)?[，,。;；]*'
+    r'(?:(?P<method>泡鼻法)[，,。;；]*)?'
+    r'(?:(?P<mask>(?:带|戴)(?:上|了|上了)?口罩))?[。.!！]*$',
+    re.IGNORECASE,
+)
+
 
 def _parse_nasal_wash(text: str, now: datetime) -> BaseModel | None:
-    match = _WASH.fullmatch(re.sub(r'\s+', '', text))
+    normalized = re.sub(r'\s+', '', text)
+    match = _WASH.fullmatch(normalized) or _NATURAL_WASH.fullmatch(normalized)
     if match is None:
         return None
     groups = match.groupdict()
@@ -101,10 +123,16 @@ def _parse_nasal_wash(text: str, now: datetime) -> BaseModel | None:
     count = numbers.get(groups['count'])
     if count is None:
         count = int(groups['count'])
-    volume = groups['before'] or groups['after']
+    volume = groups.get('before') or groups.get('after')
     try:
-        return NasalWashRecord(count=count, volume_ml=float(volume) if volume else None,
-                               solution=groups['solution'] or groups['solution_first'], record_date=target)
+        return NasalWashRecord(
+            count=count,
+            volume_ml=float(volume) if volume else None,
+            solution=groups['solution'] or groups['solution_first'],
+            record_date=target,
+            type='soak' if groups.get('method') else None,
+            mask_worn=True if groups.get('mask') else None,
+        )
     except ValidationError:
         return None
 
@@ -113,7 +141,8 @@ RECORD_CAPABILITIES = (
     RecordCapability('nasal_wash', '洗鼻', NasalWashRecord, _parse_nasal_wash,
                      '/checkin/nasal-wash', '/checkin/{record_id}/nasal-wash/{event_id}', 'health_checkin',
                      '记录本人已完成的洗鼻行为；count 为本次次数，volume_ml 为本次总用量（毫升），'
-                     'solution 为用户说出的液体，record_date 为当地日期。未提供的用量和液体留空，不推算或推荐剂量。'),
+                     'solution 为用户说出的液体，record_date 为当地日期。type 仅在用户明确说出泡鼻法时为 soak，'
+                     'mask_worn 仅在用户明确说已戴口罩时为 true。未提供的上下文留空，不推算或推荐剂量。'),
 )
 
 
@@ -122,7 +151,14 @@ def resolve_record_capability(text: str, now: datetime) -> BoundRecord | None:
     for capability in RECORD_CAPABILITIES:
         payload = capability.parse(str(text or ''), now)
         if payload is not None:
-            matches.append(BoundRecord(capability, payload.model_dump_json()))
+            values = payload.model_dump(mode='json')
+            for optional_key in ('type', 'mask_worn'):
+                if values.get(optional_key) is None:
+                    values.pop(optional_key, None)
+            matches.append(BoundRecord(
+                capability,
+                json.dumps(values, ensure_ascii=False, separators=(',', ':')),
+            ))
     return matches[0] if len(matches) == 1 else None
 
 
