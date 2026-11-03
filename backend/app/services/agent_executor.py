@@ -11981,6 +11981,16 @@ def _model_tool_result_content(
     timezone_label: str = "Asia/Shanghai",
 ) -> str:
     """Add deterministic query scope to the model-only tool result."""
+    if tool_name == "health_query" and args.get("dimension") == "medical_exam":
+        from app.services.medical_readout import medical_readout_rows
+        try:
+            payload = json.loads(result)
+        except (TypeError, ValueError):
+            payload = None
+        if medical_readout_rows(payload, args) is not None:
+            # Card data stays with executed results. Preserve the original full
+            # clinical summary byte-for-byte without duplicating it in prompts.
+            return payload["summary"]
     record_type = str(args.get("record_type") or args.get("type") or "").strip().lower()
     if tool_name == "health_record" and record_type == "reminder":
         delivery_status = _extract_reminder_delivery_status_from_result(result)
@@ -29260,6 +29270,7 @@ class AgentExecutor:
             uploaded_since=str(uploaded_since or ""),
             uploaded_days=uploaded_days,
             reference_date=self._agent_kernel_reference_now().date(),
+            medical_readout=True,
         )
         if canonical is not None:
             return with_blood_pressure_safety(canonical)

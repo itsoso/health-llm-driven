@@ -4,6 +4,7 @@ P0: 之前 medical_exam 走原始 /medical-exams/me HTTP, 经 _api_get 截断成
 化验项查空/不全. 现改读归一化 MedicalIndicator 表 (与 Twin fetch_latest_labs 同源).
 """
 import asyncio
+import json
 from datetime import date, datetime, timedelta, timezone
 
 import pytest
@@ -172,6 +173,7 @@ def test_stale_indicator_marked_old(db):
     out = _exec(db, uid)
     # 陈旧项带标记,近期项不带
     assert "较旧" in out
+    out = json.loads(out)["summary"]
     chen_line = next(l for l in out.splitlines() if "陈年指标" in l)
     jin_line = next(l for l in out.splitlines() if "近期指标" in l)
     assert "较旧" in chen_line

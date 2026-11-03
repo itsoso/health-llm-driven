@@ -585,3 +585,15 @@ RED 路由/生成 9 failed、128 passed；最初缺 Pi runtime 的环境失败�
 - 公开 iOS production 清单独立通过：runtime `1.3.6`，group `e39c4e5b-f9a9-49f0-a5ce-1dc9555fa6c6`，update `01a1a101-3792-788a-88f5-3667b222ddc9`；launch asset 与 47 项资源摘要一致。本轮业务改动仅后端，按本会话用户持续明确的发布与 OTA 指令完成同版本发布，未新增 Mobile 运行行为。
 
 G5 发布完成，G6 自动线上发布核验通过。合成饮水两次中位数 2.75s→0.57s 只证明明确完整 typed 饮水路径的提案模型调用被省去；生产长尾、模拟器实际显示、设备接收仍未验证，不能宣称所有请求三秒达标。完整样本、失败、修复及发布证据见 [本轮机器证据](../reviews/2026-11-03-closed-water-route-performance.json)。
+
+### 第八轮：化验事实提前展示（2026-11-04，进行中）
+
+最新 main `f0a520a4eb547b9e230b73a5443f4620180aea92`，生产 `095ef6936552121264524fc5d537fa783adf8b5b`，沿用隔离 checkout 与 Harness。七天脱敏只读统计158个run，仅一个新样本：完整171926ms，服务端首内容113040ms，三次模型调用合计157655ms，可选路由5031ms；工具为 health_query / knowledge_search，不是重复调用证据，未保存具体参数，不能把它断言为某个医疗查询路径。原始 prompt/健康载荷未导出。
+
+只读独立调查确认普通 medical_exam 的纯文本结果缺少结构化事实投影，而已有提前 GenUI/依据出口可复用。按[本轮准入与契约](../specs/medical-readout-early-facts.md)补最小展示切片，不调整模型选择、临床思考或权限。目标为成功读取后、下一模型调用前提供事实；长期三秒目标仍未达成。保持原临床文本、owner/日期/筛选绑定及来源局限，失败/范围不符不得出卡。新行为三个RED，13个拒绝边界已通过。
+
+真实模型基线先因工具白名单未含 query_lab_indicators 停止，完整保留为测量失败；修正探针范围并固定报告查询请求后重新测量，不删除失败记录。后续同一请求与合成数据成对验证；样本量不足不报告生产长尾。
+
+本轮实现新增同查询数值投影，原 canonical reader 默认文本不变；Agent 展示和依据使用投影，模型通过既有 model-only result choke point 得到逐字原 summary，避免重复上下文。补充不完整 envelope 拒绝和模型文本不变四项 RED 后全部通过。CI-mode 相关集成626 passed，最终 PostgreSQL60 passed（含所选报告隔离）；Ruff fatal、diff及重新生成后的System Map通过。
+
+真实模型探针的前几轮存在测试环境限制：未允许既有 medical_exam report-list GET，以及报告列表未接合成用户的本地API，导致提前停止/失败，两组均受影响。未据此宣称性能退化或改善，全部日志保留；最终探针改为仅允许原只读工具与医疗报告列表，并以真实JWT鉴权的ASGI API访问同一临时数据库，禁止其他HTTP路径和任何写工具，模型调用上限5次。最终配对和独立G4仍待完成，尚未发布。

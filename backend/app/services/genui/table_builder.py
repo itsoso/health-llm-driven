@@ -21,8 +21,8 @@ LLM 不参与数据路径 —— 请用 `grep -n "llm\|LLM\|_call_llm" table_bui
 
 刻意跳过 (只文本, 绝不 regex-scrape): health_query(activity/steps/heart_rate/hrv/
 body_battery/stress) 走 canonical `read_wearable_daily` 返回紧凑 LLM 文本 (非 JSON);
-health_query(medical_exam) 走 `read_medical_indicators` 也是文本 —— 结构化化验/异常
-清单只从 query_lab_indicators 出 (上面已覆盖)。
+health_query(medical_exam) 仅支持 medical-readout.v1 的同查询数值白名单；
+旧文本、所选报告和上传列表不解析为事实卡。
 
 设计:
   - 纯函数 (无 DB / 无 HTTP / 无 LLM): 输入 (tool_name, args, result_str), 输出 block dict。
@@ -622,6 +622,14 @@ def build_table_from_tool_call(
         return _table_from_lab(payload)
     if tool_name == "health_query":
         dim = str((args or {}).get("dimension") or "").strip().lower()
+        if dim == "medical_exam":
+            from app.services.medical_readout import medical_readout_rows
+            projection = medical_readout_rows(payload, args or {})
+            if projection is None:
+                return None
+            rows, footnote = projection
+            return _make_block("已存化验数值", [("metric", "指标"), ("value", "数值"),
+                                           ("note", "日期与来源")], rows, footnote)
         if isinstance(payload, dict) and "window" in payload:
             if dim not in {"sleep", "diet", "water"}:
                 return None

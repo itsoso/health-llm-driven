@@ -62,6 +62,7 @@ def canonical_read(
     uploaded_since: str = "",
     uploaded_days=None,
     reference_date: Optional[date] = None,
+    medical_readout: bool = False,
 ) -> Optional[str]:
     """统一 canonical 读入口. 返回紧凑文本; None = 此维度未迁移(调用方回退旧路径)."""
     defaulted_days = 7 if days is None else days
@@ -74,6 +75,8 @@ def canonical_read(
             keyword=keyword,
             uploaded_since=uploaded_since,
             uploaded_days=uploaded_days,
+            reference_date=reference_date,
+            structured=medical_readout,
         )
     if dimension == "illness":
         return read_illness_episodes(
@@ -209,6 +212,8 @@ def read_medical_indicators(
     keyword: str = "",
     uploaded_since: str = "",
     uploaded_days=None,
+    reference_date: Optional[date] = None,
+    structured: bool = False,
 ) -> str:
     """化验/体检维度: 直接读 MedicalIndicator (与 Twin fetch_latest_labs 同源).
 
@@ -233,6 +238,14 @@ def read_medical_indicators(
     since = date.today() - timedelta(days=window_days)
 
     from app.models.family_health import MedicalIndicator
+
+    def render(summary: str, rows) -> str:
+        if not structured:
+            return summary
+        from app.services.medical_readout import serialize_medical_readout
+        return serialize_medical_readout(summary, rows, days=days, indicator=indicator,
+                                        keyword=keyword, since=since,
+                                        reference_date=reference_date or date.today())
 
     name = (indicator or keyword or "").strip()
     try:
@@ -274,7 +287,7 @@ def read_medical_indicators(
                 lines.extend(["相关检查报告摘要:", *summaries, ""])
             lines.append(f"化验指标「{rows[0].name}」时间序列 (最近 {len(rows)} 条):")
             lines.extend(_format_indicator_line(r) for r in rows)
-            return "\n".join(lines)
+            return render("\n".join(lines), rows)
 
         # 无 indicator: 指标清单 + 每项最新值. 按 name 取最新一条.
         summaries = _latest_medical_exam_summary_lines(
@@ -328,7 +341,7 @@ def read_medical_indicators(
             lines.extend(["最近检查报告摘要:", *summaries, ""])
         lines.append(header)
         lines.extend(_format_indicator_line(r) for r in uniq)
-        return "\n".join(lines)
+        return render("\n".join(lines), uniq)
     except Exception as e:
         logger.error("[health_read] 查询 MedicalIndicator 失败: %s", e)
         _safe_rollback(db)
