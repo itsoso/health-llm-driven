@@ -158,22 +158,14 @@ export function RecordCardView(d: RecordData) {
 export const RecordCardSpec: CardSpec<RecordData> = {
   type: 'record',
   label: '记录确认',
-  match({ query_lower, toolsUsed }) {
-    if (toolsUsed.has('health_record')) return 20;
-    if (/记录|打卡|吃了|喝了|喝水|服药|补剂.*吃|刚吃|刚喝|体重是|血压是|洗鼻了|喷嚏|提醒|闹钟/.test(query_lower)) return 12;
+  // A request or an attempted tool call is not proof of a committed write.
+  // Record confirmations come from the server's receipt-backed card pipeline;
+  // the local keyword fallback has neither an outcome nor a record identity.
+  match() {
     return null;
   },
-  build({ query_lower }) {
-    let type = 'default';
-    if (/喝水|喝了.*水/.test(query_lower)) type = 'water';
-    else if (/补剂|服药/.test(query_lower)) type = 'supplement';
-    else if (/吃了|早餐|午餐|晚餐|加餐/.test(query_lower)) type = 'diet';
-    else if (/体重/.test(query_lower)) type = 'weight';
-    else if (/血压/.test(query_lower)) type = 'blood_pressure';
-    else if (/喷嚏|洗鼻|鼻炎/.test(query_lower)) type = 'rhinitis';
-    else if (/提醒|闹钟/.test(query_lower)) type = 'reminder';
-    else if (/跑|运动|锻炼|训练/.test(query_lower)) type = 'exercise';
-    return { type, detail: '已记录' };
+  build() {
+    return null;
   },
   render: (d) => <RecordCardView {...d} />,
 };

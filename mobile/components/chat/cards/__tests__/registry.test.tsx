@@ -162,6 +162,15 @@ describe('card match priorities', () => {
 });
 
 describe('dispatchCard', () => {
+  it.each([
+    ['这家店羊肉不膻 山间小馆 记录下来', []],
+    ['记录一下', ['health_record']],
+    ['记录失败了，再看看', ['health_record']],
+  ])('does not infer a successful write from %s or a tool name', async (query, tools) => {
+    const ctx = makeContext(query as string, { toolsUsed: new Set(tools as string[]) });
+    expect(await dispatchCard(ctx)).toBeNull();
+  });
+
   it('returns null for empty query with no matching cards', async () => {
     const ctx = makeContext('');
     const result = await dispatchCard(ctx);

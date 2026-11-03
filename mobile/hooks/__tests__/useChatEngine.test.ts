@@ -3351,6 +3351,24 @@ describe('useChatEngine', () => {
     expect(currentTurnCards.some(message => message.cardType === 'cards_group')).toBe(false);
   });
 
+  it.each(['waiting_for_user', 'partial', 'blocked'] as const)(
+    'does not append a local keyword card to a %s reply', async terminalStatus => {
+      mockStreamChat.mockImplementation(async function* () {
+        yield { type: 'token', content: '请确认要保存的记录类型。' };
+        yield { type: 'done', conversationId: 1, messageId: 85,
+          completionStatus: 'complete', terminalStatus, cards: [], writeReceipts: [] };
+      });
+      mockDispatchCard.mockResolvedValue({ type: 'record', data: { detail: '已记录' } });
+      const { result } = renderHook(() => useChatEngine());
+      await act(async () => {
+        await result.current.sendMessage('这家店羊肉不膻 山间小馆 记录下来');
+      });
+      expect(mockDispatchCard).not.toHaveBeenCalled();
+      expect(result.current.messages.some(message => message.cardType === 'record')).toBe(false);
+      expect(result.current.activeTurn.phase).toBe(terminalStatus);
+    },
+  );
+
   it('does not fabricate a local fallback when supplied done cards are unrenderable', async () => {
     mockStreamChat.mockImplementation(streamUnrenderableDoneCard);
     mockRenderServerCards.mockReturnValue([]);

@@ -2415,6 +2415,7 @@ export function useChatEngine(opts: UseChatEngineOptions = {}) {
           });
           if (
             allowDoneCards
+            && terminalTurn.phase === 'completed'
             && rawDoneCards.length === 0
             && terminalCards.length === 0
             && !renderedStreamedServerCard
