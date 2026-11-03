@@ -9697,6 +9697,20 @@ def _build_preplanned_simple_diet_tool_call(
     )
 
 
+def _is_closed_explicit_water_record(message: str) -> bool:
+    """A complete current-turn amount/unit statement, not a substring match.
+
+    Goal compilation also supports container defaults and mixed utterances;
+    those retain ordinary model planning rather than gaining a new shortcut.
+    """
+    return re.fullmatch(
+        r"(?:请)?(?:帮我)?(?:(?:记录|记下|记一下)(?:一下)?)?\s*"
+        r"(?:我)?(?:今天|刚才)?\s*(?:喝了|喝水|饮水)\s*"
+        r"[0-9]+(?:\.[0-9]+)?\s*(?:毫升|ml|升|l)\s*(?:的)?水?[。！! ]*",
+        str(message or "").strip(), re.IGNORECASE,
+    ) is not None
+
+
 def _build_preplanned_simple_water_tool_call(
     goal: Optional[GoalSpec],
     *,
@@ -18352,11 +18366,41 @@ class AgentExecutor:
         self._turn_synthesis_skip_thinking = _is_fast_eligible_turn(
             message or "", has_images=bool(images), has_file=bool(file_base64)
         )
+        # A fully typed, bounded water/create goal already contains the entire
+        # write payload. Preview only for routing; recompute after conversation
+        # binding below before it may become a Pi proposal.
+        water_route_preview = (
+            _build_preplanned_simple_water_tool_call(
+                (
+                    self._agent_kernel_snapshot.goal
+                    if self._agent_kernel_snapshot is not None
+                    else None
+                ),
+                write_receipts=(),
+                has_attachment=bool(images or file_base64),
+                runtime_write_blocked=bool(self._runtime_write_block_reason),
+                read_only_turn=bool(read_only_tools),
+                safety_language=(
+                    contains_crisis_language(message)
+                    or contains_acute_symptom_language(message)
+                ),
+            )
+            if (
+                not health_advice_buffered
+                and clinician_turn_decision.kind
+                not in {*_CLINICIAN_ZERO_TOOL_KINDS, "explicit_doctor_feedback_write"}
+                and clinician_turn_decision.reason_code
+                not in _CLINICIAN_ZERO_TOOL_REASON_CODES
+            )
+            else None
+        )
+
         self._decision_route = None
         routing_started_at = time.perf_counter()
         staged_preclassified_tier: Optional[str] = None
         staged_preclassification_failed = False
-        if self._staged_response_mode != "off" or settings.decision_mode != "off":
+        if (self._staged_response_mode != "off" or settings.decision_mode != "off"
+                or getattr(settings, "domain_prompt_optimization", False)):
             try:
                 from app.services.llm.task_routing import classify_answer_task_tier
 
@@ -18377,11 +18421,31 @@ class AgentExecutor:
             and staged_preclassified_tier in {"casual", "balanced"}
             and self._simple_record_lookup_scope() is not None
         )
+        # These already-bound actions have a deterministic execution path. A
+        # route vote cannot supply missing facts or grant write authority.
+        from app.services.daily_plan_chat import resolve_daily_plan_request
+
+        closed_daily_plan = resolve_daily_plan_request(self._agent_kernel_snapshot)
+        closed_action_preplanned = bool(
+            getattr(settings, "domain_prompt_optimization", False)
+            and channel == "typed"
+            and not health_advice_buffered and health_evidence_turn is None
+            and not staged_preclassification_failed
+            and staged_preclassified_tier in {"casual", "balanced"}
+            and not extra_context and not images and not file_base64
+            and not self._current_turn_has_attachment
+            and not read_only_tools and not self._runtime_write_block_reason
+            and not self._has_isolated_report_scope()
+            and pending_choice_resolution is None and retry_recovery is None
+            and not self._agent_kernel_pending_confirmation_tools
+            and ((water_route_preview is not None and _is_closed_explicit_water_record(message))
+                 or (closed_daily_plan is not None and closed_daily_plan[0] == user_id))
+        )
         # A fully bound factual query needs no advisory routing vote, even in
         # an existing conversation. History/planning and read verification still
         # run below; only history-free queries qualify for deterministic output.
         if (settings.decision_mode != "off" and self._public_task is None
-                and not simple_lookup_route_skipped
+                and not simple_lookup_route_skipped and not closed_action_preplanned
                 and not _meal_photo_optional_route_unneeded(
                     message or "", auto_save=self._diet_photo_auto_save,
                     has_file=bool(file_base64), read_only=bool(read_only_tools),
@@ -20833,6 +20897,25 @@ class AgentExecutor:
                                 owned_read_preplanned = True
                             if (
                                 not proposed_calls and round_idx == 0
+                                and closed_action_preplanned
+                                and preplanned_water_turn_call is not None
+                                and not health_advice_buffered and not self._read_only_turn
+                                and not deterministic_simple_record_fallback_attempted
+                                and not write_receipts and not pending_pi_writes
+                                and not unverified_write_operations and not failed_write_operations
+                                and not self._runtime_write_block_reason
+                                and not self._agent_kernel_pending_confirmation_tools
+                                and any((tool.get("function") or {}).get("name") == "health_record"
+                                        for tool in round_tools)
+                            ):
+                                # Proposal only: Pi validation, current-turn policy,
+                                # ordinary dispatch and verified receipt closure
+                                # below remain the authority for this write.
+                                proposed_calls = [preplanned_water_turn_call]
+                                deterministic_simple_record_fallback_attempted = True
+                                self._record_model_fallback_reason("simple_water_record_preplanned_before_model")
+                            if (
+                                not proposed_calls and round_idx == 0
                                 and channel in {"typed", "voice"}
                                 and _is_explicit_single_food_voice_record(
                                     message,
@@ -22373,6 +22456,7 @@ class AgentExecutor:
             "simple_lookup_rendered": simple_lookup_rendered,
             "public_answer_rendered": public_answer_text is not None,
             "simple_lookup_route_skipped": simple_lookup_route_skipped,
+            "closed_action_preplanned": closed_action_preplanned,
             **({"report_render": {
                 "kind": "cycling_html",
                 "model_synthesis_calls_avoided": static_report_model_calls_avoided,

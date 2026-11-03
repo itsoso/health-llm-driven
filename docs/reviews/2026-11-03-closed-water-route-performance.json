@@ -1,0 +1,430 @@
+{
+  "baseline_sha": "5e4448dc547b7366484440c7a509ff9cfa823246",
+  "synthetic_only": true,
+  "scope": "closed typed water record and saved daily plan; disposable local SQLite and actual model provider; optional route off in paired e2e to isolate main-model proposal",
+  "baseline": [
+    {
+      "case": "water_record__qwen3.7-plus",
+      "repeat": 0,
+      "passed": true,
+      "total_ms": 3893,
+      "first_ms": 3868,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": 47,
+        "pre_llm_ms": 26,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 2,
+          "opener_ms": 2,
+          "system_prompt_ms": 0,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 3183,
+        "first_useful_ms": 3813,
+        "end_to_end_total_ms": 3869,
+        "end_to_end_ttft_ms": 3868,
+        "model_call_count": 1,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [
+        {
+          "model": "qwen3.6-flash",
+          "ms": 3178,
+          "first_content_ms": null,
+          "prompt_chars": 1917,
+          "tool_count": 17,
+          "usage": null
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "daily_plan__qwen3.7-plus",
+      "repeat": 0,
+      "passed": true,
+      "total_ms": 15,
+      "first_ms": 14,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": null,
+        "pre_llm_ms": null,
+        "pre_llm_stages": null,
+        "model_wait_ms": null,
+        "first_useful_ms": null,
+        "end_to_end_total_ms": null,
+        "end_to_end_ttft_ms": null,
+        "model_call_count": null,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 0
+    },
+    {
+      "case": "water_record__qwen3.7-plus",
+      "repeat": 1,
+      "passed": true,
+      "total_ms": 1607,
+      "first_ms": 1589,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": 2,
+        "pre_llm_ms": 4,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 0,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 1307,
+        "first_useful_ms": 1580,
+        "end_to_end_total_ms": 1589,
+        "end_to_end_ttft_ms": 1588,
+        "model_call_count": 1,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [
+        {
+          "model": "qwen3.6-flash",
+          "ms": 1307,
+          "first_content_ms": null,
+          "prompt_chars": 1917,
+          "tool_count": 17,
+          "usage": null
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "daily_plan__qwen3.7-plus",
+      "repeat": 1,
+      "passed": true,
+      "total_ms": 8,
+      "first_ms": 7,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": null,
+        "pre_llm_ms": null,
+        "pre_llm_stages": null,
+        "model_wait_ms": null,
+        "first_useful_ms": null,
+        "end_to_end_total_ms": null,
+        "end_to_end_ttft_ms": null,
+        "model_call_count": null,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 0
+    }
+  ],
+  "candidate": [
+    {
+      "case": "water_record__qwen3.7-plus",
+      "repeat": 0,
+      "passed": true,
+      "total_ms": 803,
+      "first_ms": 778,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": 48,
+        "pre_llm_ms": 33,
+        "pre_llm_stages": {
+          "routing_ms": 2,
+          "conv_ms": 2,
+          "opener_ms": 3,
+          "system_prompt_ms": 0,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 717,
+        "end_to_end_total_ms": 779,
+        "end_to_end_ttft_ms": 777,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "daily_plan__qwen3.7-plus",
+      "repeat": 0,
+      "passed": true,
+      "total_ms": 15,
+      "first_ms": 15,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": null,
+        "pre_llm_ms": null,
+        "pre_llm_stages": null,
+        "model_wait_ms": null,
+        "first_useful_ms": null,
+        "end_to_end_total_ms": null,
+        "end_to_end_ttft_ms": null,
+        "model_call_count": null,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 0
+    },
+    {
+      "case": "water_record__qwen3.7-plus",
+      "repeat": 1,
+      "passed": true,
+      "total_ms": 288,
+      "first_ms": 269,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": 2,
+        "pre_llm_ms": 4,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 0,
+          "opener_ms": 0,
+          "system_prompt_ms": 0,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 261,
+        "end_to_end_total_ms": 269,
+        "end_to_end_ttft_ms": 268,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "daily_plan__qwen3.7-plus",
+      "repeat": 1,
+      "passed": true,
+      "total_ms": 8,
+      "first_ms": 7,
+      "outcome": "complete",
+      "error_type": null,
+      "stop_reason": null,
+      "segments": {
+        "turn_setup_ms": null,
+        "pre_llm_ms": null,
+        "pre_llm_stages": null,
+        "model_wait_ms": null,
+        "first_useful_ms": null,
+        "end_to_end_total_ms": null,
+        "end_to_end_ttft_ms": null,
+        "model_call_count": null,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "calls": [],
+      "verified_receipts": 0
+    }
+  ],
+  "initial_measurement_error": {
+    "reason": "post-completion harness diagnostic accessed unset prompt context attribute",
+    "rows": [
+      {
+        "case": "water_record__qwen3.7-plus",
+        "repeat": 0,
+        "passed": false,
+        "total_ms": 4723,
+        "first_ms": 4691,
+        "outcome": "complete",
+        "error_type": "AttributeError",
+        "stop_reason": null,
+        "segments": null,
+        "calls": [
+          {
+            "model": "qwen3.6-flash",
+            "ms": 3981,
+            "first_content_ms": null,
+            "prompt_chars": 1917,
+            "tool_count": 17,
+            "usage": null
+          }
+        ],
+        "verified_receipts": 0
+      },
+      {
+        "case": "daily_plan__qwen3.7-plus",
+        "repeat": 0,
+        "passed": false,
+        "total_ms": 15,
+        "first_ms": 14,
+        "outcome": "complete",
+        "error_type": "AttributeError",
+        "stop_reason": null,
+        "segments": null,
+        "calls": [],
+        "verified_receipts": 0
+      },
+      {
+        "case": "water_record__qwen3.7-plus",
+        "repeat": 1,
+        "passed": false,
+        "total_ms": 1574,
+        "first_ms": 1555,
+        "outcome": "complete",
+        "error_type": "AttributeError",
+        "stop_reason": null,
+        "segments": null,
+        "calls": [
+          {
+            "model": "qwen3.6-flash",
+            "ms": 1279,
+            "first_content_ms": null,
+            "prompt_chars": 1917,
+            "tool_count": 17,
+            "usage": null
+          }
+        ],
+        "verified_receipts": 0
+      },
+      {
+        "case": "daily_plan__qwen3.7-plus",
+        "repeat": 1,
+        "passed": false,
+        "total_ms": 9,
+        "first_ms": 7,
+        "outcome": "complete",
+        "error_type": "AttributeError",
+        "stop_reason": null,
+        "segments": null,
+        "calls": [],
+        "verified_receipts": 0
+      }
+    ]
+  },
+  "live_route_only": {
+    "scope": "synthetic route advice only; no health operation executed",
+    "rows": [
+      {
+        "synthetic_prompt": "记录喝水500ml",
+        "repeat": 0,
+        "wall_ms": 1561,
+        "route": {
+          "mode": "on",
+          "provider": "laya",
+          "status": "abstained",
+          "effective_tier": "casual",
+          "reason": "write_intent",
+          "suggested_tier": "casual",
+          "capability": null,
+          "model": "laya-multilingual@aa8c91ca088e",
+          "input_tokens": 91,
+          "output_tokens": 0,
+          "elapsed_ms": 756,
+          "tier_confidence": 0.4985,
+          "capability_confidence": 0.999
+        }
+      },
+      {
+        "synthetic_prompt": "给我今日计划",
+        "repeat": 0,
+        "wall_ms": 534,
+        "route": {
+          "mode": "on",
+          "provider": "laya",
+          "status": "partial",
+          "effective_tier": "balanced",
+          "reason": "tier_low_confidence",
+          "suggested_tier": "casual",
+          "capability": "none",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "input_tokens": 83,
+          "output_tokens": 0,
+          "elapsed_ms": 315,
+          "tier_confidence": 0.2767,
+          "capability_confidence": 0.9391
+        }
+      },
+      {
+        "synthetic_prompt": "记录喝水500ml",
+        "repeat": 1,
+        "wall_ms": 262,
+        "route": {
+          "mode": "on",
+          "provider": "laya",
+          "status": "abstained",
+          "effective_tier": "casual",
+          "reason": "write_intent",
+          "suggested_tier": "casual",
+          "capability": null,
+          "model": "laya-multilingual@aa8c91ca088e",
+          "input_tokens": 91,
+          "output_tokens": 0,
+          "elapsed_ms": 259,
+          "tier_confidence": 0.4985,
+          "capability_confidence": 0.999
+        }
+      },
+      {
+        "synthetic_prompt": "给我今日计划",
+        "repeat": 1,
+        "wall_ms": 280,
+        "route": {
+          "mode": "on",
+          "provider": "laya",
+          "status": "partial",
+          "effective_tier": "balanced",
+          "reason": "tier_low_confidence",
+          "suggested_tier": "casual",
+          "capability": "none",
+          "model": "laya-multilingual@aa8c91ca088e",
+          "input_tokens": 83,
+          "output_tokens": 0,
+          "elapsed_ms": 277,
+          "tier_confidence": 0.2767,
+          "capability_confidence": 0.9391
+        }
+      }
+    ]
+  },
+  "reproduction_script": "import os\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path(os.environ['REVA_BENCH_ROOT'])\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nMODELS=['qwen3.7-plus']\nPROMPTS=[('water_record','记录喝水500ml'),('daily_plan','给我今日计划')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(2):\n   for case,prompt,model in CASES:\n    calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'automatic_answer_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=None;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search','health_record'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      \n      if req.tool_name == 'health_record' and (req.arguments.get('record_type') != 'water' or req.arguments.get('data',{}).get('amount') != 500):raise BenchmarkStopped('unexpected_write')\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured(model)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(60):\n        async for e in ex.run_stream(user.id,prompt,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['write_receipts']=(done or {}).get('write_receipts',[])\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':getattr(ex,'_prompt_context_profile',None)}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','baseline_sha':'5e4448dc547b7366484440c7a509ff9cfa823246','decision_mode':'off','domain_prompt_optimization':True,'saved_preference':False,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n",
+  "limitations": [
+    "two repeats per scenario do not establish production percentiles",
+    "optional live routing measured separately; timings must not be added as causal end-to-end results",
+    "no native paint or device reception acceptance",
+    "three-second goal across all requests remains unverified"
+  ]
+}

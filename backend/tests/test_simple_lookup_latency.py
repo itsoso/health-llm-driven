@@ -463,3 +463,138 @@ async def test_sleep_analysis_rejects_shifted_window_before_live_and_persisted_c
     assert done['turn_outcome']['status'] != 'complete'
     assert '123456' not in tokens and '```reva-ui' not in tokens
     assert saved.content == tokens
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prompt", ["记录喝水500ml", "记录饮水 500 毫升", "记录喝水0.5升", "给我今日计划"])
+async def test_closed_deterministic_action_does_not_wait_for_advisory_router(
+    db, owned_data, clock, monkeypatch, prompt,
+):
+    from tests.test_decision_routing import fake_result, wire
+    from tests.test_daily_plan_chat import add_plan
+    from app.models.daily_health import WaterIntake
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    seen = wire(monkeypatch, fake_result("casual"))
+    add_plan(db, owned_data.id, clock[0].date(), "合成计划行动")
+    before = db.query(WaterIntake).filter_by(user_id=owned_data.id).count()
+    trace = script_executor(db, monkeypatch, [])
+    events = [e async for e in trace.executor.run_stream(
+        owned_data.id, prompt, channel="typed",
+    )]
+    done = events[-1]["data"]
+    assert not trace.calls and not trace.unexpected
+    assert done["turn_outcome"]["status"] == "complete"
+    saved = db.get(AgentMessage, done["message_id"])
+    if "计划" not in prompt:
+        assert db.query(WaterIntake).filter_by(user_id=owned_data.id).count() == before + 1
+        assert len(done["write_receipts"]) == 1
+        assert done["write_receipts"][0]["verified"] is True
+    else:
+        assert "合成计划行动" in saved.content
+        assert not done["write_receipts"]
+        assert db.query(WaterIntake).filter_by(user_id=owned_data.id).count() == before
+    assert not seen, "a closed deterministic action must not wait for optional model advice"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prompt", ["记录喝水500ml", "给我今日计划"])
+@pytest.mark.parametrize("guard", ["flag_off", "high_stakes", "classifier_error", "context", "read_only", "voice"])
+async def test_closed_action_keeps_advisory_route_outside_narrow_admission(
+    db, owned_data, clock, monkeypatch, prompt, guard,
+):
+    from tests.test_decision_routing import fake_result, wire
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", guard != "flag_off")
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    seen = wire(monkeypatch, fake_result("casual"))
+    if guard == "high_stakes":
+        monkeypatch.setattr("app.services.llm.task_routing.classify_answer_task_tier", lambda *a, **k: "high_stakes")
+    if guard == "classifier_error":
+        def unavailable(*a, **k):
+            raise RuntimeError("synthetic classifier failure")
+        monkeypatch.setattr("app.services.llm.task_routing.classify_answer_task_tier", unavailable)
+    trace = script_executor(db, monkeypatch, ["当前请求需要进一步核对。"])
+    events = [e async for e in trace.executor.run_stream(
+        owned_data.id, prompt,
+        channel="voice" if guard == "voice" else "typed",
+        extra_context="合成上下文" if guard == "context" else None,
+        read_only_tools=guard == "read_only",
+    )]
+    assert events[-1]["event"] == "done"
+    assert seen, "quality/context admission must retain ordinary routing"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prompt", [
+    "喝了一杯水", "喝了0.5升水", "不要记录喝水500ml", "把昨天的饮水改为500ml",
+    "记录喝水500ml，并分析睡眠", "我胸痛，记录喝水500ml",
+    "生成并执行今日计划", "给我今日计划并保存", "给我老婆今日计划",
+])
+async def test_nonclosed_requests_keep_router(db, owned_data, clock, monkeypatch, prompt):
+    from tests.test_decision_routing import fake_result, wire
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    seen = wire(monkeypatch, fake_result("casual"))
+    trace = script_executor(db, monkeypatch, ["当前请求需要进一步核对。"])
+    events = [e async for e in trace.executor.run_stream(owned_data.id, prompt, channel="typed")]
+    assert events[-1]["event"] == "done"
+    assert seen
+
+
+@pytest.mark.asyncio
+async def test_preplanned_water_retry_replays_verified_receipt_without_second_write(
+    db, owned_data, clock, monkeypatch,
+):
+    from uuid import uuid4
+    from app.models.daily_health import WaterIntake
+    from tests.test_decision_routing import fake_result, wire
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    seen = wire(monkeypatch, fake_result())
+    trace = script_executor(db, monkeypatch, [])
+    key = str(uuid4())
+    before = db.query(WaterIntake).filter_by(user_id=owned_data.id).count()
+    replies = []
+    for _ in range(2):
+        events = [e async for e in trace.executor.run_stream(
+            owned_data.id, "记录喝水500ml", channel="typed", client_turn_id=key,
+        )]
+        replies.append(events[-1]["data"])
+    assert not seen and not trace.calls and not trace.unexpected
+    assert len(trace.dispatches) == 1
+    assert db.query(WaterIntake).filter_by(user_id=owned_data.id).count() == before + 1
+    assert replies[0]["message_id"] == replies[1]["message_id"]
+    assert replies[1]["replayed"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["error", "missing_receipt"])
+async def test_preplanned_water_failure_cannot_claim_verified_success(
+    db, owned_data, clock, monkeypatch, failure,
+):
+    import json
+    from app.models.daily_health import WaterIntake
+    from tests.test_decision_routing import fake_result, wire
+
+    monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+    monkeypatch.setattr(settings, "decision_admin_control_enabled", False)
+    wire(monkeypatch, fake_result())
+    trace = script_executor(db, monkeypatch, ["本次记录未完成，请核对记录状态。"])
+    async def rejected(request, token):
+        return json.dumps({"error": "synthetic_failure"} if failure == "error" else {"message": "无持久化回执"})
+    monkeypatch.setattr(trace.executor, "_dispatch_tool_request", rejected)
+    before = db.query(WaterIntake).filter_by(user_id=owned_data.id).count()
+    events = [e async for e in trace.executor.run_stream(owned_data.id, "记录喝水500ml", channel="typed")]
+    done = events[-1]["data"]
+    assert done["turn_outcome"]["status"] != "complete"
+    assert not any(r.get("verified") for r in done["write_receipts"])
+    assert db.query(WaterIntake).filter_by(user_id=owned_data.id).count() == before
