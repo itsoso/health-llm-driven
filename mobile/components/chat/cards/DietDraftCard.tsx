@@ -995,14 +995,14 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
             style={({ pressed }) => [
               styles.recordedAdjustButton,
               data.communityAction && styles.recordedActionCompact,
-              styles.recordedViewButton,
               pressed && styles.editButtonPressed,
             ]}
           >
-            <Ionicons name="list-outline" size={16} color={C.greenOn} />
+            <Ionicons name="list-outline" size={16} color={C.ink2} />
             <View style={styles.recordedAdjustCopy}>
-              <Text maxFontSizeMultiplier={1.12} style={[styles.recordedAdjustTitle, styles.recordedViewTitle]}>饮食记录</Text>
+              <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>饮食记录</Text>
             </View>
+            <Ionicons name="chevron-forward" size={12} color={C.ink3} />
           </Pressable>
           {adjustRecord && adjustRecordId != null ? (
             <Pressable
@@ -1018,9 +1018,9 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
                 pressed && styles.editButtonPressed,
               ]}
             >
-              <Ionicons name="create-outline" size={16} color={C.green700} />
+              <Ionicons name="create-outline" size={16} color={savedAdjustOpen ? C.green700 : C.ink2} />
               <View style={styles.recordedAdjustCopy}>
-                <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>
+                <Text maxFontSizeMultiplier={1.12} style={[styles.recordedAdjustTitle, savedAdjustOpen && styles.recordedAdjustTitleOpen]}>
                   {savedAdjustOpen ? '收起修正' : '修正本餐'}
                 </Text>
               </View>
@@ -1034,7 +1034,7 @@ export function DietDraftCardView(data: DietDraftCardViewProps) {
               accessibilityHint="带着这餐记录打开同行圈发布页"
               style={({ pressed }) => [styles.recordedAdjustButton, styles.recordedActionCompact, pressed && styles.editButtonPressed]}
             >
-              <Ionicons name="people-outline" size={16} color={C.green700} />
+              <Ionicons name="people-outline" size={16} color={C.ink2} />
               <View style={styles.recordedAdjustCopy}>
                 <Text maxFontSizeMultiplier={1.12} style={styles.recordedAdjustTitle}>同行圈</Text>
               </View>
@@ -1754,16 +1754,16 @@ const styles = StyleSheet.create({
     fontWeight: '900',
   } as TextStyle,
   recordedActions: {
-    marginTop: 12,
-    paddingTop: 12,
+    marginTop: 10,
+    paddingTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.green100,
+    borderTopColor: C.line,
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 8,
   },
   recordedAdjustButton: {
-    minHeight: 48,
+    minHeight: 44,
     flexBasis: 120,
     flexGrow: 1,
     flexShrink: 1,
@@ -1771,23 +1771,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: 6,
-    borderRadius: revaRadii.md,
-    backgroundColor: 'rgba(255,255,255,0.88)',
+    borderRadius: revaRadii.sm,
+    backgroundColor: C.surface2,
     borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
+    borderColor: C.line,
     paddingHorizontal: 8,
-    paddingVertical: 8,
+    paddingVertical: 6,
   },
   recordedActionCompact: {
     flexBasis: 88,
     paddingHorizontal: 5,
   },
-  recordedViewButton: {
-    backgroundColor: C.green700,
-    borderColor: C.green700,
-  },
   recordedAdjustButtonOpen: {
     backgroundColor: C.green50,
+    borderColor: C.green100,
   },
   recordedAdjustCopy: {
     flexShrink: 1,
@@ -1798,12 +1795,12 @@ const styles = StyleSheet.create({
     fontFamily: revaFonts.sans,
     fontSize: 12,
     lineHeight: 17,
-    color: C.green700,
-    fontWeight: '900',
+    color: C.ink2,
+    fontWeight: '600',
     textAlign: 'center',
   } as TextStyle,
-  recordedViewTitle: {
-    color: C.greenOn,
+  recordedAdjustTitleOpen: {
+    color: C.green700,
   } as TextStyle,
   inlineHeader: {
     flexDirection: 'row',
