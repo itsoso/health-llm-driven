@@ -1,5 +1,5 @@
 'use client';
-import { ArrowUpRight, ArrowRight, BookOpen, ChevronDown, RefreshCw, X } from 'lucide-react';
+import { ArrowUpRight, ArrowRight, BookOpen, ChevronDown, PanelLeftClose, PanelLeftOpen, RefreshCw, X } from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { getMorningReading, getMorningReadings, type MorningReadingItem, type MorningReadingDetail } from '@/services/morningReadings';
 import css from './workspace.module.css';
@@ -118,6 +118,7 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
   const titleId = useId();
   const [position, setPosition] = useState(0);
   const [activeSection, setActiveSection] = useState<string | null>(null);
+  const [contentsExpanded, setContentsExpanded] = useState(true);
   const { blocks, appendix } = useMemo(() => readingDocument(report.content_text, report.title), [report.content_text, report.title]);
   const appendixParagraphs = useMemo(() => appendix.map((block, index) => <p key={index}>{[block.kicker, block.title, block.body].filter(Boolean).join('\n')}</p>), [appendix]);
   const metadata = blocks.filter(block => block.kind === 'meta');
@@ -166,13 +167,18 @@ function MorningReader({ report, onClose }: { report: MorningReadingDetail; onCl
     onCancel={event => { event.preventDefault(); onClose(); }}>
     <header className={css.readerHeader}>
       <span className={css.readerBrand}><BookOpen size={17} aria-hidden="true" /> 晨读 <span>{report.reading_date.replaceAll('-', '.')}</span></span>
-      <div className={css.readerTools}><a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">原版 <ArrowUpRight size={13} aria-hidden="true" /></a>
+      <div className={css.readerTools}>{contents.length ? <button type="button" className={css.readerContentsToggle}
+        aria-label={contentsExpanded ? '收起目录' : '展开目录'} aria-expanded={contentsExpanded}
+        onClick={() => setContentsExpanded(value => !value)}>
+        {contentsExpanded ? <PanelLeftClose size={16} aria-hidden="true" /> : <PanelLeftOpen size={16} aria-hidden="true" />}
+        <span>目录</span>
+      </button> : null}<a href={`https://base.executor.life/external-reports/${encodeURIComponent(report.report_id)}`} target="_blank" rel="noopener noreferrer">原版 <ArrowUpRight size={13} aria-hidden="true" /></a>
       <button type="button" className={css.readerClose} aria-label="关闭阅读" onClick={onClose}><X size={19} aria-hidden="true" /></button></div>
     </header>
     <div className={css.readerProgress} role="progressbar" aria-label="正文位置" aria-valuemin={0} aria-valuemax={100} aria-valuenow={position}>
       <span style={{ width: `${position}%` }} />
     </div>
-    <div className={`${css.readerLayout} ${contents.length ? '' : css.readerWithoutContents}`}>
+    <div data-contents={contentsExpanded ? 'expanded' : 'collapsed'} className={`${css.readerLayout} ${contents.length ? '' : css.readerWithoutContents} ${contentsExpanded ? '' : css.readerContentsCollapsed}`}>
       {contents.length ? <aside className={css.readerSidebar}>
         <p className={css.readerContentsLabel}>本期目录 <span>{String(contents.length).padStart(2, '0')}</span></p>
         <nav className={css.readerDesktopContents} aria-label="本期目录">{contentsButtons}</nav>

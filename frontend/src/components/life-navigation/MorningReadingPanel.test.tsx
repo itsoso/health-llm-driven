@@ -61,6 +61,19 @@ it('tracks the visible chapter and lets the mobile contents close after navigati
   expect(scroll).toHaveBeenCalledWith({ block: 'start' });
 });
 
+it('lets the reader hide the desktop contents for a focused article view', async () => {
+  vi.mocked(getMorningReading).mockResolvedValue({ ...item, content_text: '主读｜第一章\n\n正文一\n\n深入问题｜第二章\n\n正文二' });
+  render(<MorningReadingPanel owner={7} day="2026-10-19" />);
+  fireEvent.click(await screen.findByRole('button', { name: '开始阅读' }));
+  const reader = screen.getByRole('dialog');
+  const toggle = within(reader).getByRole('button', { name: '收起目录' });
+  expect(toggle).toHaveAttribute('aria-expanded', 'true');
+  expect(within(reader).getByRole('navigation', { name: '本期目录' })).toBeVisible();
+  fireEvent.click(toggle);
+  expect(within(reader).getByRole('button', { name: '展开目录' })).toHaveAttribute('aria-expanded', 'false');
+  expect(reader.querySelector('[data-contents="collapsed"]')).toBeTruthy();
+});
+
 it('loads the selected date and renders source text without executing HTML', async () => {
   const view = render(<MorningReadingPanel owner={7} day="2026-10-19" />);
   expect(await screen.findByText('有依据的思考 <script>bad()</script>')).toBeTruthy();
