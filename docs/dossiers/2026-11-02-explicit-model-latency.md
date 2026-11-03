@@ -514,7 +514,7 @@ G5 发布完成、G6 自动线上发布核验通过。App 点击至实际显示�
 历史纠正、分析与临床判断仍保留模型路径。基线中的饮食评价、综合分析和睡眠趋势图问题尚未修复，继续保留待办。
 
 
-## 第六轮：整体链路减少等待与有效结果计时（实施中）
+## 第六轮：整体链路减少等待与有效结果计时
 
 用户授权按整体规划执行，基于最新主干 `3c438e8362e3ce3dc11e845b80d22c98a506be0b`，新隔离工作区保留其他并行改动。
 沿用本 Dossier / Health Harness run `ff67fa8caa7a`，需求与边界见 [性能规格](../specs/2026-11-03-agent-pipeline-performance.md)。
@@ -530,3 +530,17 @@ RED 路由/生成 9 failed、128 passed；最初缺 Pi runtime 的环境失败�
 真实模型配对用两个固定合成聊天任务各两次，原回答模型固定为自动 qwen3.7-plus；同一 Pi/Gateway，临时同意主体与 SQLite，路由服务两组均关闭以隔离模型重复生成。基线四次均为 Qwen Flash→Qwen Plus，两次调用；候选四次均一次 Plus。完整时间中位数 17.27s→5.04s，P95/P99 最近秩最大值 20.59s→7.65s；四次均成功，两组均 0/4 在三秒内。完整单样本和脚本见 [机器证据](../reviews/2026-11-03-agent-pipeline-performance.json)。小样本不可外推生产长尾；只证明该调用路径少一次生成，不证明普遍达到三秒，也不将调用数下降等同人民币成本同比下降。
 
 后续上下文装配、视觉服务时延及复杂分析生命周期继续按同样证据门推进；本批不引入新的缓存、视觉模型或后台任务机制，不以重构文件数量冒充时延收益。原始深度分析/视觉慢样本和三秒验收仍保留，未宣称完整规划全部交付。
+
+
+第六轮最终候选 `b9904bd198615e811b4c6df3d586e537431d53e6`：CI-mode 合并集成 859 passed / 1 skipped，真实 PostgreSQL 17 的食物核验 38 passed，独立 G4 470 passed / 1 skipped 与 Mobile 206 passed，判定 GO。精确候选真实模型闸 invariants 12、health core 50、live orchestrator 5（均分 0.92）、trajectory contract 12、goldens 9 全部通过；未降低质量门。
+
+- [完整 CI 41589056536](https://github.com/itsoso/health-llm-driven/actions/runs/41589056536)：32/32 成功。
+- [发布预检 41590621462](https://github.com/itsoso/health-llm-driven/actions/runs/41590621462)：成功。
+- [后端发布 41593274202](https://github.com/itsoso/health-llm-driven/actions/runs/41593274202)：成功。独立读回生产 SHA 和干净工作区一致，backend `SUCCEEDED`，runtime `COMMITTED / code-only-no-backup`，lease 已释放，backend / worker / beat / Laya 正常，内外网健康通过。backend 回执 SHA256 `3af956d568c336509b2dba613be13fa605613fe594b9e7fc34d067864737313c`。
+- 后端初次调度在获取工作流信息的 GET 阶段 TLS 超时；原意图和错误保留，经独立任务列表及服务器回执确认未提交后，续接原意图并只创建上述一个部署任务，未重复消费发布。
+- [OTA validate 41593940381](https://github.com/itsoso/health-llm-driven/actions/runs/41593940381)：成功。
+
+- [OTA publish 41594210824](https://github.com/itsoso/health-llm-driven/actions/runs/41594210824)：成功。OTA `SUCCEEDED` 回执 SHA256 `89237f5fd068e34c6345c70e0b0a3134c946fc79f42f0f8cc8cd08c0bff5f5b6`；intent 和 verified receipt 的摘要关联已独立复核。
+- 公开 iOS production 清单独立验证通过：runtime `1.3.6`，group `31d07b8d-d6ab-4ed6-a5c8-8515f4bef826`，update `01a1a043-3b71-7369-b6c5-5ae35d80bd77`，launch asset 与全部 47 项资源摘要一致。发布后生产版本及健康保持正常，lease 已释放。
+
+第六轮首批优化 G5 发布完成，G6 自动线上发布核验 PASS。模拟器实际界面、设备 OTA 接收和生产 v3 有效结果 P95 仍未验证；4 个合成聊天样本的中位数下降不等于所有请求三秒达标。上下文装配、视觉首卡与复杂分析的后续阶段仍按规格分批推进，未宣称完整规划全部完成。机器交付证据与所有性能样本见 [本轮证据](../reviews/2026-11-03-agent-pipeline-performance.json)。

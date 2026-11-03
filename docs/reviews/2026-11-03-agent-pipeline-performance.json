@@ -283,5 +283,175 @@
     "source": "import os\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path(os.environ['REVA_BENCH_ROOT'])\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nMODELS=['qwen3.7-plus']\nPROMPTS=[('short_story','讲一个很短的故事'),('short_joke','讲一个两句话的笑话')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(2):\n   for case,prompt,model in CASES:\n    calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'automatic_answer_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=None;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured(model)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(60):\n        async for e in ex.run_stream(user.id,prompt,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':ex._prompt_context_profile}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','baseline_sha':'3c438e8362e3ce3dc11e845b80d22c98a506be0b','decision_mode':'off','domain_prompt_optimization':True,'saved_preference':False,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n",
     "source_sha256": "dbde36f1795a539bbdf8c2f30f42aa30f834a2f05c87863005e1f321f7930e0e",
     "usage": "REVA_BENCH_ROOT=<baseline-or-candidate-clean-checkout> TZ=Asia/Shanghai backend/venv/bin/python <source.py> <result.json>"
+  },
+  "delivery": {
+    "candidate_sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+    "integration": {
+      "passed": 859,
+      "skipped": 1,
+      "seconds": 134.7,
+      "ci_mode": true
+    },
+    "independent_review": {
+      "verdict": "GO",
+      "backend_passed": 470,
+      "backend_skipped": 1,
+      "mobile_passed": 206
+    },
+    "live_gate": {
+      "status": "passed",
+      "llm_cost": "possible",
+      "suites": [
+        {
+          "suite": "invariants",
+          "total_cases": 12,
+          "passed": 12,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "health_agent_core",
+          "total_cases": 50,
+          "passed": 50,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 1.0,
+          "avg_latency_ms": 0,
+          "regression": []
+        },
+        {
+          "suite": "orchestrator",
+          "total_cases": 5,
+          "passed": 5,
+          "failed": 0,
+          "errored": 0,
+          "avg_score": 0.92,
+          "avg_latency_ms": 8615,
+          "regression": []
+        }
+      ],
+      "failed_suites": [],
+      "errors": [],
+      "trajectory_contract": {
+        "status": "passed",
+        "total_cases": 12,
+        "failed_cases": []
+      },
+      "trajectory_goldens": {
+        "status": "passed",
+        "fixture_version": 1,
+        "total_cases": 9,
+        "covered_scenarios": [
+          "duplicate_client_turn_side_effect",
+          "duplicate_same_record_side_effect",
+          "idempotent_client_turn_replay",
+          "meal_context_reestimate",
+          "missing_identity_receipt",
+          "read_only_delete_side_effect",
+          "simple_fruit_write",
+          "simple_water_write",
+          "uncertain_receipt_false_success"
+        ],
+        "failed_cases": []
+      }
+    },
+    "checks": [
+      "TypeScript",
+      "SystemMap",
+      "tracked secret scan",
+      "Ruff F821/F822/E9",
+      "git diff --check"
+    ],
+    "ci_run": 41589056536,
+    "release_status": "backend_and_ota_published_independently_verified",
+    "ci": {
+      "run_id": 41589056536,
+      "status": "success",
+      "jobs_passed": 32
+    },
+    "release_preflight": {
+      "run_id": 41590621462,
+      "status": "success"
+    },
+    "postgresql": {
+      "cases_passed": 38,
+      "version": 17,
+      "synthetic_data": true
+    },
+    "backend_workflow": 41593274202,
+    "backend_acceptance": {
+      "authorization_matches": true,
+      "backend_completed": {
+        "sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+        "state": "SUCCEEDED"
+      },
+      "backend_completed_sha256": "3af956d568c336509b2dba613be13fa605613fe594b9e7fc34d067864737313c",
+      "business_lease_absent": true,
+      "local_health": "healthy",
+      "production_clean": true,
+      "public_health": "healthy",
+      "services": {
+        "celery-beat": "active/running",
+        "celery-worker": "active/running",
+        "health-backend": "active/running",
+        "reva-laya": "active/running"
+      },
+      "sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+      "state": "BACKEND_READONLY_VERIFIED"
+    },
+    "runtime_terminal": {
+      "sha256": "e5150a8f096815315d4cf0d16b16f0b885b514846894c4bb16f569f9b7c59060",
+      "value": {
+        "candidate_sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+        "mode": "code-only-no-backup",
+        "old_sha": "8a1933a1b071d273230cabf5d7f16d7c4fc9cf47",
+        "phase": "COMMITTED",
+        "release_target": null
+      }
+    },
+    "ota_validate_workflow": 41593940381,
+    "ota_publish_workflow": 41594210824,
+    "ota_completed": {
+      "sha256": "89237f5fd068e34c6345c70e0b0a3134c946fc79f42f0f8cc8cd08c0bff5f5b6",
+      "value": {
+        "intent_sha256": "b101c513f9c76a3628f72653c7091d53a29b6906e5023fb0759e4d7fc064d917",
+        "receipt_sha256": "2c6fd9d7b741457a9825376e39bee4d68e94a4e505561d183af188a59895007c",
+        "sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+        "state": "SUCCEEDED"
+      }
+    },
+    "ota_verified": {
+      "sha256": "2c6fd9d7b741457a9825376e39bee4d68e94a4e505561d183af188a59895007c",
+      "value": {
+        "group_id": "31d07b8d-d6ab-4ed6-a5c8-8515f4bef826",
+        "sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+        "update_id": "01a1a043-3b71-7369-b6c5-5ae35d80bd77"
+      }
+    },
+    "ota_intent_sha256": "b101c513f9c76a3628f72653c7091d53a29b6906e5023fb0759e4d7fc064d917",
+    "public_manifest": {
+      "artifact_matches": true,
+      "asset_hash_count": 47,
+      "backend_healthy": true,
+      "channel": "production",
+      "device_acceptance": "not_verified",
+      "group_id": "31d07b8d-d6ab-4ed6-a5c8-8515f4bef826",
+      "launch_asset_hash": "daBz8yF2jsjoevMFVUi06R9v4o5wcORY5kKY4DLKLh8",
+      "platform": "ios",
+      "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+      "runtime": "1.3.6",
+      "sha": "b9904bd198615e811b4c6df3d586e537431d53e6",
+      "state": "PUBLIC_MANIFEST_VERIFIED",
+      "update_id": "01a1a043-3b71-7369-b6c5-5ae35d80bd77"
+    },
+    "acceptance_limits": [
+      "production effective-result P95 below 3 seconds unverified",
+      "simulator actual paint and interaction unverified",
+      "device OTA reception unverified",
+      "context preparation, vision and complex analysis subsequent stages remain"
+    ]
   }
 }

@@ -1,6 +1,6 @@
 # Agent 请求处理链路性能优化
 
-Status: implementing; baseline `3c438e8362e3ce3dc11e845b80d22c98a506be0b`.
+Status: first batch released at `b9904bd198615e811b4c6df3d586e537431d53e6`; remaining stages and production SLO unverified. Baseline `3c438e8362e3ce3dc11e845b80d22c98a506be0b`.
 Controller / evidence: [既有延迟 Dossier](../dossiers/2026-11-02-explicit-model-latency.md).
 
 ## Decision and admission
