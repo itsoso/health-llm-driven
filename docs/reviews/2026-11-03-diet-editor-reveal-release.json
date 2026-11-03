@@ -1,0 +1,344 @@
+{
+  "candidate_sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+  "scope": "Explicitly reveal the saved meal correction editor; preserve manual chat scrolling and existing health write behavior",
+  "original_production_sha": "9cb3b78bc418cbf0e1484cb1ac4c143a3d7182b4",
+  "checks": {
+    "ci_mode_integration": {
+      "suites": 5,
+      "passed": 338
+    },
+    "typecheck": "passed",
+    "system_map": "passed",
+    "dossier_consistency": "passed",
+    "secret_scan": "passed"
+  },
+  "independent_ui_review": {
+    "candidate": "095ef6936552121264524fc5d537fa783adf8b5b",
+    "verdict": "GO",
+    "regressions_passed": 116,
+    "additional_delayed_callback_probes_passed": 8,
+    "report_sha256": "3bee95b9d29dfcfec0321248708404a8a137d355143b1c07bb2bec98d41e5c27",
+    "limitations": [
+      "Native click/measurement not verified because Mac locked; Jest measurements are synthetic.",
+      "Original external unmount test batched unmount and callback before React commit; corrected probe separates commit and callback; first failure log retained."
+    ]
+  },
+  "release_reviews": {
+    "stage": {
+      "candidate_sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "verdict": "GO",
+      "approval_sha256": "ad0c124d3c62068934f52dec76fa74947628dd0f53978de4afaab164b2847943"
+    },
+    "refresh": {
+      "candidate_sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "verdict": "GO",
+      "approval_sha256": "8e8b4a230763d10eee8d497e612fc5a18cbd3b69438f6b2318315ca6ce860948"
+    },
+    "rotation": {
+      "candidate_sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "verdict": "GO",
+      "approval_sha256": "ed305c875615d660e825cf9ec9057acfe6b2f2269183e94cf7edc3cb8926e6d3"
+    }
+  },
+  "workflows": {
+    "full_ci": {
+      "databaseId": 41653626061,
+      "headSha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "event": "push",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41653626061",
+      "jobs": [
+        {
+          "name": "classify-changes",
+          "conclusion": "success"
+        },
+        {
+          "name": "mac-build",
+          "conclusion": "success"
+        },
+        {
+          "name": "docs-quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "neo-wechat-systemd249",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-quality",
+          "conclusion": "success"
+        },
+        {
+          "name": "agent-runtime-postgres",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-04",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-01",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-13",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-08",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-03",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-05",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-12",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-15",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-10",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-07",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-02",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-14",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-06",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-16",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-11",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-test-balanced-09",
+          "conclusion": "success"
+        },
+        {
+          "name": "release-invariants",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-runner-startup",
+          "conclusion": "success"
+        },
+        {
+          "name": "mobile-typecheck",
+          "conclusion": "success"
+        },
+        {
+          "name": "type-drift",
+          "conclusion": "success"
+        },
+        {
+          "name": "frontend-artifact-integration",
+          "conclusion": "success"
+        },
+        {
+          "name": "frontend-build",
+          "conclusion": "success"
+        },
+        {
+          "name": "ota-runner-startup",
+          "conclusion": "success"
+        },
+        {
+          "name": "release-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-tests",
+          "conclusion": "success"
+        },
+        {
+          "name": "backend-release-ready-v1",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "release_validate": {
+      "databaseId": 41655211934,
+      "headSha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41655211934",
+      "jobs": [
+        {
+          "name": "preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "build-permission",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "ios-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "release-result",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    "backend": {
+      "databaseId": 41658328623,
+      "headSha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41658328623",
+      "jobs": [
+        {
+          "name": "preflight",
+          "conclusion": "success"
+        },
+        {
+          "name": "build-permission",
+          "conclusion": "success"
+        },
+        {
+          "name": "retained-testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "backend",
+          "conclusion": "success"
+        },
+        {
+          "name": "ios-build",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "testflight",
+          "conclusion": "skipped"
+        },
+        {
+          "name": "release-result",
+          "conclusion": "skipped"
+        }
+      ]
+    },
+    "ota_validate": {
+      "databaseId": 41659395221,
+      "headSha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41659395221",
+      "jobs": [
+        {
+          "name": "ota",
+          "conclusion": "success"
+        }
+      ]
+    },
+    "ota_publish": {
+      "databaseId": 41659779406,
+      "headSha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "event": "workflow_dispatch",
+      "status": "completed",
+      "conclusion": "success",
+      "url": "https://github.com/itsoso/health-llm-driven/actions/runs/41659779406",
+      "jobs": [
+        {
+          "name": "ota",
+          "conclusion": "success"
+        }
+      ]
+    }
+  },
+  "backend_readonly_acceptance": {
+    "authorization_matches": true,
+    "backend_completed": {
+      "sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "state": "SUCCEEDED"
+    },
+    "backend_completed_sha256": "ec8921733d8efa39e6fc039e2ff04227d7a772bfc6a361adde15088bd31cc723",
+    "business_lease_absent": true,
+    "local_health": "healthy",
+    "production_clean": true,
+    "public_health": "healthy",
+    "services": {
+      "celery-beat": "active/running",
+      "celery-worker": "active/running",
+      "health-backend": "active/running",
+      "reva-laya": "active/running"
+    },
+    "sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+    "state": "BACKEND_READONLY_VERIFIED"
+  },
+  "ota_completed": {
+    "sha256": "6f91f42ccd114abb63fc89f554b813bd5cd19513413b6b61da5537173247ae88",
+    "value": {
+      "intent_sha256": "e0cb500253933c3295035011d1b1b60f4ba1fc7ef89d85d1e7e8040f24900978",
+      "receipt_sha256": "5bfcc8ddbf834fb8e707e5fe4a01cff9fd35d6a19c4459db2c7326cd932b848d",
+      "sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "state": "SUCCEEDED"
+    }
+  },
+  "ota_verified": {
+    "sha256": "5bfcc8ddbf834fb8e707e5fe4a01cff9fd35d6a19c4459db2c7326cd932b848d",
+    "value": {
+      "group_id": "ae9a7888-548b-431a-9111-5c7d5686086e",
+      "sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+      "update_id": "01a1a1f6-52b5-7421-8186-35042be62457"
+    }
+  },
+  "public_manifest": {
+    "artifact_matches": true,
+    "asset_hash_count": 47,
+    "backend_healthy": true,
+    "channel": "production",
+    "device_acceptance": "not_verified",
+    "group_id": "ae9a7888-548b-431a-9111-5c7d5686086e",
+    "launch_asset_hash": "Tn9DAHU0v0aj8lRPHGdtWvNbmUgmc8WrScJzmmMOVQY",
+    "platform": "ios",
+    "project": "911ea84f-bc7e-4a12-90cf-33966b6f7398",
+    "runtime": "1.3.6",
+    "sha": "095ef6936552121264524fc5d537fa783adf8b5b",
+    "state": "PUBLIC_MANIFEST_VERIFIED",
+    "update_id": "01a1a1f6-52b5-7421-8186-35042be62457"
+  },
+  "native_click_acceptance": {
+    "status": "not_verified",
+    "reason": "Mac locked; computer-use tool could not perform simulator click. Synthetic Jest native measurements are not device evidence."
+  },
+  "device_acceptance": "not_verified"
+}
