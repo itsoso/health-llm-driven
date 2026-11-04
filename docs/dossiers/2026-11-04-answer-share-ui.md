@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | building |
-| 当前阶段 | S5 本地验证完成，远端 CI 与发布准入处理中 |
+| 状态 | shipped |
+| 当前阶段 | S6 后端与 production OTA 已发布，独立回读通过 |
 | 工作流 | quick_fix → mobile-ota + safety-gate |
 | 基线 | 91936757ad1adf2404451aa0cb0378a15b0594c6 |
 
@@ -86,3 +86,19 @@
 - 并发 PR #304 合入 `a3dc7da8cc7ba4c74e5e2752223b77a85f553ac3`，增加 backend_link 的新证明格式；其历史 strict equality 拒绝已完成的 ad894→1423 审计。旧候选不再发布，不重试旧工作流。
 - 本次兼容只允许固定旧 SHA/后继、固定旧 proof 摘要及三份已完成审计摘要；保留 canonical producer 验证、安全文件读取和身份稳定检查。历史字节不改写，返回原 proof；新 inspect 仍强制 backend_link。
 - 下一候选仍须独立 G4、精确完整 CI、未消费授权退役、凭据刷新、后端健康回读及 trusted OTA publish/readback；用户已豁免视觉验收，不豁免这些发布闸。
+
+
+## 最终交付（2026-11-04）
+
+裁决：PASS
+
+- 已合并 UI PR #300、必要的原生基线 PR #303 与历史审计兼容 PR #306。实际发布版本 `91b1f1ed3fccc21d83dae3d1982076be357a3f8f`。上述准备期状态保留为历史，以下最终回执为准。
+- 完整 main CI `41816648317` attempt 2：32/32 成功。首次 OTA runner 的 npm cache rename EEXIST/ENOENT 失败及其汇总失败保留；仅在同 SHA 重跑失败检查。候选代码未因此改变。
+- 发布预检 `41817985100`、后端 `41821258749`、OTA validate `41822185160`、OTA publish `41822477785` 均成功。
+- 后端独立回读：生产源码干净且为发布 SHA，SUCCEEDED 回执、COMMITTED/finalized runtime 一致，backend/worker/beat active；内外健康接口 200，未登录访问认证和健康记录接口均 401；无发布 lease。
+- OTA：production/iOS/runtime `1.3.6`；group `5e241435-e16f-49c1-a45b-cf6e54f52ea3`，update `01a1a660-885d-7eee-b3fe-453776cd457b`。公开清单的 update/runtime/project、启动包与 47 项资源摘要匹配原 intent；服务器 claimed/verified/completed/released-lease 齐全。
+- 并发流程完成的 canonical staging、授权轮换、凭据刷新及后端部署均以独立实际回读接续，未重复执行成功操作。我方 staging 因已有目录停止，两次未启动退役分别在取锁及配置清单检查停止，未生成远端退役意图；一次只读凭据 mint 成功但未安装，远端无意图/替换，精确失败原因仍未知。全部失败 WAL 保留，未清锁、未备份、未重发 vendor update。
+- 用户明确豁免本次 Mac 锁定时的视觉验收；模拟器视觉/点击与用户设备实际接收仍为未验证。自动化、CI、后台与 OTA 公开清单验证通过，不冒充设备已生效。
+- 本次交付是分享入口收敛；此前症状记录两轮/大上下文问题仅完成诊断，未随本 UI 修改修复。
+
+机器可读交付证据见 `docs/reviews/2026-11-04-answer-share-ui-delivery.json`。
