@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 BUILD_288_SHA = "8f272e49aebc1ee8d2640d93eee37a530b181e71"
+SUCCESSFUL_919_SHA = "91936757ad1adf2404451aa0cb0378a15b0594c6"
 FAILED_UPLOAD_SHA = "a" * 40
 
 
@@ -21,6 +22,36 @@ def load():
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def test_successful_919_profile_binds_exact_terminal_evidence():
+    profile = load().profile_for(SUCCESSFUL_919_SHA)
+
+    assert profile == {
+        "workspace_kind": "successful-backend",
+        "run_id": 41790474536,
+        "run_attempt": 1,
+        "log_host": "productionresultssa16.blob.core.windows.net",
+        "job_ids": {
+            "preflight": 126442422578,
+            "build-permission": 126442497935,
+            "retained-testflight": 126442499230,
+            "ios-build": 126442683731,
+            "backend": 126442683797,
+            "testflight": 126445972991,
+            "release-result": 126446509437,
+        },
+        "build_id": "06b5b8e4-68bd-4b0f-8ddd-59b901a60c13",
+        "submission_id": "193d413c-0cfa-4c92-b356-70bb3d9dd6d8",
+        "log_sha256": "70ea66548f32530a0856a21cca79f9f35e9cbb0b34311125f8f7394197d728ea",
+        "jobs_sha256": "ff5caa180dbd8db2def2bb2ef79f9c9c5e3fbd98806ed28939499e38fd2dcd52",
+        "canonical_hashes": {
+            ".github/workflows/trusted-release.yml": "ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62",
+            "scripts/trusted_eas_build.py": "c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a",
+            "scripts/trusted_release_server.py": "9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638",
+        },
+        "skipped_jobs": ["retained-testflight"],
+    }
 
 
 def metadata(m):

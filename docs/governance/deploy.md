@@ -812,6 +812,9 @@ legacy 类型仍要求原 build 锁。所有进程、真实生产 revision、授
 新 executor 使用 root-owned 旧生产对象库做只读协商缓存，从固定 GitHub origin 仅获取
 main 的浅历史窗口，并用精确旧生产 revision 生成增量 bundle；同时在成功命令返回后等待
 整个受控进程组在两秒内退出，超时仍写 NEEDS_OPERATOR。
+原生构建或上传领取前，发布操作机必须先通过受审 adapter 刷新既有仓库只读
+GitHub App 凭据；服务器的完整 CI 准入要求该凭据从校验时起至少再有效 30 分钟。
+不足时在创建 build claim 和调用 EAS 前失败关闭，不回退环境令牌，也不扩大仓库或权限范围。
 上传 job 只依赖 ios-build 成功，默认与 backend 部署并行；`claim-testflight` 使用
 独立于 launcher 的短 build.lock，锁内核验时间窗、同 SHA 的 build claim 与未撤销的
 loopback 授权，再持久化一次性上传权限。后端 READY/STARTED 不要求等待，已知
