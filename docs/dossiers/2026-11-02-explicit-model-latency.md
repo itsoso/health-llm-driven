@@ -610,3 +610,16 @@ G5 发布完成，G6 自动线上发布核验通过。合成饮水两次中位�
 [OTA validate41749160627](https://github.com/itsoso/health-llm-driven/actions/runs/41749160627)通过后，[publish41749446880](https://github.com/itsoso/health-llm-driven/actions/runs/41749446880)成功。服务端完成回执与公开manifest一致：production/iOS/runtime1.3.6，group `a62501a2-fcf7-412e-b113-dcb8656f28f8`，update `01a1a40d-917d-7abe-8f6c-717531ff3d91`，启动制品和47个资源哈希匹配。两端均为同一精确候选，发布后无业务租约。
 
 配对合成请求首个服务端内容中位数18.59秒至4.88秒，完整回复并未稳定变快。每组仅两例，不证明生产P95/P99、成本改善或三秒SLO；没有把最新线上172秒样本与合成4.88秒直接比较。App实际绘制、设备接收及真实用户新查询验收尚未验证，不能把公开manifest成功等同设备验收。最终证据已补入同一机器证据文件；本轮代码发布完成，整体性能目标仍待继续。
+
+
+### 第九轮：日常对话输入预算（2026-11-04，实施中）
+
+用户批准最近两周分析方案后继续开发部署，沿用已授权隔离 checkout 和同一 Harness run。基线为 ad8949e7e；原共享工作树未动。[准入与契约](../specs/everyday-prompt-budget.md)限定完整正向语义，不以未知短句或空 pending 列表判定普通聊天。
+
+新增日常路径仅省略已证明无关的健康工具、全量系统上下文、可选决策与知识/Twin预加载，保留用户选定模型、原历史构建、源时间/消息来源、终态验证与落库/流式文本一致性。完整小会话按 owner 查询；达到普通历史窗口上限即不准入，不用尾部问候覆盖更早待办。问候、致谢、闭合接车观察、无开放主题的短故事/笑话为当前覆盖；未知自由文本和任意旧助手叙事仍走原路径。
+
+Provider wrapper 新增纯数字 prompt_payload；真实 API token/cached token 不被字符估计覆盖，失败/取消/fallback 各调用独立计量，capture尾部上限及遗漏项显式返回。无新DB字段、无健康原文/参数/URL导出。完整JSON工具示例只省少量字符，本轮未为此泛化删除安全说明。
+
+辅助模块69项通过；实际Pi provider载荷先4 RED（仍携带全套工具），接入后通过，补原始更正历史后8项通过。首轮环境缺Pi依赖和一次编辑瞬态语法错误不计行为RED，后续已修正；非流式metadata coverage有独立RED后GREEN。CI-mode相关289 passed。独立临时PostgreSQL86 passed；首次PG暴露测试硬编码缺少user FK，修为真实创建合成用户后重测通过。System Map生成物已同步，检查通过。更广回归、配对真实模型、独立G4和发布尚未完成。
+
+发布约束：并行原生41806221746终态failure，但iOS构建和TestFlight上传成功，backend重复消费失败；其活动claim尚未收口，旧OTA基线亦不兼容主干原生变更。继续本任务验证，不绕过原操作与OTA闸，不把本地代码称为上线。

@@ -62,6 +62,9 @@ def _build_usage(usage_summary: Optional[Dict[str, Any]]) -> Optional[Dict[str, 
         "models": list(usage_summary.get("models") or []) if isinstance(usage_summary.get("models"), list) else [],
         "providers": list(usage_summary.get("providers") or []) if isinstance(usage_summary.get("providers"), list) else [],
         "items": list(usage_summary.get("items") or []) if isinstance(usage_summary.get("items"), list) else [],
+        **{key: _int_or_none(usage_summary.get(key)) for key in (
+            "captured_items", "omitted_items", "prompt_payload_calls", "prompt_payload_items",
+        ) if key in usage_summary},
     }
 
 

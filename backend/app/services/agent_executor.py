@@ -477,69 +477,7 @@ def _prompt_prefix_signature(messages: List[Dict]) -> Dict[str, Any]:
     }
 
 
-def _prompt_payload_budget(
-    messages: List[Dict],
-    tools: Optional[List[Dict]] = None,
-) -> Dict[str, int]:
-    """Return content-free per-block prompt size telemetry.
-
-    The accounting deliberately contains only lengths/counts. It is safe for
-    health logs because neither prompt text nor tool descriptions are emitted.
-    ``// 4`` matches the existing token-ish prefix metric, so before/after
-    dashboards remain comparable until provider-reported token blocks exist.
-    """
-    last_user_idx = -1
-    for index, message in enumerate(messages):
-        if message.get("role") == "user":
-            last_user_idx = index
-
-    system_chars = 0
-    history_chars = 0
-    turn_chars = 0
-    tool_result_chars = 0
-    tool_call_chars = 0
-    for index, message in enumerate(messages):
-        size = len(_stringify_message_content(message.get("content")))
-        if message.get("role") == "tool":
-            tool_result_chars += size
-        if message.get("tool_calls"):
-            tool_call_chars += len(json.dumps(
-                message["tool_calls"], ensure_ascii=False, separators=(",", ":"), default=str,
-            ))
-        if message.get("role") == "system":
-            system_chars += size
-        elif index == last_user_idx:
-            turn_chars += size
-        else:
-            history_chars += size
-
-    tool_payload = json.dumps(
-        tools or [],
-        ensure_ascii=False,
-        sort_keys=True,
-        separators=(",", ":"),
-        default=str,
-    )
-    tool_schema_chars = len(tool_payload) if tools else 0
-    message_chars = system_chars + history_chars + turn_chars
-    return {
-        "system_chars": system_chars,
-        "system_approx_tokens": system_chars // 4,
-        "history_chars": history_chars,
-        "history_approx_tokens": history_chars // 4,
-        "dialogue_chars": history_chars - tool_result_chars,
-        "tool_result_chars": tool_result_chars,
-        "tool_call_chars": tool_call_chars,
-        "turn_chars": turn_chars,
-        "turn_approx_tokens": turn_chars // 4,
-        "tool_schema_chars": tool_schema_chars,
-        "tool_schema_approx_tokens": tool_schema_chars // 4,
-        "tool_count": len(tools or []),
-        "message_approx_tokens": message_chars // 4,
-        "total_approx_tokens": (message_chars + tool_schema_chars) // 4,
-        # Keep legacy metrics comparable; this estimate also counts calls.
-        "input_approx_tokens": (message_chars + tool_schema_chars + tool_call_chars) // 4,
-    }
+from app.services.llm.prompt_payload_budget import prompt_payload_budget as _prompt_payload_budget
 
 
 MAX_TOOL_ROUNDS = 8
@@ -17366,6 +17304,7 @@ class AgentExecutor:
         # Clear before replay, panel, or any other early-return branch. Only the
         # current single-model turn may establish an authorized manual choice.
         self._explicit_request_model_id = None
+        self._everyday_task = None
         selection = selected_notification_id(extra_context)
         self._turn_selected_notification_id = (
             selection if message.strip() == NOTIFICATION_REVIEW_PROMPT
@@ -18315,6 +18254,28 @@ class AgentExecutor:
         self._fast_route_simple_turn = False
         self._health_evidence_answer_budget_active = health_advice_buffered
         self._public_task = None
+        self._everyday_task = None
+        everyday_entry_only = not extra_context
+        if extra_context and self._explicit_request_model_id:
+            try:
+                everyday_entry_only = json.loads(extra_context) == {
+                    "model_id": self._explicit_request_model_id,
+                }
+            except (TypeError, ValueError):
+                everyday_entry_only = False
+        if (
+            getattr(settings, "domain_prompt_optimization", False)
+            and everyday_entry_only and not health_advice_buffered
+            and health_evidence_turn is None and not health_continuation_attempted
+            and pending_choice_resolution is None and retry_recovery is None
+            and recovered_user_message is None
+            and not images and not file_base64 and not self._current_turn_has_attachment
+            and not read_only_tools and not self._runtime_write_block_reason
+            and not self._has_isolated_report_scope()
+            and not self._agent_kernel_pending_confirmation_tools
+            and not self._agent_kernel_snapshot.actionable_references
+        ):
+            self._everyday_task = self._admit_everyday_task(message, user_id, conversation_id)
         if (
             getattr(settings, "domain_prompt_optimization", False)
             and not health_advice_buffered and not extra_context
@@ -18462,7 +18423,7 @@ class AgentExecutor:
         # A fully bound factual query needs no advisory routing vote, even in
         # an existing conversation. History/planning and read verification still
         # run below; only history-free queries qualify for deterministic output.
-        if (settings.decision_mode != "off" and self._public_task is None
+        if (settings.decision_mode != "off" and self._public_task is None and self._everyday_task is None
                 and not simple_lookup_route_skipped and not closed_action_preplanned
                 and not _meal_photo_optional_route_unneeded(
                     message or "", auto_save=self._diet_photo_auto_save,
@@ -18985,6 +18946,7 @@ class AgentExecutor:
             from app.services.opener_quick_reply import apply_opener_quick_reply_context
 
             if (not self._has_current_input_recovery_advice_goal() and self._public_task is None
+                    and self._everyday_task is None
                     and not self._has_isolated_report_scope()):
                 opener_quick_reply_note = apply_opener_quick_reply_context(
                     self.db,
@@ -19006,6 +18968,11 @@ class AgentExecutor:
 
             system_content = public_task_prompt(self._public_task)
             self._prompt_context_profile = "public_" + self._public_task
+        elif self._everyday_task is not None:
+            from app.services.agent_everyday_prompt import everyday_prompt
+
+            system_content = everyday_prompt(self._everyday_task)
+            self._prompt_context_profile = "everyday_" + self._everyday_task
         elif preplanned_water_turn_call is not None:
             system_content = ""
         else:
@@ -19157,6 +19124,7 @@ class AgentExecutor:
         # 对「今天喝了多少水」无用, 且检索本身占 pre-first-token 壁钟 (kb_ms)。
         system_kb_context = (
             "" if (self._fast_route_simple_turn or health_advice_buffered or self._public_task
+                   or self._everyday_task
                    or self._has_isolated_report_scope())
             else self._build_system_knowledge_prompt_context(user_id, message)
         )
@@ -19529,6 +19497,8 @@ class AgentExecutor:
         if self._public_task:
             allowed_public_tools = {"environment_check"} if self._public_task == "weather" else set()
             tools = [t for t in tools if (t.get("function") or {}).get("name") in allowed_public_tools]
+        if self._everyday_task:
+            tools = []
 
         # 5. Agent 循环
         full_reply = ""
@@ -22633,7 +22603,7 @@ class AgentExecutor:
         evidence_cards = []
         if (completion_status == "complete" and turn_outcome.get("status") == "complete"
                 and health_evidence_turn is None and not self._has_isolated_report_scope()
-                and self._public_task is None):
+                and self._public_task is None and self._everyday_task is None):
             try:
                 evidence_card = self._build_system_knowledge_evidence_card(user_id, message)
                 if evidence_card:
@@ -22757,7 +22727,8 @@ class AgentExecutor:
         citation_anchor = (
             None
             if (health_evidence_turn is not None or self._has_current_input_recovery_advice_goal()
-                or self._has_isolated_report_scope() or self._public_task is not None)
+                or self._has_isolated_report_scope() or self._public_task is not None
+                or self._everyday_task is not None)
             else _citation_anchor_shadow_meta(self.db, user_id, full_reply)
         )
         kernel_trace = self._agent_kernel_trace_summary(status=("complete" if turn_outcome["status"] == "complete" else turn_outcome["status"]))
@@ -25378,6 +25349,36 @@ class AgentExecutor:
         )
         return compact_tool_json(messages)
 
+    def _admit_everyday_task(self, message: str, user_id: int, conversation_id: Optional[int]) -> Optional[str]:
+        """Prove a small complete conversation before omitting unrelated context.
+
+        Read at most one row beyond the ordinary history window. If there are
+        more prior rows, retain the normal path; never infer closure from a tail.
+        This read does not create a conversation or grant action authority.
+        """
+        from app.models.agent_conversation import AgentConversation, AgentMessage
+        from app.services.agent_everyday_prompt import classify_everyday_task, everyday_history_is_standalone
+
+        task = classify_everyday_task(message)
+        if task is None:
+            return None
+        conversation = None
+        prior = []
+        if conversation_id is not None:
+            conversation = self.db.query(AgentConversation).filter(
+                AgentConversation.id == conversation_id, AgentConversation.user_id == user_id,
+            ).first()
+            if conversation is None:
+                return None
+            prior = self.db.query(AgentMessage).filter(
+                AgentMessage.conversation_id == conversation.id,
+            ).order_by(AgentMessage.created_at.asc().nullsfirst(), AgentMessage.id.asc()).limit(15).all()
+            if len(prior) >= 15:
+                return None
+        return task if everyday_history_is_standalone(
+            user_id=user_id, conversation=conversation, messages=prior,
+        ) else None
+
     def _model_tools_for_turn(self, tools: List[Dict]) -> List[Dict]:
         """Project provider schemas; Pi and the gateway keep their authority.
 
@@ -25388,6 +25389,8 @@ class AgentExecutor:
         """
         if not tools or not getattr(settings, "domain_prompt_optimization", False):
             return tools
+        if getattr(self, "_everyday_task", None):
+            return []
         snapshot = self._agent_kernel_snapshot
         if (
             snapshot is not None

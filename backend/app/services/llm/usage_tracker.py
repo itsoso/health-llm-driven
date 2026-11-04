@@ -21,6 +21,7 @@ from contextvars import ContextVar, Token
 from typing import Any, Dict, List, Optional, Tuple
 
 from app.services.llm.tokenplan_cost import estimate_tokenplan_cost
+from app.services.llm.prompt_payload_budget import prompt_payload_budget
 
 logger = logging.getLogger(__name__)
 
@@ -583,6 +584,16 @@ def summarize_usage_capture() -> Optional[Dict[str, Any]]:
         "failed_calls": sum(1 for item in captured if not item.get("success", True)),
         "models": models,
         "providers": providers,
+        # Totals above cover every call; detailed items deliberately retain
+        # only the bounded tail. Report coverage so audits do not mistake it
+        # for the entire request or interpret missing payloads as zero input.
+        "captured_items": min(len(captured), _MAX_CAPTURE_ITEMS),
+        "omitted_items": max(0, len(captured) - _MAX_CAPTURE_ITEMS),
+        "prompt_payload_calls": sum(isinstance(item.get("prompt_payload"), dict) for item in captured),
+        "prompt_payload_items": sum(
+            isinstance(item.get("prompt_payload"), dict)
+            for item in captured[-_MAX_CAPTURE_ITEMS:]
+        ),
         "items": captured[-_MAX_CAPTURE_ITEMS:],
     }
 
@@ -821,6 +832,7 @@ def record_usage(
     recovery_action: Optional[str] = None,
     recovery_model: Optional[str] = None,
     run_id: Optional[str] = None,
+    prompt_payload: Optional[Dict[str, int]] = None,
 ) -> None:
     """写一条 LlmUsageLog (旁路, 失败只 log). API 真值优先, tiktoken 估算兜底."""
     api_usage = _consume_api_usage()
@@ -879,6 +891,10 @@ def record_usage(
         "recovery_action": recovery_action,
         "recovery_model": recovery_model,
     }
+    if prompt_payload is not None:
+        # This optional diagnostic belongs to the existing per-answer capture,
+        # not the SQL usage row or billing truth. Copy to avoid later mutation.
+        entry["prompt_payload"] = dict(prompt_payload)
     _capture_usage_entry(entry)
 
     try:
@@ -950,6 +966,7 @@ def wrap_provider(provider, *, allow_recovery=True):
             # 流式不追踪 (会破坏 AsyncIterator 语义); 流式调用本身少
             return await original_chat(messages, model=model, temperature=temperature,
                                        max_tokens=max_tokens, stream=True, **kwargs)
+        payload_budget = prompt_payload_budget(messages, kwargs.get("tools"))
         start = time.monotonic()
         success = True
         result = ""
@@ -997,6 +1014,7 @@ def wrap_provider(provider, *, allow_recovery=True):
                         provider=provider.provider_name,
                         model=actual_model,
                         prompt_text=_messages_to_text(messages),
+                        prompt_payload=payload_budget,
                         completion_text="",
                         latency_ms=latency_ms,
                         success=False,
@@ -1048,6 +1066,7 @@ def wrap_provider(provider, *, allow_recovery=True):
                     provider=provider.provider_name,
                     model=actual_model,
                     prompt_text=prompt_text,
+                    prompt_payload=payload_budget,
                     completion_text=completion_text,
                     latency_ms=latency_ms,
                     success=success,
@@ -1069,6 +1088,7 @@ def wrap_provider(provider, *, allow_recovery=True):
                 messages=messages,
                 max_tokens=max_tokens,
             )
+            payload_budget = prompt_payload_budget(messages, tools)
             start = time.monotonic()
             success = True
             collected: List[str] = []
@@ -1107,6 +1127,7 @@ def wrap_provider(provider, *, allow_recovery=True):
                     provider=provider.provider_name,
                     model=actual_model,
                     prompt_text=_messages_to_text(messages),
+                    prompt_payload=payload_budget,
                     completion_text="".join(collected),
                     latency_ms=latency_ms,
                     success=success,
