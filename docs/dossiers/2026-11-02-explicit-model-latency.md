@@ -623,3 +623,6 @@ Provider wrapper 新增纯数字 prompt_payload；真实 API token/cached token 
 辅助模块69项通过；实际Pi provider载荷先4 RED（仍携带全套工具），接入后通过，补原始更正历史后8项通过。首轮环境缺Pi依赖和一次编辑瞬态语法错误不计行为RED，后续已修正；非流式metadata coverage有独立RED后GREEN。CI-mode相关289 passed。独立临时PostgreSQL86 passed；首次PG暴露测试硬编码缺少user FK，修为真实创建合成用户后重测通过。System Map生成物已同步，检查通过。更广回归、配对真实模型、独立G4和发布尚未完成。
 
 发布约束：并行原生41806221746终态failure，但iOS构建和TestFlight上传成功，backend重复消费失败；其活动claim尚未收口，旧OTA基线亦不兼容主干原生变更。继续本任务验证，不绕过原操作与OTA闸，不把本地代码称为上线。
+
+
+第九轮扩大CI-mode490 passed，临时PG86 passed。真实模型配对[机器证据](../reviews/2026-11-04-everyday-prompt-performance.json)：生产既有domain开关双方均True，基线仅关闭新准入；三组请求各两次，12/12成功且仅用户选定DeepSeek单次调用。输入API token为12,175→545、12,175→542、12,294→663，缩减94.61–95.55%。候选实际释放首token1.34–2.68秒，中位2.56→1.94秒；完整中位2.58→1.95秒。基线缓存11,776/次，候选零缓存，输出长度不一致；不能当纯prefill因果或生产P95/设备呈现证据。初始off/on探针仅探索，不混入归因结果。最大14条原历史加当前消息的实际Pi载荷保留全部原文和更正。后续main分享UI已在隔离分支无冲突合并，后端受测源码摘要一致。

@@ -1,0 +1,178 @@
+{
+  "comparison": "same_domain_flag_admission_disabled_vs_actual",
+  "samples": 12,
+  "failures": 0,
+  "base_sha": "242e1b78e7a55b3db950b6e973b22ad1eaf71bad",
+  "source_sha256": {
+    "backend/app/services/agent_executor.py": "95d41134bdb7818ad4068a552d8bf9cfddc9efc41a6c98ecfc83229a49f9a17b",
+    "backend/app/services/agent_everyday_prompt.py": "f8bf1fbfbc27257c83c8829fcbf0168b5bfb45a0634a3d0e964c1a6e3ae29883",
+    "backend/app/services/llm/usage_tracker.py": "72eb4971ddb473dd990b9177352f723d2b73148525c9d0fd0d6248af5d31e795",
+    "backend/app/services/llm/prompt_payload_budget.py": "b2b781b60d37e1911e46d8518b0da437c5d11d1d3ed7da3e7afd11ee07c406a8"
+  },
+  "groups": {
+    "baseline": {
+      "count": 6,
+      "api_tokens_only": true,
+      "prompt_tokens": [
+        12175,
+        12175,
+        12294,
+        12175,
+        12175,
+        12294
+      ],
+      "cached_tokens": [
+        11776,
+        11776,
+        11776,
+        11776,
+        11776,
+        11776
+      ],
+      "first_effective_median_ms": 2562.0,
+      "first_effective_range_ms": [
+        1907,
+        3928
+      ],
+      "total_median_ms": 2584.0,
+      "provider_first_content_median_ms": 1338.0,
+      "completion_tokens": [
+        226,
+        152,
+        138,
+        183,
+        119,
+        167
+      ],
+      "single_selected_model_all": true,
+      "saved_matches_streamed_all": true
+    },
+    "candidate": {
+      "count": 6,
+      "api_tokens_only": true,
+      "prompt_tokens": [
+        545,
+        542,
+        663,
+        545,
+        542,
+        663
+      ],
+      "cached_tokens": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ],
+      "first_effective_median_ms": 1943.0,
+      "first_effective_range_ms": [
+        1339,
+        2676
+      ],
+      "total_median_ms": 1948.5,
+      "provider_first_content_median_ms": 956.5,
+      "completion_tokens": [
+        109,
+        49,
+        152,
+        124,
+        52,
+        185
+      ],
+      "single_selected_model_all": true,
+      "saved_matches_streamed_all": true
+    }
+  },
+  "cases": [
+    {
+      "case": "joke",
+      "prompt_tokens_before": 12175,
+      "prompt_tokens_after": 542,
+      "input_reduction_pct": 95.55,
+      "first_effective_before_ms": [
+        2315,
+        1907
+      ],
+      "first_effective_after_ms": [
+        1588,
+        1339
+      ]
+    },
+    {
+      "case": "story",
+      "prompt_tokens_before": 12175,
+      "prompt_tokens_after": 545,
+      "input_reduction_pct": 95.52,
+      "first_effective_before_ms": [
+        3928,
+        2428
+      ],
+      "first_effective_after_ms": [
+        1837,
+        2049
+      ]
+    },
+    {
+      "case": "story_greeting_history",
+      "prompt_tokens_before": 12294,
+      "prompt_tokens_after": 663,
+      "input_reduction_pct": 94.61,
+      "first_effective_before_ms": [
+        2790,
+        2696
+      ],
+      "first_effective_after_ms": [
+        2174,
+        2676
+      ]
+    }
+  ],
+  "limitations": [
+    "Synthetic local executor and real vendor LLM; not production P95 or device appearance time.",
+    "Provider cache uncontrolled; every baseline had 11776 cached tokens, every candidate 0.",
+    "Outputs have different lengths; wall-time effects are paired workflow evidence, not pure prefill causality.",
+    "first_effective_ms observes released executor token; provider first_content and internal first_useful are separate.",
+    "SQLite synthetic isolation proves no production writes, not PostgreSQL behavior."
+  ],
+  "evidence_files": {
+    "reva-everyday-isolated-capture.json": {
+      "sha256": "e2c1297b8bf491593479c69c4fb868c02a2b4f58e562242d3b00f674ca15ca3c"
+    },
+    "reva-everyday-isolated-live.json": {
+      "sha256": "dc6824493197b281d71b7aef55eb9b46731189ab96a026f33f590c1bfad1376e"
+    },
+    "reva-everyday-history14-capture.json": {
+      "sha256": "08a7721395d00c2d3a302e2d00b34f655a48af99d58fa87cd2d07ce87f1374e6"
+    },
+    "reva-everyday-paired-probe.py": {
+      "sha256": "c8285ccdc3b570b27592e76670f7b0e003d9bd8ae638ae2f1a9020788232940d"
+    },
+    "reva-everyday-focused.log": {
+      "sha256": "3d52dace7a459e5577159dc1ea4a29124fdca3717b598651cf829b73d01e4046"
+    },
+    "reva-everyday-integration-final.log": {
+      "sha256": "2a213cb82c533e8d24d621a8bd5555a5495709ddb4f2bfc0f4e381cc814b2400"
+    },
+    "reva-everyday-pg.log": {
+      "sha256": "574cd1964b0cba42502c5008331b60e68818d4a73709d4f8f8403422fb6fba40"
+    }
+  },
+  "gates": {
+    "focused_ci_mode": {
+      "passed": 289
+    },
+    "expanded_ci_mode": {
+      "passed": 490
+    },
+    "postgresql": {
+      "passed": 86
+    },
+    "g4": "pending",
+    "main_ci": "pending",
+    "backend": "not_deployed",
+    "ota": "native_baseline_and_prior_claim_blocked"
+  },
+  "exploratory_note": "Initial domain flag off/on probes are not attribution evidence; retained separately. Main comparison holds the existing production flag constant."
+}
