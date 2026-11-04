@@ -626,8 +626,8 @@ ${sectionTitle}
     });
   });
 
-  it('keeps icon-only WeChat and Xiaohongshu actions while speech remains in the long-press menu', () => {
-    const { getByLabelText, getByTestId, queryByText } = renderBubble(
+  it('keeps a quiet share entry while platform choices and speech stay secondary', () => {
+    const { getByLabelText, getByTestId, queryByText, queryByLabelText } = renderBubble(
       '建议今晚 23:00 前睡觉，并在睡前 3 小时停止正餐。',
     );
 
@@ -637,8 +637,9 @@ ${sectionTitle}
     expect(queryByText('继续追问')).toBeNull();
     expect(queryByText('微信')).toBeNull();
     expect(queryByText('小红书')).toBeNull();
-    expect(getByLabelText('微信分享这条回复')).toHaveStyle({ width: 44, height: 44 });
-    expect(getByLabelText('小红书分享这条回复')).toHaveStyle({ width: 44, height: 44 });
+    expect(queryByLabelText('微信分享这条回复')).toBeNull();
+    expect(queryByLabelText('小红书分享这条回复')).toBeNull();
+    expect(getByLabelText('分享回答')).toHaveStyle({ width: 44, height: 44 });
     expect(() => getByLabelText('语音播报')).toThrow();
 
     fireEvent(getByTestId('assistant-message-surface'), 'longPress');
@@ -656,6 +657,7 @@ ${sectionTitle}
       { onShareLongImage },
     );
 
+    fireEvent.press(getByLabelText('分享回答'));
     fireEvent.press(getByLabelText(label));
 
     await waitFor(() => {
@@ -1178,6 +1180,7 @@ ${sectionTitle}
     ].join('\n');
     const { getByLabelText } = renderBubble(content, { onShareLongImage });
 
+    fireEvent.press(getByLabelText('分享回答'));
     fireEvent.press(getByLabelText('小红书分享这条回复'));
 
     await waitFor(() => expect(onShareLongImage).toHaveBeenCalledTimes(1));
