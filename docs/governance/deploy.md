@@ -1879,3 +1879,22 @@ EAS build/submission 身份；凭据仅从既有只读凭据文件读取。两�
 证明随 successful-auth-revocations 原有 intent 持久化，撤权前再次读取远端核验；
 后续历史校验继续绑定原 claim、后端 completed 和原生证明，不重写原始成功回执。
 该分支不能进入 native-only 收尾；没有受审 profile 的续发不得自动关闭。
+
+#### 2026-11-04 已成功后端的固定原生续接与 OTA 291 基线
+
+`ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1` 的原生 run `41806221746`
+在同 SHA 后端已成功部署后误选完整 release，后端重复请求被既有一次性授权检查拒绝，
+但 build 291 与 TestFlight 上传成功。source-owned profile 仅为这个固定 SHA 启用
+`backend-already-consumed`：整体、backend 和汇总 job 仍必须 failure；上传与构建必须
+success。完整固定 jobs/上传日志/后端拒绝日志摘要和唯一锚定 consumed 原因均实时核验。
+后端成功仍来自既有 root-owned SUCCEEDED workspace、摘要、真实生产及安装身份，
+失败 workflow 绝不构成后端成功证明。拒绝日志摘要随 continuation proof 进入原轮换审计；
+不重试任何旧 claim、不清锁、不改旧回执、不创建备份，也不允许其他 SHA 使用该形态。
+
+OTA 源码基线迁移至完成、已签名且 Apple VALID 的 Store 291，保持 runtime 1.3.6。
+实际 production cohort 的每个 build/source/fingerprint 身份固定在
+[291 基线证据](../reviews/2026-11-04-ota-runtime136-build291-baseline.json)。
+HealthKit 变化只涉及原生用途说明及其保存插件，无新增 native module/API；旧宿主继续
+使用自身嵌入的用途说明，OTA 不替换这些原生文案。未知宿主、原生源码漂移、环境或
+制品漂移仍阻断。此契约变化不证明 OTA 已发布，仍需同一当前 main 完整 CI、G4、
+真实后端成功/健康回执与 trusted validate → publish。
