@@ -68,3 +68,13 @@
 - 本地执行当前 `trusted_ota.validate_source` 明确拒绝：`native or unknown mobile input changed`。主干相对原生 287 基线改变了 `mobile/app.json` 的 HealthKit 用途说明与插件参数。不得将本次纯 UI diff 当作完整主干可 OTA 的证明。
 - 前一项 TestFlight `41789615290` 已在 server readiness 失败，未进入新构建/上传；本任务不重试、不清锁、不收尾他人操作。
 - 后端部署与 OTA 尚未开始，等待精确 CI、原生兼容基线和发布历史/授权准入满足。
+
+## main 合并与必要发布契约续接
+
+- 用户再次明确要求“合并到 main 并且发布”。PR #300 同步最新主干后，212 项针对性测试、tsc、eslint 和独立 G4 均通过；PR CI `41806740829` 成功。
+- 等待原生流程 `41806221746` 完整终态及 TestFlight 上传成功后合并，避免打断其 current-main 校验。合并提交 `ba481351305e1c4b2af2aae6545f57bd35440519`，完整 main CI `41808030303` 成功。分享 UI 已合并，不等于 OTA 已交付。
+- 原生流程整体 failure：同 SHA 后端此前已由 `41801637758` 成功部署，本次再次申请被 `authorization already consumed` 拒绝；build/TestFlight 上传实际成功。生产只读确认 ad894 的 SUCCEEDED 回执。不得重跑旧部署、重建或重传包。
+- 为继续本次已授权发布，单独补 source-owned ad894 continuation profile 与固定 `backend-already-consumed` 形态：保留失败 run/job 状态，绑定完整 job/上传/后端拒绝日志摘要和唯一锚定原因；仍须既有 successful-workspace 回执、真实生产、claims、安装身份与锁检查才可轮换。新增负例先失败，再实现；不开放任意失败放行。
+- OTA 基线迁移至实际 Store build 291：EAS FINISHED，Apple VALID / IN_BETA_TESTING，实际 IPA 的签名权限、用途说明和源码匹配。实时 production runtime cohort 恰为证据内列出的闭集；287→288/290 的 EAS fingerprint 仅 expoConfig 与 HealthKit 用途文案插件不同，其他原生输入一致；289–291 指纹一致。没有新 native module/API。
+- 旧宿主保留各自原生用途说明，OTA 不会替换这些文案；本次 UI 仅使用已有分享/复制路径。所有未来原生变化和未知 cohort 继续拒绝。完整依据见 `docs/reviews/2026-11-04-ota-runtime136-build291-baseline.json`。
+- 原生基线和回执契约修复须经独立 G4、新候选精确完整 CI，再走 canonical 授权续接、后端健康回读及 trusted OTA validate/publish。当前尚未轮换或发布本次 UI。

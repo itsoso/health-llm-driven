@@ -1,0 +1,319 @@
+{
+  "runtime": "1.3.6",
+  "native_source": "ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1",
+  "native_build": "8370725c-f6b6-4c18-b408-8123b900eb36",
+  "build_number": "291",
+  "observed_at": "2026-11-04",
+  "builds": [
+    {
+      "id": "399eb452-402e-47cd-a0e3-18dff2d1ca51",
+      "git_sha": "1ba724dcb62ac389a72e41eecf40fea7aaca27e3",
+      "fingerprint": "cfb1606da3744f6df32d89364535e307d3f2ed70",
+      "build": "279"
+    },
+    {
+      "id": "1faa3a05-2385-44fd-bf84-296cc68e84c2",
+      "git_sha": "c28050786c1e9aa70cca33d7e3d5c093652aeb26",
+      "fingerprint": "2c29cc641498ac6653d89d54f986dc12fe22e9e0",
+      "build": "280"
+    },
+    {
+      "id": "a40a61f3-02db-4a88-a308-56884c53500b",
+      "git_sha": "8f7d94696424f92ff57243edb906cd6d2dd14a3a",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "281"
+    },
+    {
+      "id": "267aad01-a185-4343-b0fb-13ee7e8fabc7",
+      "git_sha": "83876750fcbb404255b7439482688fee82a490d4",
+      "fingerprint": "43972dceac5ad3916bf8c91d1dd5adc6188ef427",
+      "build": "282"
+    },
+    {
+      "id": "ea1dda2a-86b3-4e46-adf8-b2b024465154",
+      "git_sha": "ae7a5972921ee9d51eec2c90c7893e6941d2d7ff",
+      "fingerprint": "0f13707a06be8ea69d9a8f083e4c38edfa08cbe4",
+      "build": "283"
+    },
+    {
+      "id": "bd388c63-4a28-491c-acea-f57bebb54fd1",
+      "git_sha": "a4ffb0b3567ab8e248fe86fc4af72c4322f673d2",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "284"
+    },
+    {
+      "id": "d1d281f4-8e4b-4cac-8106-0f93fb67778e",
+      "git_sha": "35bb63e155e6349596ff29455b4aa97066b9b73b",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "285"
+    },
+    {
+      "id": "cc90f439-f400-4059-9a60-c1b400ff298a",
+      "git_sha": "e6f26f6230e429a29113e4322ff5d7be22764787",
+      "fingerprint": "0a16db1dc4ea8c10bb95a43481e64c7605fc2d4a",
+      "build": "286"
+    },
+    {
+      "id": "039c87d2-3bbb-4a20-915b-9c61fc584e71",
+      "git_sha": "1612c75ffc47af5ed470e57335e6c593c6af5817",
+      "fingerprint": "f06866fba3b5676c60fbbd016774cac6cba7fc1d",
+      "build": "287"
+    },
+    {
+      "id": "2a2fb4da-71b5-477d-88ec-10b6ab29abd5",
+      "git_sha": "8f272e49aebc1ee8d2640d93eee37a530b181e71",
+      "fingerprint": "2da0792459fc822ca02dd670e92d695039d338bf",
+      "build": "288"
+    },
+    {
+      "id": "e18c5964-14df-410f-89d4-1129ab64ec9f",
+      "git_sha": "aaeb17f6cf77e548ffaae798e602a9849ad64806",
+      "fingerprint": "db97200d033e7339907db1ed4181420bc8ada4ea",
+      "build": "289"
+    },
+    {
+      "id": "06b5b8e4-68bd-4b0f-8ddd-59b901a60c13",
+      "git_sha": "91936757ad1adf2404451aa0cb0378a15b0594c6",
+      "fingerprint": "db97200d033e7339907db1ed4181420bc8ada4ea",
+      "build": "290"
+    },
+    {
+      "id": "8370725c-f6b6-4c18-b408-8123b900eb36",
+      "git_sha": "ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1",
+      "fingerprint": "db97200d033e7339907db1ed4181420bc8ada4ea",
+      "build": "291"
+    }
+  ],
+  "artifact": {
+    "source_sha": "ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1",
+    "build": "291",
+    "build_id": "8370725c-f6b6-4c18-b408-8123b900eb36",
+    "ipa_sha256": "87025961cc57e365dddffdfabe412523b32dc216abd01be0a0cb21b14d4ec711",
+    "bundle": "life.executor.health",
+    "version": "1.3.6",
+    "healthkit_purpose_matches_source": true,
+    "entitlements_verified": true,
+    "capabilities_errors": [],
+    "device_acceptance": "not_verified"
+  },
+  "apple": {
+    "checked_at": "2026-11-04T09:32:19.420Z",
+    "builds": [
+      {
+        "id": "1fdd99a0-cdb2-4a82-89b1-727fc8e2f18d",
+        "version": "291",
+        "processingState": "VALID",
+        "expired": false
+      }
+    ],
+    "beta": [
+      {
+        "id": "1fdd99a0-cdb2-4a82-89b1-727fc8e2f18d",
+        "autoNotifyEnabled": true,
+        "internalBuildState": "IN_BETA_TESTING",
+        "externalBuildState": "READY_FOR_BETA_SUBMISSION"
+      }
+    ]
+  },
+  "native_continuation": {
+    "state": "VENDOR_UPLOAD_SUCCEEDED",
+    "run_id": 41806221746,
+    "run_attempt": 1,
+    "workflow_id": 352404554,
+    "build_id": "8370725c-f6b6-4c18-b408-8123b900eb36",
+    "submission_id": "76692f33-c058-48b6-8158-fc008bbab6a2",
+    "log_sha256": "dd09cc2359bf3538a30072b22879e91cc279d2d984cc38055df6e61783de876d",
+    "jobs_sha256": "49bce5cde5b80e199245a73451aa6299cd29a1b3569ee66548db52b41eda5cf5",
+    "prior_jobs_sha256": null,
+    "canonical_hashes": {
+      ".github/workflows/trusted-release.yml": "ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62",
+      "scripts/trusted_eas_build.py": "c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a",
+      "scripts/trusted_release_server.py": "fe38713013cab8b68f4aa2cd744dae0f2205b13d3ab45b49f87e66b631dbcd46"
+    },
+    "backend_log_sha256": "d3dd2a552675726c85cb9be2ca895f60aad7f21eaa88b9fac909b17027eee823"
+  },
+  "compatibility": {
+    "previous_baseline": "1612c75ffc47af5ed470e57335e6c593c6af5817",
+    "fingerprint_source_counts": [
+      287,
+      287
+    ],
+    "changed_source_keys": [
+      "contents:expoConfig",
+      "file:plugins/withHealthKitCleanup.js"
+    ],
+    "config_delta": [
+      [
+        "/ios/infoPlist/NSHealthShareUsageDescription",
+        "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
+        "仅读取你选择授权的 Apple 健康数据（如步数、心率、睡眠、血氧、体重、血压和心电图），同步至你的个人健康档案，用于展示趋势和复盘。例如，汇总最近一周的步数与睡眠时长，帮助你回顾活动和作息。你可选择授权项目并随时在 Apple 健康中关闭访问。"
+      ],
+      [
+        "/ios/infoPlist/NSHealthUpdateUsageDescription",
+        null,
+        "小气候当前不会向 Apple 健康写入数据。此说明仅因应用链接的 HealthKit SDK 和系统兼容性要求而保留；App 只读取你选择授权的数据。若未来提供写入功能，我们会在写入前另行说明并请求授权。"
+      ],
+      [
+        "/plugins",
+        [
+          "./plugins/withHealthKitCleanup",
+          "./plugins/withIosSupportedOrientations",
+          "@sentry/react-native",
+          "expo-document-picker",
+          "expo-font",
+          "expo-image",
+          "expo-router",
+          "expo-secure-store",
+          "expo-sharing",
+          "expo-web-browser",
+          [
+            "@react-native-voice/voice",
+            {
+              "microphonePermission": "用于语音输入、健康记录听写和小气候对话",
+              "speechRecognitionPermission": "识别你的语音,和小气候连续对话"
+            }
+          ],
+          [
+            "expo-audio",
+            {
+              "enableBackgroundPlayback": false,
+              "enableBackgroundRecording": false
+            }
+          ],
+          [
+            "expo-build-properties",
+            {
+              "ios": {
+                "deploymentTarget": "16.0",
+                "privacyManifestAggregationEnabled": true
+              }
+            }
+          ],
+          [
+            "expo-location",
+            {
+              "isAndroidBackgroundLocationEnabled": false,
+              "isAndroidForegroundServiceEnabled": false,
+              "isIosBackgroundLocationEnabled": false,
+              "locationAlwaysAndWhenInUsePermission": false,
+              "locationAlwaysPermission": false,
+              "locationWhenInUsePermission": "用于查询天气、空气质量；你主动同意时单次定位，通过高德查找分享餐厅，或确认城市后保存记录足迹，不持续追踪"
+            }
+          ],
+          [
+            "expo-media-library",
+            {
+              "photosPermission": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
+              "savePhotosPermission": "用于你主动保存小气候对话中的图片、健康报告或分享截图到照片图库"
+            }
+          ],
+          [
+            "expo-notifications",
+            {
+              "color": "#0A8F8F"
+            }
+          ],
+          [
+            "react-native-health",
+            {
+              "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据",
+              "healthUpdatePermission": "仅在你确认后将健康记录写入 Apple Health",
+              "isClinicalDataEnabled": false
+            }
+          ]
+        ],
+        [
+          "./plugins/withHealthKitCleanup",
+          "./plugins/withIosSupportedOrientations",
+          "@sentry/react-native",
+          "expo-document-picker",
+          "expo-font",
+          "expo-image",
+          "expo-router",
+          "expo-secure-store",
+          "expo-sharing",
+          "expo-web-browser",
+          [
+            "@react-native-voice/voice",
+            {
+              "microphonePermission": "用于语音输入、健康记录听写和小气候对话",
+              "speechRecognitionPermission": "识别你的语音,和小气候连续对话"
+            }
+          ],
+          [
+            "expo-audio",
+            {
+              "enableBackgroundPlayback": false,
+              "enableBackgroundRecording": false
+            }
+          ],
+          [
+            "expo-build-properties",
+            {
+              "ios": {
+                "deploymentTarget": "16.0",
+                "privacyManifestAggregationEnabled": true
+              }
+            }
+          ],
+          [
+            "expo-location",
+            {
+              "isAndroidBackgroundLocationEnabled": false,
+              "isAndroidForegroundServiceEnabled": false,
+              "isIosBackgroundLocationEnabled": false,
+              "locationAlwaysAndWhenInUsePermission": false,
+              "locationAlwaysPermission": false,
+              "locationWhenInUsePermission": "用于查询天气、空气质量；你主动同意时单次定位，通过高德查找分享餐厅，或确认城市后保存记录足迹，不持续追踪"
+            }
+          ],
+          [
+            "expo-media-library",
+            {
+              "photosPermission": "用于你主动选择餐盘、补剂标签、检查报告或健康相关图片，生成记录草稿和健康分析",
+              "savePhotosPermission": "用于你主动保存小气候对话中的图片、健康报告或分享截图到照片图库"
+            }
+          ],
+          [
+            "expo-notifications",
+            {
+              "color": "#0A8F8F"
+            }
+          ],
+          [
+            "react-native-health",
+            {
+              "isClinicalDataEnabled": false
+            }
+          ]
+        ]
+      ]
+    ],
+    "native_dependency_delta": false,
+    "entitlements_delta": false,
+    "reason": "HealthKit purpose strings and their Info.plist preservation plugin changed; no native module/API addition. App remains read-only. UI OTA uses the existing share and copy callbacks. Older hosts keep their embedded purpose strings; OTA cannot update those native strings.",
+    "same_fingerprint_builds": [
+      "289",
+      "290",
+      "291"
+    ],
+    "build_288_changed_source_keys": [
+      "contents:expoConfig",
+      "file:plugins/withHealthKitCleanup.js"
+    ]
+  },
+  "raw_evidence_sha256": {
+    "reva-answer-share-native-cohort-current.json": "3ef81f117cde45c42991404c8e092018cb0947f9f12fae5886f08aa1a5453d1b",
+    "reva-answer-share-native291.json": "9b8b1a3f72698663f691070fe62e03fcfceb1453f2397b71e798ff4ab147622a",
+    "reva-answer-share-fingerprint-287-290.json": "c3b72399ec50cce2b62defcd8a8f4c2d1f5b65d28b19b769a03f73f6e5b7bc39",
+    "reva-answer-share-native291-artifact.json": "2e3408df20b5b39289bddd7c5cc6e46eb995d41cabbb24bb7d7eb810dcd16d0a",
+    "reva-answer-share-asc291.json": "b76f7ebc5101272285ce1fe0dab9af0108ab6fb94ee944daa23db8ebab0cffe5",
+    "reva-answer-share-fingerprint-287-288.json": "a7fb899a0789b3e54d6aa938cef6d623ab2ca7fa66b07561afa8a12ade41c3cb"
+  },
+  "limitations": [
+    "Device installation and UI acceptance not verified; user waived visual acceptance for this release.",
+    "Native purpose strings remain those embedded in each installed host; this OTA cannot deliver new permission wording to old hosts.",
+    "No App Review or public Store submission performed.",
+    "Live exact cohort, current-main CI, backend receipt, environment and artifact checks still required."
+  ]
+}

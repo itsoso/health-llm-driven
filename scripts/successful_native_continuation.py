@@ -50,6 +50,8 @@ def expected(b, sha):
         'prior_jobs_sha256': profile.get('prior_jobs_sha256'),
         'canonical_hashes': profile['canonical_hashes'],
     }
+    if profile.get('terminal_mode') == 'backend-already-consumed':
+        vendor['backend_log_sha256'] = profile['backend_log_sha256']
     return native, {'kind': 'successful-backend-native-continuation', 'native_sha': sha,
                     'vendor': vendor}
 

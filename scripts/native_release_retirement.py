@@ -224,6 +224,27 @@ PROFILES = {
         },
         'skipped_jobs': ['retained-testflight'],
     },
+    'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1': {'workspace_kind': 'successful-backend',
+     'terminal_mode': 'backend-already-consumed',
+     'run_id': 41806221746,
+     'run_attempt': 1,
+     'log_host': 'productionresultssa3.blob.core.windows.net',
+     'job_ids': {'preflight': 126493792224,
+                 'build-permission': 126493887647,
+                 'retained-testflight': 126493890414,
+                 'ios-build': 126494185404,
+                 'backend': 126494185425,
+                 'testflight': 126498275765,
+                 'release-result': 126498887012},
+     'build_id': '8370725c-f6b6-4c18-b408-8123b900eb36',
+     'submission_id': '76692f33-c058-48b6-8158-fc008bbab6a2',
+     'log_sha256': 'dd09cc2359bf3538a30072b22879e91cc279d2d984cc38055df6e61783de876d',
+     'backend_log_sha256': 'd3dd2a552675726c85cb9be2ca895f60aad7f21eaa88b9fac909b17027eee823',
+     'jobs_sha256': '49bce5cde5b80e199245a73451aa6299cd29a1b3569ee66548db52b41eda5cf5',
+     'canonical_hashes': {'.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
+                          'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
+                          'scripts/trusted_release_server.py': 'fe38713013cab8b68f4aa2cd744dae0f2205b13d3ab45b49f87e66b631dbcd46'},
+     'skipped_jobs': ['retained-testflight']},
 }
 
 
@@ -284,12 +305,18 @@ def steps_map(job):
     return result
 
 
-def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
+def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA, backend_log=None):
     profile = profile_for(native_sha)
     vendor_state = profile.get("vendor_state", "VENDOR_UPLOAD_SUCCEEDED")
     if vendor_state not in {"VENDOR_UPLOAD_SUCCEEDED", "VENDOR_UPLOAD_FAILED_UNCERTAIN"}:
         raise RetirementError("unsupported native vendor terminal")
     failed_upload = vendor_state == "VENDOR_UPLOAD_FAILED_UNCERTAIN"
+    consumed_backend = profile.get("terminal_mode") == "backend-already-consumed"
+    if profile.get("terminal_mode") is not None and not (
+        consumed_backend and native_sha == "ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1"
+        and profile.get("workspace_kind") == "successful-backend" and not failed_upload
+    ):
+        raise RetirementError("unsupported native terminal mode")
     expected = {
         "id": profile["run_id"],
         "run_attempt": profile["run_attempt"],
@@ -299,7 +326,7 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         "head_branch": "main",
         "event": "workflow_dispatch",
         "status": "completed",
-        "conclusion": "failure" if failed_upload else "success",
+        "conclusion": "failure" if failed_upload or consumed_backend else "success",
     }
     if (
         not isinstance(run, dict)
@@ -324,13 +351,14 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         prior_attempts = []
     for name, job in current.items():
         expected_job = ("skipped" if name in profile.get("skipped_jobs", ("backend",))
-                        else "failure" if failed_upload and name in {"testflight", "release-result"}
+                        else "failure" if ((failed_upload and name in {"testflight", "release-result"})
+                                           or (consumed_backend and name in {"backend", "release-result"}))
                         else "success")
         if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != expected_job:
             raise RetirementError("native-only job identity or terminal differs")
         steps = steps_map(job)
         for required in REQUIRED_STEPS.get(name, ()):
-            expected_step = ("failure" if failed_upload and (
+            expected_step = ("failure" if (consumed_backend and name == "release-result") or failed_upload and (
                 (name == "testflight" and required == "Revalidate and upload the exact finished build")
                 or (name == "release-result" and required == "Join backend deployment and TestFlight upload outcomes")
             ) else "success")
@@ -339,6 +367,18 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
                 or steps[required].get("status") != "completed"
             ):
                 raise RetirementError("native vendor step terminal differs")
+    if consumed_backend:
+        step = steps_map(current["backend"]).get("Start the fixed server-side release capability", {})
+        if step.get("status") != "completed" or step.get("conclusion") != "failure":
+            raise RetirementError("backend replay rejection step differs")
+        if (not isinstance(backend_log, bytes)
+                or hashlib.sha256(backend_log).hexdigest() != profile["backend_log_sha256"]):
+            raise RetirementError("reviewed backend rejection log differs")
+        body = [re.sub(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d+Z ", "", line)
+                for line in backend_log.decode("utf-8", errors="strict").splitlines()]
+        reason = "release launcher: authorization already consumed; manual review required"
+        if body.count(reason) != 1:
+            raise RetirementError("exact backend replay rejection missing")
     # Attempt 1 failed before vendor create. Never close a profile with an
     # uncertain earlier create/upload, even if a later rerun happens to pass.
     if profile.get("prior_mode") == "upload-claim-failed":
@@ -400,6 +440,7 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         "jobs_sha256": digest(jobs),
         "prior_jobs_sha256": digest(prior) if prior is not None else None,
         "canonical_hashes": profile["canonical_hashes"],
+        **({"backend_log_sha256": profile["backend_log_sha256"]} if consumed_backend else {}),
     }
 
 
@@ -491,7 +532,13 @@ def vendor_evidence(token, native_sha=OLD_SHA):
         BASE + f"/actions/jobs/{profile['job_ids']['testflight']}/logs", token,
         logs=True, native_sha=native_sha
     )
-    proof = validate_vendor(run, jobs, prior, log, native_sha=native_sha)
+    backend_log = None
+    if profile.get("terminal_mode") == "backend-already-consumed":
+        backend_log = read_url(
+            BASE + f"/actions/jobs/{profile['job_ids']['backend']}/logs", token,
+            logs=True, native_sha=native_sha,
+        )
+    proof = validate_vendor(run, jobs, prior, log, native_sha=native_sha, backend_log=backend_log)
     if proof["log_sha256"] != profile["log_sha256"]:
         raise RetirementError("reviewed native vendor log bytes differ")
     if profile["jobs_sha256"] is not None and proof["jobs_sha256"] != profile["jobs_sha256"]:

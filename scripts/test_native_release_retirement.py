@@ -904,3 +904,77 @@ def test_native_history_survives_no_backup_retirement(tmp_path, monkeypatch):
     (retirement / 'intent.json').write_text(json.dumps(saved))
     with pytest.raises(m.RetirementError, match='retired native installation'):
         m.closed_evidence(b, m.OLD_SHA, receipt, historical=True)
+
+
+CONSUMED_BACKEND_SHA = 'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1'
+
+
+def consumed_backend_metadata(m):
+    profile = m.profile_for(CONSUMED_BACKEND_SHA)
+    run = dict(id=profile['run_id'], run_attempt=1, workflow_id=m.WORKFLOW_ID,
+               path='.github/workflows/trusted-release.yml', head_sha=CONSUMED_BACKEND_SHA,
+               head_branch='main', event='workflow_dispatch', status='completed', conclusion='failure',
+               repository={'full_name': m.REPOSITORY}, head_repository={'full_name': m.REPOSITORY})
+    jobs = []
+    for name, identity in profile['job_ids'].items():
+        conclusion = 'skipped' if name == 'retained-testflight' else 'failure' if name in {'backend', 'release-result'} else 'success'
+        steps = [dict(name=s, status='completed', conclusion='failure' if name == 'release-result' else 'success')
+                 for s in m.REQUIRED_STEPS.get(name, ())]
+        if name == 'backend':
+            steps.append(dict(name='Start the fixed server-side release capability', status='completed', conclusion='failure'))
+        jobs.append(dict(id=identity, name=name, status='completed', conclusion=conclusion, steps=steps))
+    upload = (profile['build_id'] + '\nSubmission details: https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/'
+              + profile['submission_id'] + '\n✔ Submitted your app to Apple App Store Connect!\n'
+              'Your binary has been successfully uploaded to App Store Connect!\n').encode()
+    backend = b'2026-11-04T09:18:34.4662326Z release launcher: authorization already consumed; manual review required\n'
+    profile['backend_log_sha256'] = hashlib.sha256(backend).hexdigest()
+    return run, {'total_count': len(jobs), 'jobs': jobs}, None, upload, backend
+
+
+def test_consumed_backend_retains_failed_run_and_proves_vendor_success():
+    m = load(); run, jobs, prior, log, backend = consumed_backend_metadata(m)
+    proof = m.validate_vendor(run, jobs, prior, log, native_sha=CONSUMED_BACKEND_SHA, backend_log=backend)
+    assert proof['state'] == 'VENDOR_UPLOAD_SUCCEEDED'
+    assert proof['backend_log_sha256'] == hashlib.sha256(backend).hexdigest()
+    assert run['conclusion'] == 'failure'
+
+
+@pytest.mark.parametrize('damage', ['sha', 'attempt', 'run', 'job', 'pending', 'backend_success', 'backend_step', 'result_success', 'upload_failure', 'log_drift', 'wrong_reason', 'duplicate_reason', 'unanchored_reason', 'missing_log'])
+def test_consumed_backend_rejects_unproven_or_changed_terminal(damage):
+    m = load(); run, jobs, prior, log, backend = consumed_backend_metadata(m)
+    by_name = {j['name']: j for j in jobs['jobs']}
+    if damage == 'sha': run['head_sha'] = 'a' * 40
+    if damage == 'attempt': run['run_attempt'] = 2
+    if damage == 'run': run['id'] += 1
+    if damage == 'job': by_name['backend']['id'] += 1
+    if damage == 'pending': run['status'] = 'in_progress'
+    if damage == 'backend_success': by_name['backend']['conclusion'] = 'success'
+    if damage == 'backend_step': by_name['backend']['steps'][0]['conclusion'] = 'success'
+    if damage == 'result_success': by_name['release-result']['conclusion'] = 'success'
+    if damage == 'upload_failure': by_name['testflight']['conclusion'] = 'failure'
+    if damage == 'log_drift': backend += b'unreviewed output\n'
+    if damage == 'wrong_reason': backend = backend.replace(b'authorization already consumed', b'unknown deployment outcome')
+    if damage == 'duplicate_reason': backend += backend
+    if damage == 'unanchored_reason': backend = b'quoted ' + backend
+    if damage in {'wrong_reason', 'duplicate_reason', 'unanchored_reason'}:
+        m.PROFILES[CONSUMED_BACKEND_SHA]['backend_log_sha256'] = hashlib.sha256(backend).hexdigest()
+    if damage == 'missing_log': backend = None
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log, native_sha=CONSUMED_BACKEND_SHA, backend_log=backend)
+
+
+@pytest.mark.parametrize('damage', ['other_source', 'native_only', 'failed_upload', 'unknown_mode'])
+def test_consumed_backend_mode_is_closed_to_reviewed_successful_backend(damage):
+    m = load()
+    run, jobs, prior, log, backend = consumed_backend_metadata(m)
+    profile = m.PROFILES[CONSUMED_BACKEND_SHA]
+    sha = CONSUMED_BACKEND_SHA
+    if damage == 'other_source':
+        sha = 'f' * 40
+        m.PROFILES[sha] = profile
+        run['head_sha'] = sha
+    if damage == 'native_only': profile['workspace_kind'] = 'native-only'
+    if damage == 'failed_upload': profile['vendor_state'] = 'VENDOR_UPLOAD_FAILED_UNCERTAIN'
+    if damage == 'unknown_mode': profile['terminal_mode'] = 'ignore-failure'
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log, native_sha=sha, backend_log=backend)
