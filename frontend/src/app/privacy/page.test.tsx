@@ -24,10 +24,12 @@ describe('daily GPS privacy disclosure', () => {
 describe('third-party AI privacy disclosure', () => {
   it('explains collection, recipient changes, equal protection and retention limits', () => {
     const content = render(<PrivacyPage />).container.textContent;
-    for (const phrase of ['同等或更严格', '最小必要', '接收方变更', '调用数据', '保存期限', '已发送的数据', '系统语音识别', 'AI 数据共享']) {
+    for (const phrase of ['SOC 2', 'AES-256', '不将数据用于模型训练', '接收方变更', '调用数据', '保存期限', '已发送的数据', '系统语音识别', 'AI 数据共享']) {
       expect(content).toContain(phrase);
     }
-    expect(content).not.toContain('零留存');
+    expect(content).not.toContain('同等或更严格');
+    expect(content).toContain('不代表零留存');
+    expect(content).not.toContain('保证零留存');
     expect(content).not.toContain('所有第三方数据立即删除');
   });
 });

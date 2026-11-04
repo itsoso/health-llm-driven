@@ -2,6 +2,7 @@ import * as SecureStore from 'expo-secure-store';
 
 import { BASE_URL, TOKEN_KEY } from './api';
 import { requireAIConsent } from './aiConsent';
+import { aiConsentRevision, subscribeAIConsentInvalidation } from './aiConsentState';
 import type { CloudVoiceKey } from './cloudTts';
 import {
   enqueuePcmPlayback,
@@ -40,6 +41,8 @@ export interface StreamingTtsDependencies {
   enqueuePcmPlayback: (audioBase64: string) => Promise<void>;
   finishPcmPlayback: () => Promise<void>;
   stopPcmPlayback: () => Promise<void>;
+  aiConsentRevision?: () => number;
+  subscribeAIConsentInvalidation?: (listener: () => void) => () => void;
 }
 
 export interface StreamingTtsSession {
@@ -71,6 +74,8 @@ const defaultDependencies: StreamingTtsDependencies = {
   enqueuePcmPlayback,
   finishPcmPlayback,
   stopPcmPlayback,
+  aiConsentRevision,
+  subscribeAIConsentInvalidation,
 };
 
 type PlayerSlot = { available: Promise<void>; owner: symbol | null };
@@ -104,6 +109,11 @@ export function createCloudStreamingTtsSession(
   let startTimer: ReturnType<typeof setTimeout> | null = null;
   let finishTimer: ReturnType<typeof setTimeout> | null = null;
   let playerChain = Promise.resolve();
+  let consentRevision: number | null = null;
+  let unsubscribeConsent: (() => void) | null = null;
+  const readConsentRevision = dependencies.aiConsentRevision || aiConsentRevision;
+  const subscribeConsentInvalidation = dependencies.subscribeAIConsentInvalidation
+    || subscribeAIConsentInvalidation;
 
   const clearTimers = () => {
     if (startTimer) clearTimeout(startTimer);
@@ -116,6 +126,14 @@ export function createCloudStreamingTtsSession(
     if (socket && socket.readyState < 2) socket.close();
     socket = null;
   };
+
+  const stopConsentWatch = () => {
+    unsubscribeConsent?.();
+    unsubscribeConsent = null;
+  };
+
+  const consentIsCurrent = () => consentRevision !== null
+    && readConsentRevision() === consentRevision;
 
   // Cancellation must finish native startup/cleanup before another session
   // acquires the shared player. Late callbacks may not stop its new owner.
@@ -146,6 +164,7 @@ export function createCloudStreamingTtsSession(
     terminalError = error;
     cancelled = true;
     clearTimers();
+    stopConsentWatch();
     closeSocket();
     void stopPlayer().catch(() => { terminalError = new Error('无法停止流式语音播放'); });
     if (!started && rejectStart) rejectStart(error);
@@ -221,6 +240,7 @@ export function createCloudStreamingTtsSession(
         await dependencies.finishPcmPlayback();
         if (cancelled) return;
         completed = true;
+        stopConsentWatch();
         playerSlot.owner = null;
         releasePlayer?.();
         clearTimers();
@@ -238,13 +258,41 @@ export function createCloudStreamingTtsSession(
     start(): Promise<boolean> {
       if (startPromise) return startPromise;
       startPromise = (async () => {
+        const requestedRevision = readConsentRevision();
         await dependencies.requireAIConsent();
-        const token = await dependencies.getAuthToken();
-        if (!token) throw new Error('登录已过期，请重新登录后使用语音播放');
+        if (readConsentRevision() !== requestedRevision) return false;
+        consentRevision = requestedRevision;
+        unsubscribeConsent = subscribeConsentInvalidation(() => {
+          fail('AI 数据共享授权已变化，语音内容未继续发送');
+        });
+        if (!consentIsCurrent()) {
+          fail('AI 数据共享授权已变化，语音内容未继续发送');
+          return false;
+        }
+        let token: string | null;
+        try {
+          token = await dependencies.getAuthToken();
+        } catch (error) {
+          stopConsentWatch();
+          throw error;
+        }
+        if (!token) {
+          stopConsentWatch();
+          throw new Error('登录已过期，请重新登录后使用语音播放');
+        }
+        if (!consentIsCurrent()) {
+          fail('AI 数据共享授权已变化，语音内容未继续发送');
+          return false;
+        }
         if (cancelled) return false;
         const query = `voice_style=${encodeURIComponent(options.voiceKey)}`
           + `&speed=${encodeURIComponent(String(options.speed ?? 1.0))}`;
-        socket = dependencies.openSocket(`${streamingTtsWebSocketUrl()}?${query}`, token);
+        try {
+          socket = dependencies.openSocket(`${streamingTtsWebSocketUrl()}?${query}`, token);
+        } catch (error) {
+          stopConsentWatch();
+          throw error;
+        }
         socket.onmessage = event => { void handleMessage(event.data); };
         socket.onerror = () => fail('无法连接流式语音服务');
         socket.onclose = () => {
@@ -266,6 +314,10 @@ export function createCloudStreamingTtsSession(
       if (!clean) return;
       const didStart = await this.start();
       if (terminalError) throw terminalError;
+      if (!consentIsCurrent()) {
+        fail('AI 数据共享授权已变化，语音内容未继续发送');
+        throw terminalError!;
+      }
       if (!didStart || cancelled || !socket || socket.readyState > 1) {
         throw new Error('流式语音会话不可用');
       }
@@ -277,6 +329,10 @@ export function createCloudStreamingTtsSession(
       finishPromise = (async () => {
         const didStart = await this.start();
         if (terminalError) throw terminalError;
+        if (!consentIsCurrent()) {
+          fail('AI 数据共享授权已变化，语音内容未继续发送');
+          throw terminalError!;
+        }
         if (!didStart || cancelled || !socket) return;
         return new Promise<void>((resolve, reject) => {
           resolveFinish = resolve;
@@ -300,6 +356,7 @@ export function createCloudStreamingTtsSession(
       cancelPromise = (async () => {
         cancelled = true;
         clearTimers();
+        stopConsentWatch();
         if (!started && resolveStart) resolveStart(false);
         if (finishPromise && resolveFinish) resolveFinish();
         try {

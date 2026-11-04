@@ -314,4 +314,117 @@ describe('cloudStreamingTts', () => {
     expect(dependencies.stopPcmPlayback).toHaveBeenCalledTimes(1);
     expect(dependencies.finishPcmPlayback).not.toHaveBeenCalled();
   });
+
+  it('does not open a socket when consent identity changes while the auth token is loading', async () => {
+    const socket = new FakeSocket();
+    let revision = 7;
+    let resolveToken!: (token: string) => void;
+    let invalidate!: () => void;
+    const dependencies = {
+      requireAIConsent: jest.fn().mockResolvedValue(undefined),
+      getAuthToken: jest.fn(() => new Promise<string>(resolve => { resolveToken = resolve; })),
+      openSocket: jest.fn(() => socket),
+      startPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      enqueuePcmPlayback: jest.fn().mockResolvedValue(undefined),
+      finishPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      stopPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      aiConsentRevision: jest.fn(() => revision),
+      subscribeAIConsentInvalidation: jest.fn((listener: () => void) => {
+        invalidate = listener;
+        return jest.fn();
+      }),
+    } as StreamingTtsDependencies & {
+      aiConsentRevision: () => number;
+      subscribeAIConsentInvalidation: (listener: () => void) => () => void;
+    };
+    const session = createCloudStreamingTtsSession({ voiceKey: 'warm_female' }, dependencies);
+    const start = session.start();
+    await flushMicrotasks();
+    revision += 1;
+    invalidate?.();
+    resolveToken('new-account-token');
+    await expect(start).resolves.toBe(false);
+    expect(dependencies.openSocket).not.toHaveBeenCalled();
+  });
+
+  it('closes an active socket and sends no more text or finish after consent is invalidated', async () => {
+    const socket = new FakeSocket();
+    let revision = 3;
+    let invalidate!: () => void;
+    const unsubscribe = jest.fn();
+    const dependencies = {
+      requireAIConsent: jest.fn().mockResolvedValue(undefined),
+      getAuthToken: jest.fn().mockResolvedValue('jwt-token'),
+      openSocket: jest.fn(() => socket),
+      startPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      enqueuePcmPlayback: jest.fn().mockResolvedValue(undefined),
+      finishPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      stopPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      aiConsentRevision: jest.fn(() => revision),
+      subscribeAIConsentInvalidation: jest.fn((listener: () => void) => {
+        invalidate = listener;
+        return unsubscribe;
+      }),
+    } as StreamingTtsDependencies & {
+      aiConsentRevision: () => number;
+      subscribeAIConsentInvalidation: (listener: () => void) => () => void;
+    };
+    const session = createCloudStreamingTtsSession({ voiceKey: 'warm_female' }, dependencies);
+    const start = session.start();
+    await flushMicrotasks();
+    socket.open();
+    socket.receive({ type: 'ready' });
+    await expect(start).resolves.toBe(true);
+    await session.append('before withdrawal');
+    const sentBeforeWithdrawal = socket.sent.length;
+
+    revision += 1;
+    invalidate();
+    await flushMicrotasks();
+
+    expect(socket.readyState).toBe(3);
+    await expect(session.append('must not send')).rejects.toThrow('授权已变化');
+    await expect(session.finish()).rejects.toThrow('授权已变化');
+    expect(socket.sent).toHaveLength(sentBeforeWithdrawal);
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an in-flight finish when consent is invalidated', async () => {
+    const socket = new FakeSocket();
+    let revision = 11;
+    let invalidate!: () => void;
+    const dependencies = {
+      requireAIConsent: jest.fn().mockResolvedValue(undefined),
+      getAuthToken: jest.fn().mockResolvedValue('jwt-token'),
+      openSocket: jest.fn(() => socket),
+      startPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      enqueuePcmPlayback: jest.fn().mockResolvedValue(undefined),
+      finishPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      stopPcmPlayback: jest.fn().mockResolvedValue(undefined),
+      aiConsentRevision: jest.fn(() => revision),
+      subscribeAIConsentInvalidation: jest.fn((listener: () => void) => {
+        invalidate = listener;
+        return jest.fn();
+      }),
+    } as StreamingTtsDependencies & {
+      aiConsentRevision: () => number;
+      subscribeAIConsentInvalidation: (listener: () => void) => () => void;
+    };
+    const session = createCloudStreamingTtsSession({ voiceKey: 'warm_female' }, dependencies);
+    const start = session.start();
+    await flushMicrotasks();
+    socket.open();
+    socket.receive({ type: 'ready' });
+    await start;
+    const finish = session.finish();
+    void finish.catch(() => undefined);
+    await flushMicrotasks();
+    expect(JSON.parse(socket.sent.at(-1)!)).toEqual({ type: 'finish' });
+
+    revision += 1;
+    invalidate();
+    await expect(finish).rejects.toThrow('授权已变化');
+    expect(socket.readyState).toBe(3);
+    expect(dependencies.finishPcmPlayback).not.toHaveBeenCalled();
+  });
 });

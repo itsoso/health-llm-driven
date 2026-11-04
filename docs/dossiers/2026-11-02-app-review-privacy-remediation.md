@@ -3,9 +3,9 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | in_progress |
-| 当前阶段 | S5 实现与本地验证完成；尚未提交、发布或重新送审 |
+| 当前阶段 | S5 实现与本地验证；首轮独立安全复审 NO-GO 的两项阻断已修复，等待新审查者复审 |
 
-Controller: health-harness-orchestrator; overlay: safety-gate.
+Controller: mobile-testflight-release; overlays: ios-app-review-gate, safety-gate.
 
 ## G1 准入
 
@@ -19,8 +19,9 @@ AI 数据发送前的明确同意、隐私说明和原生用途文案，不扩�
 User authorized fixing AI disclosure, HealthKit purpose strings and privacy policies,
 regression tests, simulator acceptance, a new package and an App Review reply draft.
 No Apple message, submission, production deployment or Git publication has occurred.
-The original shared main worktree is dirty and behind origin/main; all changes live
-in an isolated checkout of origin/main `741feaf11a3d2e08d2dafa765e8c3039d1572329`.
+The original shared main worktree is dirty, so the current candidate lives in an
+isolated checkout based on origin/main
+`9c8deb52b39c6ca5bbfdece621c99f463db6d3ad`.
 
 Review submission: `3f8c84d4-8cc5-4123-9829-6a318e1444e9`; app `6763569720`.
 Rejected: 1.3.6 (286), review date 2026-10-29, iPad Air 11-inch (M3).
@@ -60,14 +61,15 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
 - Test refusal, pending saves, account switches, revocation, stale policies, ASR
   cancellation, actual native configuration and responsive disclosure rendering.
 
-## Final local evidence
+## Prior local evidence (superseded by the current candidate where noted)
 
 - Mobile: 385 main suites / 3937 passed / 1 skipped; isolated stateful suites 134
   passed; isolated composer 86 passed. Total 4157 passed, 1 skipped.
 - Backend consent/media/agent boundary checks: 38 passed, 2 skipped. No schema
   changes; this does not establish PostgreSQL integration coverage for skips.
 - Web privacy: 3 passed. TypeScript, design gate, System Map, diff whitespace and
-  LLM-change gate passed. Independent safety review: code GO.
+  LLM-change gate passed. This earlier code GO did not cover the later streaming-TTS
+  account/revocation review and is not the current safety verdict.
 - Production-config Release simulator app built successfully with local signing.
   Initial unsigned build could not persist login credentials; signed rebuild fixed
   this and both simulator logins succeeded. App version 1.3.6, local build 1.
@@ -109,3 +111,28 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   the desktop. This is historical evidence, not live locked-desktop access. CLI/API
   checks may continue while locked if the host remains awake; UI tasks stay pending.
   No lock/security setting was weakened and no remote-access service was opened.
+
+## 2026-11-04 current-candidate verification and safety review
+
+- Cherry-picked the disclosure, realtime-ASR, HealthKit purpose-string, policy and
+  test remediation onto current origin/main. The candidate commits before the latest
+  safety fixes are `f19e2acb9` and `7d4772fe4`; the latter keeps the exact public-policy
+  gate wording `AI 模型服务`.
+- Fresh pre-review checks passed: Mobile 390 suites / 4185 passed / 1 skipped; Web
+  114 files / 662 passed / 1 skipped; focused backend consent/media/realtime checks
+  47 passed / 2 skipped; App Store release pack, iOS submission preflight, Mobile
+  TypeScript and System Map checks passed.
+- The first independent reviewer returned **NO-GO** for two concrete blockers:
+  streaming TTS was not bound to consent revision/account invalidation, and the
+  privacy policy claimed equivalent-or-stricter contractual protection without
+  product-specific contract evidence.
+- Streaming TTS now captures the consent revision before authentication, rechecks it
+  after token load and before append/finish, subscribes to account/revocation/policy
+  invalidation, closes the socket, stops playback and rejects an in-flight finish.
+  Focused regression evidence: 16/16 Mobile tests passed plus Mobile TypeScript.
+- Mobile and Web privacy copy now states only verifiable public provider measures:
+  SOC 2, AES-256, published no-training treatment and lawful retention. It explicitly
+  avoids zero-retention and product-specific DPA claims. Mobile policy tests 3/3 and
+  Web policy tests 3/3 passed; the App Store release pack and iOS preflight passed.
+- These fixes still require a new independent read-only safety re-review. Until it
+  returns GO, the candidate must not be published, built, uploaded or resubmitted.

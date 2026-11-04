@@ -37,9 +37,11 @@ composer. The AI Data Sharing screen appears before audio transmission. Choose
 under Personal Center → Settings → AI Data Sharing (“AI 数据共享”).
 
 The in-app and public privacy policies explain collection methods, AI recipients,
-processing purposes, equivalent protection requirements, and retention/deletion
-boundaries. Withdrawal stops future transmission; it does not automatically
-recall or delete previously transmitted data. Provider policy links are included.
+processing purposes, the providers' published security and privacy measures, and
+retention/deletion boundaries. They do not claim zero retention or an optional
+retention setting that is not enabled. Withdrawal stops future transmission; it
+does not automatically recall or delete previously transmitted data. Provider
+policy links are included.
 Public policy: https://health.executor.life/privacy
 
 **HealthKit purpose string (5.1.1(ii))**
@@ -59,7 +61,8 @@ Thank you.
 
 ## Internal release checklist (not part of the message)
 
-- Verify production provider identities and applicable contractual protection.
+- Verify production provider identities and read back their current official
+  privacy/security notices; do not claim a product-specific DPA without evidence.
 - Publish and read back Web privacy policy only after deployment authorization.
 - Commit/push candidate only with authorization, verify exact-revision CI and
   trusted build gates; retain actual IPA signature, source and build binding.
