@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, TextStyle, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -13,7 +13,6 @@ import {
   type AgentTransparencyBand,
   type AgentTransparencyProfile,
 } from '../../utils/chatTransparency';
-import { SocialBrandIcon } from '../common/SocialBrandIcon';
 import { AttributionDetails, normalizedAttributionCount } from './AttributionChips';
 import type { AgentTerminalStatus } from '../../utils/agentTurnState';
 import type { AnswerEvidence } from '../../services/answerEvidence';
@@ -154,6 +153,10 @@ export default function AnswerEvidencePanel({
 }: Props) {
   const [open, setOpen] = useState(false);
   const [technicalOpen, setTechnicalOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
+  useEffect(() => {
+    if (!completionActionsEnabled) setShareOpen(false);
+  }, [completionActionsEnabled]);
   const sourceCount = normalizedAttributionCount(sources);
   const waitingForUser = terminalStatus === 'waiting_for_user' && !incomplete;
   const businessIncomplete = incomplete || (terminalStatus !== undefined && terminalStatus !== 'complete');
@@ -210,7 +213,7 @@ export default function AnswerEvidencePanel({
 
   return (
     <View testID="assistant-utility-panel" style={styles.panel}>
-      <View style={[styles.rail, !answerEvidence && sourceCount === 0 && styles.quietRail]}>
+      <View style={styles.rail}>
         {hasDetails ? (
           <Pressable
             onPress={() => setOpen(value => !value)}
@@ -221,7 +224,7 @@ export default function AnswerEvidencePanel({
             accessibilityState={{ expanded: open }}
           >
             <View style={styles.railIcon}>
-              <Ionicons name="document-text-outline" size={13} color={C.green700} />
+              <Ionicons name="document-text-outline" size={14} color={C.ink2} />
             </View>
             <Text style={txt.evidenceLabel} numberOfLines={1}>
               {`${detailLabel}${evidenceCount > 0 ? ` · ${evidenceCount}项` : ''}`}
@@ -231,25 +234,15 @@ export default function AnswerEvidencePanel({
         ) : <View style={styles.spacer} />}
 
         {completionActionsEnabled ? (
-          <>
-            <View style={styles.divider} />
-            <Pressable
-              onPress={onShareWeChat}
-              accessibilityRole="button"
-              accessibilityLabel="微信分享这条回复"
-              style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
-            >
-              <SocialBrandIcon brand="wechat" size={20} />
-            </Pressable>
-            <Pressable
-              onPress={onShareXiaohongshu}
-              accessibilityRole="button"
-              accessibilityLabel="小红书分享这条回复"
-              style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
-            >
-              <SocialBrandIcon brand="xiaohongshu" size={20} />
-            </Pressable>
-          </>
+          <Pressable
+            onPress={() => setShareOpen(value => !value)}
+            accessibilityRole="button"
+            accessibilityLabel={shareOpen ? '收起分享选项' : '分享回答'}
+            accessibilityState={{ expanded: shareOpen }}
+            style={({ pressed }) => [styles.shareButton, pressed && styles.pressed]}
+          >
+            <Ionicons name={shareOpen ? 'close-outline' : 'share-outline'} size={18} color={C.ink2} />
+          </Pressable>
         ) : null}
 
         {completionActionsEnabled ? (
@@ -257,17 +250,39 @@ export default function AnswerEvidencePanel({
             onPress={onCopy}
             accessibilityRole="button"
             accessibilityLabel={copied ? '已复制' : '复制回答'}
-            hitSlop={6}
             style={({ pressed }) => [
               styles.copyButton,
               copied && styles.copyButtonDone,
               pressed && styles.pressed,
             ]}
           >
-            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={14} color={copied ? C.green700 : C.ink3} />
+            <Ionicons name={copied ? 'checkmark' : 'copy-outline'} size={16} color={copied ? C.green700 : C.ink2} />
           </Pressable>
         ) : null}
       </View>
+
+      {completionActionsEnabled && shareOpen ? (
+        <View style={styles.shareOptions}>
+          <Pressable
+            onPress={() => { setShareOpen(false); onShareWeChat(); }}
+            accessibilityRole="button"
+            accessibilityLabel="微信分享这条回复"
+            style={({ pressed }) => [styles.shareOption, pressed && styles.pressed]}
+          >
+            <Ionicons name="chatbubbles-outline" size={17} color={C.ink2} />
+            <Text style={txt.shareOption}>微信</Text>
+          </Pressable>
+          <Pressable
+            onPress={() => { setShareOpen(false); onShareXiaohongshu(); }}
+            accessibilityRole="button"
+            accessibilityLabel="小红书分享这条回复"
+            style={({ pressed }) => [styles.shareOption, pressed && styles.pressed]}
+          >
+            <Ionicons name="book-outline" size={17} color={C.ink2} />
+            <Text style={txt.shareOption}>小红书</Text>
+          </Pressable>
+        </View>
+      ) : null}
 
       {open && hasDetails ? (
         <View style={styles.details}>
@@ -496,11 +511,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     borderRadius: 12,
-    backgroundColor: C.paper2,
-    paddingHorizontal: 4,
+    backgroundColor: 'transparent',
     gap: 2,
   },
-  quietRail: { backgroundColor: 'transparent' },
   evidenceButton: {
     minHeight: 44,
     flex: 1,
@@ -508,25 +521,22 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 7,
-    paddingHorizontal: 7,
+    paddingRight: 7,
   },
   railIcon: {
-    width: 23,
-    height: 23,
-    borderRadius: 8,
+    width: 18,
+    height: 18,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: C.green50,
   },
   spacer: { flex: 1 },
-  divider: { width: StyleSheet.hairlineWidth, height: 18, backgroundColor: C.line },
   shareButton: {
     width: 44,
     height: 44,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: revaRadii.pill,
-    backgroundColor: C.paper,
+    backgroundColor: 'transparent',
   },
   copyButton: {
     width: 44,
@@ -534,7 +544,20 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: revaRadii.pill,
-    backgroundColor: C.paper,
+    backgroundColor: 'transparent',
+  },
+  shareOptions: { flexDirection: 'row', gap: 8, marginTop: 4 },
+  shareOption: {
+    flex: 1,
+    minHeight: 44,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 7,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: C.paper2,
   },
   copyButtonDone: { backgroundColor: C.green50 },
   pressed: { opacity: 0.76 },
@@ -656,7 +679,8 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  evidenceLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 11.8, lineHeight: 16, fontWeight: '800', color: C.ink2 } as TextStyle,
+  evidenceLabel: { flex: 1, minWidth: 0, fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 17, fontWeight: '500', color: C.ink2 } as TextStyle,
+  shareOption: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 18, fontWeight: '500', color: C.ink2 } as TextStyle,
   summaryTitle: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 18, fontWeight: '900', color: C.ink1 } as TextStyle,
   summarySubtitle: { fontFamily: revaFonts.sans, fontSize: 10.8, lineHeight: 16, color: C.ink3 } as TextStyle,
   summarySubtitleWarning: { color: revaSemantic.caution.fg, fontWeight: '700' } as TextStyle,
