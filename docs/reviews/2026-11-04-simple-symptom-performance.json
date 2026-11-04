@@ -672,8 +672,12 @@
     "red_corrected": "8 failed, 2 passed, 34 deselected; initial event-envelope fixture corrected before this RED",
     "focused": "422 passed",
     "postgresql_17_non_superuser": "44 passed",
-    "ci_mode": "pending",
+    "ci_mode": "3443 passed; source unchanged after run",
     "safety_review": "pending",
-    "production": "not_deployed"
+    "production": "not_deployed",
+    "expanded_focused": "50 passed; decision_mode on, nasal variants, attachment, classifier failure",
+    "system_map": "passed",
+    "secret_scan": "passed",
+    "dossier_consistency": "passed"
   }
 }

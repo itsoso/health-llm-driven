@@ -29,4 +29,5 @@
 - 候选 6/6 保留原描述、单条持久化及单个核验回执；零 provider 调用，0.31–0.73 秒。基线完整耗时 10.06–30.74 秒，中位 14.07 秒；候选中位 0.32 秒。六例最近秩 P95/P99 均是最大值，不代表生产长尾或手机呈现。
 - 基线“症状”后缀两例虽写入成功，未原样保留完整描述，质量标记 FAIL，未掩盖。最初未采 token 的六例只作探索，不混入配对；最初探针缺合成加密配置、初次 pytest 缺测试 DATABASE_URL 的环境失败均未算业务 RED。
 - RED：修正事件信封读取夹具后在原实现重跑，8 failed、2 passed、34 deselected。GREEN：定向 422 passed；PostgreSQL 17 临时非超级用户角色 44 passed，含真实 API、owner、历史、重复提交与失败回执。
-- CI-mode 扩展集成、System Map、独立 safety GO、精确 main CI 与上线仍待完成。无 Mobile 改动；视觉验收按用户要求不作为阻断，不宣称设备验证。
+- CI=true 扩展集成 3,443 passed；新增 decision_mode=on 下鼻塞/打喷嚏、新旧会话、附件和分类器失败边界后，定向 50 passed。分类器异常在既有更早阶段直接传播，未为快捷路径吞掉失败。实现未变化。System Map、秘密扫描、Dossier 一致性、diff 检查通过。
+- 独立 safety GO、精确候选真实模型闸、main CI 与上线仍待完成。无 Mobile 改动，本次为后端发布；视觉验收按用户要求不作为阻断，不宣称设备验证。

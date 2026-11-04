@@ -39,7 +39,9 @@ def test_nasal_preplan_never_reclassifies_clinical_or_unknown_input(message):
     assert not ae._is_closed_nasal_symptom_record(message)
 
 
-@pytest.mark.parametrize("message", ["记录流鼻涕症状", "记录流鼻涕", "记录流鼻涕的症状"])
+@pytest.mark.parametrize("message", [
+    "记录流鼻涕症状", "记录流鼻涕", "记录流鼻涕的症状", "记录鼻塞症状", "记录打喷嚏症状",
+])
 @pytest.mark.parametrize("history", [False, True])
 async def test_closed_symptom_actual_pi_persists_once_without_model(
     db, client, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch,
@@ -51,6 +53,12 @@ async def test_closed_symptom_actual_pi_persists_once_without_model(
     from app.models.user import User
 
     monkeypatch.setattr(settings, "domain_prompt_optimization", True)
+    monkeypatch.setattr(settings, "decision_mode", "on")
+
+    async def unexpected_route(*args, **kwargs):
+        raise AssertionError("closed nasal writes need no advisory route")
+
+    monkeypatch.setattr("app.services.decisions.routing.decide_route", unexpected_route)
     user, headers = auth_user_and_headers
     other = User(username="symptom_other", email="symptom_other@example.invalid", name="Other")
     db.add(other)
@@ -102,7 +110,8 @@ async def test_closed_symptom_actual_pi_persists_once_without_model(
     assert len(done["write_receipts"]) == 1 and done["write_receipts"][0]["verified"] is True
     reply = "".join(e["data"].get("content", "") for e in events if e.get("event") == "token")
     saved = db.get(AgentMessage, done["message_id"])
-    assert "流鼻涕" in reply and saved.content == reply
+    symptom = next(word for word in ("流鼻涕", "鼻塞", "打喷嚏") if word in message)
+    assert symptom in reply and saved.content == reply
     assert done["turn_outcome"]["status"] == "complete"
     assert not calls
     replay = [e async for e in ex.run_stream(
@@ -115,12 +124,18 @@ async def test_closed_symptom_actual_pi_persists_once_without_model(
     assert db.query(SymptomEntry).filter_by(user_id=user.id).count() == 1
 
 
-@pytest.mark.parametrize("boundary", ["disabled", "voice", "read_only", "runtime_block", "extra_context", "clinical"])
+@pytest.mark.parametrize("boundary", [
+    "disabled", "voice", "read_only", "runtime_block", "extra_context", "clinical", "attachment", "tier_failure",
+])
 async def test_nasal_preplan_respects_existing_turn_gates(
     db, auth_user_and_headers, isolated_agent_protocol_transport, monkeypatch, boundary,
 ):
     from app.config import settings
     monkeypatch.setattr(settings, "domain_prompt_optimization", boundary != "disabled")
+    if boundary == "tier_failure":
+        def unavailable_tier(*args, **kwargs):
+            raise RuntimeError("synthetic classification unavailable")
+        monkeypatch.setattr("app.services.llm.task_routing.classify_answer_task_tier", unavailable_tier)
     user, headers = auth_user_and_headers
     ex = ae.AgentExecutor(db)
     calls, posts = [], []
@@ -136,6 +151,13 @@ async def test_nasal_preplan_respects_existing_turn_gates(
 
     monkeypatch.setattr(ex, "_call_llm_stream", model)
     monkeypatch.setattr(ex, "_api_post", post)
+    if boundary == "tier_failure":
+        # The existing earlier classifier propagates this failure; it must not
+        # silently fall through into the deterministic write path.
+        with pytest.raises(RuntimeError, match="synthetic classification unavailable"):
+            _ = [e async for e in ex.run_stream(user.id, "记录流鼻涕症状", channel="typed")]
+        assert not posts and not calls
+        return
     events = [e async for e in ex.run_stream(
         user.id, "记录流鼻涕症状" + ("，需要就医吗" if boundary == "clinical" else ""),
         channel="voice" if boundary == "voice" else "typed",
@@ -143,6 +165,8 @@ async def test_nasal_preplan_respects_existing_turn_gates(
         read_only_tools=boundary == "read_only",
         runtime_write_block_reason="synthetic_block" if boundary == "runtime_block" else None,
         extra_context="合成附加上下文" if boundary == "extra_context" else None,
+        file_base64="c3ludGhldGlj" if boundary == "attachment" else None,
+        file_name="synthetic.txt" if boundary == "attachment" else None,
     )]
     done = next(e["data"] for e in events if e.get("event") == "done")
     assert "nasal_symptom_record_preplanned" not in done.get("fallback_reasons", [])
