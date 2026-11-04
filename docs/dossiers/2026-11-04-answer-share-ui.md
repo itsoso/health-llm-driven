@@ -1,5 +1,18 @@
 # 回答底部分享入口收敛
 
+| 字段 | 值 |
+| --- | --- |
+| 状态 | building |
+| 当前阶段 | S5 本地验证完成，远端 CI 与发布准入处理中 |
+| 工作流 | quick_fix → mobile-ota + safety-gate |
+| 基线 | 91936757ad1adf2404451aa0cb0378a15b0594c6 |
+
+## G1 准入
+
+裁决：PASS
+
+既有回答分享入口的局部呈现与展开交互修复；不新增平台、数据用途、网络出口、权限、健康写入或诊疗语义。复用既有主题、分享回调和完成状态门控，允许本次最小修复进入验证。
+
 - 日期：2026-11-04
 - 状态：独立发布候选准备完成；模拟器视觉/点按经用户明确豁免；待精确 CI、部署与 OTA。
 - 路由：quick_fix，reva-workflow-router；按需使用 system-map。遵守全局禁用 superpowers 的要求。
@@ -47,3 +60,11 @@
 - Mobile lock 与现存依赖工作区逐字一致后复用 node_modules；`CI=1` 下 5 suites / 212 tests 通过，涵盖组件、流式回复、分享文案及平台分发；tsc、局部 eslint、System Map、diff check 通过。移植时遗漏的测试解构已补齐并重新验证。
 - 发布模式 mobile-ota，加 safety-gate 对分享隐私和发布权限进行独立复核。
 - 前一项 TestFlight 工作流 `41789615290` 正在处理；本任务不修改其状态，不在其运行期间推进 main。
+
+## 远端验证与发布准入
+
+- 独立 G4 对代码提交 `39cfafe8f4caf4105d6549315d23818b59028233` 判 GO，并独立复跑 212 项测试。
+- PR #300 的首次 CI `41790232025` 因本 Dossier 缺少可解析状态表和 G1 段失败，已补齐并保留失败记录；不是运行时代码失败，也未绕过 Gate。
+- 本地执行当前 `trusted_ota.validate_source` 明确拒绝：`native or unknown mobile input changed`。主干相对原生 287 基线改变了 `mobile/app.json` 的 HealthKit 用途说明与插件参数。不得将本次纯 UI diff 当作完整主干可 OTA 的证明。
+- 前一项 TestFlight `41789615290` 已在 server readiness 失败，未进入新构建/上传；本任务不重试、不清锁、不收尾他人操作。
+- 后端部署与 OTA 尚未开始，等待精确 CI、原生兼容基线和发布历史/授权准入满足。
