@@ -53,6 +53,7 @@ def test_rerun_continuation_binds_reviewed_prior_attempts(evidence):
     m, b, profile, _, _, _, _, _ = evidence
     profile.update(run_attempt=3, prior_jobs_sha256='c' * 64)
     _, proof = m.expected(b, 'c' * 40)
+    assert proof['vendor']['run_attempt'] == 3
     assert proof['vendor']['prior_jobs_sha256'] == 'c' * 64
 
 
