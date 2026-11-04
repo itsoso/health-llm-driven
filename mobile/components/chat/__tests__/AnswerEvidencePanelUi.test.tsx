@@ -10,6 +10,44 @@ const props = {
   onShareXiaohongshu: jest.fn(), onCopy: jest.fn(),
 };
 
+beforeEach(() => jest.clearAllMocks());
+
+it('keeps platform choices hidden until sharing is explicitly opened', () => {
+  const view = render(<AnswerEvidencePanel {...props} completionActionsEnabled sources={['今天打卡记录']} />);
+  expect(view.queryByLabelText('微信分享这条回复')).toBeNull();
+  expect(view.queryByLabelText('小红书分享这条回复')).toBeNull();
+  expect(view.getByLabelText('分享回答')).toHaveStyle({ width: 44, height: 44 });
+  fireEvent.press(view.getByLabelText('分享回答'));
+  expect(props.onShareWeChat).not.toHaveBeenCalled();
+  expect(props.onShareXiaohongshu).not.toHaveBeenCalled();
+  expect(view.getByLabelText('展开回答依据')).toBeTruthy();
+  expect(view.getByLabelText('微信分享这条回复')).toBeTruthy();
+  expect(view.getByLabelText('小红书分享这条回复')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('收起分享选项'));
+  expect(view.queryByLabelText('微信分享这条回复')).toBeNull();
+});
+
+it.each([
+  ['微信分享这条回复', props.onShareWeChat, props.onShareXiaohongshu],
+  ['小红书分享这条回复', props.onShareXiaohongshu, props.onShareWeChat],
+] as const)('dispatches only the selected target and closes the options: %s', (label, selected, other) => {
+  const view = render(<AnswerEvidencePanel {...props} completionActionsEnabled />);
+  fireEvent.press(view.getByLabelText('分享回答'));
+  fireEvent.press(view.getByLabelText(label));
+  expect(selected).toHaveBeenCalledTimes(1);
+  expect(other).not.toHaveBeenCalled();
+  expect(view.queryByLabelText(label)).toBeNull();
+});
+
+it('dismisses open sharing when completion actions become unavailable', () => {
+  const view = render(<AnswerEvidencePanel {...props} completionActionsEnabled />);
+  fireEvent.press(view.getByLabelText('分享回答'));
+  view.rerender(<AnswerEvidencePanel {...props} completionActionsEnabled={false} />);
+  expect(view.queryByLabelText('微信分享这条回复')).toBeNull();
+  view.rerender(<AnswerEvidencePanel {...props} completionActionsEnabled />);
+  expect(view.queryByLabelText('微信分享这条回复')).toBeNull();
+});
+
 it('does not render an empty evidence rail', () => {
   const view = render(<AnswerEvidencePanel {...props} />);
   expect(view.queryByTestId('assistant-utility-panel')).toBeNull();
