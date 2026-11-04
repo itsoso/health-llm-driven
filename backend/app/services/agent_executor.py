@@ -17243,9 +17243,13 @@ class AgentExecutor:
             text = clarification_reply(message)
             reason_code = "input_too_short"
             route = "clarification"
+        acknowledgement_complete = context_statement is not None or (
+            meal_input_clarification is not None
+            and not meal_input_clarification.requires_clarification
+        )
         outcome = {
-            "status": "complete" if context_statement is not None else "waiting_for_user",
-            "category": "answer" if context_statement is not None else "clarification_required",
+            "status": "complete" if acknowledgement_complete else "waiting_for_user",
+            "category": "answer" if acknowledgement_complete else "clarification_required",
             "reason_code": reason_code,
             "retryable": False,
             "dispatch_started": False,
@@ -17254,7 +17258,7 @@ class AgentExecutor:
             "refusal_detected": False,
             "capability_block_count": 0,
             "tool_failure_count": 0,
-            "confirmation_required": context_statement is None,
+            "confirmation_required": not acknowledgement_complete,
         }
         meta = {
             "completion_status": "complete",
