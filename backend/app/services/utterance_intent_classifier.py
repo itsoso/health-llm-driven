@@ -299,6 +299,13 @@ def classify_agent_utterance(
 
     raw = "" if message is None else str(message).strip()
     instruction_text = active_health_instruction_text(raw)
+    from app.services.agent_meal_input_clarification import (
+        resolve_meal_count_input,
+    )
+
+    if resolve_meal_count_input(raw) is not None:
+        return _intent(raw, _normalize(raw), "chat", "diet", "none", 0.96,
+                       "meal_count_without_food_authority")
     from app.services.record_capabilities import (
         resolve_record_capability,
     )
