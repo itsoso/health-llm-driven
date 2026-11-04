@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import ssl
 import sys
 import time
 import urllib.error
@@ -46,6 +48,11 @@ class AdmissionError(RuntimeError):
     """A sanitized duplicate-admission rejection."""
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        raise AdmissionError("GitHub redirect rejected")
+
+
 def unique(pairs):
     value = {}
     for key, item in pairs:
@@ -65,8 +72,21 @@ def read_token(stream=sys.stdin) -> str:
 def get_json(path: str, token: str):
     if not path.startswith("/actions/workflows/") or "\r" in path or "\n" in path:
         raise AdmissionError("invalid bounded GitHub resource")
+    url = API + path
+    defaults = ssl.get_default_verify_paths()
+    cafile = defaults.openssl_cafile if os.path.isfile(defaults.openssl_cafile or "") else None
+    capath = defaults.openssl_capath if os.path.isdir(defaults.openssl_capath or "") else None
+    if not cafile and not capath:
+        raise AdmissionError("system TLS trust unavailable")
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.load_verify_locations(cafile=cafile, capath=capath)
+    opener = urllib.request.build_opener(
+        urllib.request.ProxyHandler({}),
+        _NoRedirect(),
+        urllib.request.HTTPSHandler(context=context),
+    )
     request = urllib.request.Request(
-        API + path,
+        url,
         headers={
             "Accept": "application/vnd.github+json",
             "Authorization": "Bearer " + token,
@@ -74,12 +94,13 @@ def get_json(path: str, token: str):
             "Cache-Control": "no-cache",
             "User-Agent": "reva-release-dispatch-admission/1.0",
         },
+        method="GET",
     )
     for attempt in range(3):
         try:
-            with urllib.request.urlopen(request, timeout=12) as response:
-                if response.status != 200:
-                    raise AdmissionError("GitHub run inventory unavailable")
+            with opener.open(request, timeout=12) as response:
+                if response.status != 200 or response.geturl() != url:
+                    raise AdmissionError("unexpected GitHub response")
                 raw = response.read(1_000_001)
             if len(raw) > 1_000_000:
                 raise AdmissionError("GitHub run inventory exceeds bound")

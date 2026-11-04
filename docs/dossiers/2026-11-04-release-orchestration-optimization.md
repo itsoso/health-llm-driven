@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | in_progress |
-| 当前阶段 | S5 实现与增量验证 |
+| 当前阶段 | S6 PR 与精确 revision CI |
 | Controller | health-harness-orchestrator |
 | Overlay | safety-gate |
 | Base revision | `50d3ae26813d608263f350c5a2b250fca59022b1` |
@@ -27,11 +27,13 @@ coordination layer built on the trusted workflows already proven in production.
 
 1. Make the Mobile OTA skill and repository entrypoint agree on the trusted GitHub
    workflow; local publication remains disabled.
-2. Add a read-only release coordinator that discovers and reuses a unique applicable
-   run for the exact SHA and target before dispatching anything.
+2. Add a fail-closed workflow-side election that admits only the lowest exact
+   `(workflow, target, SHA)` dispatch before any production credential or write.
 3. Split backend-only credential admission from the 30-minute native horizon and
    move the applicable lifetime check ahead of expensive or claim-consuming work.
-4. Record bounded end-to-end timing evidence and expose the actual slow phase.
+4. Preserve and document the existing bounded `release_performance_report.py`
+   observer; collecting a new production timing sample is deferred until a real
+   post-merge release is authorized.
 5. Document deferred optimization work: immutable OTA artifact reuse, Pi/runtime
    cache, cross-runner tool images, and release latency SLOs.
 
@@ -48,15 +50,17 @@ coordination layer built on the trusted workflows already proven in production.
 
 ## Acceptance criteria
 
-- Repeated coordination for the same SHA/target observes or waits for the existing
-  run instead of creating a duplicate.
+- Concurrent dispatches for the same workflow/SHA/target are serialized; only the
+  lowest exact run proceeds beyond credential-free preflight, while every later
+  duplicate is blocked before production credentials or writes.
 - Failed, cancelled, stale-SHA, ambiguous, or unknown runs are never represented as
   success and are not automatically retried.
-- Credential insufficiency is detected before claims and vendor work; refresh, when
-  needed, uses the existing repository-scoped audited operator.
+- Backend-only credential insufficiency is detected before claims and vendor work.
+  Missing or insufficient credentials fail closed; this batch does not mint or
+  refresh credentials.
 - Timing output contains only allowlisted phases and numeric durations, never URLs,
   tokens, logs, or arbitrary exception text.
-- Tests cover success, in-progress reuse, ambiguity, failure, cancellation, SHA
+- Tests cover success, in-progress blocking, ambiguity, failure, cancellation, SHA
   drift, credential expiry, and secret-redaction boundaries.
 - Repository release instructions have one canonical OTA path.
 
@@ -74,6 +78,9 @@ coordination layer built on the trusted workflows already proven in production.
   fail closed and require the separately installed, reviewed external operator.
 - Telemetry: reuse `release_performance_report.py`; do not create a parallel timing
   parser or treat timing as release authority.
+- Deferred: a local read-only pre-dispatch observer, immutable OTA artifact reuse,
+  Pi/runtime caching, cross-runner tool images, and latency SLO enforcement are not
+  implemented by this batch and require separate design and verification.
 
 ## Evidence log
 
@@ -85,6 +92,17 @@ coordination layer built on the trusted workflows already proven in production.
   verification requirement.
 - RED: focused tests failed because duplicate admission and backend-specific fixed
   commands did not exist (`30 failed, 9 passed`).
-- GREEN: trusted workflow/server/OTA/CI contract regression set passed `371 passed,
-  1 skipped` before the final documentation-only edits; final verification remains
-  pending.
+- Independent safety review of `f99f93e87` returned NO-GO because the new GitHub
+  reader did not yet inherit the canonical no-proxy, system-CA-only, no-redirect,
+  exact-final-URL boundary, and because this Dossier overclaimed a pre-dispatch
+  coordinator. Both findings were remediated with negative transport tests and
+  corrected scope; independent re-review of the remediation remains required.
+- GREEN after remediation: the related release regression set passed `414 passed,
+  1 skipped`; `release-preflight.sh` passed after the code remediation. The only
+  subsequent change corrected this Dossier's wording, and its consistency gate
+  passed. Exact-revision remote CI remains required before merge.
+- Independent safety review returned GO after the transport hardening and final
+  Dossier truth corrections; no production release is authorized by that verdict.
+- The registry-selected `verification-before-completion` capability is not installed
+  in this environment. Repository release tests, preflight, CI, exact-SHA status,
+  independent safety review, and post-merge readback remain the verification path.

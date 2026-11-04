@@ -1,6 +1,8 @@
 """Fail-closed admission for duplicate trusted release workflow dispatches."""
 
 import importlib.util
+import io
+import json
 from pathlib import Path
 
 import pytest
@@ -203,17 +205,87 @@ def test_api_failure_is_sanitized_and_never_leaks_secret():
     assert "SECRET" not in str(caught.value)
 
 
+def test_transport_ignores_proxy_and_custom_ca_and_rejects_redirects(monkeypatch):
+    admission = module()
+    path = "/actions/workflows/370218159/runs?per_page=100"
+    expected_url = admission.API + path
+    observed = {}
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def geturl(self):
+            return expected_url
+
+    class Opener:
+        def open(self, request, timeout):
+            observed.update(method=request.method, url=request.full_url, timeout=timeout)
+            return Response(json.dumps({"ok": True}).encode())
+
+    def build(*handlers):
+        assert any(
+            isinstance(handler, admission.urllib.request.ProxyHandler)
+            and handler.proxies == {}
+            for handler in handlers
+        )
+        redirect = next(
+            handler for handler in handlers if isinstance(handler, admission._NoRedirect)
+        )
+        with pytest.raises(admission.AdmissionError, match="redirect rejected"):
+            redirect.redirect_request(None, None, 302, "", {}, "https://evil.test")
+        assert any(
+            isinstance(handler, admission.urllib.request.HTTPSHandler)
+            for handler in handlers
+        )
+        return Opener()
+
+    monkeypatch.setenv("HTTPS_PROXY", "https://evil.test")
+    monkeypatch.setenv("SSL_CERT_FILE", "/nonexistent/untrusted.pem")
+    monkeypatch.setattr(admission.urllib.request, "build_opener", build)
+    assert admission.get_json(path, "token") == {"ok": True}
+    assert observed == {"method": "GET", "url": expected_url, "timeout": 12}
+
+
+def test_transport_rejects_changed_final_url(monkeypatch):
+    admission = module()
+
+    class Response(io.BytesIO):
+        status = 200
+
+        def geturl(self):
+            return "https://evil.test/leak"
+
+    class Opener:
+        def open(self, request, timeout):
+            return Response(b"{}")
+
+    monkeypatch.setattr(admission.urllib.request, "build_opener", lambda *handlers: Opener())
+    with pytest.raises(admission.AdmissionError, match="unexpected GitHub response"):
+        admission.get_json("/actions/workflows/370218159/runs?per_page=100", "token")
+
+
+def test_transport_fails_when_system_ca_is_unavailable(monkeypatch):
+    admission = module()
+    monkeypatch.setattr(
+        admission.ssl,
+        "get_default_verify_paths",
+        lambda: type("Paths", (), {"openssl_cafile": "/missing", "openssl_capath": "/missing"})(),
+    )
+    with pytest.raises(admission.AdmissionError, match="system TLS trust unavailable"):
+        admission.get_json("/actions/workflows/370218159/runs?per_page=100", "token")
+
+
 def test_bounded_api_retry_does_not_expose_provider_error(monkeypatch):
     import urllib.error
 
     admission = module()
     sleeps = []
     monkeypatch.setattr(admission.time, "sleep", sleeps.append)
-    monkeypatch.setattr(
-        admission.urllib.request,
-        "urlopen",
-        lambda *args, **kwargs: (_ for _ in ()).throw(urllib.error.URLError("SECRET provider body")),
-    )
+    class Opener:
+        def open(self, *args, **kwargs):
+            raise urllib.error.URLError("SECRET provider body")
+
+    monkeypatch.setattr(admission.urllib.request, "build_opener", lambda *handlers: Opener())
     with pytest.raises(admission.AdmissionError) as caught:
         admission.get_json("/actions/workflows/370218159/runs?per_page=100", "token")
     assert sleeps == [2, 4]
