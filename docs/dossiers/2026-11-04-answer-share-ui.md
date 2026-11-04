@@ -78,3 +78,11 @@
 - OTA 基线迁移至实际 Store build 291：EAS FINISHED，Apple VALID / IN_BETA_TESTING，实际 IPA 的签名权限、用途说明和源码匹配。实时 production runtime cohort 恰为证据内列出的闭集；287→288/290 的 EAS fingerprint 仅 expoConfig 与 HealthKit 用途文案插件不同，其他原生输入一致；289–291 指纹一致。没有新 native module/API。
 - 旧宿主保留各自原生用途说明，OTA 不会替换这些文案；本次 UI 仅使用已有分享/复制路径。所有未来原生变化和未知 cohort 继续拒绝。完整依据见 `docs/reviews/2026-11-04-ota-runtime136-build291-baseline.json`。
 - 原生基线和回执契约修复须经独立 G4、新候选精确完整 CI，再走 canonical 授权续接、后端健康回读及 trusted OTA validate/publish。当前尚未轮换或发布本次 UI。
+
+## 已合并候选与发布续接状态
+
+- PR #303 合并为 `1423dd5d5af378abe679b2aba7ef03761ca5f42a`，完整 main CI `41810708114` 成功；trusted release validate `41811994810` 和 OTA validate `41813195862` 成功。
+- canonical staging 与 ad894→1423 授权轮换已完成。后端操作 `41813161255` 在创建 workspace/claim 前因 GitHub 只读凭据过期失败；生产仍为 ad894，本次 OTA 尚未 publish。
+- 并发 PR #304 合入 `a3dc7da8cc7ba4c74e5e2752223b77a85f553ac3`，增加 backend_link 的新证明格式；其历史 strict equality 拒绝已完成的 ad894→1423 审计。旧候选不再发布，不重试旧工作流。
+- 本次兼容只允许固定旧 SHA/后继、固定旧 proof 摘要及三份已完成审计摘要；保留 canonical producer 验证、安全文件读取和身份稳定检查。历史字节不改写，返回原 proof；新 inspect 仍强制 backend_link。
+- 下一候选仍须独立 G4、精确完整 CI、未消费授权退役、凭据刷新、后端健康回读及 trusted OTA publish/readback；用户已豁免视觉验收，不豁免这些发布闸。
