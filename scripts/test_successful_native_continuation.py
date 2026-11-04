@@ -64,6 +64,27 @@ def test_terminal_upload_failure_is_preserved_in_continuation(evidence):
     assert proof['vendor']['state'] == 'VENDOR_UPLOAD_FAILED_UNCERTAIN'
 
 
+def test_prior_backend_link_is_preserved_in_continuation(evidence):
+    m, b, profile, native, workspace, _, _, _ = evidence
+    profile['backend_link'] = {
+        'run_id': 789, 'run_attempt': 1,
+        'job_ids': {'backend': 999},
+        'jobs_sha256': 'c' * 64,
+    }
+    _, proof = m.expected(b, 'c' * 40)
+    assert proof['backend_link'] == {
+        'state': 'PRIOR_BACKEND_SUCCEEDED',
+        'run_id': 789,
+        'run_attempt': 1,
+        'workflow_id': 456,
+        'jobs_sha256': 'c' * 64,
+    }
+    observed = {**proof['vendor'], 'backend_link': proof['backend_link']}
+    native.vendor_evidence = lambda *args, **kwargs: observed
+    assert m.inspect(b, 'c' * 40, workspace) == proof
+    assert observed['backend_link'] == proof['backend_link']
+
+
 @pytest.mark.parametrize('damage', ['missing-upload', 'wrong-kind', 'wrong-producer', 'vendor-differs'])
 def test_incomplete_or_mismatched_continuation_fails_closed(evidence, damage):
     m, b, profile, native, workspace, proof, _, source = evidence

@@ -61,6 +61,7 @@ JOB_IDS = {
 }
 JOB_NAMES = set(JOB_IDS)
 BUILD_STEP = "Build once without uploading to Apple"
+BACKEND_STEP = "Start the fixed server-side release capability"
 REQUIRED_STEPS = {
     "preflight": (
         "Materialize canonical source and check exact CI without production credentials",
@@ -244,7 +245,21 @@ PROFILES = {
      'canonical_hashes': {'.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
                           'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
                           'scripts/trusted_release_server.py': 'fe38713013cab8b68f4aa2cd744dae0f2205b13d3ab45b49f87e66b631dbcd46'},
-     'skipped_jobs': ['retained-testflight']},
+     'skipped_jobs': ['retained-testflight'],
+     'backend_link': {
+         'run_id': 41801637758,
+         'run_attempt': 1,
+         'job_ids': {
+             'preflight': 126478582744,
+             'build-permission': 126478669154,
+             'retained-testflight': 126478671589,
+             'backend': 126478887606,
+             'ios-build': 126478889453,
+             'testflight': 126478890460,
+             'release-result': 126480831640,
+         },
+         'jobs_sha256': '99803a1ee17b618ed51973bd03637a5decc1eda4a526de8666dca8036569088f',
+     }},
 }
 
 
@@ -444,6 +459,54 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA, backend_log=No
     }
 
 
+def validate_backend_link(run, jobs, *, native_sha):
+    profile = profile_for(native_sha)
+    link = profile.get("backend_link")
+    if not isinstance(link, dict):
+        raise RetirementError("reviewed prior backend linkage required")
+    expected = {
+        "id": link["run_id"],
+        "run_attempt": link["run_attempt"],
+        "workflow_id": WORKFLOW_ID,
+        "path": ".github/workflows/trusted-release.yml",
+        "head_sha": native_sha,
+        "head_branch": "main",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+    }
+    if (
+        not isinstance(run, dict)
+        or any(run.get(key) != value for key, value in expected.items())
+        or any(
+            not isinstance(run.get(key), dict)
+            or run[key].get("full_name") != REPOSITORY
+            for key in ("repository", "head_repository")
+        )
+    ):
+        raise RetirementError("exact prior backend workflow terminal required")
+    observed = jobs_map(jobs, native_sha=native_sha)
+    successful = {"preflight", "build-permission", "backend"}
+    for name, job in observed.items():
+        conclusion = "success" if name in successful else "skipped"
+        if job.get("id") != link["job_ids"][name] or job.get("conclusion") != conclusion:
+            raise RetirementError("prior backend job identity or terminal differs")
+    backend_steps = steps_map(observed["backend"])
+    if (
+        backend_steps.get(BACKEND_STEP, {}).get("status") != "completed"
+        or backend_steps.get(BACKEND_STEP, {}).get("conclusion") != "success"
+        or digest(jobs) != link["jobs_sha256"]
+    ):
+        raise RetirementError("prior backend success evidence differs")
+    return {
+        "state": "PRIOR_BACKEND_SUCCEEDED",
+        "run_id": link["run_id"],
+        "run_attempt": link["run_attempt"],
+        "workflow_id": WORKFLOW_ID,
+        "jobs_sha256": link["jobs_sha256"],
+    }
+
+
 class NoRedirect(urllib.request.HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None
@@ -539,6 +602,17 @@ def vendor_evidence(token, native_sha=OLD_SHA):
             logs=True, native_sha=native_sha,
         )
     proof = validate_vendor(run, jobs, prior, log, native_sha=native_sha, backend_log=backend_log)
+    link = profile.get("backend_link")
+    if link is not None:
+        backend_run_url = BASE + f"/actions/runs/{link['run_id']}"
+        backend_run = json_value(read_url(backend_run_url, token))
+        backend_jobs = json_value(read_url(
+            backend_run_url + f"/attempts/{link['run_attempt']}/jobs?per_page=100",
+            token,
+        ))
+        proof["backend_link"] = validate_backend_link(
+            backend_run, backend_jobs, native_sha=native_sha
+        )
     if proof["log_sha256"] != profile["log_sha256"]:
         raise RetirementError("reviewed native vendor log bytes differ")
     if profile["jobs_sha256"] is not None and proof["jobs_sha256"] != profile["jobs_sha256"]:
@@ -548,6 +622,8 @@ def vendor_evidence(token, native_sha=OLD_SHA):
         raise RetirementError("reviewed earlier native attempts differ")
     if json_value(read_url(run_url, token)) != run:
         raise RetirementError("native workflow changed during inspection")
+    if link is not None and json_value(read_url(backend_run_url, token)) != backend_run:
+        raise RetirementError("prior backend workflow changed during inspection")
     return proof
 
 

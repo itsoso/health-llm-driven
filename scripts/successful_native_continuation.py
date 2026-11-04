@@ -52,8 +52,17 @@ def expected(b, sha):
     }
     if profile.get('terminal_mode') == 'backend-already-consumed':
         vendor['backend_log_sha256'] = profile['backend_log_sha256']
-    return native, {'kind': 'successful-backend-native-continuation', 'native_sha': sha,
-                    'vendor': vendor}
+    proof = {'kind': 'successful-backend-native-continuation', 'native_sha': sha,
+             'vendor': vendor}
+    link = profile.get('backend_link')
+    if link is not None:
+        proof['backend_link'] = {
+            'state': 'PRIOR_BACKEND_SUCCEEDED',
+            'run_id': link['run_id'], 'run_attempt': link['run_attempt'],
+            'workflow_id': native.WORKFLOW_ID,
+            'jobs_sha256': link['jobs_sha256'],
+        }
+    return native, proof
 
 
 def validate_saved(b, sha, value):
@@ -76,6 +85,8 @@ def inspect(b, sha, workspace):
     if not token:
         raise ContinuationError('native continuation read credential unavailable')
     observed = native.vendor_evidence(token, native_sha=sha)
-    if observed != proof['vendor']:
+    observed_link = observed.get('backend_link')
+    observed_vendor = {key: value for key, value in observed.items() if key != 'backend_link'}
+    if observed_vendor != proof['vendor'] or observed_link != proof.get('backend_link'):
         raise ContinuationError('native continuation vendor terminal differs')
     return proof

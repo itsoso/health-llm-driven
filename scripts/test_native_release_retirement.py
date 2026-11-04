@@ -11,6 +11,7 @@ import pytest
 
 BUILD_288_SHA = "8f272e49aebc1ee8d2640d93eee37a530b181e71"
 SUCCESSFUL_919_SHA = "91936757ad1adf2404451aa0cb0378a15b0594c6"
+LINKED_BACKEND_SHA = "ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1"
 FAILED_UPLOAD_SHA = "a" * 40
 
 
@@ -52,6 +53,79 @@ def test_successful_919_profile_binds_exact_terminal_evidence():
         },
         "skipped_jobs": ["retained-testflight"],
     }
+
+
+def test_prior_backend_link_profile_binds_exact_successful_run():
+    profile = load().profile_for(LINKED_BACKEND_SHA)
+
+    assert profile["terminal_mode"] == "backend-already-consumed"
+    assert profile["backend_link"] == {
+        "run_id": 41801637758,
+        "run_attempt": 1,
+        "job_ids": {
+            "preflight": 126478582744,
+            "build-permission": 126478669154,
+            "retained-testflight": 126478671589,
+            "backend": 126478887606,
+            "ios-build": 126478889453,
+            "testflight": 126478890460,
+            "release-result": 126480831640,
+        },
+        "jobs_sha256": "99803a1ee17b618ed51973bd03637a5decc1eda4a526de8666dca8036569088f",
+    }
+
+
+def prior_backend_metadata(m):
+    profile = m.profile_for(LINKED_BACKEND_SHA)
+    link = profile["backend_link"]
+    run = {
+        "id": link["run_id"], "run_attempt": 1, "workflow_id": m.WORKFLOW_ID,
+        "path": ".github/workflows/trusted-release.yml", "head_sha": LINKED_BACKEND_SHA,
+        "head_branch": "main", "event": "workflow_dispatch", "status": "completed",
+        "conclusion": "success", "repository": {"full_name": m.REPOSITORY},
+        "head_repository": {"full_name": m.REPOSITORY},
+    }
+    jobs = []
+    for name, job_id in link["job_ids"].items():
+        required = (m.BACKEND_STEP,) if name == "backend" else m.REQUIRED_STEPS.get(name, ())
+        steps = [dict(name=step, status="completed", conclusion="success") for step in required]
+        conclusion = "success" if name in {"preflight", "build-permission", "backend"} else "skipped"
+        if conclusion == "skipped":
+            steps = []
+        jobs.append({"id": job_id, "name": name, "status": "completed",
+                     "conclusion": conclusion, "steps": steps})
+    return run, {"total_count": len(jobs), "jobs": jobs}
+
+
+def test_linked_backend_accepts_upload_only_with_exact_prior_backend_success(monkeypatch):
+    m = load()
+    run, jobs = prior_backend_metadata(m)
+    profile = copy.deepcopy(m.profile_for(LINKED_BACKEND_SHA))
+    profile["backend_link"]["jobs_sha256"] = m.digest(jobs)
+    monkeypatch.setitem(m.PROFILES, LINKED_BACKEND_SHA, profile)
+
+    link = m.validate_backend_link(run, jobs, native_sha=LINKED_BACKEND_SHA)
+
+    assert link["state"] == "PRIOR_BACKEND_SUCCEEDED"
+
+
+@pytest.mark.parametrize("damage", ["run", "job", "step", "digest"])
+def test_linked_backend_rejects_any_changed_linkage(monkeypatch, damage):
+    m = load()
+    run, jobs = prior_backend_metadata(m)
+    profile = copy.deepcopy(m.profile_for(LINKED_BACKEND_SHA))
+    profile["backend_link"]["jobs_sha256"] = m.digest(jobs)
+    monkeypatch.setitem(m.PROFILES, LINKED_BACKEND_SHA, profile)
+    if damage == "run":
+        run["conclusion"] = "failure"
+    elif damage == "job":
+        next(j for j in jobs["jobs"] if j["name"] == "backend")["conclusion"] = "failure"
+    elif damage == "step":
+        next(j for j in jobs["jobs"] if j["name"] == "backend")["steps"][0]["conclusion"] = "failure"
+    else:
+        profile["backend_link"]["jobs_sha256"] = "0" * 64
+    with pytest.raises(m.RetirementError):
+        m.validate_backend_link(run, jobs, native_sha=LINKED_BACKEND_SHA)
 
 
 def metadata(m):
