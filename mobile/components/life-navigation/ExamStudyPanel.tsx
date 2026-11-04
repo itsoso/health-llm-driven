@@ -7,10 +7,11 @@ import ServerExamPractice from './ServerExamPractice';
 import { paperAssignment, examPapers } from '../../utils/examPapers';
 import { useLifeControls } from './Controls';
 
-type Props = {owner:number;data:LifeData;day:string;disabled:boolean;edit:(change:(data:LifeData)=>void)=>void;focus:(task:LifeTask)=>void};
-export default function ExamStudyPanel({owner,data,day,disabled,edit,focus}:Props) {
+type Section='每日计划'|'练习与错题'|'真题与路线';
+type Props = {owner:number;data:LifeData;day:string;disabled:boolean;initialSection?:Section;edit:(change:(data:LifeData)=>void)=>void;focus:(task:LifeTask)=>void};
+export default function ExamStudyPanel({owner,data,day,disabled,initialSection='每日计划',edit,focus}:Props) {
  const {c,text,button,field}=useLifeControls(disabled);
- const [section,setSection]=useState('每日计划'),[error,setError]=useState('');
+ const [section,setSection]=useState<Section>(initialSection),[error,setError]=useState('');
  const [practiceEntry,setPracticeEntry]=useState<{subject:Subject;mode:'next'|'wrong'}>({subject:'英语',mode:'next'});
  const assignment=paperAssignment(day),plan=dailyStudy(day),remaining=daysUntil(localDate());
  const startPractice=(subject:Subject,mode:'next'|'wrong'='next')=>{setPracticeEntry({subject,mode});setSection('练习与错题');};
@@ -20,7 +21,7 @@ export default function ExamStudyPanel({owner,data,day,disabled,edit,focus}:Prop
  const card={padding:16,gap:12,backgroundColor:c.bgCard,borderRadius:14,borderWidth:1,borderColor:c.separator} as const;
  return <View style={{gap:16}}>
   <View style={card}>{heading('EMBA · 每天两小时')}{text('英语四级基础起步 · 199 管综 + 204 英语（二）')}{text(remaining>0?`${remaining} 天后初试`:remaining===0?'今天初试':'初试已结束')}{text(`${examDate} · 以准考证为准`)}</View>
-  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{['每日计划','练习与错题','真题与路线'].map(s=>button(s,()=>setSection(s),section===s))}</View>
+  <View style={{flexDirection:'row',flexWrap:'wrap',gap:8}}>{(['每日计划','练习与错题','真题与路线'] as const).map(s=>button(s,()=>setSection(s),section===s))}</View>
   {text('练习答案独立保存到当前账号。计划和笔记仍需点顶部「保存」。')}
   {!!error&&<Text accessibilityRole="alert" style={{color:c.labelPrimary}}>{error}</Text>}
   {assignment&&section!=='真题与路线'&&<View style={card}>{heading(`${day} · ${assignment.year}年真题 · ${assignment.review?'复测与补弱':'首轮分段'}`)}{text(`英语：${assignment.english}；管综：${assignment.comprehensive}`)}{text(assignment.writing)}{assignment.papers.map(p=>button(`打开${p.year}年${p.subject==='204'?'英语（二）':'管综'}原卷`,()=>{void open(p.url);} ))}{text('原卷训练：纸上作答，在每日计划记录题号、正确数、用时与错因；尚无真题在线自动判分。文件可能含参考答案，请先遮住答案。')}{text(assignment.papers.map(p=>p.source).join(' / '))}</View>}

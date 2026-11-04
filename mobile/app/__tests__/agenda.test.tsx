@@ -14,6 +14,7 @@ const mockPushChatWithContext = jest.fn();
 const mockToast = jest.fn();
 const mockShowUndoable = jest.fn();
 let mockCanGoBack = true;
+let mockRouteParams: { navigation?: string; tab?: string; study?: string } = {};
 let mockAgendaData: AgendaToday;
 let mockCompleteState: {
   isPending: boolean;
@@ -67,6 +68,8 @@ const agendaData: AgendaToday = {
 };
 
 jest.mock('expo-router', () => ({
+  useLocalSearchParams: () => mockRouteParams,
+  Redirect: ({ href }: { href: string }) => `redirect:${href}`,
   useRouter: () => ({
     back: mockBack,
     navigate: mockNavigate,
@@ -117,6 +120,7 @@ describe('AgendaScreen', () => {
     jest.setSystemTime(new Date(2026, 6, 20, 9, 0, 0));
     jest.clearAllMocks();
     mockCanGoBack = true;
+    mockRouteParams = {};
     mockAgendaData = agendaData;
     mockCompleteState = { isPending: false };
     mockSnoozeState = { isPending: false };
@@ -145,6 +149,14 @@ describe('AgendaScreen', () => {
     expect(queryByText('[movement] 晚饭后步行 10 分钟')).toBeNull();
     expect(queryByText('智能优先处理')).toBeNull();
     expect(queryByText('7 天健康运行时')).toBeNull();
+  });
+
+  it('opens the matching mobile EMBA practice route from the web agenda parameters', () => {
+    mockRouteParams = { navigation: 'week', tab: 'exam', study: 'practice' };
+    const view = render(<AgendaScreen />);
+
+    expect(view.toJSON()).toBe('redirect:/life-navigation?tab=exam&study=practice');
+    expect(view.queryByText('今日行动')).toBeNull();
   });
 
   it('keeps later actions collapsed until the user asks to inspect them', () => {

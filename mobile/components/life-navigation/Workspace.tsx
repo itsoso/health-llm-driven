@@ -18,12 +18,12 @@ const noteFields = { valuable: '有价值的事', beautiful: '美好的事', mis
 const quarterFields = { review: '季度回顾', strategy: '季度战略', decomposition: '季度拆解', plan: '季度计划', risk: '季度风险' };
 const opportunityFields = { insight: '机会洞察', evidence: '依据', personal_fit: '个人适配', assumption: '待验证假设', next_step: '验证行动', success_criteria: '成功标准', risk_limit: '风险边界', result: '验证结果' };
 function confirm(title: string, body: string, run: () => void) { Alert.alert(title, body, [{ text: '取消', style: 'cancel' }, { text: '确认', onPress: run }]); }
-export default function Workspace({ owner, onViewHealth }: {
-    owner: number; onViewHealth:()=>void;
+export default function Workspace({ owner, onViewHealth, initialTab = '今日', initialExamSection }: {
+    owner: number; onViewHealth:()=>void; initialTab?:typeof tabs[number]; initialExamSection?:'每日计划'|'练习与错题'|'真题与路线';
 }) {
     const { c } = useTheme();
     const navigation = useNavigation();
-    const [workspace, setWorkspace] = useState<LifeWorkspace | null>(null), [draft, setDraft] = useState<LifeData | null>(null), [tab, setTab] = useState<typeof tabs[number]>('今日'), [date, setDate] = useState(localDate()), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [refresh, setRefresh] = useState(0), [now, setNow] = useState(Date.now());
+    const [workspace, setWorkspace] = useState<LifeWorkspace | null>(null), [draft, setDraft] = useState<LifeData | null>(null), [tab, setTab] = useState<typeof tabs[number]>(initialTab), [date, setDate] = useState(localDate()), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [dirty, setDirty] = useState(false), [refresh, setRefresh] = useState(0), [now, setNow] = useState(Date.now());
     const [expandedTask,setExpandedTask]=useState<string|null>(null);
     const [showHelp,setShowHelp]=useState(false);
     const [showTaskSearch,setShowTaskSearch]=useState(false);
@@ -179,7 +179,7 @@ export default function Workspace({ owner, onViewHealth }: {
  {tab === '记事本' && <NotebookPanel notes={draft.notebook ?? []} disabled={busy}
      onChange={notes => editStudy(d => { d.notebook = notes; })}
      onDelete={id => ask('删除笔记', '确认删除这条笔记？点击保存后生效。', () => editStudy(d => { d.notebook = (d.notebook ?? []).filter(note => note.id !== id); }))}/>}
- {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} owner={owner} data={draft} day={date} disabled={busy} edit={editStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
+ {tab === '备考学习' && <ExamStudyPanel key={`study-${date}`} owner={owner} data={draft} day={date} disabled={busy} initialSection={initialExamSection} edit={editStudy} focus={task=>{persistFocus(focusStart({...draft.focus,focus_minutes:task.estimated_minutes||25,rounds:1},task.id,Date.now()));setTab('时段导航');}}/>}
  {tab === '今日' && <>
  <TodayTaskList key={date} tasks={tasks.filter(t=>t.date===date)} expandedTaskId={expandedTask} onCollapseTask={()=>setExpandedTask(null)} renderTask={taskCard} disabled={busy} searchOpen={showTaskSearch}/>
  <View style={{flexDirection:'row',flexWrap:'wrap',gap:6}}>

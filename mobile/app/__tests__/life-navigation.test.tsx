@@ -4,12 +4,13 @@ import { render, waitFor, fireEvent, act } from '@testing-library/react-native';
 let mockOwner = 1;
 const mockDispatch = jest.fn();
 const mockPush = jest.fn();
+let mockRouteParams: { tab?: string; study?: string } = {};
 let mockPreventRemove = false;
 let mockOnRemove: ((event: { data: { action: { type: string } } }) => void) | undefined;
 jest.mock('@react-navigation/native', () => ({ usePreventRemove: (prevent: boolean, callback: typeof mockOnRemove) => { mockPreventRemove = prevent; mockOnRemove = callback; } }));
 jest.mock('../../utils/lifeNavigationModel', () => ({...jest.requireActual('../../utils/lifeNavigationModel'),localDate:()=> '2026-10-27'}));
 jest.mock('../../hooks/useAuth', () => ({ useAuth: () => ({ user: { id: mockOwner } }) }));
-jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }), useNavigation: () => ({ dispatch: mockDispatch }), Stack: { Screen: ({ options }: any) => options.headerRight?.() ?? null }, useFocusEffect: (cb: () => void) => require('react').useEffect(cb, [cb]) }));
+jest.mock('expo-router', () => ({ useRouter: () => ({ push: mockPush }), useLocalSearchParams: () => mockRouteParams, useNavigation: () => ({ dispatch: mockDispatch }), Stack: { Screen: ({ options }: any) => options.headerRight?.() ?? null }, useFocusEffect: (cb: () => void) => require('react').useEffect(cb, [cb]) }));
 jest.mock('../../services/lifeNavigation', () => ({ fetchLifeWorkspace: jest.fn(), saveLifeWorkspace: jest.fn(), fetchLifeHistory: jest.fn().mockResolvedValue([]), restoreLifeWorkspace: jest.fn(), fetchLifeBackup: jest.fn(), importLifeBackup: jest.fn() }));
 import { fetchLifeWorkspace, saveLifeWorkspace, fetchLifeHistory, importLifeBackup, restoreLifeWorkspace } from '../../services/lifeNavigation';
 jest.mock('../../utils/lifeNavigationFiles', () => ({ exportLifeBackup: jest.fn(), pickLifeBackup: jest.fn() }), { virtual: true });
@@ -20,7 +21,17 @@ import { blankData, blankTask, blankWeek, localDate, mondayOf } from '../../util
 import { invalidateAIConsent } from '../../services/aiConsentState';
 import { pickLifeBackup } from '../../utils/lifeNavigationFiles';
 const workspace = () => ({ schema_version: 'life_navigation.v1', revision: 0, updated_at: null, data: blankData() });
-beforeEach(() => { mockOwner = 1; jest.clearAllMocks();jest.spyOn(AppState,'addEventListener').mockImplementation(()=>({remove:jest.fn()})); (fetchLifeWorkspace as jest.Mock).mockResolvedValue(workspace()); });
+beforeEach(() => { mockOwner = 1; mockRouteParams = {}; jest.clearAllMocks();jest.spyOn(AppState,'addEventListener').mockImplementation(()=>({remove:jest.fn()})); (fetchLifeWorkspace as jest.Mock).mockResolvedValue(workspace()); });
+
+it('opens the mobile EMBA practice route directly from matching web parameters', async () => {
+    mockRouteParams = { tab: 'exam', study: 'practice' };
+    (fetchExamPractice as jest.Mock).mockResolvedValue({ catalog_version: 'server', day: localDate(), today: localDate(), questions: [{ id: 'e1', version: 1, subject: '英语', topic: '新题', prompt: 'Mobile route question', options: ['A choice', 'B choice'], source: '原创', difficulty: '基础' }], progress: [], queue: ['e1'], plan: [], total_minutes: 120, legacy_notice: '' });
+    const view = render(<Screen />);
+    await waitFor(() => view.getByText('Mobile route question'));
+    expect(view.getByLabelText('备考学习').props.accessibilityState.selected).toBe(true);
+    expect(view.getByLabelText('练习与错题').props.accessibilityState.disabled).toBe(true);
+    expect(fetchExamPractice).toHaveBeenCalledWith(1, localDate());
+});
 it('only reports a personal task saved after the server confirms', async () => {
     (fetchLifeWorkspace as jest.Mock).mockResolvedValue({ revision: 0, data: { weeks: {} } });
     (saveLifeWorkspace as jest.Mock).mockRejectedValue({ response: { status: 409 } });

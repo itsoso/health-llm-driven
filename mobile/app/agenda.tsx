@@ -20,7 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
+import { Redirect, useLocalSearchParams, useRouter } from 'expo-router';
 
 import {
   useAgendaToday,
@@ -99,7 +99,16 @@ const FUTURE_REVIEW_MENU: AgendaMenuItem[] = [
   { label: '取消', action: 'cancel' },
 ];
 
-export default function AgendaScreen() {
+export default function AgendaRoute() {
+  const params = useLocalSearchParams<{ navigation?: string; tab?: string; study?: string }>();
+  if (params.navigation === 'week' && params.tab === 'exam') {
+    const study = params.study === 'practice' ? '&study=practice' : '';
+    return <Redirect href={`/life-navigation?tab=exam${study}` as any} />;
+  }
+  return <AgendaScreen />;
+}
+
+function AgendaScreen() {
   const router = useRouter();
   const toast = useToast();
   const { data, isLoading, isError, isRefetching, refetch } = useAgendaToday();
