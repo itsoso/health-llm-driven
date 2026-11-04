@@ -49,6 +49,13 @@ def test_completed_native_continuation_is_live_verified_and_secret_free(evidence
     assert m.validate_saved(b, 'c' * 40, proof) == proof
 
 
+def test_rerun_continuation_binds_reviewed_prior_attempts(evidence):
+    m, b, profile, _, _, _, _, _ = evidence
+    profile.update(run_attempt=3, prior_jobs_sha256='c' * 64)
+    _, proof = m.expected(b, 'c' * 40)
+    assert proof['vendor']['prior_jobs_sha256'] == 'c' * 64
+
+
 @pytest.mark.parametrize('damage', ['missing-upload', 'wrong-kind', 'wrong-producer', 'vendor-differs'])
 def test_incomplete_or_mismatched_continuation_fails_closed(evidence, damage):
     m, b, profile, native, workspace, proof, _, source = evidence

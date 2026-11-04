@@ -9,6 +9,8 @@ from types import SimpleNamespace
 
 import pytest
 
+BUILD_288_SHA = "8f272e49aebc1ee8d2640d93eee37a530b181e71"
+
 
 def load():
     spec = importlib.util.spec_from_file_location(
@@ -83,6 +85,60 @@ def test_vendor_success_is_upload_only_and_binds_prior_attempt():
     assert evidence["submission_id"] == m.SUBMISSION_ID
     assert evidence["run_attempt"] == 2
     assert "backend" not in evidence
+
+
+def third_attempt_metadata(m):
+    profile = m.profile_for(BUILD_288_SHA)
+    run = {
+        "id": profile["run_id"], "run_attempt": 3, "workflow_id": m.WORKFLOW_ID,
+        "path": ".github/workflows/trusted-release.yml", "head_sha": BUILD_288_SHA,
+        "head_branch": "main", "event": "workflow_dispatch", "status": "completed",
+        "conclusion": "success", "repository": {"full_name": m.REPOSITORY},
+        "head_repository": {"full_name": m.REPOSITORY},
+    }
+    jobs = []
+    for name, job_id in profile["job_ids"].items():
+        steps = [dict(name=step, status="completed", conclusion="success")
+                 for step in m.REQUIRED_STEPS.get(name, ())]
+        jobs.append({"id": job_id, "name": name, "status": "completed",
+                     "conclusion": "skipped" if name in profile["skipped_jobs"] else "success",
+                     "steps": steps})
+    prior = []
+    for attempt in (1, 2):
+        previous = copy.deepcopy(jobs)
+        for job in previous:
+            job["id"] -= 1000 * attempt
+            if job["name"] == "testflight":
+                job["conclusion"] = "failure"
+                for step in job["steps"]:
+                    if step["name"] == "Claim one-time TestFlight upload permission before exposing vendor credentials":
+                        step["conclusion"] = "failure"
+                    if step["name"] == "Revalidate and upload the exact finished build":
+                        step["conclusion"] = "skipped"
+            if job["name"] == "release-result":
+                job["conclusion"] = "failure"
+                for step in job["steps"]:
+                    step["conclusion"] = "failure"
+        prior.append({"total_count": len(previous), "jobs": previous})
+    log = (
+        f"2026-11-04T04:33:46.9420921Z {profile['build_id']}\n"
+        f"2026-11-04T04:33:52.0233016Z Submission details: https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/{profile['submission_id']}\n"
+        "2026-11-04T04:34:07.3014301Z ✔ Submitted your app to Apple App Store Connect!\n"
+        "2026-11-04T04:34:07.3015715Z Your binary has been successfully uploaded to App Store Connect!\n"
+    ).encode()
+    return run, {"total_count": len(jobs), "jobs": jobs}, prior, log
+
+
+def test_third_attempt_profile_requires_both_pre_upload_failures():
+    m = load()
+    run, jobs, prior, log = third_attempt_metadata(m)
+    proof = m.validate_vendor(run, jobs, prior, log, native_sha=BUILD_288_SHA)
+    assert proof["run_attempt"] == 3
+    assert proof["prior_jobs_sha256"] == m.digest(prior)
+    previous_upload = next(j for j in prior[1]["jobs"] if j["name"] == "testflight")
+    previous_upload["steps"][-1]["conclusion"] = "success"
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log, native_sha=BUILD_288_SHA)
 
 
 @pytest.mark.parametrize(

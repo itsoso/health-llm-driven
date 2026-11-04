@@ -145,6 +145,33 @@ PROFILES = {
                       'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
                       'scripts/trusted_release_server.py': '9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638'},
  'skipped_jobs': ['backend', 'retained-testflight']},
+    '8f272e49aebc1ee8d2640d93eee37a530b181e71': {
+        'workspace_kind': 'successful-backend',
+        'run_id': 41771639966,
+        'run_attempt': 3,
+        'log_host': 'productionresultssa17.blob.core.windows.net',
+        'job_ids': {
+            'testflight': 126389490661,
+            'build-permission': 126389491885,
+            'preflight': 126389493199,
+            'retained-testflight': 126389521356,
+            'ios-build': 126389525735,
+            'backend': 126389539732,
+            'release-result': 126389948936,
+        },
+        'build_id': '2a2fb4da-71b5-477d-88ec-10b6ab29abd5',
+        'submission_id': '28e52c78-728a-4a32-bfe3-eb5c4e3d82f2',
+        'log_sha256': '1f12dedd44d0e31d732286046d6aa8787013908fc4a878966afef099f2b0fa0c',
+        'jobs_sha256': 'fff291c0d3b5a2de83e55762d1fcb1960889470c5607f57f0e42d9ed4e455561',
+        'prior_jobs_sha256': '38b22c68bda4b119ffc6170ee263607f76a82855f1f2c07ea349fe4b83f6535c',
+        'canonical_hashes': {
+            '.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
+            'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
+            'scripts/trusted_release_server.py': '9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638',
+        },
+        'skipped_jobs': ['retained-testflight'],
+        'prior_mode': 'upload-claim-failed',
+    },
 }
 
 
@@ -230,7 +257,15 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
     current = jobs_map(jobs, native_sha=native_sha)
     if profile["run_attempt"] == 1 and prior is not None:
         raise RetirementError("unexpected earlier native attempt evidence")
-    first = jobs_map(prior, native_sha=native_sha) if profile["run_attempt"] == 2 else None
+    if profile["run_attempt"] == 2:
+        prior_attempts = [jobs_map(prior, native_sha=native_sha)]
+    elif profile["run_attempt"] > 2:
+        if (not isinstance(prior, list)
+                or len(prior) != profile["run_attempt"] - 1):
+            raise RetirementError("complete earlier native attempts required")
+        prior_attempts = [jobs_map(value, native_sha=native_sha) for value in prior]
+    else:
+        prior_attempts = []
     for name, job in current.items():
         if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != (
             "skipped" if name in profile.get("skipped_jobs", ("backend",)) else "success"
@@ -245,14 +280,26 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
                 raise RetirementError("native vendor step did not succeed")
     # Attempt 1 failed before vendor create. Never close a profile with an
     # uncertain earlier create/upload, even if a later rerun happens to pass.
-    if first is not None and (
-        first["backend"].get("conclusion") != "skipped"
-        or first["testflight"].get("conclusion") != "skipped"
-        or first["ios-build"].get("conclusion") != "failure"
-        or steps_map(first["ios-build"]).get(BUILD_STEP, {}).get("conclusion")
-        != "skipped"
-    ):
-        raise RetirementError("earlier native attempt may have reached vendor")
+    if profile.get("prior_mode") == "upload-claim-failed":
+        claim = "Claim one-time TestFlight upload permission before exposing vendor credentials"
+        upload = "Revalidate and upload the exact finished build"
+        for attempt in prior_attempts:
+            testflight = attempt.get("testflight", {})
+            steps = steps_map(testflight)
+            if (testflight.get("conclusion") != "failure"
+                    or steps.get(claim, {}).get("conclusion") != "failure"
+                    or steps.get(upload, {}).get("conclusion") != "skipped"
+                    or attempt.get("release-result", {}).get("conclusion") != "failure"):
+                raise RetirementError("earlier native attempt may have uploaded")
+    elif prior_attempts:
+        first = prior_attempts[0]
+        if (len(prior_attempts) != 1
+                or first["backend"].get("conclusion") != "skipped"
+                or first["testflight"].get("conclusion") != "skipped"
+                or first["ios-build"].get("conclusion") != "failure"
+                or steps_map(first["ios-build"]).get(BUILD_STEP, {}).get("conclusion")
+                != "skipped"):
+            raise RetirementError("earlier native attempt may have reached vendor")
     try:
         lines = log.decode("utf-8").splitlines()
     except (UnicodeError, AttributeError):
@@ -366,8 +413,13 @@ def vendor_evidence(token, native_sha=OLD_SHA):
     jobs = json_value(read_url(
         run_url + f"/attempts/{profile['run_attempt']}/jobs?per_page=100", token
     ))
-    prior = (json_value(read_url(run_url + "/attempts/1/jobs?per_page=100", token))
-             if profile["run_attempt"] == 2 else None)
+    if profile["run_attempt"] == 2:
+        prior = json_value(read_url(run_url + "/attempts/1/jobs?per_page=100", token))
+    elif profile["run_attempt"] > 2:
+        prior = [json_value(read_url(run_url + f"/attempts/{attempt}/jobs?per_page=100", token))
+                 for attempt in range(1, profile["run_attempt"])]
+    else:
+        prior = None
     log = read_url(
         BASE + f"/actions/jobs/{profile['job_ids']['testflight']}/logs", token,
         logs=True, native_sha=native_sha
@@ -377,6 +429,9 @@ def vendor_evidence(token, native_sha=OLD_SHA):
         raise RetirementError("reviewed native vendor log bytes differ")
     if profile["jobs_sha256"] is not None and proof["jobs_sha256"] != profile["jobs_sha256"]:
         raise RetirementError("reviewed native workflow job bytes differ")
+    if (profile.get("prior_jobs_sha256") is not None
+            and proof["prior_jobs_sha256"] != profile["prior_jobs_sha256"]):
+        raise RetirementError("reviewed earlier native attempts differ")
     if json_value(read_url(run_url, token)) != run:
         raise RetirementError("native workflow changed during inspection")
     return proof
@@ -625,10 +680,12 @@ def closed_evidence(b, sha, receipt, *, historical=False):
         or any(
             not isinstance(vendor[k], str)
             or re.fullmatch("[a-f0-9]{64}", vendor[k]) is None
-            for k in (("jobs_sha256", "prior_jobs_sha256") if profile["run_attempt"] == 2 else ("jobs_sha256",))
+            for k in (("jobs_sha256", "prior_jobs_sha256") if profile["run_attempt"] > 1 else ("jobs_sha256",))
         )
         or (profile["run_attempt"] == 1 and vendor.get("prior_jobs_sha256") is not None)
         or (profile["jobs_sha256"] is not None and vendor.get("jobs_sha256") != profile["jobs_sha256"])
+        or (profile.get("prior_jobs_sha256") is not None
+            and vendor.get("prior_jobs_sha256") != profile["prior_jobs_sha256"])
     ):
         raise RetirementError("native vendor proof differs")
     if (

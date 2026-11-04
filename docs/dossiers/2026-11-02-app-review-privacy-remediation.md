@@ -168,3 +168,12 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   Store preflight and release-pack validation passed. A new exact main SHA, full CI,
   canonical native build and successful App Store Connect ingestion are still
   required before submission.
+- The prior release workspace has both native one-shot claims consumed even though
+  App Store Connect later rejected the ingested binary. Rotation therefore now uses
+  a byte-pinned successful-backend continuation profile for the exact upload run,
+  Build ID and EAS submission ID. It additionally binds both earlier rerun attempts
+  and proves their upload step was skipped after the server claim failed. This proof
+  certifies only the EAS/Apple upload terminal; the separate Build 288 ingestion
+  failure remains the reason a new binary is mandatory. Focused release tests pass
+  89/89 and a live read-only GitHub evidence reconstruction matches all reviewed
+  job, prior-attempt and log digests.

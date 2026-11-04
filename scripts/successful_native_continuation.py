@@ -33,7 +33,7 @@ def requires_proof(b, sha):
 def expected(b, sha):
     native = load(b, 'native_release_retirement')
     profile = native.profile_for(sha)
-    if profile.get('workspace_kind') != 'successful-backend' or profile['run_attempt'] != 1:
+    if profile.get('workspace_kind') != 'successful-backend' or profile['run_attempt'] < 1:
         raise ContinuationError('reviewed successful-backend native continuation required')
     source = b.canonical_source(sha)
     for name, digest in profile['canonical_hashes'].items():
@@ -46,7 +46,8 @@ def expected(b, sha):
         'run_attempt': 1, 'workflow_id': native.WORKFLOW_ID,
         'build_id': profile['build_id'], 'submission_id': profile['submission_id'],
         'log_sha256': profile['log_sha256'], 'jobs_sha256': profile['jobs_sha256'],
-        'prior_jobs_sha256': None, 'canonical_hashes': profile['canonical_hashes'],
+        'prior_jobs_sha256': profile.get('prior_jobs_sha256'),
+        'canonical_hashes': profile['canonical_hashes'],
     }
     return native, {'kind': 'successful-backend-native-continuation', 'native_sha': sha,
                     'vendor': vendor}
