@@ -80,8 +80,15 @@ def _stdin_token():
 
 
 
-def _read_credential_file(path, *, _anchor='/', _owner_uid=0):
+def _read_credential_file(
+    path, *, _anchor='/', _owner_uid=0, minimum_lifetime_seconds=0
+):
     """Read through verified directory descriptors; test anchors are internal only."""
+    if (
+        type(minimum_lifetime_seconds) is not int
+        or not 0 <= minimum_lifetime_seconds <= 3600
+    ):
+        raise GateError('Invalid release credential lifetime requirement')
     path = os.fspath(path)
     anchor = os.fspath(_anchor)
     relative = os.path.relpath(path, anchor)
@@ -142,6 +149,8 @@ def _read_credential_file(path, *, _anchor='/', _owner_uid=0):
                 or not 1 <= len(data['token']) <= _MAX_TOKEN_BYTES
                 or re.fullmatch(r'[A-Za-z0-9_.-]+', data['token']) is None):
             raise GateError('Invalid or expired release credential')
+        if data['expires_at'] - time.time() < minimum_lifetime_seconds:
+            raise GateError('Release credential lifetime is insufficient')
         return data['token']
     except GateError:
         raise
@@ -154,7 +163,7 @@ def _read_credential_file(path, *, _anchor='/', _owner_uid=0):
             os.close(fd)
 
 
-def _configured_token():
+def _configured_token(*, minimum_lifetime_seconds=0):
     # An absent optional file retains compatibility. Any configured-but-invalid
     # file fails closed, even when a legacy environment token is available.
     try:
@@ -165,6 +174,11 @@ def _configured_token():
         raise GateError('Release credential metadata unavailable') from None
     if os.geteuid() != 0:
         raise GateError('Release credential requires root process')
+    if minimum_lifetime_seconds:
+        return _read_credential_file(
+            _CREDENTIAL_PATH,
+            minimum_lifetime_seconds=minimum_lifetime_seconds,
+        )
     return _read_credential_file(_CREDENTIAL_PATH)
 
 
@@ -173,7 +187,7 @@ class _NoRedirect(urllib.request.HTTPRedirectHandler):
         raise GateError("GitHub redirect rejected")
 
 
-def _get_json(url, *, token=_ENV_TOKEN):
+def _get_json(url, *, token=_ENV_TOKEN, minimum_credential_lifetime_seconds=0):
     # Ignore proxy and custom CA environment variables. Trust only the Python
     # installation's system CA locations, not caller-selected trust roots.
     defaults = ssl.get_default_verify_paths()
@@ -194,7 +208,12 @@ def _get_json(url, *, token=_ENV_TOKEN):
         "Cache-Control": "no-cache",
     }
     if token is _ENV_TOKEN:
-        token = _configured_token()
+        if minimum_credential_lifetime_seconds:
+            token = _configured_token(
+                minimum_lifetime_seconds=minimum_credential_lifetime_seconds
+            )
+        else:
+            token = _configured_token()
     if token:
         headers["Authorization"] = "Bearer " + token
     request = urllib.request.Request(url, headers=headers, method="GET")
@@ -529,12 +548,35 @@ def main():
     parser.add_argument("--observed-main")
     parser.add_argument("--target", choices=("full", "backend-v1"), default="full")
     parser.add_argument("--token-stdin", action="store_true", help="Read API token once from bounded stdin; never fall back to environment")
+    parser.add_argument(
+        "--minimum-credential-lifetime-seconds",
+        default="0",
+        help="Require configured server credential validity through the release horizon",
+    )
     args = parser.parse_args()
     try:
+        if re.fullmatch(r"[0-9]{1,4}", args.minimum_credential_lifetime_seconds) is None:
+            raise GateError("Invalid release credential lifetime requirement")
+        minimum_credential_lifetime_seconds = int(
+            args.minimum_credential_lifetime_seconds
+        )
+        if minimum_credential_lifetime_seconds > 3600:
+            raise GateError("Invalid release credential lifetime requirement")
         options = {}
         if args.token_stdin:
+            if minimum_credential_lifetime_seconds:
+                raise GateError(
+                    "Explicit stdin token cannot prove a credential lifetime"
+                )
             token = _stdin_token()
             options['_get_json'] = lambda url: _get_json(url, token=token)
+        else:
+            options['_get_json'] = lambda url: _get_json(
+                url,
+                minimum_credential_lifetime_seconds=(
+                    minimum_credential_lifetime_seconds
+                ),
+            )
         receipt = verify_release(args.sha, args.workflow_sha, observed_main=args.observed_main, target=args.target, **options)
     except GateError as error:
         print(f"release gate: {error}", file=sys.stderr)

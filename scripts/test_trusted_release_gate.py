@@ -696,6 +696,55 @@ def test_stdin_token_is_bounded_once_private_and_not_argv(monkeypatch,capsys):
     output=capsys.readouterr()
     assert 'synthetic' not in output.out+output.err
 
+
+def test_cli_forwards_configured_credential_horizon(monkeypatch):
+    from types import SimpleNamespace
+    gate=load_gate()
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(
+        gate.sys,
+        'argv',
+        [
+            'gate', '--sha', SHA, '--workflow-sha', SHA,
+            '--minimum-credential-lifetime-seconds', '1800',
+        ],
+    )
+    seen=[]
+    monkeypatch.setattr(
+        gate,
+        '_get_json',
+        lambda url,**kwargs:seen.append(kwargs) or {},
+    )
+    monkeypatch.setattr(
+        gate,
+        'verify_release',
+        lambda *args,**kwargs:kwargs['_get_json'](BASE) or {},
+    )
+    assert gate.main()==0
+    assert seen==[{'minimum_credential_lifetime_seconds':1800}]
+
+
+def test_cli_rejects_unprovable_stdin_credential_horizon(monkeypatch,capsys):
+    from types import SimpleNamespace
+    gate=load_gate()
+    monkeypatch.setattr(gate.sys,'flags',SimpleNamespace(isolated=1))
+    monkeypatch.setattr(
+        gate.sys,
+        'argv',
+        [
+            'gate', '--sha', SHA, '--workflow-sha', SHA, '--token-stdin',
+            '--minimum-credential-lifetime-seconds', '1800',
+        ],
+    )
+    calls=[]
+    monkeypatch.setattr(gate,'verify_release',lambda *args,**kwargs:calls.append(kwargs) or {})
+    assert gate.main()==1
+    assert calls==[]
+    assert capsys.readouterr().err == (
+        'release gate: Explicit stdin token cannot prove a credential lifetime\n'
+    )
+
+
 @pytest.mark.parametrize('explicit',[False,True])
 def test_transport_token_source_is_explicit_and_environment_compatible(monkeypatch,explicit):
     gate=load_gate()
@@ -739,6 +788,39 @@ def test_root_credential_reader_uses_real_bounded_fd(tmp_path):
     gate=load_gate()
     path=credential_file(tmp_path)
     assert gate._read_credential_file(path, _anchor=tmp_path, _owner_uid=os.getuid())=='synthetic_credential'
+
+
+def test_configured_credential_must_cover_requested_release_horizon(tmp_path, monkeypatch):
+    gate=load_gate()
+    monkeypatch.setattr(gate.time, 'time', lambda: 1000)
+    path=credential_file(tmp_path, expires_at=2799)
+    with pytest.raises(gate.GateError, match='lifetime is insufficient'):
+        gate._read_credential_file(
+            path,
+            _anchor=tmp_path,
+            _owner_uid=os.getuid(),
+            minimum_lifetime_seconds=1800,
+        )
+    path=credential_file(tmp_path, expires_at=2800)
+    assert gate._read_credential_file(
+        path,
+        _anchor=tmp_path,
+        _owner_uid=os.getuid(),
+        minimum_lifetime_seconds=1800,
+    ) == 'synthetic_credential'
+
+
+@pytest.mark.parametrize('value', [-1, True, 3601])
+def test_invalid_minimum_credential_lifetime_is_rejected_before_read(tmp_path, value):
+    gate=load_gate()
+    path=credential_file(tmp_path)
+    with pytest.raises(gate.GateError, match='credential lifetime requirement'):
+        gate._read_credential_file(
+            path,
+            _anchor=tmp_path,
+            _owner_uid=os.getuid(),
+            minimum_lifetime_seconds=value,
+        )
 
 @pytest.mark.parametrize('case',['expired','repository','extra','token','file_mode','parent_mode','symlink','hardlink','directory','oversize'])
 def test_invalid_configured_credential_fails_closed(tmp_path,case):

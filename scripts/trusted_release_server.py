@@ -35,6 +35,7 @@ DEPLOY_TIMEOUT_SECONDS = 3600
 RECOVERY_MARGIN_SECONDS = 3600
 PREPARATION_TIMEOUT_SECONDS = 90
 PREPARATION_GROUP_EXIT_GRACE_SECONDS = 2
+NATIVE_CREDENTIAL_HORIZON_SECONDS = 1800
 
 
 class LaunchError(Exception):
@@ -1574,7 +1575,9 @@ def attest_full_ci(policy):
     script = STATE / "bootstrap" / policy["sha"] / "source/scripts/trusted_release_gate.py"
     secure_path(script)
     subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
-                    "--workflow-sha", policy["sha"]],
+                    "--workflow-sha", policy["sha"],
+                    "--minimum-credential-lifetime-seconds",
+                    str(NATIVE_CREDENTIAL_HORIZON_SECONDS)],
                    env=clean_environment(STATE), stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                    check=True, timeout=300)
