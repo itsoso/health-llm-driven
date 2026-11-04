@@ -3,7 +3,7 @@
 | 字段 | 值 |
 |---|---|
 | 状态 | in_progress |
-| 当前阶段 | S5 实现与本地验证；首轮独立安全复审 NO-GO 的两项阻断已修复，等待新审查者复审 |
+| 当前阶段 | S6 发布验证；新的独立安全复审 GO，等待精确 revision 入 main、CI 与 trusted release |
 
 Controller: mobile-testflight-release; overlays: ios-app-review-gate, safety-gate.
 
@@ -118,7 +118,7 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   test remediation onto current origin/main. The candidate commits before the latest
   safety fixes are `f19e2acb9` and `7d4772fe4`; the latter keeps the exact public-policy
   gate wording `AI 模型服务`.
-- Fresh pre-review checks passed: Mobile 390 suites / 4185 passed / 1 skipped; Web
+- Fresh pre-review checks passed: Mobile 390 suites / 4188 passed / 1 skipped; Web
   114 files / 662 passed / 1 skipped; focused backend consent/media/realtime checks
   47 passed / 2 skipped; App Store release pack, iOS submission preflight, Mobile
   TypeScript and System Map checks passed.
@@ -134,5 +134,12 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   SOC 2, AES-256, published no-training treatment and lawful retention. It explicitly
   avoids zero-retention and product-specific DPA claims. Mobile policy tests 3/3 and
   Web policy tests 3/3 passed; the App Store release pack and iOS preflight passed.
-- These fixes still require a new independent read-only safety re-review. Until it
-  returns GO, the candidate must not be published, built, uploaded or resubmitted.
+- A new independent read-only safety reviewer returned **GO** after inspecting the
+  committed fixes and independently rerunning 6 Mobile suites / 131 tests, Web
+  privacy 3/3 and Mobile TypeScript. No blocking finding remains. The reviewer did
+  not modify the working tree.
+- The registry's deferred external capability `verification-before-completion` is
+  not installed as a readable Skill in this environment. Completion discipline is
+  therefore enforced through fresh full Mobile/Web suites, App Store release pack,
+  iOS preflight, System Map, Dossier consistency, exact-revision CI and trusted
+  release gates without claiming that unavailable Skill was executed.
