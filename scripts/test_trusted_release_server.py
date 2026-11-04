@@ -80,6 +80,28 @@ def test_documentation_attestation_verifies_canonical_bytes_and_binds_observed_h
     assert len(calls) == 1
 
 
+def test_full_ci_attestation_requires_credential_horizon_for_native_release(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    script = server.STATE / "bootstrap" / SHA / "source/scripts/trusted_release_gate.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_bytes(b"canonical gate")
+    calls = []
+
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(stdout=b"")
+
+    monkeypatch.setattr(server.subprocess, "run", run)
+    server.attest_full_ci(policy())
+    assert calls[0][0] == [
+        server.PYTHON, "-I", "-S", "-B", str(script),
+        "--sha", SHA, "--workflow-sha", SHA,
+        "--minimum-credential-lifetime-seconds", "1800",
+    ]
+    assert calls[0][1]["check"] is True
+    assert calls[0][1]["timeout"] == 300
+
+
 def policy(**changes):
     result = {"sha": SHA, "expires_at": 7300, "executor_sha256": HASH}
     result.update(changes)

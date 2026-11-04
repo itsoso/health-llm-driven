@@ -29,6 +29,10 @@ ledger 或完成状态。不要从带 WIP 的本机工作区直接运行 EAS bui
 先核对 main、开放 PR、工作树来源和授权范围，读取本次 Dossier。
 从干净的目标 revision 跑 CI-mode 集成闸，核验该精确 main SHA 的真实 CI 绿色及独立安全裁决。
 按 deploy 治理准备绑定该 SHA 的短期发布身份；不覆盖正在运行的 executor/policy。
+在已配置发布操作机上，正式 `validate` 前先运行受审的仓库只读 GitHub App
+credential refresh adapter；刷新失败则停止，不启动构建。服务器随后要求该凭据至少覆盖
+30 分钟发布窗口，避免凭据在 EAS 构建结束后才过期。刷新只更新现有仓库只读凭据，
+不得扩大 repository 或 permission 范围，也不得把私钥、token 写入仓库或日志。
 
 ```bash
 gh workflow run trusted-release.yml --ref main -f sha=<exact-main-sha> -f target=validate
