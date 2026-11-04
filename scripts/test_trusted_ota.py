@@ -79,13 +79,13 @@ def test_local_publishers_do_not_execute_repo_helpers_or_vendor():
         assert 'trusted-ota.yml' in result.stderr
 
 
-def test_native_baseline_matches_delivered_testflight_287():
+def test_native_baseline_matches_delivered_testflight_291():
     m = module()
     root = Path(__file__).resolve().parents[1]
     spec = importlib.util.spec_from_file_location('ota_publisher', root / 'scripts/trusted_ota_publish.py')
     publisher = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(publisher)
-    expected = ('1.3.6', '1612c75ffc47af5ed470e57335e6c593c6af5817', '039c87d2-3bbb-4a20-915b-9c61fc584e71')
+    expected = ('1.3.6', 'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1', '8370725c-f6b6-4c18-b408-8123b900eb36')
     for contract in (m, publisher):
         assert (contract.RUNTIME, contract.NATIVE_SHA, contract.NATIVE_BUILD) == expected
     assert json.loads(source_bytes(m.NATIVE_SHA, 'mobile/app.json'))['expo']['version'] == m.RUNTIME
@@ -157,12 +157,12 @@ def test_old_runtime_manifest_is_rejected_by_279_contract():
         m.validate_manifest(payload, ident, proof)
 
 
-@pytest.mark.parametrize('sha,allowed', [('1612c75ffc47af5ed470e57335e6c593c6af5817', True), ('e6f26f6230e429a29113e4322ff5d7be22764787', False), ('ae7a5972921ee9d51eec2c90c7893e6941d2d7ff', False), (REVIEWED_LOCK_SHA, False), (SECURITY_DEPENDENCY_SHA, False)])
-def test_287_migration_contract_admits_only_descendant_runtime_source(tmp_path, sha, allowed):
+@pytest.mark.parametrize('sha,allowed', [('ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1', True), ('1612c75ffc47af5ed470e57335e6c593c6af5817', False), ('e6f26f6230e429a29113e4322ff5d7be22764787', False), ('ae7a5972921ee9d51eec2c90c7893e6941d2d7ff', False), (REVIEWED_LOCK_SHA, False), (SECURITY_DEPENDENCY_SHA, False)])
+def test_291_migration_contract_admits_only_descendant_runtime_source(tmp_path, sha, allowed):
     m = module()
     assert (m.RUNTIME, m.NATIVE_SHA, m.NATIVE_BUILD) == (
-        '1.3.6', '1612c75ffc47af5ed470e57335e6c593c6af5817',
-        '039c87d2-3bbb-4a20-915b-9c61fc584e71')
+        '1.3.6', 'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1',
+        '8370725c-f6b6-4c18-b408-8123b900eb36')
     source = tmp_path / 'source'
     # Source admission compares committed paths/bytes, not Android APK payloads.
     # A shared Git clone has no LFS object store; never download unrelated assets.
@@ -225,7 +225,7 @@ def test_286_review_evidence_binds_forward_pinned_native_paths():
     m = module()
     evidence = json.loads((Path(__file__).resolve().parents[1]/'docs/reviews/2026-10-29-ota-runtime136-build286-baseline.json').read_text())
     assert set(evidence['source_admission']['pinned_native_paths']) == m.NATIVE_BASELINE_PATHS
-    assert m.NATIVE_SHA == '1612c75ffc47af5ed470e57335e6c593c6af5817'
+    assert m.NATIVE_SHA == 'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1'
 
 
 @pytest.mark.parametrize('relative', [

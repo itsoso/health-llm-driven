@@ -93,3 +93,14 @@ def test_backend_without_native_claim_does_not_read_vendor(evidence):
     m, b, _, _, _, _, calls, _ = evidence
     assert m.inspect(b, 'c' * 40, {'state': 'SUCCEEDED', 'inventory': []}) is None
     assert calls == []
+
+
+def test_consumed_backend_rejection_digest_survives_saved_proof(evidence):
+    m, b, profile, _, _, _, _, _ = evidence
+    profile.update(terminal_mode='backend-already-consumed', backend_log_sha256='e' * 64)
+    _, proof = m.expected(b, 'c' * 40)
+    assert proof['vendor']['backend_log_sha256'] == 'e' * 64
+    assert m.validate_saved(b, 'c' * 40, proof) == proof
+    proof['vendor']['backend_log_sha256'] = 'f' * 64
+    with pytest.raises(m.ContinuationError):
+        m.validate_saved(b, 'c' * 40, proof)

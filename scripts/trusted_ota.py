@@ -15,8 +15,8 @@ from pathlib import Path
 PROJECT = '911ea84f-bc7e-4a12-90cf-33966b6f7398'
 RUNTIME = '1.3.6'
 CHANNEL = 'production'
-NATIVE_SHA = '1612c75ffc47af5ed470e57335e6c593c6af5817'
-NATIVE_BUILD = '039c87d2-3bbb-4a20-915b-9c61fc584e71'
+NATIVE_SHA = 'ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1'
+NATIVE_BUILD = '8370725c-f6b6-4c18-b408-8123b900eb36'
 UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
 ENV = {'PATH': '/usr/bin:/bin', 'HOME': '/nonexistent', 'GIT_CONFIG_NOSYSTEM': '1', 'GIT_CONFIG_GLOBAL': '/dev/null', 'GIT_CONFIG_SYSTEM': '/dev/null', 'GIT_NO_REPLACE_OBJECTS': '1'}
 
