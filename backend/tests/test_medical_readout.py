@@ -171,3 +171,43 @@ def test_model_receives_original_summary_without_duplicate_readout_tokens():
     p['status'] = 'failed'
     raw = json.dumps(p)
     assert _model_tool_result_content('health_query', args, raw) == raw
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('args', [{'dimension':'medical_exam','days':None}, {'dimension':'medical_exam','days':'7'}, {'dimension':'medical_exam','query':'Synthetic'}, {'dimension':'medical_exam','unused':'ignored'}, {'dimension':'medical_exam','limit':10}])
+async def test_unsupported_projection_args_keep_original_model_text(db,auth_user_and_headers,args):
+    from app.services.agent_executor import _model_tool_result_content
+    user, _ = auth_user_and_headers
+    db.add(MedicalIndicator(user_id=user.id,name='Synthetic',value=1.25,unit='unit',record_date=date.today()))
+    db.commit()
+    ex = AgentExecutor(db)
+    ex._current_user_id = user.id
+    result = await ex._exec_health_query('',{},args)
+    assert not result.startswith('{')
+    assert _model_tool_result_content('health_query',args,result) == result
+
+
+@pytest.mark.parametrize('offset', [-1,1])
+def test_cross_midnight_projection_preserves_original_summary(offset):
+    from types import SimpleNamespace
+    from app.services.medical_readout import serialize_medical_readout
+    summary = 'Original complete clinical summary'
+    item = SimpleNamespace(name='Synthetic',value=1.25,unit='unit',reference_low=None,reference_high=None,record_date=date(2026,11,3))
+    result = serialize_medical_readout(summary,[item],days=7,indicator='',keyword='',since=date(2025,11,4),reference_date=date(2026,11,4)+timedelta(days=offset))
+    assert result == summary
+
+
+def test_extreme_invalid_window_is_rejected_without_date_overflow():
+    p = payload()
+    p['readout']['reference_date'] = '0001-01-01'
+    p['readout']['since'] = '0001-01-01'
+    assert build_table_from_tool_call('health_query',{'dimension':'medical_exam'},json.dumps(p)) is None
+
+
+def test_equivalent_cached_read_args_preserve_original_model_summary():
+    from app.services.agent_executor import _model_tool_result_content, _read_operation_fingerprint
+    p = payload()
+    original = {'dimension':'medical_exam'}
+    equivalent = {'dimension':'medical_exam','limit':10}
+    assert _read_operation_fingerprint('health_query',original) == _read_operation_fingerprint('health_query',equivalent)
+    assert _model_tool_result_content('health_query',equivalent,json.dumps(p)) == p['summary']

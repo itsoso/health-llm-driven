@@ -1,0 +1,149 @@
+{
+  "baseline_sha": "f0a520a4eb547b9e230b73a5443f4620180aea92",
+  "measured_candidate_sha": "22c097df3b6c9a91b42ac392240a255aa6f72f5d",
+  "scope": "Synthetic requests, disposable SQLite, actual selected model and official Pi; report-list GET through real authenticated ASGI application. First emitted content is not device paint. Optional routing off in both arms. Final edge repair leaves supported ordinary query path unchanged.",
+  "production_observation": {
+    "new_runs": 1,
+    "total_ms": 171926,
+    "first_content_ms": 113040,
+    "model_ms": 157655,
+    "routing_ms": 5031,
+    "tool_names": [
+      "health_query",
+      "knowledge_search"
+    ],
+    "tool_arguments_available": false
+  },
+  "arms": {
+    "baseline": {
+      "rows": [
+        {
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 17141,
+          "first_evidence_ms": null,
+          "total_ms": 17194,
+          "outcome": "complete",
+          "api_statuses": [
+            200
+          ],
+          "model_calls": 2,
+          "model_names": [
+            "qwen3.8-max"
+          ],
+          "prompt_chars": [
+            9385,
+            9494
+          ]
+        },
+        {
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 20043,
+          "first_evidence_ms": null,
+          "total_ms": 20066,
+          "outcome": "complete",
+          "api_statuses": [
+            200
+          ],
+          "model_calls": 2,
+          "model_names": [
+            "qwen3.8-max"
+          ],
+          "prompt_chars": [
+            9385,
+            9494
+          ]
+        }
+      ],
+      "first_p50_ms": 18592.0,
+      "total_p50_ms": 18630.0,
+      "sample_max_total_ms": 20066,
+      "production_p95_ms": null,
+      "production_p99_ms": null,
+      "cost_cny": null
+    },
+    "candidate": {
+      "rows": [
+        {
+          "repeat": 0,
+          "passed": true,
+          "first_ms": 3752,
+          "first_evidence_ms": 3753,
+          "total_ms": 24810,
+          "outcome": "complete",
+          "api_statuses": [
+            200
+          ],
+          "model_calls": 3,
+          "model_names": [
+            "qwen3.8-max"
+          ],
+          "prompt_chars": [
+            9385,
+            9492,
+            9494
+          ]
+        },
+        {
+          "repeat": 1,
+          "passed": true,
+          "first_ms": 5999,
+          "first_evidence_ms": 5999,
+          "total_ms": 16443,
+          "outcome": "complete",
+          "api_statuses": [
+            200
+          ],
+          "model_calls": 2,
+          "model_names": [
+            "qwen3.8-max"
+          ],
+          "prompt_chars": [
+            9385,
+            9494
+          ]
+        }
+      ],
+      "first_p50_ms": 4875.5,
+      "total_p50_ms": 20626.5,
+      "sample_max_total_ms": 24810,
+      "production_p95_ms": null,
+      "production_p99_ms": null,
+      "cost_cny": null
+    }
+  },
+  "evidence": [
+    {
+      "path": "/private/tmp/reva-medical-readout-asgi-v2-baseline.json",
+      "sha256": "76ef0402650a14eb5c8ba4173301b6518a01c07c6374f04eb77f924a7faa21cb"
+    },
+    {
+      "path": "/private/tmp/reva-medical-readout-asgi-v2-candidate.json",
+      "sha256": "cdee537e87fec317ffa9e7c08e069164e359c4b845f143372f1f2b4d626bdecb"
+    },
+    {
+      "path": "/private/tmp/reva-medical-readout-paired.py",
+      "sha256": "98fd882f6e87d7aa908d589be59135e72839964637e70ef4fcea0370f411e130"
+    },
+    {
+      "path": "/private/tmp/reva-medical-readout-ci-integration.log",
+      "sha256": "3a584d7337b581ba7447ae3ab568c991bdc9da695acb1ed11efdc47ccfae6ee0"
+    },
+    {
+      "path": "/private/tmp/reva-medical-readout-pg-final.log",
+      "sha256": "7c97584a1265df0928b30c7e63c02127efe8d01cd11407681c14d7cd40ab7840"
+    },
+    {
+      "path": "/private/tmp/reva-medical-readout-g4.json",
+      "sha256": "5c192ebc2ecaf7230d3c01f144452d9e36284981f029c36e75aa118c07f7cdca"
+    }
+  ],
+  "limitations": [
+    "Two samples per arm do not establish production quantiles or a three-second SLO.",
+    "Complete response latency did not improve consistently; candidate call counts 3/2 versus baseline 2/2 reflect model planning variation; same supported clinical tool summary is byte-identical.",
+    "Earlier probes had report-list tool whitelist/call-budget limits and lacked authenticated local API; all errors retained under /private/tmp/reva-medical-readout-*. No error samples are presented as successful delivery.",
+    "No raw production prompts or health payloads exported.",
+    "Independent G4 rejected initial 22c097df3 for edge-case model envelope leakage; repair and fresh review required."
+  ]
+}

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import math
-from datetime import date, timedelta
+from datetime import date
 from typing import Any
 
 from app.services.agent_write_outcome import result_declares_explicit_failure
@@ -31,7 +31,7 @@ def _finite(value: Any) -> bool:
         return False
 
 
-def _query(args: dict) -> dict | None:
+def medical_readout_query(args: dict) -> dict | None:
     if set(args) - _ALLOWED_QUERY_KEYS or args.get('dimension') != 'medical_exam':
         return None
     days = args.get('days', 7)
@@ -65,8 +65,8 @@ def serialize_medical_readout(summary: str, rows, *, days, indicator: str, keywo
     Invalid/non-numeric rows remain available in the original clinical summary;
     they cannot become numeric facts. No additional query or range expansion.
     """
-    query = _query({'dimension': 'medical_exam', 'days': days, 'indicator': indicator, 'keyword': keyword})
-    if query is None:
+    query = medical_readout_query({'dimension': 'medical_exam', 'days': days, 'indicator': indicator, 'keyword': keyword})
+    if query is None or (reference_date-since).days != max(query['days'], 365):
         return summary
     items = []
     for row in rows:
@@ -91,7 +91,7 @@ def medical_readout_rows(payload: Any, args: dict) -> tuple[list[dict], str] | N
             or any(payload.get(k) for k in ('truncated', 'has_more', 'next_cursor'))
             or not isinstance(payload.get('summary'), str)):
         return None
-    query = _query(args)
+    query = medical_readout_query(args)
     data = payload.get('readout')
     if query is None or not isinstance(data, dict) or data.get('query') != query:
         return None
@@ -101,7 +101,7 @@ def medical_readout_rows(payload: Any, args: dict) -> tuple[list[dict], str] | N
     except (KeyError, TypeError, ValueError):
         return None
     window_days = max(query['days'], 365)
-    if data.get('window_days') != window_days or since != reference-timedelta(days=window_days):
+    if data.get('window_days') != window_days or (reference-since).days != window_days:
         return None
     items = data.get('items')
     if not isinstance(items, list) or not items or not all(_valid_item(item, since, reference) for item in items):

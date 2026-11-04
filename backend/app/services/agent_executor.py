@@ -11981,13 +11981,15 @@ def _model_tool_result_content(
     timezone_label: str = "Asia/Shanghai",
 ) -> str:
     """Add deterministic query scope to the model-only tool result."""
-    if tool_name == "health_query" and args.get("dimension") == "medical_exam":
+    if tool_name == "health_query":
         from app.services.medical_readout import medical_readout_rows
         try:
             payload = json.loads(result)
         except (TypeError, ValueError):
             payload = None
-        if medical_readout_rows(payload, args) is not None:
+        # Read deduplication uses this same semantic argument normalization.
+        # A replay under an equivalent alias still gets the original summary.
+        if medical_readout_rows(payload, _normalize_health_query_args(args)) is not None:
             # Card data stays with executed results. Preserve the original full
             # clinical summary byte-for-byte without duplicating it in prompts.
             return payload["summary"]
@@ -29259,6 +29261,7 @@ class AgentExecutor:
         #     读 GarminData + device_source_priority 多源合并 (与 Twin 的
         #     MultiSourceIntegrationService 同源), 不再各别名各走一次 /garmin-analysis/me HTTP.
         from app.services import health_read
+        from app.services.medical_readout import medical_readout_query
 
         canonical = health_read.canonical_read(
             self.db,
@@ -29270,7 +29273,7 @@ class AgentExecutor:
             uploaded_since=str(uploaded_since or ""),
             uploaded_days=uploaded_days,
             reference_date=self._agent_kernel_reference_now().date(),
-            medical_readout=True,
+            medical_readout=(dim == "medical_exam" and medical_readout_query(supplied_args) is not None),
         )
         if canonical is not None:
             return with_blood_pressure_safety(canonical)
