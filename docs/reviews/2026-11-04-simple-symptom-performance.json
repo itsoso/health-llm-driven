@@ -1,0 +1,679 @@
+{
+  "baseline_sha": "7e69aa250564f3d08194bc274bd0be1d62fbfec7",
+  "candidate_executor_sha256": "1ad21f39653dfd6b1e1af141522f9f0bfa572ad1a9c892b9626eb05e9ed96e6b",
+  "synthetic_only": true,
+  "engine": "disposable_sqlite_with_real_symptom_api_and_real_pi",
+  "provider": "qwen3.8-max",
+  "decision_mode": "off_for_both",
+  "domain_prompt_optimization": true,
+  "baseline": [
+    {
+      "case": "suffix__qwen3.8-max",
+      "repeat": 0,
+      "passed": false,
+      "persisted_exact": false,
+      "first_ms": 15904,
+      "total_ms": 15930,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 174,
+        "pre_llm_ms": 52,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 2,
+          "opener_ms": 0,
+          "system_prompt_ms": 27,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 5,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 15025,
+        "first_useful_ms": 14205,
+        "end_to_end_total_ms": 15904,
+        "end_to_end_ttft_ms": 14380,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17252,
+          "completion_tokens": 325,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 9387,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17439,
+          "completion_tokens": 170,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 5622,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9609,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 9395
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9840,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 5625
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "plain__qwen3.8-max",
+      "repeat": 0,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 10300,
+      "total_ms": 10323,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 6,
+        "pre_llm_ms": 16,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 9921,
+        "first_useful_ms": 8661,
+        "end_to_end_total_ms": 10300,
+        "end_to_end_ttft_ms": 8668,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17250,
+          "completion_tokens": 257,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 6800,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17454,
+          "completion_tokens": 74,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 3108,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9605,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 6807
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9836,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 3111
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "possessive__qwen3.8-max",
+      "repeat": 0,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 13847,
+      "total_ms": 13870,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 5,
+        "pre_llm_ms": 14,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 13538,
+        "first_useful_ms": 12735,
+        "end_to_end_total_ms": 13846,
+        "end_to_end_ttft_ms": 12740,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17252,
+          "completion_tokens": 182,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 5651,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17458,
+          "completion_tokens": 168,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 7876,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9611,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 5654
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9845,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 7880
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "suffix__qwen3.8-max",
+      "repeat": 1,
+      "passed": false,
+      "persisted_exact": false,
+      "first_ms": 14238,
+      "total_ms": 14260,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 4,
+        "pre_llm_ms": 16,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 7,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 13929,
+        "first_useful_ms": 12908,
+        "end_to_end_total_ms": 14238,
+        "end_to_end_ttft_ms": 12912,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17252,
+          "completion_tokens": 321,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 9209,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17439,
+          "completion_tokens": 120,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 4711,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9609,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 9212
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9840,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 4714
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "plain__qwen3.8-max",
+      "repeat": 1,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 30722,
+      "total_ms": 30742,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 3,
+        "pre_llm_ms": 14,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 7,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 30413,
+        "first_useful_ms": 29588,
+        "end_to_end_total_ms": 30722,
+        "end_to_end_ttft_ms": 29592,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17250,
+          "completion_tokens": 244,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 27015,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17454,
+          "completion_tokens": 60,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 3383,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9605,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 27022
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9836,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 3387
+        }
+      ],
+      "verified_receipts": 1
+    },
+    {
+      "case": "possessive__qwen3.8-max",
+      "repeat": 1,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 10036,
+      "total_ms": 10059,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 4,
+        "pre_llm_ms": 15,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 9635,
+        "first_useful_ms": 8584,
+        "end_to_end_total_ms": 10036,
+        "end_to_end_ttft_ms": 8588,
+        "model_call_count": 2,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 2,
+      "provider_usage": [
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17252,
+          "completion_tokens": 136,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 4129,
+          "success": true
+        },
+        {
+          "model": "qwen3.8-max",
+          "prompt_tokens": 17458,
+          "completion_tokens": 145,
+          "cached_tokens": 16384,
+          "token_source": "api",
+          "latency_ms": 5496,
+          "success": true
+        }
+      ],
+      "provider_payload": [
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9611,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 4133
+        },
+        {
+          "model": "qwen3.8-max",
+          "system_chars": 8501,
+          "prompt_chars": 9845,
+          "tool_schema_chars": 29199,
+          "tool_count": 17,
+          "ms": 5499
+        }
+      ],
+      "verified_receipts": 1
+    }
+  ],
+  "candidate": [
+    {
+      "case": "suffix__qwen3.8-max",
+      "repeat": 0,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 705,
+      "total_ms": 729,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 170,
+        "pre_llm_ms": 47,
+        "pre_llm_stages": {
+          "routing_ms": 2,
+          "conv_ms": 2,
+          "opener_ms": 0,
+          "system_prompt_ms": 25,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 3,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 534,
+        "end_to_end_total_ms": 706,
+        "end_to_end_ttft_ms": 704,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "plain__qwen3.8-max",
+      "repeat": 0,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 300,
+      "total_ms": 320,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 6,
+        "pre_llm_ms": 16,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 293,
+        "end_to_end_total_ms": 300,
+        "end_to_end_ttft_ms": 299,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "possessive__qwen3.8-max",
+      "repeat": 0,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 307,
+      "total_ms": 326,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 5,
+        "pre_llm_ms": 15,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 301,
+        "end_to_end_total_ms": 307,
+        "end_to_end_ttft_ms": 306,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "suffix__qwen3.8-max",
+      "repeat": 1,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 294,
+      "total_ms": 314,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 4,
+        "pre_llm_ms": 15,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 289,
+        "end_to_end_total_ms": 294,
+        "end_to_end_ttft_ms": 293,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "plain__qwen3.8-max",
+      "repeat": 1,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 301,
+      "total_ms": 319,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 3,
+        "pre_llm_ms": 15,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 6,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 296,
+        "end_to_end_total_ms": 300,
+        "end_to_end_ttft_ms": 299,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    },
+    {
+      "case": "possessive__qwen3.8-max",
+      "repeat": 1,
+      "passed": true,
+      "persisted_exact": true,
+      "first_ms": 297,
+      "total_ms": 316,
+      "outcome": "complete",
+      "segments": {
+        "turn_setup_ms": 4,
+        "pre_llm_ms": 14,
+        "pre_llm_stages": {
+          "routing_ms": 1,
+          "conv_ms": 1,
+          "opener_ms": 0,
+          "system_prompt_ms": 5,
+          "kb_ms": 0,
+          "inspect_ms": 0,
+          "history_ms": 0,
+          "vision_ms": 0
+        },
+        "model_wait_ms": 0,
+        "first_useful_ms": 291,
+        "end_to_end_total_ms": 296,
+        "end_to_end_ttft_ms": 295,
+        "model_call_count": 0,
+        "tool_total_ms": null,
+        "prompt_context_profile": null,
+        "composed_synthesis_used": null
+      },
+      "model_calls": 0,
+      "provider_usage": [],
+      "provider_payload": [],
+      "verified_receipts": 1
+    }
+  ],
+  "sample_latency": {
+    "baseline": {
+      "n": 6,
+      "p50_ms": 14065.0,
+      "p95_nearest_rank_ms": 30742,
+      "p99_nearest_rank_ms": 30742
+    },
+    "candidate": {
+      "n": 6,
+      "p50_ms": 319.5,
+      "p95_nearest_rank_ms": 729,
+      "p99_nearest_rank_ms": 729
+    }
+  },
+  "limitations": [
+    "Six paired synthetic samples are not production P95/P99 or device presentation evidence.",
+    "Baseline API tokens include cached input; no currency-cost savings claim.",
+    "Candidate usage capture is null; zero provider calls were observed directly, not inferred from null usage.",
+    "Baseline suffix samples wrote a record but failed exact original-description preservation.",
+    "No healthy personal history or production patient data used."
+  ],
+  "reproduction_script": "import os\nfrom cryptography.fernet import Fernet\nos.environ[\"GARMIN_ENCRYPTION_KEY\"]=Fernet.generate_key().decode()\nfrom dotenv import dotenv_values\nfor k,v in dotenv_values('/Users/thomas/work/personal/health-llm-driven/.env-online').items():\n if k in {'TOKENPLAN_API_KEY','TOKENPLAN_BASE_URL','TOKENPLAN_MODEL'} and v:os.environ[k]=v\nos.environ.update(APP_ENV='test',DATABASE_URL='sqlite:///:memory:',SECRET_KEY='synthetic-probe-secret-not-production-0000',REDIS_URL='redis://127.0.0.1:1/15',DECISION_MODE='off')\nimport asyncio, json, logging, sys, time, subprocess, importlib.util, importlib\nfrom contextlib import ExitStack\nfrom pathlib import Path\nfrom unittest.mock import patch\nfrom uuid import uuid4\nROOT=Path(os.environ['REVA_BENCH_ROOT'])\nsys.path[:0]=[str(ROOT/'backend'),str(ROOT)]\nlogging.disable(logging.CRITICAL)\nfrom sqlalchemy.ext.compiler import compiles\nfrom sqlalchemy.dialects.postgresql import JSONB\n@compiles(JSONB,'sqlite')\ndef compile_jsonb(*a,**k):return 'JSON'\nimport app.models, app.models.cgm_reading, app.models.family_health, app.models.clinical_journal\nfrom app.database import Base\nfrom app.models.user import User\nfrom app.models.agent_conversation import AgentMessage\nfrom app.services import agent_executor as ae, ai_consent\nfrom app.services.llm import factory, usage_tracker\nfrom app.config import settings\nfrom sqlalchemy.orm import sessionmaker\nfrom eval.ephemeral_database import create_ephemeral_engine\nfrom eval.full_task_prompt_benchmark import BenchmarkStopped\nfrom main import app\nfrom fastapi.testclient import TestClient\nfrom app.database import get_db\nfrom app.services.auth import auth_service\ncreate_access_token=auth_service.create_access_token\nfrom app.models.symptom_entry import SymptomEntry\nMODELS=['qwen3.8-max']\nPROMPTS=[('suffix','记录流鼻涕症状'),('plain','记录流鼻涕'),('possessive','记录流鼻涕的症状')]\nCASES=[(name+'__'+model,prompt,model) for name,prompt in PROMPTS for model in MODELS]\nasync def main():\n rows=[]\n engine=create_ephemeral_engine();Base.metadata.create_all(bind=engine)\n sessions=sessionmaker(bind=engine,autoflush=False)\n original=factory.create_provider_for_model_id;original_user=factory.create_provider_for_user\n with ExitStack() as st:\n  for name,value in [('agent_base_url',None),('agent_api_key',None),('task_tiered_routing',True),('llm_auto_recovery_enabled',False),('domain_prompt_optimization',True)]:st.enter_context(patch.object(settings,name,value))\n  st.enter_context(patch.object(ai_consent,'SessionLocal',sessions));st.enter_context(patch('app.database.SessionLocal',sessions))\n  st.enter_context(patch('app.utils.redis_cache.get_redis_client',lambda:None))\n  for name,fn in [('get_cached_twin',lambda *a,**k:None),('set_cached_twin',lambda *a,**k:False),('invalidate_twin',lambda *a,**k:None)]:st.enter_context(patch('app.twin.cache.'+name,fn))\n  for repeat in range(2):\n   for case,prompt,model in CASES:\n    usage_token=usage_tracker.begin_usage_capture();calls=[];row={'case':case,'repeat':repeat,'calls':calls,'tools':[],'cards':[],'automatic_answer_model':model};t=time.monotonic();first=None;text='';done=None\n    with sessions() as db:\n     user=User(username='synthetic_'+uuid4().hex,email=uuid4().hex+'@example.invalid',name='Synthetic latency subject',is_admin=True,is_active=True,is_approved=True)\n     db.add(user);db.commit();ai_consent.update_ai_consent(db,user.id,True,ai_consent.POLICY_VERSION)\n     from app.models.user_profile import UserProfile\n     profile=db.query(UserProfile).filter_by(user_id=user.id).one_or_none()\n     if profile is None:profile=UserProfile(user_id=user.id);db.add(profile)\n     profile.llm_model_id=model;db.commit()\n     from datetime import date, timedelta\n     from app.models.daily_health import WaterIntake, GarminData, DietRecord\n     for offset in range(7):\n      day=date.today()-timedelta(days=offset)\n      db.add_all([WaterIntake(user_id=user.id,record_date=day,amount_ml=500+50*offset),GarminData(user_id=user.id,record_date=day,sleep_score=80-offset,total_sleep_duration=420+5*offset),DietRecord(user_id=user.id,record_date=day,meal_type='dinner',food_name='合成番茄',food_items='合成番茄',calories=200)])\n     db.commit()\n     class Measured:\n      def __init__(self,mid,inner=None):self.inner=inner or original(mid);self.model=mid\n      async def chat_stream(self,**kw):\n       if len(calls)>=3:raise BenchmarkStopped('call_budget')\n       c={'system_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[]) if x.get('role')=='system'),'tool_schema_chars':len(json.dumps(kw.get('tools') or [],ensure_ascii=False)),'prompt_chars':sum(len(str(x.get('content',''))) for x in kw.get('messages',[])),'tool_count':len(kw.get('tools') or []),'model':self.model,'has_tools':bool(kw.get('tools')),'enable_thinking':kw.get('enable_thinking'),'thinking_budget':kw.get('thinking_budget')};calls.append(c);start=time.monotonic()\n       try:\n        async for e in self.inner.chat_stream(**kw):\n         if e.get('type')=='content' and e.get('text','').strip() and 'first_content_ms' not in c:c['first_content_ms']=round((time.monotonic()-start)*1000)\n         if e.get('type')=='content':c['synthetic_visible_text']=(c.get('synthetic_visible_text','')+e.get('text',''))[:12000]\n         if e.get('type')=='finish':c['finish_reason']=e.get('finish_reason')\n         if e.get('type')=='usage':c['usage']=e.get('usage')\n         yield e\n       finally:c['ms']=round((time.monotonic()-start)*1000)\n      async def chat(self,**kw):raise BenchmarkStopped('nonstream_fallback')\n     ex=ae.AgentExecutor(db);t=time.monotonic()\n     dispatch=ex._dispatch_tool_request\n     async def refuse_tool(req,token):\n      if req.tool_name not in {'health_query','health_query_batch','knowledge_search','health_record'}:raise BenchmarkStopped('unexpected_tool:'+req.tool_name)\n      \n      if req.tool_name == 'health_record' and req.arguments.get('record_type') != 'symptom':raise BenchmarkStopped('unexpected_write')\n      tool_start=time.monotonic()\n      tr={'name':req.tool_name,'args':req.arguments};row['tools'].append(tr)\n      try:return await dispatch(req,token)\n      finally:tr['ms']=round((time.monotonic()-tool_start)*1000)\n     def local_db():\n      yield db\n     app.dependency_overrides[get_db]=local_db\n     client=TestClient(app)\n     token=create_access_token(data={'sub':str(user.id)})\n     async def local_post(url,headers,payload):\n      if not url.endswith('/symptoms'): raise BenchmarkStopped('unexpected_api')\n      response=client.post('/api/v1/symptoms',headers={'Authorization':'Bearer '+token},json=payload)\n      if response.status_code != 201: raise BenchmarkStopped('local_write_failed')\n      return response.text\n     ex._api_post=local_post\n     try:\n      with patch.object(factory,'create_provider_for_model_id',Measured), patch.object(factory,'create_provider_for_user',lambda uid,db,**kw: Measured(model)), patch.object(ex,'_dispatch_tool_request',refuse_tool), ai_consent.ai_user_scope(user.id):\n       async with asyncio.timeout(60):\n        async for e in ex.run_stream(user.id,prompt,user_auth_token=token,channel='typed',client_turn_id=uuid4().hex,extra_context=None,client_caps=['genui-v1','genui-components-v1','genui-record-quality-v1','genui-table-v1','genui-diet-summary-v1','genui-sleep-summary-v1','genui-medication-list-v1']):\n         if e.get('event')=='token':\n          chunk=e.get('data',{}).get('content','');text+=chunk\n          if first is None and chunk.strip():first=round((time.monotonic()-t)*1000)\n         elif e.get('event')=='card':\n          row['cards'].append({'ms':round((time.monotonic()-t)*1000),'descriptor':e.get('data')})\n         elif e.get('event')=='done':done=e['data']\n      row.update(passed=bool(done and text.strip() and done.get('turn_outcome',{}).get('status')=='complete'),first_ms=first,total_ms=round((time.monotonic()-t)*1000),answer_chars=len(text),answer=text,outcome=(done or {}).get('turn_outcome',{}).get('status'))\n      scope=ex._owned_read_scope_for(ex._agent_kernel_snapshot)\n      completion=ex._composed_read_completion()\n      row['write_receipts']=(done or {}).get('write_receipts',[])\n      records=db.query(SymptomEntry).filter_by(user_id=user.id).all()\n      row['persisted_exact']=len(records)==1 and records[0].description==prompt and records[0].severity is None\n      row['passed']=row['passed'] and row['persisted_exact'] and len(row['write_receipts'])==1 and row['write_receipts'][0].get('verified') is True\n      row['diagnostic']={'scope':repr(scope),'daily_plan':repr(ex._turn_daily_read_plan),'completion':repr(completion),'context_profile':getattr(ex,'_prompt_context_profile',None)}\n      if done:\n       row['turn_outcome']=done.get('turn_outcome')\n       saved=db.get(AgentMessage,done.get('message_id'));perf=(saved.meta or {}).get('perf',{}) if saved else {}\n       row['quality']={k:v for k,v in (saved.meta or {}).items() if any(t in k for t in ('quality','boundary','reason'))} if saved else {}\n       row['segments']={k:perf.get(k) for k in ('turn_setup_ms','pre_llm_ms','pre_llm_stages','model_wait_ms','first_useful_ms','end_to_end_total_ms','end_to_end_ttft_ms','model_call_count','tool_total_ms','prompt_context_profile','composed_synthesis_used')}\n     except (Exception,BenchmarkStopped) as e:row.update(passed=False,error_type=type(e).__name__,stop_reason=str(e) if isinstance(e,BenchmarkStopped) else None,total_ms=round((time.monotonic()-t)*1000))\n    row['usage']=usage_tracker.summarize_usage_capture();usage_tracker.end_usage_capture(usage_token)\n    rows.append(row);print(json.dumps({k:v for k,v in row.items() if k not in {'answer','cards','diagnostic'}}),flush=True);Path(sys.argv[1]).write_text(json.dumps({'synthetic_only':True,'engine':'disposable_sqlite','source_sha':subprocess.check_output(['git','rev-parse','HEAD'],cwd=ROOT,text=True).strip(),'decision_mode':'off','domain_prompt_optimization':True,'saved_preference':False,'client_capabilities':'mobile/services/clientCaps.ts current enabled seven caps','rows':rows},indent=2)+'\\n')\n engine.dispose()\n return 0 if all(r['passed'] for r in rows) else 1\nsys.exit(asyncio.run(main()))\n",
+  "validation": {
+    "red_corrected": "8 failed, 2 passed, 34 deselected; initial event-envelope fixture corrected before this RED",
+    "focused": "422 passed",
+    "postgresql_17_non_superuser": "44 passed",
+    "ci_mode": "pending",
+    "safety_review": "pending",
+    "production": "not_deployed"
+  }
+}

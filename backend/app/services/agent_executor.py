@@ -8896,9 +8896,27 @@ def _is_proven_pure_symptom_record_request(message: Any) -> bool:
     ):
         return True
     suffix = normalized[symptom_end:].strip("。！？!?；;，, ")
-    if suffix not in {"", "的症状"}:
+    if suffix not in {"", "症状", "的症状"}:
         return False
     return _symptom_text_is_current_self_observation(normalized)
+
+
+def _is_closed_nasal_symptom_record(message: Any) -> bool:
+    """Only an explicit, single nasal observation needs no model decision.
+
+    This is not a clinical-risk classifier. Keep acute symptoms, extra facts,
+    questions, dates, severities and unknown wording on the existing path.
+    The ordinary current-turn authority and write gateway still apply.
+    """
+    raw = str(message or "")
+    return bool(
+        re.fullmatch(
+            r"(?:请)?(?:帮我)?(?:记录(?:一下)?|记下)(?:我)?(?:现在|今天)?"
+            r"(?:有点)?(?:流鼻涕|鼻塞|打喷嚏)(?:的?症状)?[。.!！]?",
+            raw,
+        )
+        and _is_proven_pure_symptom_record_request(raw)
+    )
 
 
 def _compound_symptom_fact_description(message: Any) -> Optional[str]:
@@ -18444,12 +18462,13 @@ class AgentExecutor:
         from app.services.daily_plan_chat import resolve_daily_plan_request
 
         closed_daily_plan = resolve_daily_plan_request(self._agent_kernel_snapshot)
+        closed_nasal_record = _is_closed_nasal_symptom_record(message)
         closed_action_preplanned = bool(
             getattr(settings, "domain_prompt_optimization", False)
             and channel == "typed"
             and not health_advice_buffered and health_evidence_turn is None
             and not staged_preclassification_failed
-            and staged_preclassified_tier in {"casual", "balanced"}
+            and (staged_preclassified_tier in {"casual", "balanced"} or closed_nasal_record)
             and not extra_context and not images and not file_base64
             and not self._current_turn_has_attachment
             and not read_only_tools and not self._runtime_write_block_reason
@@ -18457,7 +18476,8 @@ class AgentExecutor:
             and pending_choice_resolution is None and retry_recovery is None
             and not self._agent_kernel_pending_confirmation_tools
             and ((water_route_preview is not None and _is_closed_explicit_water_record(message))
-                 or (closed_daily_plan is not None and closed_daily_plan[0] == user_id))
+                 or (closed_daily_plan is not None and closed_daily_plan[0] == user_id)
+                 or closed_nasal_record)
         )
         # A fully bound factual query needs no advisory routing vote, even in
         # an existing conversation. History/planning and read verification still
@@ -21008,7 +21028,8 @@ class AgentExecutor:
                                 and not deterministic_symptom_fallback_attempted
                                 and not unverified_write_operations and not failed_write_operations
                                 and not self._agent_kernel_pending_confirmation_tools
-                                and parse_symptom_status_observation(message) is not None
+                                and (parse_symptom_status_observation(message) is not None
+                                     or (closed_action_preplanned and closed_nasal_record))
                                 and any((tool.get("function") or {}).get("name") == "health_record"
                                         for tool in round_tools)
                             ):
@@ -21022,7 +21043,10 @@ class AgentExecutor:
                                 if symptom_call is not None:
                                     proposed_calls = [symptom_call]
                                     deterministic_symptom_fallback_attempted = True
-                                    self._record_model_fallback_reason("symptom_status_observation_preplanned")
+                                    self._record_model_fallback_reason(
+                                        "nasal_symptom_record_preplanned" if closed_nasal_record
+                                        else "symptom_status_observation_preplanned"
+                                    )
                             from app.services.agent_kernel.bmi_read_scope import is_bmi_read_request
                             bmi_turn = is_bmi_read_request(message)
                             if (bmi_turn and round_idx == 0 and not proposed_calls
