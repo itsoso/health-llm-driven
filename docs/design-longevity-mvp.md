@@ -190,7 +190,7 @@ mobile 首页"身体年龄卡" (OTA)
 ## 13. 反馈环
 - Step 1:本地 `pytest`,秒级(纯函数)。
 - Step 2-3 后端:`pytest` + `uvicorn` 本地打 `/twin/me`。
-- Mobile:OTA(纯 RN/TS,无 native 改动)→ `./scripts/mobile-ota.sh production`。
+- Mobile:OTA(纯 RN/TS,无 native 改动)→ `trusted-ota.yml` 同 SHA 先 `validate` 后 `publish`。
 - **无 EAS build 需求**(MVP 不碰 native)。
 
 ---

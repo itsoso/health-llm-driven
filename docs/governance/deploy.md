@@ -57,6 +57,12 @@ Web 制品发布保留生产跟踪配置，默认拒绝 `public` 与 `next.confi
 （例如历史候选或纯文档候选尚无所需完整验证）。不得通过取消同 SHA 的运行中
 或失败记录制造绿色；全部适用运行仍按现有 trusted release gate 裁决。
 
+Trusted release 与 Trusted OTA 在同一非取消 concurrency group 内串行。每个 run 在
+canonical source/精确 CI 后、production 凭据和任何 claim/vendor/SSH 之前，按固定
+workflow、target、SHA、run ID 和 attempt 读取完整有界 inventory。仅最早的首次
+dispatch 可继续；已有更早的同 key run 无论成功、失败、取消或未知均阻断，不自动
+重发。validate 与 publish 是不同 key，validate 成功不冒充 publish。
+
 #### 本次发布的真实模型评测豁免
 
 默认仍要求高风险 LLM 变更具备真实评测证据。只有用户明确取消当前发布的
@@ -97,6 +103,12 @@ SHA 的 root-owned `SUCCEEDED` 回执，使用 `backend_release_scope.py` 验证
 `run` 或原生/OTA claim 时仍在领取资格前检查 full；既有 finish 动作继续按原
 绑定回执完成收尾，避免发布成功后因 main 前进留下悬挂租约。
 协议启用须安装新受审 canonical executor；仅合入 workflow 不等于线上已启用。
+
+普通 full-CI backend-only 使用固定 `check-backend` / `run-backend` RPC。它仍要求
+精确完整 CI、同一生产 readiness、锁、事务和健康回执，但只要求仓库只读凭据覆盖
+当前服务端 CI 核验的固定 300 秒窗口；不会继承原生 build/TestFlight 的 1800 秒
+凭据窗口。组合 `release`、原生 build 与 TestFlight 继续使用 1800 秒，并在 readiness
+与真正执行前分别复核。凭据不足只失败关闭；仓库 workflow 不 mint、不替换凭据。
 
 #### 同主机前端制品准备与复用
 

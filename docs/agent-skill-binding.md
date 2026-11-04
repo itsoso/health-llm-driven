@@ -53,7 +53,7 @@ Router 的机器推荐是入口，不是第二套状态机。`product-pipeline`�
 | 新增 Safety 规则、specialist、agent 分区或相关注册表 | `.claude/skills/extend-safety-or-specialist/SKILL.md` | `scripts/check_doc_drift.py`, `docs/ARCHITECTURE.md`, `docs/_generated/system-map.json` |
 | CI/System Map/doc drift 红,或代码派生系统事实变化 | `.claude/skills/doc-drift-fix/SKILL.md` + `.claude/skills/system-map/SKILL.md` | `scripts/dump_system_map.py`, `./scripts/system-map-check.sh`, `docs/system-map/INDEX.md` |
 | 后端上线 | `.claude/skills/backend-deploy/SKILL.md` | `deploy.sh`, `docs/governance/deploy.md` |
-| Mobile JS/TS/UI 线上热更新 | `.claude/skills/mobile-ota/SKILL.md` | `scripts/mobile-ota.sh`, mobile release notes |
+| Mobile JS/TS/UI 线上热更新 | `.claude/skills/mobile-ota/SKILL.md` | `.github/workflows/trusted-ota.yml`, `scripts/trusted_ota*.py`, OTA receipt |
 | Mobile native / EAS / TestFlight 发版 | `.claude/skills/mobile-testflight-release/SKILL.md` | EAS profiles, iOS signing, user confirmation gates |
 | iOS App Store 送审 / 审核被拒 / Review Notes / 截图隐私 / 审核账号可达性 | `.claude/skills/ios-app-review-gate/SKILL.md` | `docs/release/app-store/submission-pack.md`, `docs/release/app-store/adapted-review-checklist.md`, `scripts/check_app_store_release_pack.py` |
 | Mac app 构建/安装/分发 | `.claude/skills/mac-build-deploy/SKILL.md` | `apps/mac/`, packaging scripts |

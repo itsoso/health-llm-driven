@@ -132,6 +132,17 @@ jobs:
         ' reva-bootstrap "$TARGET_SHA"
         test -n "$GH_TOKEN"
         printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/trusted_release_gate.py --sha "$TARGET_SHA" --workflow-sha "$TARGET_SHA" --token-stdin
+    - name: Admit unique exact release dispatch
+      env:
+        GH_TOKEN: ${{ github.token }}
+        TARGET_SHA: ${{ inputs.sha }}
+        RELEASE_TARGET: ${{ inputs.target }}
+      run: |
+        test -n "$GH_TOKEN"
+        printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+          /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/release_dispatch_admission.py \
+            --token-stdin --workflow trusted-ota --target "$RELEASE_TARGET" --sha "$TARGET_SHA" \
+            --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
     - name: Canonical source metadata after_checkout
       run: |
         /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I -S -B - <<'PY'

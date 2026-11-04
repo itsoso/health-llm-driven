@@ -50,6 +50,17 @@ jobs:
           ' reva-bootstrap "$TARGET_SHA" "$CI_TARGET"
           test -n "$GH_TOKEN"
           printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root /usr/bin/python3 -I /opt/reva-release/source/scripts/trusted_release_gate.py --token-stdin --sha "$TARGET_SHA" --workflow-sha "$GITHUB_SHA" --target "$CI_TARGET"
+      - name: Admit unique exact release dispatch
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TARGET_SHA: ${{ inputs.sha }}
+          RELEASE_TARGET: ${{ inputs.target }}
+        run: |
+          test -n "$GH_TOKEN"
+          printf '%s' "$GH_TOKEN" | /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
+            /usr/bin/python3 -I -S -B /opt/reva-release/source/scripts/release_dispatch_admission.py \
+              --token-stdin --workflow trusted-release --target "$RELEASE_TARGET" --sha "$TARGET_SHA" \
+              --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT"
       - name: Probe fixed production TCP and SSH banner without credentials
         run: |
           /usr/bin/sudo /usr/bin/env -i PATH=/usr/bin:/bin HOME=/root \
@@ -91,8 +102,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
-          RELEASE_RPC: ${{ inputs.target == 'testflight' && 'check-testflight' || inputs.target == 'backend-v1' && 'check-backend-v1' || 'check' }}
-          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || 'run' }}
+          RELEASE_RPC: ${{ inputs.target == 'testflight' && 'check-testflight' || inputs.target == 'backend-v1' && 'check-backend-v1' || inputs.target == 'backend' && 'check-backend' || 'check' }}
+          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || inputs.target == 'backend' && 'run-backend' || 'run' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
           RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
         run: |
@@ -152,7 +163,7 @@ jobs:
         env:
           TARGET_SHA: ${{ inputs.sha }}
           CI_TARGET: ${{ inputs.target == 'backend-v1' && 'backend-v1' || 'full' }}
-          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || 'run' }}
+          BACKEND_RPC: ${{ inputs.target == 'backend-v1' && 'run-backend-v1' || inputs.target == 'backend' && 'run-backend' || 'run' }}
           RELEASE_KEY: ${{ secrets.REVA_RELEASE_SSH_KEY }}
           RELEASE_HOST_KEYS: ${{ secrets.REVA_RELEASE_KNOWN_HOSTS }}
         run: |

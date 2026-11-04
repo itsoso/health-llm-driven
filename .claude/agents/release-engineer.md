@@ -23,11 +23,11 @@ model: opus
 ## 移动端发布(判断走哪条)
 | 改动 | 通道 | 命令 |
 |---|---|---|
-| 纯 `.ts/.tsx/.js`/样式/文案/RN 组件/hooks | **OTA** | `./scripts/mobile-ota.sh production "msg"` |
+| 纯 `.ts/.tsx/.js`/样式/文案/RN 组件/hooks | **OTA** | `trusted-ota.yml`:同 SHA 先 `validate` 后 `publish` |
 | `app.json` plugins / Info.plist / Podfile / 新 native module / SDK 升级 | **必须 EAS build**(异步) | `eas build -p ios --profile production --auto-submit` |
 | 发版/TestFlight | EAS build production + submit(异步) | 同上(autoIncrement build#,ascAppId 已配) |
 
-- **OTA 坑**:`mobile-ota.sh` 打包**工作树不是 HEAD** → 发前确认 Mobile/shared 相关树干净。若 clean checkout 缺依赖且 lock 与主工作区一致，复用现有 `mobile/node_modules`，不要默认 `npm ci`。只发 iOS。runtime 从 `mobile/app.json` 读取，不能在 skill 写死旧版本。
+- **OTA 坑**:本地 `mobile-ota.sh` 已冻结并固定退出 78。production 只用 trusted workflow 的 canonical main SHA；validate 不等于 publish，失败/取消/未知结果不得重发。只发 iOS，runtime 从受审源码读取。
 - **反模式**:JS 改动用 EAS build;同步等 EAS build(15-25min)。长任务一律后台异步,触发后切别的活。
 
 ## Mac 桌面端发布
