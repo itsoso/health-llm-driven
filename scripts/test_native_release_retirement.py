@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 BUILD_288_SHA = "8f272e49aebc1ee8d2640d93eee37a530b181e71"
+FAILED_UPLOAD_SHA = "a" * 40
 
 
 def load():
@@ -139,6 +140,64 @@ def test_third_attempt_profile_requires_both_pre_upload_failures():
     previous_upload["steps"][-1]["conclusion"] = "success"
     with pytest.raises(m.RetirementError):
         m.validate_vendor(run, jobs, prior, log, native_sha=BUILD_288_SHA)
+
+
+def failed_upload_metadata(m):
+    profile = copy.deepcopy(m.profile_for(BUILD_288_SHA))
+    profile.update(
+        run_id=999,
+        run_attempt=1,
+        vendor_state="VENDOR_UPLOAD_FAILED_UNCERTAIN",
+        job_ids={name: index for index, name in enumerate(profile["job_ids"], 1)},
+        build_id="failed-build",
+        submission_id="failed-submission",
+        skipped_jobs=["retained-testflight"],
+        log_sha256="0" * 64,
+        jobs_sha256="1" * 64,
+    )
+    m.PROFILES[FAILED_UPLOAD_SHA] = profile
+    run = {
+        "id": profile["run_id"], "run_attempt": 1, "workflow_id": m.WORKFLOW_ID,
+        "path": ".github/workflows/trusted-release.yml", "head_sha": FAILED_UPLOAD_SHA,
+        "head_branch": "main", "event": "workflow_dispatch", "status": "completed",
+        "conclusion": "failure", "repository": {"full_name": m.REPOSITORY},
+        "head_repository": {"full_name": m.REPOSITORY},
+    }
+    jobs = []
+    for name, job_id in profile["job_ids"].items():
+        steps = [dict(name=step, status="completed", conclusion="success")
+                 for step in m.REQUIRED_STEPS.get(name, ())]
+        conclusion = "skipped" if name == "retained-testflight" else (
+            "failure" if name in {"testflight", "release-result"} else "success")
+        if name in {"testflight", "release-result"}:
+            steps[-1]["conclusion"] = "failure"
+        jobs.append({"id": job_id, "name": name, "status": "completed",
+                     "conclusion": conclusion, "steps": steps})
+    log = (
+        "2026-11-04T06:08:21.0050030Z failed-build\n"
+        "2026-11-04T06:08:25.7075719Z Submission details: https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/failed-submission\n"
+        "2026-11-04T06:08:46.0195855Z ✖ Something went wrong when submitting your app to Apple App Store Connect.\n"
+        "2026-11-04T06:08:46.0202199Z App Store Connect returned an unexpected server error. Check Apple’s service status at https://developer.apple.com/system-status/ and verify whether the requested operation completed in App Store Connect before trying again. If the error continues, try again later or contact Apple Developer Support.\n"
+    ).encode()
+    return run, {"total_count": len(jobs), "jobs": jobs}, None, log
+
+
+def test_terminal_vendor_failure_is_bound_without_claiming_upload_success():
+    m = load()
+    proof = m.validate_vendor(*failed_upload_metadata(m), native_sha=FAILED_UPLOAD_SHA)
+    assert proof["state"] == "VENDOR_UPLOAD_FAILED_UNCERTAIN"
+    assert proof["build_id"] == "failed-build"
+
+
+def test_terminal_vendor_failure_requires_exact_error_and_no_success_marker():
+    m = load()
+    run, jobs, prior, log = failed_upload_metadata(m)
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log.replace(b"unexpected server error", b"other error"),
+                          native_sha=FAILED_UPLOAD_SHA)
+    with pytest.raises(m.RetirementError):
+        m.validate_vendor(run, jobs, prior, log + b"\xe2\x9c\x94 Submitted your app to Apple App Store Connect!\n",
+                          native_sha=FAILED_UPLOAD_SHA)
 
 
 @pytest.mark.parametrize(

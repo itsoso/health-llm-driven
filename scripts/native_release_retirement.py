@@ -3,8 +3,9 @@
 The fixed native profiles are deliberately narrow. A root operator at a reviewed,
 CI-green canonical source performs inspect -> matching digest -> durable intent
 and completion. Old claims, locks and installation bytes are never rewritten.
-A consumed or interrupted closure is never resumed. This certifies a completed
-vendor upload, not Apple processing, TestFlight availability or App Review.
+A consumed or interrupted closure is never resumed. Profiles bind either a
+completed vendor upload or an explicit uncertain terminal vendor failure; they
+never certify Apple processing, TestFlight availability or App Review.
 """
 
 import argparse
@@ -172,6 +173,32 @@ PROFILES = {
         'skipped_jobs': ['retained-testflight'],
         'prior_mode': 'upload-claim-failed',
     },
+    'aaeb17f6cf77e548ffaae798e602a9849ad64806': {
+        'workspace_kind': 'successful-backend',
+        'vendor_state': 'VENDOR_UPLOAD_FAILED_UNCERTAIN',
+        'run_id': 41782468757,
+        'run_attempt': 1,
+        'log_host': 'productionresultssa9.blob.core.windows.net',
+        'job_ids': {
+            'preflight': 126416958589,
+            'build-permission': 126417014554,
+            'retained-testflight': 126417015772,
+            'ios-build': 126417160323,
+            'backend': 126417160341,
+            'testflight': 126420033859,
+            'release-result': 126420578828,
+        },
+        'build_id': 'e18c5964-14df-410f-89d4-1129ab64ec9f',
+        'submission_id': 'f7eb32a3-07c4-4596-97b1-a9741a474826',
+        'log_sha256': 'febf740b24c584543c5a6393b54914cb7442e4710f2a4226f344c00d9fa6e0fb',
+        'jobs_sha256': '2a46f46bb15b9a54bd9647c84f8da66324c0ac9cd19fab2afd2f280511814c6e',
+        'canonical_hashes': {
+            '.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
+            'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
+            'scripts/trusted_release_server.py': '9f2360ffecbbe2db7828da1aef9ef460b7be1c6aa19094289fd0523106401638',
+        },
+        'skipped_jobs': ['retained-testflight'],
+    },
 }
 
 
@@ -234,6 +261,10 @@ def steps_map(job):
 
 def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
     profile = profile_for(native_sha)
+    vendor_state = profile.get("vendor_state", "VENDOR_UPLOAD_SUCCEEDED")
+    if vendor_state not in {"VENDOR_UPLOAD_SUCCEEDED", "VENDOR_UPLOAD_FAILED_UNCERTAIN"}:
+        raise RetirementError("unsupported native vendor terminal")
+    failed_upload = vendor_state == "VENDOR_UPLOAD_FAILED_UNCERTAIN"
     expected = {
         "id": profile["run_id"],
         "run_attempt": profile["run_attempt"],
@@ -243,7 +274,7 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         "head_branch": "main",
         "event": "workflow_dispatch",
         "status": "completed",
-        "conclusion": "success",
+        "conclusion": "failure" if failed_upload else "success",
     }
     if (
         not isinstance(run, dict)
@@ -267,17 +298,22 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
     else:
         prior_attempts = []
     for name, job in current.items():
-        if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != (
-            "skipped" if name in profile.get("skipped_jobs", ("backend",)) else "success"
-        ):
+        expected_job = ("skipped" if name in profile.get("skipped_jobs", ("backend",))
+                        else "failure" if failed_upload and name in {"testflight", "release-result"}
+                        else "success")
+        if job.get("id") != profile["job_ids"][name] or job.get("conclusion") != expected_job:
             raise RetirementError("native-only job identity or terminal differs")
         steps = steps_map(job)
         for required in REQUIRED_STEPS.get(name, ()):
+            expected_step = ("failure" if failed_upload and (
+                (name == "testflight" and required == "Revalidate and upload the exact finished build")
+                or (name == "release-result" and required == "Join backend deployment and TestFlight upload outcomes")
+            ) else "success")
             if (
-                steps.get(required, {}).get("conclusion") != "success"
+                steps.get(required, {}).get("conclusion") != expected_step
                 or steps[required].get("status") != "completed"
             ):
-                raise RetirementError("native vendor step did not succeed")
+                raise RetirementError("native vendor step terminal differs")
     # Attempt 1 failed before vendor create. Never close a profile with an
     # uncertain earlier create/upload, even if a later rerun happens to pass.
     if profile.get("prior_mode") == "upload-claim-failed":
@@ -312,18 +348,24 @@ def validate_vendor(run, jobs, prior, log, *, native_sha=OLD_SHA):
         "Submission details: https://expo.dev/accounts/itsoso/projects/health-pilot/submissions/"
         + profile["submission_id"]
     )
-    if (
-        body.count(profile["build_id"]) != 1
-        or body.count(submission) != 1
-        or body.count("✔ Submitted your app to Apple App Store Connect!") != 1
-        or body.count(
-            "Your binary has been successfully uploaded to App Store Connect!"
+    success_lines = (
+        "✔ Submitted your app to Apple App Store Connect!",
+        "Your binary has been successfully uploaded to App Store Connect!",
+    )
+    if body.count(profile["build_id"]) != 1 or body.count(submission) != 1:
+        raise RetirementError("exact vendor build and submission missing")
+    if failed_upload:
+        failure_lines = (
+            "✖ Something went wrong when submitting your app to Apple App Store Connect.",
+            "App Store Connect returned an unexpected server error. Check Apple’s service status at https://developer.apple.com/system-status/ and verify whether the requested operation completed in App Store Connect before trying again. If the error continues, try again later or contact Apple Developer Support.",
         )
-        != 1
-    ):
-        raise RetirementError("exact vendor build and upload terminal missing")
+        if any(body.count(line) != 1 for line in failure_lines) or any(
+                body.count(line) != 0 for line in success_lines):
+            raise RetirementError("exact uncertain vendor upload failure missing")
+    elif any(body.count(line) != 1 for line in success_lines):
+        raise RetirementError("exact vendor upload success missing")
     return {
-        "state": "VENDOR_UPLOAD_SUCCEEDED",
+        "state": vendor_state,
         "run_id": profile["run_id"],
         "run_attempt": profile["run_attempt"],
         "workflow_id": WORKFLOW_ID,

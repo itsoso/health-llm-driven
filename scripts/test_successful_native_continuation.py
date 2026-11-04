@@ -57,6 +57,13 @@ def test_rerun_continuation_binds_reviewed_prior_attempts(evidence):
     assert proof['vendor']['prior_jobs_sha256'] == 'c' * 64
 
 
+def test_terminal_upload_failure_is_preserved_in_continuation(evidence):
+    m, b, profile, _, _, _, _, _ = evidence
+    profile['vendor_state'] = 'VENDOR_UPLOAD_FAILED_UNCERTAIN'
+    _, proof = m.expected(b, 'c' * 40)
+    assert proof['vendor']['state'] == 'VENDOR_UPLOAD_FAILED_UNCERTAIN'
+
+
 @pytest.mark.parametrize('damage', ['missing-upload', 'wrong-kind', 'wrong-producer', 'vendor-differs'])
 def test_incomplete_or_mismatched_continuation_fails_closed(evidence, damage):
     m, b, profile, native, workspace, proof, _, source = evidence

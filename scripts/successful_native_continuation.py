@@ -1,4 +1,4 @@
-"""Bind native upload completion to retirement of an already successful backend.
+"""Bind a native vendor terminal to retirement of an already successful backend.
 
 The exact reviewed vendor profile is source-owned. No caller-selected workflow,
 artifact, token argument or synthetic backend completion is accepted.
@@ -42,7 +42,8 @@ def expected(b, sha):
         if hashlib.sha256(path.read_bytes()).hexdigest() != digest:
             raise ContinuationError('native continuation producer differs')
     vendor = {
-        'state': 'VENDOR_UPLOAD_SUCCEEDED', 'run_id': profile['run_id'],
+        'state': profile.get('vendor_state', 'VENDOR_UPLOAD_SUCCEEDED'),
+        'run_id': profile['run_id'],
         'run_attempt': profile['run_attempt'], 'workflow_id': native.WORKFLOW_ID,
         'build_id': profile['build_id'], 'submission_id': profile['submission_id'],
         'log_sha256': profile['log_sha256'], 'jobs_sha256': profile['jobs_sha256'],
