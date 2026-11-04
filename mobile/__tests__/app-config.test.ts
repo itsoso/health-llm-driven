@@ -541,9 +541,14 @@ describe('HealthKit privacy purpose in generated Info.plist', () => {
     expect(purpose).toContain('关闭');
   });
 
-  it('does not claim HealthKit writes when this app only requests read access', async () => {
+  it('retains an honest HealthKit update purpose required by the linked SDK', async () => {
     const plist = await generatedHealthPlist();
-    expect(plist.NSHealthUpdateUsageDescription).toBeUndefined();
+    const purpose = plist.NSHealthUpdateUsageDescription;
+    expect(purpose).toBe(appJson.expo.ios.infoPlist.NSHealthUpdateUsageDescription);
+    expect(purpose).toContain('当前不会向 Apple 健康写入数据');
+    expect(purpose).toContain('HealthKit SDK');
+    expect(purpose).toContain('未来');
+    expect(purpose).toContain('另行说明并请求授权');
     expect(plist.NSHealthClinicalHealthRecordsShareUsageDescription).toBeUndefined();
   });
 });

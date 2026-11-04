@@ -20,9 +20,14 @@
 const { withEntitlementsPlist, withInfoPlist } = require('@expo/config-plugins');
 
 function withHealthKitCleanup(config) {
+  const updatePurpose = config.ios?.infoPlist?.NSHealthUpdateUsageDescription;
   config = withInfoPlist(config, (mod) => {
-    // The app requests read access only; react-native-health adds a write string by default.
-    delete mod.modResults.NSHealthUpdateUsageDescription;
+    // The linked SDK triggers Apple's static HealthKit write-purpose check even
+    // though this app requests read access only. Preserve our honest, reviewed
+    // purpose instead of the SDK's generic default string.
+    if (updatePurpose) {
+      mod.modResults.NSHealthUpdateUsageDescription = updatePurpose;
+    }
     return mod;
   });
   return withEntitlementsPlist(config, (mod) => {

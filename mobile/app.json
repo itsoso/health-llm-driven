@@ -32,6 +32,7 @@
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和小气候连续对话",
         "NSLocationWhenInUseUsageDescription": "用于查询天气、空气质量；你主动同意时单次定位，通过高德查找分享餐厅，或确认城市后保存记录足迹，不持续追踪",
         "NSHealthShareUsageDescription": "仅读取你选择授权的 Apple 健康数据（如步数、心率、睡眠、血氧、体重、血压和心电图），同步至你的个人健康档案，用于展示趋势和复盘。例如，汇总最近一周的步数与睡眠时长，帮助你回顾活动和作息。你可选择授权项目并随时在 Apple 健康中关闭访问。",
+        "NSHealthUpdateUsageDescription": "小气候当前不会向 Apple 健康写入数据。此说明仅因应用链接的 HealthKit SDK 和系统兼容性要求而保留；App 只读取你选择授权的数据。若未来提供写入功能，我们会在写入前另行说明并请求授权。",
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {

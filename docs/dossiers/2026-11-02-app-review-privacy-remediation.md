@@ -55,8 +55,10 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   grant; retain server enforcement and account/revocation invalidation.
 - Gate realtime dictation before opening its socket; refusal preserves non-AI use.
 - Add a visible voice-screen disclosure entry; settings retains withdrawal.
-- Make Info.plist the HealthKit purpose string source; verify the full Expo plugin
-  chain and remove unused write permission text.
+- Make Info.plist the HealthKit purpose string source and verify the full Expo plugin
+  chain. Keep an honest write-purpose compatibility string because Apple's static
+  validation requires it for the linked HealthKit SDK even though runtime permissions
+  remain read-only.
 - Keep Web and Mobile policies consistent with actual provider terms and controls.
 - Test refusal, pending saves, account switches, revocation, stale policies, ASR
   cancellation, actual native configuration and responsive disclosure rendering.
@@ -80,7 +82,8 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   to composer; personal settings exposes AI sharing/privacy; native HealthKit sheet
   opens. Mac locked before scrolling to the purpose text, so its final visual
   verification is incomplete. The actual built Info.plist and plugin tests verify
-  the full purpose text and absence of unused write-description key.
+  the full read-purpose text. The later Store upload result supersedes the earlier
+  assumption that the write-description key could be absent.
 - Screenshots and source-bound simulator archive are in the task artifact folder.
   Simulator archive is not a distributable Store IPA.
 
@@ -143,3 +146,25 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   therefore enforced through fresh full Mobile/Web suites, App Store release pack,
   iOS preflight, System Map, Dossier consistency, exact-revision CI and trusted
   release gates without claiming that unavailable Skill was executed.
+
+## 2026-11-04 Build 288 upload rejection and correction
+
+- Exact revision `8f272e49aebc1ee8d2640d93eee37a530b181e71` passed full CI, deployed the
+  backend, published the updated public privacy policy and produced EAS build
+  `2a2fb4da-71b5-477d-88ec-10b6ab29abd5`. The trusted upload workflow completed,
+  but App Store Connect independently rejected Build 288 during ingestion.
+- App Store Connect reported ITMS-90683: `NSHealthUpdateUsageDescription` was
+  required because linked code or entitlements reference sensitive HealthKit APIs.
+  Build 288 is not eligible for review and is not represented as a successful Store
+  candidate. Existing Build 287 predates this remediation and must not be substituted.
+- The new correction preserves the app-authored update purpose after the actual
+  `react-native-health` Expo plugin runs. It states that the current app does not
+  write Apple Health data, that the key is retained for linked SDK/system
+  compatibility, and that any future write behavior requires separate disclosure
+  and authorization. Runtime HealthKit permissions remain read-only and the clinical
+  records entitlement remains removed.
+- TDD evidence: the revised plugin-chain test failed while the key was absent, then
+  passed after the fix (62/62 in `app-config.test.ts`). Mobile TypeScript, iOS App
+  Store preflight and release-pack validation passed. A new exact main SHA, full CI,
+  canonical native build and successful App Store Connect ingestion are still
+  required before submission.
