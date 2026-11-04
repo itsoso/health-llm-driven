@@ -191,7 +191,7 @@ PROFILES = {
         'build_id': 'e18c5964-14df-410f-89d4-1129ab64ec9f',
         'submission_id': 'f7eb32a3-07c4-4596-97b1-a9741a474826',
         'log_sha256': 'febf740b24c584543c5a6393b54914cb7442e4710f2a4226f344c00d9fa6e0fb',
-        'jobs_sha256': '2a46f46bb15b9a54bd9647c84f8da66324c0ac9cd19fab2afd2f280511814c6e',
+        'jobs_sha256': '9ba68a4957421e12b2ccfeb01c1c71ea4d03e5721917e3c2ae33f1cbb0af3193',
         'canonical_hashes': {
             '.github/workflows/trusted-release.yml': 'ce224047dbeed684afea1d78cc894704cca3b357ff646c70bd2f91541d2e3a62',
             'scripts/trusted_eas_build.py': 'c669e95caaa626a9e62cb24251a22d710b73b4211fa1e2ef52a969b2f916154a',
