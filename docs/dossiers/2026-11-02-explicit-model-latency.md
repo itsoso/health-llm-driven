@@ -586,7 +586,7 @@ RED 路由/生成 9 failed、128 passed；最初缺 Pi runtime 的环境失败�
 
 G5 发布完成，G6 自动线上发布核验通过。合成饮水两次中位数 2.75s→0.57s 只证明明确完整 typed 饮水路径的提案模型调用被省去；生产长尾、模拟器实际显示、设备接收仍未验证，不能宣称所有请求三秒达标。完整样本、失败、修复及发布证据见 [本轮机器证据](../reviews/2026-11-03-closed-water-route-performance.json)。
 
-### 第八轮：化验事实提前展示（2026-11-04，进行中）
+### 第八轮：化验事实提前展示（2026-11-04，已发布；三秒目标未达成）
 
 最新 main `f0a520a4eb547b9e230b73a5443f4620180aea92`，生产 `095ef6936552121264524fc5d537fa783adf8b5b`，沿用隔离 checkout 与 Harness。七天脱敏只读统计158个run，仅一个新样本：完整171926ms，服务端首内容113040ms，三次模型调用合计157655ms，可选路由5031ms；工具为 health_query / knowledge_search，不是重复调用证据，未保存具体参数，不能把它断言为某个医疗查询路径。原始 prompt/健康载荷未导出。
 
@@ -601,3 +601,12 @@ G5 发布完成，G6 自动线上发布核验通过。合成饮水两次中位�
 独立G4对 `22c097df3` 判定NO-GO：跨午夜的冻结日期与服务器日期不一致，或原工具参数有 `days=None/limit` 等非投影形状时，数值卡正确拒绝，但模型收到额外JSON，违反原文不变的质量底线。未发现越权或临床原文丢失。父流程补RED，修复先用原始 supplied_args 决定是否opt-in，再在序列化端按实际日期差校验窗口，不匹配直接保留原文本；禁止放宽卡片验证。首次修订误在归一后的args做门控，仍有三个RED，已修为归一前参数。另处理等价只读缓存重放：模型文本提取沿用已有只读去重的参数归一，保持原summary，卡片仍按原执行范围校验；该行为先RED后GREEN。极早日期使用日期差避免减法溢出。
 
 修复后CI-mode集成620 passed，缓存边界修复后相关155 passed；最终PG及新独立G4待完成。有效ASGI配对请求均成功：基线首流出内容17141/20043ms，候选3752/5999ms；完整回复17194/20066ms对24810/16443ms，候选第一例多一次模型规划。此数据只证明该事实展示切片能先于完整回复出现，不证明完整耗时、成本或生产P95改善，更未达成三秒SLO。正常查询的模型结果原文逐字不变；不将模型随机轮次数差异归因于这次展示变更。全部失败探针、样本与证据摘要见[机器证据](../reviews/2026-11-04-medical-readout-performance.json)。
+
+
+第八轮最终闭环：候选 `829110cdfc89fd5972355653da57bf6773da249e` 修复后 PostgreSQL69 passed，独立G4 GO（113项回归、4项旧边界、真实Pi历史/缓存/流式一致性1项、15项恶意输入探针）。精确候选 live Gate 通过；[完整CI41744438892](https://github.com/itsoso/health-llm-driven/actions/runs/41744438892)全部32个job成功。首次本地change-gate调用缺少GITHUB_SHA而配置失败，补齐精确候选环境后通过，原失败保留。
+
+[后端41748420298](https://github.com/itsoso/health-llm-driven/actions/runs/41748420298)成功，生产HEAD为829110cdf且干净；runtime事务COMMITTED、业务租约释放，后端/worker/beat/Laya active/running，内外网健康检查通过。canonical staging、只读App凭据刷新及独立审核后的授权轮换均保留一次性回执，没有备份或回退副本。
+
+[OTA validate41749160627](https://github.com/itsoso/health-llm-driven/actions/runs/41749160627)通过后，[publish41749446880](https://github.com/itsoso/health-llm-driven/actions/runs/41749446880)成功。服务端完成回执与公开manifest一致：production/iOS/runtime1.3.6，group `a62501a2-fcf7-412e-b113-dcb8656f28f8`，update `01a1a40d-917d-7abe-8f6c-717531ff3d91`，启动制品和47个资源哈希匹配。两端均为同一精确候选，发布后无业务租约。
+
+配对合成请求首个服务端内容中位数18.59秒至4.88秒，完整回复并未稳定变快。每组仅两例，不证明生产P95/P99、成本改善或三秒SLO；没有把最新线上172秒样本与合成4.88秒直接比较。App实际绘制、设备接收及真实用户新查询验收尚未验证，不能把公开manifest成功等同设备验收。最终证据已补入同一机器证据文件；本轮代码发布完成，整体性能目标仍待继续。

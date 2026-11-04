@@ -1,6 +1,6 @@
 # Feature Spec: 已存化验数值提前展示
 
-> Status: implementation
+> Status: released; device paint and production latency SLO not verified
 > Updated: 2026-11-04
 > Owner: Agent performance delivery
 > Dossier: ../dossiers/2026-11-02-explicit-model-latency.md
