@@ -103,6 +103,12 @@ coordination layer built on the trusted workflows already proven in production.
   passed. Exact-revision remote CI remains required before merge.
 - Independent safety review returned GO after the transport hardening and final
   Dossier truth corrections; no production release is authorized by that verdict.
+- First exact-revision CI found one stale neighboring transport-order assertion:
+  it still required the runner probe immediately after the exact gate and did not
+  account for the new credential-free dispatch admission step between them. The
+  invariant now explicitly requires gate → admission → transport; the failed test
+  plus its adjacent admission/workflow suites pass locally (`113 passed`). A fresh
+  exact-revision CI run remains required.
 - The registry-selected `verification-before-completion` capability is not installed
   in this environment. Repository release tests, preflight, CI, exact-SHA status,
   independent safety review, and post-merge readback remain the verification path.
