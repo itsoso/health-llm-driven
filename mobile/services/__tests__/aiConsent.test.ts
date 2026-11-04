@@ -2,8 +2,10 @@ import { Alert } from 'react-native';
 import api from '../api';
 import { ensureAIConsent, manageAIConsent, requireAIConsent } from '../aiConsent';
 import { setAIConsentIdentity, invalidateAIConsent } from '../aiConsentState';
+import { showAIConsent } from '../aiConsentPresentation';
 import { hasAIConsent, isAIConsentRequired } from '../aiConsentState';
 
+jest.mock('../aiConsentPresentation', () => ({ showAIConsent: jest.fn() }));
 jest.mock('../api', () => ({ __esModule: true, default: { get: jest.fn(), put: jest.fn() } }));
 jest.mock('../auth', () => ({ getToken: jest.fn(async () => 'session-a') }));
 
@@ -13,10 +15,15 @@ const policy = {
   data_types: ['健康文本', '图片', '语音'], purpose: '生成健康管理回复',
 };
 const flush = async () => { for (let n = 0; n < 12; n++) await Promise.resolve(); };
-const buttons = () => (Alert.alert as jest.Mock).mock.calls[0][2];
+let choose: (decision: 'accept' | 'decline' | 'revoke' | 'keep') => void;
+const buttons = () => (showAIConsent as jest.Mock).mock.calls.at(-1)[1] === 'manage'
+  ? [{ onPress: () => choose('keep') }, { onPress: () => choose('revoke') }]
+  : [{ onPress: () => choose('decline') }, { onPress: () => choose('accept') }];
+const acceptFirst = async () => { const result = ensureAIConsent(); await flush(); buttons()[1].onPress(); return result; };
 
 beforeEach(() => {
   jest.clearAllMocks();
+  (showAIConsent as jest.Mock).mockImplementation(() => new Promise(resolve => { choose = resolve; }));
   setAIConsentIdentity(null); setAIConsentIdentity('session-a'); invalidateAIConsent();
   jest.spyOn(Alert, 'alert').mockImplementation(() => {});
   (api.get as jest.Mock).mockResolvedValue({ data: policy });
@@ -25,7 +32,7 @@ beforeEach(() => {
 
 it('does not authorize or write consent when disclosure is declined', async () => {
   const pending = ensureAIConsent(); await flush();
-  expect(Alert.alert).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('测试 AI 提供方'), expect.any(Array), expect.any(Object));
+  expect(showAIConsent).toHaveBeenCalledWith(policy, 'request');
   buttons()[0].onPress();
   await expect(pending).resolves.toBe(false);
   expect(api.put).not.toHaveBeenCalled();
@@ -58,10 +65,12 @@ it('does not inherit an open consent dialog across account changes', async () =>
   expect(api.put).not.toHaveBeenCalled();
 });
 
-it('reuses a persisted decision without repeated dialogs but rechecks server policy', async () => {
+it('requires an explicit mobile decision even with a persisted server grant, then reuses it only in this session', async () => {
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
+  expect(await acceptFirst()).toBe(true);
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
   await expect(ensureAIConsent()).resolves.toBe(true);
-  expect(Alert.alert).not.toHaveBeenCalled();
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, policy_version: 'new-policy' } });
   const pending = ensureAIConsent(); await flush(); buttons()[0].onPress();
   await expect(pending).resolves.toBe(false);
@@ -80,7 +89,7 @@ it('revocation is persisted and blocks later sharing', async () => {
 
 it('keeps sharing blocked while revocation is waiting for the server', async () => {
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  await ensureAIConsent();
+  await acceptFirst();
   expect(hasAIConsent()).toBe(true);
   let finish: (value: unknown) => void = () => {};
   (api.put as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
@@ -92,14 +101,14 @@ it('keeps sharing blocked while revocation is waiting for the server', async () 
 
 it('coalesces concurrent first sends into one disclosure', async () => {
   const first = ensureAIConsent(); const second = ensureAIConsent(); await flush();
-  expect(Alert.alert).toHaveBeenCalledTimes(1);
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
   buttons()[0].onPress();
   await expect(Promise.all([first, second])).resolves.toEqual([false, false]);
 });
 
 it('clears prior authorization when policy fetch fails', async () => {
   (api.get as jest.Mock).mockResolvedValueOnce({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  await ensureAIConsent();
+  await acceptFirst();
   (api.get as jest.Mock).mockRejectedValueOnce(new Error('offline'));
   await expect(ensureAIConsent()).resolves.toBe(false);
   expect(hasAIConsent()).toBe(false);
@@ -109,9 +118,9 @@ it('clears prior authorization when policy fetch fails', async () => {
 it('retries one transient policy read without granting or sending content early', async () => {
   (api.get as jest.Mock).mockRejectedValueOnce({ code: 'ERR_NETWORK' });
   (api.get as jest.Mock).mockResolvedValueOnce({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  await expect(ensureAIConsent()).resolves.toBe(true);
+  expect(await acceptFirst()).toBe(true);
   expect(api.get).toHaveBeenCalledTimes(2);
-  expect(api.put).not.toHaveBeenCalled();
+  expect(api.put).toHaveBeenCalledTimes(1);
   expect(Alert.alert).not.toHaveBeenCalled();
 });
 
@@ -135,4 +144,39 @@ it('does not show a stale policy failure after an account switch', async () => {
   await expect(pending).resolves.toBe(false);
   expect(api.get).toHaveBeenCalledTimes(1);
   expect(Alert.alert).not.toHaveBeenCalled();
+});
+
+it('does not reuse an old server grant after the local user declines', async () => {
+  (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
+  const first = ensureAIConsent(); await flush(); buttons()[0].onPress();
+  await expect(first).resolves.toBe(false);
+  expect(hasAIConsent()).toBe(false);
+  const second = ensureAIConsent(); await flush();
+  expect(showAIConsent).toHaveBeenCalledTimes(2);
+  buttons()[0].onPress(); await expect(second).resolves.toBe(false);
+});
+
+it('shares a pending grant with settings instead of opening a contradictory second decision', async () => {
+  let finish!: (value: unknown) => void;
+  (api.put as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const request = ensureAIConsent(); await flush(); buttons()[1].onPress(); await flush();
+  const settings = manageAIConsent(); await flush();
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
+  expect(hasAIConsent()).toBe(false);
+  finish({ data: { ...policy, accepted: true, accepted_at: '2026-11-02T00:00:00Z' } });
+  await expect(request).resolves.toBe(true); await settings;
+});
+
+it('cannot regrant while a completed server revocation is still awaiting its response', async () => {
+  (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-10-01T00:00:00Z' } });
+  let finish!: (value: unknown) => void;
+  (api.put as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+  const revoking = manageAIConsent(); await flush(); buttons()[1].onPress(); await flush();
+  (api.get as jest.Mock).mockResolvedValue({ data: policy });
+  await manageAIConsent();
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
+  expect(api.get).toHaveBeenCalledTimes(1);
+  expect(hasAIConsent()).toBe(false);
+  finish({ data: policy }); await revoking;
+  expect(hasAIConsent()).toBe(false);
 });

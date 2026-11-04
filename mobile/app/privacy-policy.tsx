@@ -2,6 +2,8 @@ import { backOrChat } from '../utils/backOrChat';
 import React, { useMemo } from 'react';
 import {
   ScrollView,
+  Linking,
+  Alert,
   StyleSheet,
   Text,
   TextStyle,
@@ -15,16 +17,22 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { radii, spacing } from '../constants/theme';
 import { useTheme, type ColorPalette } from '../hooks/useTheme';
 
+const providerPolicies = [
+  ['阿里云百炼隐私说明', 'https://help.aliyun.com/zh/model-studio/privacy-notice'],
+  ['阿里云百炼服务协议', 'https://terms.alicdn.com/legal-agreement/terms/common_platform_service/20230728213935489/20230728213935489.html'],
+  ['Apple 语音与隐私说明', 'https://www.apple.com/legal/privacy/data/zh-cn/ask-siri-dictation/'],
+];
+
 const sections = [
   {
     title: '我们读取和记录什么',
     body:
-      '为了生成健康时间线和行动建议,应用会处理你主动记录的症状、饮食、运动、睡眠、用药、补剂、化验、体检报告和基因报告摘要,以及你授权同步的 Apple Health、Garmin 等设备数据。',
+      '为了生成健康时间线和行动建议,应用会处理你主动记录的症状、饮食、运动、睡眠、用药、补剂、化验、体检报告和基因报告摘要,以及你授权同步的 Apple Health、Garmin 等设备数据。数据来自你在 App 中主动填写、选择上传或单独授权的设备同步；账号邮箱和用户标识用于登录与账号管理。',
   },
   {
     title: 'HealthKit 数据怎么用',
     body:
-      'Apple Health / HealthKit 数据仅用于身体状态展示、自动同步、趋势复盘、提醒和个性化健康行动建议。我们不会把 HealthKit 数据用于广告、营销画像或出售给数据经纪方。',
+      'Apple Health / HealthKit 数据仅用于身体状态展示、自动同步、趋势复盘、提醒和个性化健康行动建议，例如汇总一周步数与睡眠时长，帮助你回顾活动和作息。HealthKit 授权不代表同意向第三方 AI 共享；相关健康数据用于 AI 分析前仍需独立授权。我们不会把 HealthKit 数据用于广告、营销画像或出售给数据经纪方。',
   },
   {
     title: '位置、图片、语音音频和诊断数据',
@@ -59,7 +67,19 @@ const sections = [
   {
     title: 'AI 与第三方模型',
     body:
-      '首次使用前,App 会单独展示第三方 AI 模型服务的接收方、数据和用途。当前接收方为阿里云百炼（含通义千问、语音及图像模型）;采用 Apple 系统语音识别时,语音可能由设备或 Apple 服务器处理。只有明确同意并保存授权后,才会发送本次任务所需的对话、主动提交的图片/文件/语音及相关健康记录、个人资料和对话上下文。登录或同意隐私政策不代表同意 AI 共享。模型服务不用于第三方广告、营销画像或出售。',
+      '首次使用前,App 会单独展示第三方 AI 模型服务的接收方、数据和用途。基础模型服务接收方为阿里云百炼（含通义千问、语音及图像模型）;采用 Apple 系统语音识别时,语音可能由设备或 Apple 服务器处理。只有明确同意并保存授权后,才会发送本次任务所需的对话、主动提交的图片/文件/语音及相关健康记录、个人资料和对话上下文。登录或同意隐私政策不代表同意 AI 共享。模型服务不用于第三方广告、营销画像或出售。',
+  },
+  {
+    title: '接收方变更与授权',
+    body: '接收方变更时，我们会在发送前更新独立授权说明，列明服务商名称、处理的数据与用途，并重新征求同意。若启用额外的远程对话决策服务，其接收方和处理用途也必须列入该说明。你可在“设置 → AI 数据共享”查看当前接收方与授权。',
+  },
+  {
+    title: '第三方数据保护',
+    body: '我们要求接收个人数据的第三方提供与本政策同等或更严格的保护，包括限定用途、最小必要处理、传输安全、访问控制，以及依法处理保存和删除请求。阿里云百炼公布了数据加密与保密措施，并说明会依法保存模型与应用调用数据；Apple 系统语音识别按 Apple 的语音与隐私说明处理。我们不将服务商的通用安全说明等同于已启用特定的数据保留选项。',
+  },
+  {
+    title: 'AI 数据的保存与删除',
+    body: '你的健康记录和对话记录保存在小气候账号下，用于后续查看和管理；可通过账号与隐私入口发起删除请求。第三方处理已发送的数据时，保存期限和删除条件依适用服务协议、你在系统中的选择及法律要求而定。撤回授权会停止后续发送，不等于删除服务商已经保存的数据；如需查询或删除这些数据，请联系 support@executor.life，我们会协助处理。',
   },
   {
     title: '安全与隔离',
@@ -110,7 +130,7 @@ export default function PrivacyPolicyScreen() {
             <Text style={txt.heroBody}>
               这份政策说明主要数据用途和控制方式。具体功能是否可用，以所安装的应用版本和你的授权状态为准。
             </Text>
-            <Text style={txt.heroBody}>最近更新: 2026-10-18</Text>
+            <Text style={txt.heroBody}>最近更新: 2026-11-02</Text>
           </View>
         </View>
 
@@ -123,7 +143,17 @@ export default function PrivacyPolicyScreen() {
           ))}
         </View>
 
-        <Text style={txt.footer}>生效日期: 2026-08-05 · 最近更新: 2026-10-18</Text>
+        <View style={styles.card}>
+          <Text style={[txt.sectionTitle, styles.section]}>服务商隐私说明</Text>
+          {providerPolicies.map(([label, url]) => (
+            <TouchableOpacity key={url} accessibilityRole="link" style={styles.section}
+              onPress={() => { void Linking.openURL(url).catch(() => Alert.alert('暂时无法打开', '请稍后重试服务商隐私说明。')); }}>
+              <Text style={[txt.sectionBody, { color: c.brand }]}>{label}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
+
+        <Text style={txt.footer}>生效日期: 2026-08-05 · 最近更新: 2026-11-02</Text>
       </ScrollView>
     </SafeAreaView>
   );

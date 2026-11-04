@@ -31,7 +31,7 @@
         "NSMicrophoneUsageDescription": "用于语音输入、健康记录听写和小气候对话",
         "NSSpeechRecognitionUsageDescription": "识别你的语音,和小气候连续对话",
         "NSLocationWhenInUseUsageDescription": "用于查询天气、空气质量；你主动同意时单次定位，通过高德查找分享餐厅，或确认城市后保存记录足迹，不持续追踪",
-        "NSHealthShareUsageDescription": "用于读取 Apple Watch / RingConn / Oura 等设备写入的健康数据,生成个性化健康分析",
+        "NSHealthShareUsageDescription": "仅读取你选择授权的 Apple 健康数据（如步数、心率、睡眠、血氧、体重、血压和心电图），同步至你的个人健康档案，用于展示趋势和复盘。例如，汇总最近一周的步数与睡眠时长，帮助你回顾活动和作息。你可选择授权项目并随时在 Apple 健康中关闭访问。",
         "ITSAppUsesNonExemptEncryption": false
       },
       "privacyManifests": {
@@ -259,9 +259,7 @@
       [
         "react-native-health",
         {
-          "isClinicalDataEnabled": false,
-          "healthSharePermission": "用于读取 Apple Watch / RingConn / Oura 等设备的健康数据",
-          "healthUpdatePermission": "仅在你确认后将健康记录写入 Apple Health"
+          "isClinicalDataEnabled": false
         }
       ],
       "./plugins/withIosSupportedOrientations"

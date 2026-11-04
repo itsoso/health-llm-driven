@@ -3,6 +3,8 @@ import type { EventSubscription } from 'expo-modules-core';
 
 import { BASE_URL, TOKEN_KEY } from './api';
 import type { TranscribeAudioResult } from './transcribe';
+import { requireAIConsent } from './aiConsent';
+import { aiConsentRevision, AIConsentRequiredError, subscribeAIConsentInvalidation } from './aiConsentState';
 import {
   cancelPcmCapture,
   startPcmCapture,
@@ -120,6 +122,8 @@ export function createCloudRealtimeAsrSession(
   let startPromise: Promise<boolean> | null = null;
   let stopPromise: Promise<TranscribeAudioResult> | null = null;
   let cancelPromise: Promise<void> | null = null;
+  let consentRevision: number | null = null;
+  let unsubscribeConsent: (() => void) | null = null;
 
   const clearTimers = () => {
     if (startTimer) clearTimeout(startTimer);
@@ -129,6 +133,8 @@ export function createCloudRealtimeAsrSession(
   };
 
   const closeSocket = () => {
+    unsubscribeConsent?.();
+    unsubscribeConsent = null;
     const closingSocket = socket;
     socket = null;
     if (closingSocket && closingSocket.readyState < 2) closingSocket.close();
@@ -152,10 +158,10 @@ export function createCloudRealtimeAsrSession(
     return captureCleanupPromise;
   };
 
-  const fail = (message: string) => {
+  const fail = (message: string | Error) => {
     if (cancelled || finishSettled) return;
     const wasRecording = startSettled && !stopPromise;
-    const error = new Error(message || '云端实时语音识别失败');
+    const error = message instanceof Error ? message : new Error(message || '云端实时语音识别失败');
     terminalError = error;
     cancelled = true;
     clearTimers();
@@ -177,8 +183,14 @@ export function createCloudRealtimeAsrSession(
     });
   };
 
+  const consentIsCurrent = () => {
+    if (consentRevision !== null && consentRevision === aiConsentRevision()) return true;
+    fail(new AIConsentRequiredError());
+    return false;
+  };
+
   const handleMessage = async (raw: string) => {
-    if (cancelled || finishSettled) return;
+    if (cancelled || finishSettled || !consentIsCurrent()) return;
     let message: RealtimeAsrMessage;
     try {
       message = JSON.parse(raw) as RealtimeAsrMessage;
@@ -192,7 +204,7 @@ export function createCloudRealtimeAsrSession(
       try {
         while (captureOwners.has(dependencies.startPcmCapture)) {
           await captureOwners.get(dependencies.startPcmCapture);
-          if (cancelled) return;
+          if (cancelled || !consentIsCurrent()) return;
         }
         const ownership = new Promise<void>(resolve => { releaseCaptureOwner = resolve; });
         captureOwners.set(dependencies.startPcmCapture, ownership);
@@ -204,7 +216,7 @@ export function createCloudRealtimeAsrSession(
         captureStarted = true;
         captureStartPromise = dependencies.startPcmCapture(
           (audioBase64) => {
-            if (!cancelled && socket?.readyState === 1) {
+            if (!cancelled && consentIsCurrent() && socket?.readyState === 1) {
               socket.send(JSON.stringify({ type: 'audio', audio: audioBase64 }));
             }
           },
@@ -278,12 +290,17 @@ export function createCloudRealtimeAsrSession(
       if (startPromise) return startPromise;
       if (socket) return Promise.resolve(false);
       startPromise = (async () => {
+        await requireAIConsent();
+        if (cancelled) return false;
+        consentRevision = aiConsentRevision();
         const token = await dependencies.getAuthToken();
         if (!token) throw new Error('登录已过期，请重新登录后使用语音输入');
         if (cancelled) return false;
+        if (consentRevision !== aiConsentRevision()) throw new Error('auth_session_changed');
         startedAt = Date.now();
         finalResult = null;
         socket = dependencies.openSocket(realtimeAsrWebSocketUrl(), token);
+        unsubscribeConsent = subscribeAIConsentInvalidation(() => { fail(new AIConsentRequiredError()); });
         socket.onmessage = event => { void handleMessage(event.data); };
         socket.onerror = () => fail('无法连接云端实时语音服务');
         socket.onclose = () => {
@@ -316,6 +333,7 @@ export function createCloudRealtimeAsrSession(
         }
         if (terminalError) throw terminalError;
         if (cancelled) return asResult({}, 0);
+        if (!consentIsCurrent()) throw terminalError;
         return new Promise<TranscribeAudioResult>((resolve, reject) => {
           resolveFinish = resolve;
           rejectFinish = reject;

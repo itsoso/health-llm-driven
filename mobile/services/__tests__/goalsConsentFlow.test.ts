@@ -1,8 +1,11 @@
+import { showAIConsent } from '../aiConsentPresentation';
 import { Alert } from 'react-native';
 import { AxiosError, type InternalAxiosRequestConfig } from 'axios';
 import api, { setRuntimeAuthToken } from '../api';
 import { generateGoalsFromAnalysis } from '../goals';
 import { hasAIConsent, invalidateAIConsent } from '../aiConsentState';
+
+jest.mock('../aiConsentPresentation', () => ({ showAIConsent: jest.fn() }));
 
 jest.mock('../auth', () => ({ getToken: jest.fn(async () => 'synthetic-consent-session') }));
 
@@ -15,6 +18,7 @@ const policy = {
 describe('goals → API interceptor → consent → transport', () => {
   const originalAdapter = api.defaults.adapter;
   beforeEach(() => {
+    (showAIConsent as jest.Mock).mockResolvedValue('accept');
     setRuntimeAuthToken('synthetic-consent-session');
     invalidateAIConsent();
     jest.spyOn(Alert, 'alert').mockImplementation(() => {});
@@ -29,7 +33,7 @@ describe('goals → API interceptor → consent → transport', () => {
       return { config, status: 200, statusText: 'OK', headers: {}, data: config.url === '/auth/ai-consent' ? policy : [] };
     };
     await expect(generateGoalsFromAnalysis()).resolves.toEqual([]);
-    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
+    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
     expect(hasAIConsent()).toBe(true);
     expect(Alert.alert).not.toHaveBeenCalled();
   });
@@ -52,7 +56,7 @@ describe('goals → API interceptor → consent → transport', () => {
       requests.push(config.url!);
       return { config, status: 200, statusText: 'OK', headers: {}, data: { ...policy, accepted: false, accepted_at: null } };
     };
-    (Alert.alert as jest.Mock).mockImplementation((_title, _message, buttons) => buttons[0].onPress());
+    (showAIConsent as jest.Mock).mockResolvedValue('decline');
     await expect(generateGoalsFromAnalysis()).rejects.toThrow('ai_consent_required');
     expect(requests).toEqual(['/auth/ai-consent']);
     expect(hasAIConsent()).toBe(false);
@@ -69,7 +73,7 @@ describe('goals → API interceptor → consent → transport', () => {
         { config, status: 403, statusText: 'Forbidden', headers: {}, data: { detail: { code: 'ai_consent_required' } } });
     };
     await expect(generateGoalsFromAnalysis()).rejects.toMatchObject({ response: { status: 403 } });
-    expect(requests).toEqual(['/auth/ai-consent', '/goals/me/generate-from-analysis']);
+    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
     expect(hasAIConsent()).toBe(false);
   });
 });

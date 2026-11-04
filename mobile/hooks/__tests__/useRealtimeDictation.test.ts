@@ -1,3 +1,4 @@
+import { AIConsentRequiredError } from '../../services/aiConsentState';
 import { act, renderHook } from '@testing-library/react-native';
 import { useRealtimeDictation } from '../useRealtimeDictation';
 import {
@@ -57,6 +58,27 @@ describe('useRealtimeDictation', () => {
     expect(onError).toHaveBeenCalledWith('麦克风未能安全停止，请退出应用后重新打开');
     await act(async () => { expect(await result.current.startDictation()).toBe(false); });
     expect(session.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('preserves an AI consent refusal without reporting a speech service failure', async () => {
+    session.start.mockRejectedValueOnce(new AIConsentRequiredError());
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { expect(await result.current.startDictation()).toBe(false); });
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(onError).not.toHaveBeenCalled();
+  });
+
+  it('ends dictation as cancellation when authorization is withdrawn during recording', async () => {
+    const onError = jest.fn();
+    const { result } = renderHook(() => useRealtimeDictation({ onTranscript: jest.fn(), onError }));
+    await act(async () => { await result.current.startDictation(); });
+    await act(async () => { callbacks.onError?.(new AIConsentRequiredError()); });
+    expect(result.current.isDictating).toBe(false);
+    expect(result.current.error).toBeNull();
+    expect(onError).not.toHaveBeenCalled();
+    expect(session.cancel).toHaveBeenCalled();
   });
 
   it('uses the authenticated Alibaba Cloud ASR session as the only dictation provider', async () => {

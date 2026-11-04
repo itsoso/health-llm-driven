@@ -1,3 +1,16 @@
+import { requireAIConsent } from '../aiConsent';
+import { aiConsentRevision } from '../aiConsentState';
+jest.mock('../aiConsent', () => ({ requireAIConsent: jest.fn().mockResolvedValue(undefined) }));
+const mockConsentListeners = new Set<() => void>();
+jest.mock('../aiConsentState', () => ({
+  ...jest.requireActual('../aiConsentState'),
+  aiConsentRevision: jest.fn().mockReturnValue(0),
+  subscribeAIConsentInvalidation: (listener: () => void) => {
+    mockConsentListeners.add(listener);
+    return () => { mockConsentListeners.delete(listener); };
+  },
+}));
+
 import {
   createCloudRealtimeAsrSession,
   realtimeAsrWebSocketUrl,
@@ -36,6 +49,94 @@ async function flushMicrotasks() {
 }
 
 describe('cloudRealtimeAsr', () => {
+  beforeEach(() => {
+    mockConsentListeners.clear();
+    (requireAIConsent as jest.Mock).mockReset().mockResolvedValue(undefined);
+    (aiConsentRevision as jest.Mock).mockReset().mockReturnValue(0);
+  });
+
+  const consentDependencies = (): RealtimeAsrDependencies => ({
+    getAuthToken: jest.fn().mockResolvedValue('jwt-token'),
+    openSocket: jest.fn(() => new FakeSocket()),
+    startPcmCapture: jest.fn().mockResolvedValue(undefined),
+    stopPcmCapture: jest.fn().mockResolvedValue(undefined),
+    cancelPcmCapture: jest.fn().mockResolvedValue(undefined),
+  });
+
+  it('does not open a socket or microphone when AI disclosure is declined', async () => {
+    (requireAIConsent as jest.Mock).mockRejectedValueOnce(new Error('ai_consent_required'));
+    const dependencies = consentDependencies();
+    const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
+    const started = session.start();
+    const outcome = started.catch(error => error.message);
+    await flushMicrotasks();
+    expect(dependencies.openSocket).not.toHaveBeenCalled();
+    await expect(outcome).resolves.toBe('ai_consent_required');
+    expect(dependencies.startPcmCapture).not.toHaveBeenCalled();
+  });
+
+  it('waits for disclosure and ignores a grant after the gesture was cancelled', async () => {
+    let grant!: () => void;
+    (requireAIConsent as jest.Mock).mockImplementationOnce(() => new Promise<void>(resolve => { grant = resolve; }));
+    const dependencies = consentDependencies();
+    const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
+    const started = session.start();
+    await flushMicrotasks();
+    expect(dependencies.openSocket).not.toHaveBeenCalled();
+    await session.cancel();
+    grant();
+    await expect(started).resolves.toBe(false);
+    expect(dependencies.openSocket).not.toHaveBeenCalled();
+    expect(dependencies.startPcmCapture).not.toHaveBeenCalled();
+  });
+
+  it('rejects an account change while loading the socket credential after consent', async () => {
+    const dependencies = consentDependencies();
+    (dependencies.getAuthToken as jest.Mock).mockImplementationOnce(async () => {
+      (aiConsentRevision as jest.Mock).mockReturnValue(1);
+      return 'new-account-token';
+    });
+    const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
+    const outcome = session.start().catch(error => error.message);
+    await flushMicrotasks();
+    expect(dependencies.openSocket).not.toHaveBeenCalled();
+    await expect(outcome).resolves.toBe('auth_session_changed');
+  });
+
+  it.each(['before-ready', 'recording', 'finishing'])('stops all ASR dispatch when consent is revoked %s', async (phase) => {
+    const socket = new FakeSocket();
+    let chunk: ((value: string) => void) | undefined;
+    let finishCapture!: () => void;
+    const dependencies = consentDependencies();
+    (dependencies.openSocket as jest.Mock).mockReturnValue(socket);
+    (dependencies.startPcmCapture as jest.Mock).mockImplementation(async (onChunk) => { chunk = onChunk; });
+    (dependencies.stopPcmCapture as jest.Mock).mockImplementation(() => new Promise<void>(resolve => { finishCapture = resolve; }));
+    const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn(), onError: jest.fn() }, dependencies);
+    const outcome = session.start().catch(error => error.message);
+    await flushMicrotasks();
+    socket.open();
+    if (phase !== 'before-ready') {
+      socket.receive({ type: 'ready' });
+      await expect(outcome).resolves.toBe(true);
+    }
+    const stop = phase === 'finishing' ? session.stop().catch(error => error.message) : null;
+    await flushMicrotasks();
+    (aiConsentRevision as jest.Mock).mockReturnValue(1);
+    for (const listener of [...mockConsentListeners]) listener();
+    await flushMicrotasks();
+    expect(socket.readyState).toBe(3);
+    socket.receive({ type: 'ready' });
+    chunk?.('must-not-leave-device');
+    if (phase === 'finishing') { finishCapture(); await stop; }
+    if (phase === 'before-ready') {
+      await expect(outcome).resolves.toBe('ai_consent_required');
+      expect(dependencies.startPcmCapture).not.toHaveBeenCalled();
+    }
+    expect(socket.sent.filter(value => ['audio', 'finish'].includes(JSON.parse(value).type))).toEqual([]);
+    expect(mockConsentListeners.size).toBe(0);
+    await session.cancel();
+  });
+
   it.each([undefined, { remove: jest.fn() }])('fails closed on a recording disconnect with subscription %p', async (subscription) => {
     const socket = new FakeSocket();
     const onError = jest.fn();
@@ -48,7 +149,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn(), onError }, dependencies);
     const started = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
     await started;
@@ -75,13 +176,13 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const started = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
     let cleanupSettled = false;
     const cancelled = session.cancel().then(() => { cleanupSettled = true; });
-    await Promise.resolve();
-    await Promise.resolve();
+    await flushMicrotasks();
+    await flushMicrotasks();
     expect(cleanupSettled).toBe(false);
     resolveCapture();
     await cancelled;
@@ -115,7 +216,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const started = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     await expect(session.stop()).resolves.toEqual(expect.objectContaining({ empty: true }));
     socket.receive({ type: 'ready' });
     await flushMicrotasks();
@@ -139,13 +240,13 @@ describe('cloudRealtimeAsr', () => {
     const oldSession = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const newSession = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const oldStart = oldSession.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     sockets[0].open();
     sockets[0].receive({ type: 'ready' });
     await oldStart;
     sockets[0].close();
     const newStart = newSession.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     sockets[1].open();
     sockets[1].receive({ type: 'ready' });
     await flushMicrotasks();
@@ -170,7 +271,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const oldSession = createCloudRealtimeAsrSession({ onTranscript: jest.fn(), onError }, dependencies);
     const started = oldSession.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     sockets[0].receive({ type: 'ready' });
     await started;
     sockets[0].close();
@@ -181,7 +282,7 @@ describe('cloudRealtimeAsr', () => {
 
     const replacement = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const nextStart = replacement.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     sockets[1].receive({ type: 'ready' });
     await flushMicrotasks();
     expect(dependencies.startPcmCapture).toHaveBeenCalledTimes(1);
@@ -200,7 +301,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const started = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'ready' });
     await started;
     socket.receive({ type: 'done' });
@@ -221,7 +322,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const started = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'ready' });
     await started;
     const stopped = session.stop();
@@ -254,7 +355,7 @@ describe('cloudRealtimeAsr', () => {
     const session = createCloudRealtimeAsrSession({ onTranscript }, dependencies);
 
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
     await expect(startPromise).resolves.toBe(true);
@@ -305,12 +406,12 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     socket.receive({ type: 'ready' });
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'ready' });
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(dependencies.startPcmCapture).toHaveBeenCalledTimes(1);
     resolveCapture();
@@ -333,9 +434,10 @@ describe('cloudRealtimeAsr', () => {
     const firstStart = session.start();
     const secondStart = session.start();
     expect(secondStart).toBe(firstStart);
+    await flushMicrotasks();
 
     resolveToken('jwt-token');
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(dependencies.openSocket).toHaveBeenCalledTimes(1);
     socket.open();
     socket.receive({ type: 'ready' });
@@ -355,15 +457,15 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'ready' });
     await startPromise;
 
     socket.receive({ type: 'error', message: '上游连接中断' });
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'partial', text: '不要回写这段' });
     socket.receive({ type: 'final', text: '也不要回写这段' });
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(onTranscript).not.toHaveBeenCalled();
   });
@@ -379,7 +481,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.receive({ type: 'ready' });
     await startPromise;
 
@@ -409,7 +511,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
     await startPromise;
@@ -433,13 +535,13 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
     await startPromise;
 
     socket.receive({ type: 'error', message: '上游连接中断' });
-    await Promise.resolve();
+    await flushMicrotasks();
 
     expect(dependencies.cancelPcmCapture).toHaveBeenCalledWith(captureSubscription);
     expect(socket.readyState).toBe(3);
@@ -456,7 +558,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     await session.cancel();
 
@@ -476,7 +578,7 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
 
     await session.cancel();
     resolveToken('jwt-token');
@@ -498,16 +600,16 @@ describe('cloudRealtimeAsr', () => {
     };
     const session = createCloudRealtimeAsrSession({ onTranscript: jest.fn() }, dependencies);
     const startPromise = session.start();
-    await Promise.resolve();
+    await flushMicrotasks();
     socket.open();
     socket.receive({ type: 'ready' });
-    await Promise.resolve();
+    await flushMicrotasks();
 
     socket.receive({ type: 'error', message: '上游连接中断' });
     resolveCapture?.(captureSubscription);
 
     await expect(startPromise).rejects.toThrow('上游连接中断');
-    await Promise.resolve();
+    await flushMicrotasks();
     expect(dependencies.cancelPcmCapture).toHaveBeenCalledWith(captureSubscription);
   });
 });

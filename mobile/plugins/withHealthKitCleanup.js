@@ -11,15 +11,20 @@
  * Why: 2026-05-20 EAS dev / production 双双 ERRORED 在
  * "Provisioning profile doesn't include com.apple.developer.healthkit.access"
  *
- * Usage in app.json (放在 react-native-health 之后):
+ * Usage in app.json (mod 链逆序执行，注册在 react-native-health 之前):
  *   "plugins": [
- *     ["react-native-health", { "isClinicalDataEnabled": false, ... }],
- *     "./plugins/withHealthKitCleanup"
+ *     "./plugins/withHealthKitCleanup",
+ *     ["react-native-health", { "isClinicalDataEnabled": false, ... }]
  *   ]
  */
-const { withEntitlementsPlist } = require('@expo/config-plugins');
+const { withEntitlementsPlist, withInfoPlist } = require('@expo/config-plugins');
 
 function withHealthKitCleanup(config) {
+  config = withInfoPlist(config, (mod) => {
+    // The app requests read access only; react-native-health adds a write string by default.
+    delete mod.modResults.NSHealthUpdateUsageDescription;
+    return mod;
+  });
   return withEntitlementsPlist(config, (mod) => {
     if ('com.apple.developer.healthkit.access' in mod.modResults) {
       delete mod.modResults['com.apple.developer.healthkit.access'];

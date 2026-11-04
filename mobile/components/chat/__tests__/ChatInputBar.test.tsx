@@ -13,6 +13,7 @@ import { Alert, Animated, AppState, BackHandler, Keyboard, Modal, PanResponder, 
 import { act, fireEvent, render, waitFor, within } from '@testing-library/react-native';
 
 import ChatInputBar from '../ChatInputBar';
+import * as composerReducer from '../composerState';
 import { acceptAIConsentRevision, aiConsentRevision, invalidateAIConsent, setAIConsentIdentity } from '../../../services/aiConsentState';
 import { revaColors } from '../../../constants/revaTheme';
 
@@ -914,6 +915,31 @@ describe('ChatInputBar', () => {
     fireEvent.press(getByTestId('wechat-composer-input'));
     fireEvent(field, 'focus');
     expect(StyleSheet.flatten(field.props.style).pointerEvents).toBe('auto');
+  });
+
+  it.each(['dictation', 'hold'])('keeps the %s draft and cancels cleanly after AI consent refusal', async (mode) => {
+    setAIConsentIdentity('refused-voice-session');
+    const reducer = jest.spyOn(composerReducer, 'reduceComposerState');
+    const onSend = jest.fn();
+    mockStartDictation.mockImplementationOnce(async () => { invalidateAIConsent(true); return false; });
+    const view = render(<ChatInputBar onSend={onSend} isStreaming={false} />);
+    await act(async () => { enterKeyboardMode(view); });
+    fireEvent.changeText(view.getByLabelText('消息输入框'), '保留原有草稿');
+    try {
+      if (mode === 'dictation') {
+        await act(async () => { fireEvent.press(view.getByLabelText('实时语音转文字')); });
+      } else {
+        await act(async () => { fireEvent.press(view.getByLabelText('切换到语音输入')); });
+        await act(async () => { fireEvent(view.getByLabelText('按住说话'), 'responderGrant', { nativeEvent: { pageX: 260, pageY: 620 } }); });
+        fireEvent(view.getByLabelText('按住说话'), 'responderRelease');
+        await act(async () => { enterKeyboardMode(view); });
+      }
+      expect(view.getByLabelText('消息输入框').props.value).toBe('保留原有草稿');
+      expect(onSend).not.toHaveBeenCalled();
+      expect(mockStopDictation).not.toHaveBeenCalled();
+      expect(mockClearPersistedChatDraft).not.toHaveBeenCalled();
+      expect(reducer.mock.calls.some(([, event]) => event.type === 'fail')).toBe(false);
+    } finally { setAIConsentIdentity(null); }
   });
 
   it('cancels hold-to-talk when the finger slides left', async () => {

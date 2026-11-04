@@ -1,3 +1,4 @@
+import { AIConsentNavigation } from '../components/AIConsentDialog';
 import { configureSentryForAppMode, Sentry, SENTRY_ENABLED } from '../applib/sentry';
 
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -244,6 +245,7 @@ export function AppContent() {
           name="agenda"
           options={{ headerShown: false, gestureEnabled: true }}
         />
+        <Stack.Screen name="ai-consent" options={{ headerShown: false, presentation: 'fullScreenModal', gestureEnabled: false }} />
         <Stack.Screen name="settings" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="account-security" options={{ headerShown: false, presentation: 'modal' }} />
         <Stack.Screen name="memory" options={{ headerShown: false, presentation: 'modal' }} />
@@ -347,6 +349,7 @@ export function RootLayout() {
               {/* dark mode 下卡片用 darkColors, 状态栏 auto 让系统按背景选 icon 颜色 */}
               <StatusBar style="auto" />
               <AppContent />
+              <AIConsentNavigation />
             </ModeAwareProviders>
           </ToastProvider>
         </AppSessionProvider>

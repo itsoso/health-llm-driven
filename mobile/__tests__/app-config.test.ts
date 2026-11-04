@@ -510,3 +510,40 @@ it('does not admit daily journey into a production Store build even if the inter
   expect(config.extra.release.capabilities.backgroundLocation).toBe(false);
   expect(config.ios.infoPlist.UIBackgroundModes).toBeUndefined();
 });
+
+
+describe('HealthKit privacy purpose in generated Info.plist', () => {
+  async function generatedHealthPlist() {
+    const config = configForVariant('production', { EAS_BUILD_PLATFORM: 'ios' });
+    const withHealth = require('react-native-health/app.plugin');
+    const withCleanup = require('../plugins/withHealthKitCleanup');
+    let nativeConfig: any = { name: config.name, slug: config.slug };
+    for (const entry of config.plugins) {
+      const name = Array.isArray(entry) ? entry[0] : entry;
+      if (name === './plugins/withHealthKitCleanup') nativeConfig = withCleanup(nativeConfig);
+      if (name === 'react-native-health') nativeConfig = withHealth(nativeConfig, entry[1]);
+    }
+    return (await nativeConfig.mods.ios.infoPlist({
+      ...nativeConfig, modResults: { ...config.ios.infoPlist }, modRequest: {},
+    })).modResults;
+  }
+
+  it('keeps concrete read data, use and example after the actual HealthKit plugin runs', async () => {
+    const plist = await generatedHealthPlist();
+    const purpose = plist.NSHealthShareUsageDescription;
+    expect(purpose).toBe(appJson.expo.ios.infoPlist.NSHealthShareUsageDescription);
+    expect(purpose).toContain('步数');
+    expect(purpose).toContain('睡眠');
+    expect(purpose).toContain('心率');
+    expect(purpose).toContain('血氧');
+    expect(purpose).toContain('例如');
+    expect(purpose).toContain('最近一周');
+    expect(purpose).toContain('关闭');
+  });
+
+  it('does not claim HealthKit writes when this app only requests read access', async () => {
+    const plist = await generatedHealthPlist();
+    expect(plist.NSHealthUpdateUsageDescription).toBeUndefined();
+    expect(plist.NSHealthClinicalHealthRecordsShareUsageDescription).toBeUndefined();
+  });
+});

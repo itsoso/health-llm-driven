@@ -28,6 +28,7 @@ jest.mock('expo-router', () => {
   );
   return {
     Stack,
+    usePathname: () => '/login',
     useRouter: () => ({ replace: mockReplace }),
     useRootNavigationState: () => mockNavigationKey ? { key: mockNavigationKey } : undefined,
     ErrorBoundary: ({ children }: { children: React.ReactNode }) => children,

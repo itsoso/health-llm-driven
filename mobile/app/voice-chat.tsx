@@ -1,3 +1,4 @@
+import { manageAIConsent } from '../services/aiConsent';
 import { backOrChat } from '../utils/backOrChat';
 import React, { useEffect, useMemo } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, Pressable, TextStyle, ScrollView, Alert } from 'react-native';
@@ -299,6 +300,10 @@ export default function VoiceChatScreen() {
         {voice.turns.length === 0 ? (
           <View style={styles.emptyHint}>
             <Text style={txt.emptyHint}>你可以直接跟我聊健康话题，我会连续听、连续答。</Text>
+            <Text style={[txt.emptyHint, { marginTop: spacing.md }]}>语音识别与 AI 回复会处理你的语音、文字及相关健康上下文。开始前需单独同意向授权说明中列出的服务商共享。</Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => { void manageAIConsent(); }} style={{ padding: spacing.md }}>
+              <Text style={{ color: c.brand, fontSize: 16 }}>查看 AI 接收方与共享授权</Text>
+            </TouchableOpacity>
           </View>
         ) : (
           voice.turns.map((t, i) => (

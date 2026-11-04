@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { isAIConsentError } from '../services/aiConsentState';
 import { durationBucket, emitClientEvent } from '../services/clientEvents';
 import {
   createCloudRealtimeAsrSession,
@@ -201,6 +202,11 @@ export function useRealtimeDictation({
         sessionRef.current = null;
         setIsDictating(false);
         setAudioLevel(0);
+        if (isAIConsentError(failure)) {
+          emitTerminal('cancelled', 'ai_consent_required');
+          void disposeSession(session);
+          return;
+        }
         setError(failure.message);
         emitAsrTerminal('failed', latestTextRef.current, 'cloud_asr_runtime_failed');
         emitTerminal('failed', 'cloud_asr_runtime_failed');
@@ -228,6 +234,10 @@ export function useRealtimeDictation({
       if (generation === startGenerationRef.current) await disposeSession(session);
       if (sessionRef.current === session) sessionRef.current = null;
       if (generation !== startGenerationRef.current) return false;
+      if (isAIConsentError(e)) {
+        emitTerminal('cancelled', 'ai_consent_required');
+        return false;
+      }
       const message = e?.message || '阿里云实时语音识别失败，请稍后重试';
       setError(message);
       emitAsrTerminal('failed', '', 'cloud_asr_start_failed');

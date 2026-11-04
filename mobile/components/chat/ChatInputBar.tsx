@@ -670,7 +670,9 @@ export default function ChatInputBar({
       || activeVoiceSourceRef.current !== 'dictation';
     if (started === false) {
       if (!cancelledDuringStartup) {
-        dispatchComposer({ type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
+        dispatchComposer(isAIConsentRequired()
+          ? { type: 'dictation_end' }
+          : { type: 'fail', errorCode: realtimeDictation.error || 'dictation_start_failed' });
       }
       activeVoiceSourceRef.current = null;
       return false;
@@ -824,7 +826,11 @@ export default function ChatInputBar({
       || activeVoiceSourceRef.current !== 'hold';
     if (started === false) {
       voiceGestureActiveRef.current = false;
-      if (!cancelledDuringStartup && composerRef.current.phase === 'hold_starting') {
+      if (!cancelledDuringStartup && isAIConsentRequired()) {
+        cancelledRef.current = true;
+        activeVoiceSourceRef.current = null;
+        dispatchComposer({ type: 'hold_cancel' });
+      } else if (!cancelledDuringStartup && composerRef.current.phase === 'hold_starting') {
         dispatchComposer({ type: 'fail', errorCode: 'hold_recording_start_failed' });
       }
       return;
