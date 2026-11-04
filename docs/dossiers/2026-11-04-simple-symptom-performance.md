@@ -3,7 +3,7 @@
 | 字段 | 值 |
 | --- | --- |
 | 状态 | in_progress |
-| 当前阶段 | S5 验证与独立安全评审 |
+| 当前阶段 | S6 独立主干发布候选准备 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 7e69aa250564f3d08194bc274bd0be1d62fbfec7 |
 
@@ -31,3 +31,15 @@
 - RED：修正事件信封读取夹具后在原实现重跑，8 failed、2 passed、34 deselected。GREEN：定向 422 passed；PostgreSQL 17 临时非超级用户角色 44 passed，含真实 API、owner、历史、重复提交与失败回执。
 - CI=true 扩展集成 3,443 passed；新增 decision_mode=on 下鼻塞/打喷嚏、新旧会话、附件和分类器失败边界后，定向 50 passed。分类器异常在既有更早阶段直接传播，未为快捷路径吞掉失败。实现未变化。System Map、秘密扫描、Dossier 一致性、diff 检查通过。
 - 独立 safety GO、精确候选真实模型闸、main CI 与上线仍待完成。无 Mobile 改动，本次为后端发布；视觉验收按用户要求不作为阻断，不宣称设备验证。
+
+## G4 与主干验证
+
+独立安全评审 GO 绑定 `424f1b462edd2bf6595b11066b1ec3f124dc1077`，独立 44+204 项回归及 4 个正例/93 个对抗反例通过。补充后 PostgreSQL 50 passed。精确候选真实模型闸通过（invariants 12、health core 50、live orchestrator 5，均分 0.92；轨迹契约与 goldens 均通过），发布预检通过。
+
+[PR #309](https://github.com/itsoso/health-llm-driven/pull/309) 经 [PR CI 41839188103](https://github.com/itsoso/health-llm-driven/actions/runs/41839188103) 通过后快进合入 main，同 SHA 的 [完整 main CI 41840961969](https://github.com/itsoso/health-llm-driven/actions/runs/41840961969) 32/32 通过。
+
+## 发布预检失败与处理
+
+[validate 41842943880](https://github.com/itsoso/health-llm-driven/actions/runs/41842943880) 在 canonical source/CI 首步失败：`trusted_release_gate._latest` 对同 SHA 的所有 CI 检查 main 身份，快进合并保留了同 SHA、feature 分支的绿色 PR run，因此拒绝。不是功能测试失败，也没有到 dispatch admission、production credential、SSH 或任何生产 claim。该次失败保持原样，不重发或删除。
+
+以本次验收文档更新形成独立 main 后继，实际应用字节与通过评审/实测的 424f 完全一致。后继只推 main，不产生同 SHA PR CI；仍要求新鲜精确 live gate、完整 CI 和新 SHA validate，不更改严格发布闸。文档 push 的轻量 CI 不能代替完整验证，因此显式补一次该候选完整 CI。生产截至本节仍为 91b1，未 stage、刷新凭据、轮换或部署。现有只读凭据过期，已准备受审刷新流程，但未执行。

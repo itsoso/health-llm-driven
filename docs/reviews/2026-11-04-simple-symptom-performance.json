@@ -671,13 +671,44 @@
   "validation": {
     "red_corrected": "8 failed, 2 passed, 34 deselected; initial event-envelope fixture corrected before this RED",
     "focused": "422 passed",
-    "postgresql_17_non_superuser": "44 passed",
+    "postgresql_17_non_superuser": "50 passed",
     "ci_mode": "3443 passed; source unchanged after run",
-    "safety_review": "pending",
+    "safety_review": "GO 424f1b462edd2bf6595b11066b1ec3f124dc1077; independent 44+204 tests and 4 positive/93 adversarial probes",
     "production": "not_deployed",
     "expanded_focused": "50 passed; decision_mode on, nasal variants, attachment, classifier failure",
     "system_map": "passed",
     "secret_scan": "passed",
-    "dossier_consistency": "passed"
+    "dossier_consistency": "passed",
+    "live_gate": {
+      "sha": "424f1b462edd2bf6595b11066b1ec3f124dc1077",
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 196.46,
+      "exit_code": 0,
+      "log_sha256": "cd72f0b7941cc648fa265f92e8f566f1f7063b930102b2ca576432ea2548edb0",
+      "synthetic_only": true
+    },
+    "main_ci": {
+      "run_id": 41840961969,
+      "sha": "424f1b462edd2bf6595b11066b1ec3f124dc1077",
+      "result": "success",
+      "jobs_success": 32
+    },
+    "pr_ci": {
+      "run_id": 41839188103,
+      "result": "success"
+    },
+    "release_preflight": "passed"
+  },
+  "preserved_release_failure": {
+    "run_id": 41842943880,
+    "target": "validate",
+    "sha": "424f1b462edd2bf6595b11066b1ec3f124dc1077",
+    "failed_step": "Materialize canonical source and check exact CI without production credentials",
+    "reason": "strict exact-SHA history rejects the same-SHA green pull_request run on the feature branch after fast-forward merge",
+    "production_credentials_reached": false,
+    "admission_reached": false,
+    "production_unchanged": true,
+    "recovery": "distinct main documentation successor, application bytes unchanged; fresh live gate, full CI and new-SHA validation; do not rerun consumed validation or weaken gate"
   }
 }
