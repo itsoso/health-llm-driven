@@ -175,7 +175,7 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 | `.ts` / `.tsx` / `.js` / 样式 / 文案 / API 调用 / hooks | 本地 Sim | `npm run ios` |
 | RN 组件、navigation、React Query、状态管理 | 本地 Sim | `npm run ios` |
 | Dark mode、键盘行为、ScrollView、markdown 渲染 | 本地 Sim | `npm run ios` |
-| 已上线的真机功能微调（push payload、Siri response 文案） | OTA | `./scripts/mobile-ota.sh production "msg"` |
+| 已上线的真机功能微调（push payload、Siri response 文案） | OTA | `trusted-ota.yml`:同 SHA 先 `validate` 后 `publish` |
 | `app.json` plugins / `Info.plist` / Podfile / 新 native module | **必须** EAS build | 异步触发，**不要等** |
 | Expo SDK 升级、`expo-*` 大版本 bump | **必须** EAS build | 异步 |
 | Siri / AppShortcut / AppIntent（需真机 Apple ID） | 真机 dev build 或 TestFlight | 周末批量验 |
@@ -190,12 +190,12 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 **OTA 命令**：
 
 ```bash
-./scripts/mobile-ota.sh                        # production channel, commit msg as message
-./scripts/mobile-ota.sh preview                # push to preview channel
-./scripts/mobile-ota.sh production "fix …"     # with explicit message
+gh workflow run trusted-ota.yml --ref main -f sha=<exact-main-sha> -f target=validate
+# validate 成功且同 SHA 后端已部署、健康回读后，只触发一次：
+gh workflow run trusted-ota.yml --ref main -f sha=<same-exact-main-sha> -f target=publish
 ```
 
-- **OTA (`scripts/mobile-ota.sh` → `eas update`)** — push 改过的 `.ts/.tsx/.js`。设备 cold start 或 30s+ 后台时拉。只发 iOS bundle (`--platform ios`)，`react-native-maps` 会炸 web bundler，Android 也没在分发。
+- **OTA (`trusted-ota.yml`)** — 只从精确绿色 canonical main SHA 发布 iOS bundle。设备 cold start 或 30s+ 后台时拉。`scripts/mobile-ota.sh` 与 rollback 本地入口固定退出 78，不读取 production 凭据。
 - **Channels**: `development` (dev client, iOS sim 允许), `preview` (内部分发), `production` (App Store, 自动 bump iOS build 号, `ascAppId=6763569720`)。见 `mobile/eas.json`。
 
 **本地 build 失败排查路径**（比 EAS log grep 快 10 倍）：
@@ -206,7 +206,7 @@ The Expo app uses `expo-router` (file-based routing under `mobile/app/`), `@tans
 #### Cross-platform asymmetries (know these before shipping Android)
 
 - `modules/shared-keychain/` — custom native module for sharing the JWT with iOS app extensions (Siri / Widget). **iOS-only**; Android has no implementation. `index.ts` silently `noop`s on Android, so widget / extension features simply don't work there.
-- `mobile-ota.sh` pushes iOS-only (see above).
+- Trusted OTA pushes iOS-only (see above); local OTA publisher scripts are frozen.
 - Before treating Android as shipped, audit both of these.
 
 #### Feature parity status

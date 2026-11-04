@@ -36,6 +36,7 @@ RECOVERY_MARGIN_SECONDS = 3600
 PREPARATION_TIMEOUT_SECONDS = 90
 PREPARATION_GROUP_EXIT_GRACE_SECONDS = 2
 NATIVE_CREDENTIAL_HORIZON_SECONDS = 1800
+BACKEND_CREDENTIAL_HORIZON_SECONDS = 300
 
 
 class LaunchError(Exception):
@@ -47,7 +48,7 @@ class PreparationUncertain(LaunchError):
 
 
 def parse_command(command):
-    match = re.fullmatch(r"(run|status|check|check-backend-v1|run-backend-v1|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
+    match = re.fullmatch(r"(run|run-backend|status|check|check-backend|check-backend-v1|run-backend-v1|claim-build|claim-testflight|check-testflight|claim-testflight-build|claim-testflight-upload|claim-ota|finish-ota|claim-retained-testflight|finish-retained-testflight) ([0-9a-f]{40})", command)
     if match is None:
         raise LaunchError("only fixed release commands with an exact SHA are allowed")
     return match.group(1), match.group(2)
@@ -1571,13 +1572,26 @@ def attest_backend_ci(policy):
 
 
 def attest_full_ci(policy):
-    """Backend-only provisioning never authorizes native or OTA claims."""
+    """Full release CI attestation requires the native release credential horizon."""
     script = STATE / "bootstrap" / policy["sha"] / "source/scripts/trusted_release_gate.py"
     secure_path(script)
     subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
                     "--workflow-sha", policy["sha"],
                     "--minimum-credential-lifetime-seconds",
                     str(NATIVE_CREDENTIAL_HORIZON_SECONDS)],
+                   env=clean_environment(STATE), stdin=subprocess.DEVNULL,
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                   check=True, timeout=300)
+
+
+def attest_backend_full_ci(policy):
+    """Backend-only release keeps full CI without the native release horizon."""
+    script = STATE / "bootstrap" / policy["sha"] / "source/scripts/trusted_release_gate.py"
+    secure_path(script)
+    subprocess.run([PYTHON, "-I", "-S", "-B", str(script), "--sha", policy["sha"],
+                    "--workflow-sha", policy["sha"],
+                    "--minimum-credential-lifetime-seconds",
+                    str(BACKEND_CREDENTIAL_HORIZON_SECONDS)],
                    env=clean_environment(STATE), stdin=subprocess.DEVNULL,
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                    check=True, timeout=300)
@@ -2428,7 +2442,7 @@ def main():
         workspace = STATE / policy["sha"]
         # OTA claim's byte-bound helper performs exact full CI under its original
         # locks before intent; duplicating it here wastes the same server quota.
-        if command not in {"status", "check", "check-backend-v1", "run-backend-v1",
+        if command not in {"status", "check", "check-backend", "run-backend", "check-backend-v1", "run-backend-v1",
                            "claim-ota", "finish-ota", "finish-retained-testflight"}:
             attest_full_ci(policy)
         if command == "status":
@@ -2443,8 +2457,12 @@ def main():
             result = ota_rpc(policy, "claim" if command == "claim-ota" else "finish")
         elif command in {"claim-retained-testflight", "finish-retained-testflight"}:
             result = retained_rpc(policy, "claim" if command == "claim-retained-testflight" else "finish")
-        elif command in {"check", "check-backend-v1"}:
-            if command == "check-backend-v1":
+        elif command in {"check", "check-backend", "check-backend-v1"}:
+            if command == "check":
+                attest_full_ci(policy)
+            elif command == "check-backend":
+                attest_backend_full_ci(policy)
+            else:
                 attest_backend_ci(policy)
             check_readiness(policy)
             result = {"sha": policy["sha"], "state": "CHECKED"}
@@ -2459,6 +2477,11 @@ def main():
             workspace.mkdir(mode=0o700, exist_ok=True)
             result = run_once(policy, workspace, lambda: prepare_source(policy, workspace),
                               lambda: deploy(policy, workspace, backend_ci=True))
+        elif command == "run-backend":
+            attest_backend_full_ci(policy)
+            workspace.mkdir(mode=0o700, exist_ok=True)
+            result = run_once(policy, workspace, lambda: prepare_source(policy, workspace),
+                              lambda: deploy(policy, workspace))
         else:
             workspace.mkdir(mode=0o700, exist_ok=True)
             result = run_once(policy, workspace, lambda: prepare_source(policy, workspace), lambda: deploy(policy, workspace))

@@ -102,6 +102,22 @@ def test_full_ci_attestation_requires_credential_horizon_for_native_release(monk
     assert calls[0][1]["timeout"] == 300
 
 
+def test_backend_full_ci_attestation_uses_short_fixed_credential_horizon(monkeypatch, tmp_path):
+    server = setup_state(monkeypatch, tmp_path)
+    script = server.STATE / "bootstrap" / SHA / "source/scripts/trusted_release_gate.py"
+    script.parent.mkdir(parents=True, exist_ok=True)
+    script.write_bytes(b"canonical gate")
+    calls = []
+    monkeypatch.setattr(server.subprocess, "run", lambda args, **kwargs: calls.append((args, kwargs)))
+    server.attest_backend_full_ci(policy())
+    assert calls[0][0] == [
+        server.PYTHON, "-I", "-S", "-B", str(script),
+        "--sha", SHA, "--workflow-sha", SHA,
+        "--minimum-credential-lifetime-seconds", "300",
+    ]
+    assert calls[0][1]["check"] is True
+
+
 def policy(**changes):
     result = {"sha": SHA, "expires_at": 7300, "executor_sha256": HASH}
     result.update(changes)
@@ -926,9 +942,10 @@ def test_workspace_parent_fsync_failure_preserves_marker_and_blocks_all_work(mon
 
 
 @pytest.mark.parametrize('action,gate_name', [
-    ('run', 'attest_full_ci'), ('claim-build', 'attest_full_ci'),
+    ('run', 'attest_full_ci'), ('check', 'attest_full_ci'), ('claim-build', 'attest_full_ci'),
     ('claim-testflight-build', 'attest_full_ci'), ('claim-testflight-upload', 'attest_full_ci'),
     ('claim-retained-testflight', 'attest_full_ci'),
+    ('run-backend', 'attest_backend_full_ci'), ('check-backend', 'attest_backend_full_ci'),
     ('run-backend-v1', 'attest_backend_ci'), ('check-backend-v1', 'attest_backend_ci'),
 ])
 def test_main_rejects_ci_before_creating_workspace_or_claim(monkeypatch, tmp_path, action, gate_name):

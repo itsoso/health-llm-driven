@@ -709,7 +709,7 @@ frontend-only 不 checkout 共享仓库、不重启 backend/Celery、不更改 h
 | 通道 | 适合 | 命令 |
 |---|---|---|
 | **本机 Simulator** | 日常 JS 迭代 (90%) | `cd mobile && npx expo start --dev-client` (Metro) + `npx expo run:ios --no-bundler` |
-| **OTA production** | JS-only 推已装 TestFlight | `./scripts/mobile-ota.sh production "msg"` (~30s) |
+| **OTA production** | JS-only 推已装 TestFlight | `trusted-ota.yml`:同 SHA 先 `validate` 后 `publish` |
 | **EAS build production** | 有 native 改动 / 发版 | `eas build -p ios --profile production --auto-submit --non-interactive` (~20min) |
 | **EAS build development** | 真机 dev-client (热重载) | `eas build -p ios --profile development` (首次交互式配凭证) |
 | **TestFlight public QR** | 外部用户扫码安装 | `TESTFLIGHT_PUBLIC_LINK=https://testflight.apple.com/join/... node scripts/testflight-public-link.mjs` |

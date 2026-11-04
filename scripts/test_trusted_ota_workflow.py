@@ -71,6 +71,23 @@ def test_hosted_ota_never_uses_developer_checkout_or_cached_deps():
     assert "--allow-dirty" not in str(w)
 
 
+def test_duplicate_admission_precedes_toolchain_credentials_claims_and_vendor_calls():
+    steps = workflow()["jobs"]["ota"]["steps"]
+    admission = next(i for i, step in enumerate(steps) if step.get("name") == "Admit unique exact release dispatch")
+    install = next(i for i, step in enumerate(steps) if "Install locked CLI" in step.get("name", ""))
+    publish = next(i for i, step in enumerate(steps) if "Publish one bound" in step.get("name", ""))
+    assert admission == 1
+    assert admission < install < publish
+    step = steps[admission]
+    assert step["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "TARGET_SHA": "${{ inputs.sha }}",
+        "RELEASE_TARGET": "${{ inputs.target }}",
+    }
+    assert "--token-stdin" in step["run"]
+    assert "secrets." not in str(step)
+
+
 def named(fragment):
     return next(
         s for s in workflow()["jobs"]["ota"]["steps"] if fragment in s.get("name", "")

@@ -13,7 +13,7 @@ ledger 或完成状态。不要从带 WIP 的本机工作区直接运行 EAS bui
 
 | 需求 | 路径 |
 |---|---|
-| 仅 JS/TS/UI，符合 OTA 边界，用户未要求新包且不在审核冻结期 | `scripts/mobile-ota.sh production "<message>"` |
+| 仅 JS/TS/UI，符合 OTA 边界，用户未要求新包且不在审核冻结期 | `trusted-ota.yml` 同 SHA 先 `validate` 后 `publish` |
 | 用户要求 TestFlight 新包、原生依赖/签名/权限变化或上架 | 本 Skill 的受审 build + submit |
 | 已明确的 iOS 上架任务中，用户要求“完整上架 / 全部搞定 / 一气完成” | 本 Skill 持续到目标地区公开商店回读通过，不在上传、送审或审核通过时提前结束 |
 | 用户只要可扫码安装的包，未指定 TestFlight | `scripts/mobile-local-qr.sh`，不要擅自 submit |
@@ -29,10 +29,12 @@ ledger 或完成状态。不要从带 WIP 的本机工作区直接运行 EAS bui
 先核对 main、开放 PR、工作树来源和授权范围，读取本次 Dossier。
 从干净的目标 revision 跑 CI-mode 集成闸，核验该精确 main SHA 的真实 CI 绿色及独立安全裁决。
 按 deploy 治理准备绑定该 SHA 的短期发布身份；不覆盖正在运行的 executor/policy。
-在已配置发布操作机上，正式 `validate` 前先运行受审的仓库只读 GitHub App
-credential refresh adapter；刷新失败则停止，不启动构建。服务器随后要求该凭据至少覆盖
-30 分钟发布窗口，避免凭据在 EAS 构建结束后才过期。刷新只更新现有仓库只读凭据，
-不得扩大 repository 或 permission 范围，也不得把私钥、token 写入仓库或日志。
+在已配置且存在受审外部 adapter 的发布操作机上，正式 `validate` 前先刷新仓库只读
+GitHub App 凭据；缺少 adapter、刷新失败或结果未知都停止，不启动构建。仓库内没有
+通用自动 refresh service，固定事故恢复脚本不得泛化。服务器随后要求原生发布凭据
+至少覆盖 30 分钟窗口，避免凭据在 EAS 构建结束后才过期。刷新只更新现有仓库只读
+凭据，不得扩大 repository 或 permission 范围，也不得把私钥、token 写入仓库、Actions
+secret、argv、环境或日志。
 
 ```bash
 gh workflow run trusted-release.yml --ref main -f sha=<exact-main-sha> -f target=validate
