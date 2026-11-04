@@ -177,3 +177,34 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   failure remains the reason a new binary is mandatory. Focused release tests pass
   89/89 and a live read-only GitHub evidence reconstruction matches all reviewed
   job, prior-attempt and log digests.
+
+## 2026-11-04 current native upload continuation
+
+- Exact revision `ad8949e7eeb4abc73968b0c83ebdb38b64a6cae1` already had a
+  successful backend-only release in workflow run `41801637758`. Its seven-job
+  response is bound by SHA-256
+  `99803a1ee17b618ed51973bd03637a5decc1eda4a526de8666dca8036569088f`.
+- A later trusted release run `41806221746` reused that exact revision. Its backend
+  job failed closed with `authorization already consumed; manual review required`;
+  the failure log is bound by SHA-256
+  `d3dd2a552675726c85cb9be2ca895f60aad7f21eaa88b9fac909b17027eee823`.
+  This failure is not rewritten as a successful aggregate release.
+- The same later run successfully uploaded EAS build
+  `8370725c-f6b6-4c18-b408-8123b900eb36` through submission
+  `76692f33-c058-48b6-8158-fc008bbab6a2`. The complete seven-job response and
+  TestFlight job log are independently bound by SHA-256
+  `49bce5cde5b80e199245a73451aa6299cd29a1b3569ee66548db52b41eda5cf5` and
+  `dd09cc2359bf3538a30072b22879e91cc279d2d984cc38055df6e61783de876d`.
+- The continuation profile accepts only this fixed combination: prior backend
+  success, current consumed-authorization terminal and current vendor upload. A
+  changed run, job, step, failure reason, build, submission, producer hash or log
+  digest fails closed. It certifies upload only; Apple processing, TestFlight
+  installability, App Review submission and OTA publication remain separate gates.
+- TDD evidence: seven new linkage regressions failed before implementation and pass
+  afterward. The adjacent native-retirement and continuation suite passes 120/120;
+  the broader bootstrap/release/TestFlight/OTA set passes 774/774 after including
+  the CI YAML parser dependency. A live read-only reconstruction returned the exact
+  reviewed proof. An independent read-only safety reviewer returned **GO** after
+  inspecting the rebased commit against current main, rerunning 120/120 focused
+  tests and reproducing both workflow reads plus all four pinned digests.
+  Exact-revision CI remains required before merge or release-state rotation.
