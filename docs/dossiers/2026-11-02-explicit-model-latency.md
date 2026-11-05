@@ -640,3 +640,27 @@ PR #305 已合入 main。bbefd3a97 的完整 main CI 41982384643 为 32/32 succe
 [后端发布 41987030790](https://github.com/itsoso/health-llm-driven/actions/runs/41987030790) 成功。独立生产回读 PASS：HEAD 精确且 clean，回执 SUCCEEDED（摘要 `7077d33b65fc1dc20776de470769f577a752d4cf0a57d2f44702f70f66acb869`），runtime COMMITTED/finalized/code-only-no-backup，lease 已释放；backend/worker/beat 全 active 且 DOMAIN_PROMPT_OPTIMIZATION=true；内外 health 200，受保护匿名接口 401；八项运行时源码摘要与候选 Git 对象一致，合成纯路由正反例通过，无健康 DB 写入或模型调用。完整证据已回填[机器证据](../reviews/2026-11-04-everyday-prompt-performance.json)。
 
 本轮 Mobile/shared 树与已发布 91b 完全一致，沿用其 OTA 41822477785 / group `5e241435-e16f-49c1-a45b-cf6e54f52ea3`，未重复发空 OTA。代码发布与线上运行核验完成；真实设备呈现和生产请求 P95 未测量，仍不能把合成样本 1.34–2.68 秒外推为所有日常对话均小于三秒。
+
+
+## 第十轮：普通单餐建议误报个人查询失败（2026-11-05）
+
+用户截图中，天气问答之后的“今晚吃点啥比较好”被替换为“本轮数据查询未完成”。
+代码回溯发现 current-input advice 已覆盖多领域日程草稿，但未覆盖完整的单餐选择问句；
+额外的无授权个人读取被 Gateway 拒绝后，无法证明原问题是无需读取的建议，触发查询失败终态。
+本轮沿用 quick_fix + safety-gate；这是既有通用建议行为修复，不新增个人数据权限。
+
+新增封闭的整句单餐建议语法，复用现有 current_input_local_advice 入口，提供经过审查的
+通用餐食组合、过敏/不耐受/医嘱限制及澄清追问。不读取记录、不调用模型、不创建饮食或计划；
+回答明确未做个体化调整，不能把历史或天气当作营养依据。公开食物组合依据为 NHS Eatwell Guide
+（2026-11-05 核验）；不设定热量、减重目标或固定摄入量。
+
+额外症状、个人记录依据、过敏限定、第三方、引用、否定、写操作、未知残留仍走完整链路。
+附件和不确定写恢复保持原顺序；持久化失败不发成功，跨账户对话拒绝，重放保持原文。
+该修复不扩大 everyday prompt lane，不更换用户所选模型，不移除真实查询的证据闸。
+
+验证：截图原句先 RED（is_current_input_advice=False）；初轮含相邻测试 186 通过、2 项因
+隔离目录缺 Pi node_modules 失败，接入同版本本机依赖后扩大回归 294 通过。
+新增附件与自由模型文本拒绝测试纳入后续 PostgreSQL 回归。System Map 全闸通过，未产生架构漂移。
+PostgreSQL runner 初次因临时脚本替换了测试文件名而收集失败，已正常停库，修正测试清单重跑。
+独立 G4、精确主干完整 CI、生产部署和发布后验收尚待完成。Mobile 无变更，按部署规范不发布相同空 OTA。
+仅零模型路径验证不等于手机三秒体验或生产 P95 达标。

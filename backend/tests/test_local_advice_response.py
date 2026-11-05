@@ -7,6 +7,7 @@ from app.services.agent_executor import AgentExecutor
 from tests.test_conversational_advice_scope import BEDTIME, ACTION
 
 DAILY = '今天如何运动 饮食和 睡眠'
+MEAL = '今晚吃点啥比较好'
 
 
 def forbid_heavy_work(executor, monkeypatch):
@@ -87,7 +88,7 @@ async def test_other_goals_still_reach_existing_pipeline(db, auth_user_and_heade
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('message', [BEDTIME, DAILY])
+@pytest.mark.parametrize('message', [BEDTIME, DAILY, MEAL])
 async def test_local_advice_cannot_use_another_users_conversation(db, auth_user_and_headers, monkeypatch, message):
     from tests.conftest import create_authenticated_user
     user, _ = auth_user_and_headers
@@ -102,7 +103,7 @@ async def test_local_advice_cannot_use_another_users_conversation(db, auth_user_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize('message', [BEDTIME, DAILY])
+@pytest.mark.parametrize('message', [BEDTIME, DAILY, MEAL])
 async def test_failed_persistence_cannot_emit_success_or_answer(db, auth_user_and_headers, monkeypatch, message):
     user, _ = auth_user_and_headers
     executor = AgentExecutor(db)

@@ -156,6 +156,36 @@ def is_daily_planning_advice(text: str) -> bool:
     return bool(_DAILY_PLAN_RE.fullmatch(candidate) or _DAILY_QUESTION_RE.fullmatch(candidate))
 
 
+# A prospective meal question is not a request to inspect previous meals.
+# Consume the entire request so symptoms, restrictions, personal-record basis,
+# third parties and added actions keep their existing full processing path.
+_MEAL_SUGGESTION_RE = re.compile(
+    r"(?:请问)?(?:我)?"
+    r"(?:今晚|今早|明早|明晚|(?:今天|明天)?(?:早上|中午|晚上|早餐|早饭|午餐|午饭|晚餐|晚饭))"
+    r"(?:我)?(?:该|应该)?吃(?:点|些)?(?:什么|啥)(?:(?:比较)?好)?(?:呢)?[？?。]?"
+)
+
+
+def is_meal_suggestion_advice(text: str) -> bool:
+    """Prove an ordinary meal-choice question, granting no tool authority."""
+    if not isinstance(text, str) or len(text) > 128 or any(ch in text for ch in "\r\n\t"):
+        return False
+    return bool(_MEAL_SUGGESTION_RE.fullmatch(text.replace(" ", "").replace("\u3000", "")))
+
+
+_MEAL_SUGGESTION_ANSWER = (
+    '可以从“主食 + 蔬菜 + 蛋白质食物”里选一个简单组合。'
+    '下面是通用选项，请避开已知过敏或不耐受的食材，并优先遵守医生的饮食要求：\n\n'
+    '- 想吃米饭：米饭配炒青菜，再选豆腐、鸡蛋或鱼肉。\n'
+    '- 想吃面：蔬菜面，加自己能耐受的鸡蛋、豆腐或肉类。\n'
+    '- 想省事：面包配鸡蛋或豆制品，再搭配蔬菜。\n\n'
+    '份量结合饥饿感和平时进餐习惯，不需要为了这条建议额外加餐或刻意少吃。'
+    '本轮未查询个人记录，也未保存饮食或计划；这些选项没有按你的病情或既往记录做个体化调整。'
+    '如果有需要考虑的忌口或身体不适，可以先告诉我。你想自己做，还是点外卖？\n\n'
+    '通用参考：[NHS 均衡饮食指南](https://www.nhs.uk/live-well/eat-well/food-guidelines-and-food-labels/the-eatwell-guide/)'
+)
+
+
 _HOUSEHOLD_MAINTENANCE = re.compile(
     r"(?:https://[A-Za-z0-9.-]+/[A-Za-z0-9_/-]+[ \n]+)?"
     r"(?:我)?(?:今天|今日|今晚|刚刚|刚才)(?:我)?(?:换|更换)了"
@@ -185,7 +215,7 @@ def is_current_input_advice(text: str) -> bool:
     """Prove an entire current-input answer goal; unknown residue stays strict."""
     if (is_current_input_recovery_advice(text) or is_wearable_placement_question(text)
             or is_daily_planning_advice(text) or is_current_input_gastrointestinal_advice(text)
-            or is_household_maintenance_update(text)):
+            or is_household_maintenance_update(text) or is_meal_suggestion_advice(text)):
         return True
     if not isinstance(text, str) or len(text) > 512 or any(ch in text for ch in "\r\n\t"):
         return False
@@ -206,6 +236,10 @@ def is_current_input_advice(text: str) -> bool:
 
 
 def current_input_advice_instructions(text: str) -> str:
+    if is_meal_suggestion_advice(text):
+        return ('本轮是普通单餐选择建议，不是个人饮食记录查询。仅提供通用餐食选项，'
+                '保留过敏、不耐受和已有饮食要求的限制，不推断病情、减重目标或摄入量，'
+                '不查询个人记录、不保存饮食或计划；不能要求用户为此补查询日期。')
     if is_household_maintenance_update(text):
         return '仅回应当前家居设备维护陈述；不读取链接或健康数据，不保存维护记录或设置提醒。'
     if is_current_input_gastrointestinal_advice(text):
@@ -304,6 +338,8 @@ def local_advice_response(message: str) -> tuple[str, str] | None:
     Existing symptom-recovery remains on its existing model/medical pipeline.
     A bare general-health request is not silently changed into sleep advice.
     """
+    if is_meal_suggestion_advice(message):
+        return 'meal_suggestion_advice', _MEAL_SUGGESTION_ANSWER
     if is_household_maintenance_update(message):
         return 'household_maintenance_acknowledgement', _HOUSEHOLD_MAINTENANCE_ANSWER
     if is_daily_planning_advice(message):
