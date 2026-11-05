@@ -169,10 +169,10 @@
     "postgresql": {
       "passed": 86
     },
-    "g4": "GO_fixed_bbefd3a97",
-    "main_ci": "41982384643_32_success_predecessor",
-    "backend": "not_deployed",
-    "ota": "unchanged_mobile_tree_covered_by_91b_publication"
+    "g4": "GO_bbefd3a97_runtime_bytes_verified_unchanged_at_22547e0ce",
+    "main_ci": "41984242004_32_success",
+    "backend": "deployed_verified_22547e0ce",
+    "ota": "not_republished_identical_mobile_shared_tree_to_published_91b"
   },
   "exploratory_note": "Initial domain flag off/on probes are not attribution evidence; retained separately. Main comparison holds the existing production flag constant.",
   "nov5_integration": {
@@ -198,5 +198,91 @@
     "validate_status": "failed_before_dispatch_admission_due_same_sha_pr_ci_identity",
     "canonical_stage": "completed_no_deployment",
     "next_step": "main-only documentation successor with unchanged application bytes and fresh exact live/full CI/validate; expired credential refresh then backend deployment"
+  },
+  "delivery": {
+    "status": "shipped_backend",
+    "candidate_sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+    "main_docs_ci": 41984226906,
+    "main_full_ci": 41984242004,
+    "validate_run": 41985372405,
+    "backend_run": 41987030790,
+    "backend_readback": {
+      "domain_prompt_optimization": {
+        "celery-beat": true,
+        "celery-worker": true,
+        "health-backend": true
+      },
+      "http_statuses": {
+        "http://127.0.0.1:8000/api/v1/auth/me": 401,
+        "http://127.0.0.1:8000/api/v1/health": 200,
+        "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+        "https://health.executor.life/api/v1/auth/me": 401,
+        "https://health.executor.life/api/v1/health": 200,
+        "https://health.executor.life/api/v1/supplements/me/records": 401
+      },
+      "lease_absent": true,
+      "observed_at": 1793863845,
+      "release": {
+        "sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+        "state": "SUCCEEDED"
+      },
+      "runtime": {
+        "candidate_sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+        "mode": "code-only-no-backup",
+        "phase": "COMMITTED",
+        "terminal_sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+        "target": "candidate",
+        "result": "finalized"
+      },
+      "services": {
+        "celery-beat": "MainPID=1646745\nActiveEnterTimestamp=Thu 2026-11-05 15:28:33 CST",
+        "celery-worker": "MainPID=1646744\nActiveEnterTimestamp=Thu 2026-11-05 15:28:33 CST",
+        "health-backend": "MainPID=1646742\nActiveEnterTimestamp=Thu 2026-11-05 15:28:33 CST"
+      },
+      "sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+      "source_sha256": {
+        "backend/app/services/agent_everyday_prompt.py": "f8bf1fbfbc27257c83c8829fcbf0168b5bfb45a0634a3d0e964c1a6e3ae29883",
+        "backend/app/services/agent_executor.py": "4b3f0ba258e0f1c689a4d275fce1314bf0487f80b841c210fe61ac30fa0c865d",
+        "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+        "backend/app/services/agent_send_meta.py": "885075b007005b06b29e36fe7944d8ca5f3b87791a25cbf30de2383bcce409fd",
+        "backend/app/services/llm/prompt_payload_budget.py": "b2b781b60d37e1911e46d8518b0da437c5d11d1d3ed7da3e7afd11ee07c406a8",
+        "backend/app/services/llm/usage_tracker.py": "72eb4971ddb473dd990b9177352f723d2b73148525c9d0fd0d6248af5d31e795",
+        "backend/app/services/utterance_intent_classifier.py": "33739bb9cd338e84919467db968dc94fb1737274a36c487e5546cc290757663e",
+        "backend/pi-runtime/index.mjs": "8872560500911ee703e43b196be14b42c01cf61c86386e024aecc33a9bb2ab5d"
+      },
+      "synthetic_pure_routing_probe": "passed_no_database_or_model_calls",
+      "independent_verified_git_sources": true,
+      "completed_sha256": "7077d33b65fc1dc20776de470769f577a752d4cf0a57d2f44702f70f66acb869",
+      "runtime_terminal_sha256": "fdb630ab3a3841f4ad4b9702e427dd1f84fbd6ece878d65f3364c439a67a1f82",
+      "independent_backend_run_id": 41987030790,
+      "readback_script_sha256": "381ea0e9ad1693fec344eed789042ddfa4c73768b13987a26f0899c870f2ebb1",
+      "repository_sources_match_candidate": true,
+      "verdict": "PASS",
+      "production_clean": true,
+      "services_active": {
+        "celery-beat": true,
+        "celery-worker": true,
+        "health-backend": true
+      }
+    },
+    "readback_evidence_sha256": "9df1189ae2b59f151a5fb787b79e7f3ecc305cb75ec425c7e03d0e417d1a49ee",
+    "live_gate": {
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 95.29,
+      "exit_code": 0,
+      "log_sha256": "e9651e0fe59e3be8326cd4d503499422f8e25ab09a9ae9fef52103e80272001b",
+      "synthetic_only": true
+    },
+    "ota": {
+      "action": "not_republished",
+      "reason": "No Mobile/shared runtime delta from verified published91b",
+      "published_sha": "91b1f1ed3fccc21d83dae3d1982076be357a3f8f",
+      "publish_run": 41822477785,
+      "group_id": "5e241435-e16f-49c1-a45b-cf6e54f52ea3"
+    },
+    "device_acceptance": "not_verified",
+    "production_latency_p95": "not_measured",
+    "deployment_did_not_write_user_health_data": true
   }
 }

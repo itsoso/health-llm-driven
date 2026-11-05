@@ -633,3 +633,10 @@ Provider wrapper 新增纯数字 prompt_payload；真实 API token/cached token 
 PR #305 已合入 main。bbefd3a97 的完整 main CI 41982384643 为 32/32 success；同 SHA 的 PR CI 41982348463 被取消为重复验证。validate 41983648177 在 canonical source/CI 首步失败：发布闸要求该 SHA 的所有 CI 都来自 main，同 SHA PR run 因身份不符被拒绝，即使其重跑通过也不满足来源要求。未进入 dispatch admission、生产凭据或部署；原失败保留且不重试。canonical staging 单次成功，无授权轮换/部署。
 
 采用已有症状发布相同问题的处理路径：以本段验证证据形成仅推 main 的文档后继，应用字节保持不变，重新绑定精确 live gate、完整 main CI 和新候选 validate；不放宽发布闸、不删除 CI 记录。当前生产与授权仍是 c616a38d，服务正常、无发布 lease，优化开关在三个进程均为 true；只读 GitHub 凭据已过期，须新候选固定刷新审查后继续。此时尚未部署本轮优化。
+
+
+第九轮最终发布完成（2026-11-05）：发布候选 `22547e0cec309cf32821b94263cbad3b629a584b` 的应用/发布器字节与已审 bbefd3a97 一致；精确 live gate 再次通过。[完整 main CI 41984242004](https://github.com/itsoso/health-llm-driven/actions/runs/41984242004) 32/32 成功，文档 push CI 41984226906 同为 main/success；[validate 41985372405](https://github.com/itsoso/health-llm-driven/actions/runs/41985372405) 成功。固定 canonical staging、受审只读凭据刷新、成功旧授权 c616→225 轮换均有单次完成回执，不重试旧 bb 失败预检，不新建备份。
+
+[后端发布 41987030790](https://github.com/itsoso/health-llm-driven/actions/runs/41987030790) 成功。独立生产回读 PASS：HEAD 精确且 clean，回执 SUCCEEDED（摘要 `7077d33b65fc1dc20776de470769f577a752d4cf0a57d2f44702f70f66acb869`），runtime COMMITTED/finalized/code-only-no-backup，lease 已释放；backend/worker/beat 全 active 且 DOMAIN_PROMPT_OPTIMIZATION=true；内外 health 200，受保护匿名接口 401；八项运行时源码摘要与候选 Git 对象一致，合成纯路由正反例通过，无健康 DB 写入或模型调用。完整证据已回填[机器证据](../reviews/2026-11-04-everyday-prompt-performance.json)。
+
+本轮 Mobile/shared 树与已发布 91b 完全一致，沿用其 OTA 41822477785 / group `5e241435-e16f-49c1-a45b-cf6e54f52ea3`，未重复发空 OTA。代码发布与线上运行核验完成；真实设备呈现和生产请求 P95 未测量，仍不能把合成样本 1.34–2.68 秒外推为所有日常对话均小于三秒。
