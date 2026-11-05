@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | S6 独立主干发布候选准备 |
+| 状态 | shipped |
+| 当前阶段 | S7 生产读回完成 |
 | 工作流 | quick_fix + safety-gate → backend-deploy |
 | 基线 | 7e69aa250564f3d08194bc274bd0be1d62fbfec7 |
 
@@ -30,7 +30,7 @@
 - 基线“症状”后缀两例虽写入成功，未原样保留完整描述，质量标记 FAIL，未掩盖。最初未采 token 的六例只作探索，不混入配对；最初探针缺合成加密配置、初次 pytest 缺测试 DATABASE_URL 的环境失败均未算业务 RED。
 - RED：修正事件信封读取夹具后在原实现重跑，8 failed、2 passed、34 deselected。GREEN：定向 422 passed；PostgreSQL 17 临时非超级用户角色 44 passed，含真实 API、owner、历史、重复提交与失败回执。
 - CI=true 扩展集成 3,443 passed；新增 decision_mode=on 下鼻塞/打喷嚏、新旧会话、附件和分类器失败边界后，定向 50 passed。分类器异常在既有更早阶段直接传播，未为快捷路径吞掉失败。实现未变化。System Map、秘密扫描、Dossier 一致性、diff 检查通过。
-- 独立 safety GO、精确候选真实模型闸、main CI 与上线仍待完成。无 Mobile 改动，本次为后端发布；视觉验收按用户要求不作为阻断，不宣称设备验证。
+- 初轮验证时，独立 safety GO、精确候选真实模型闸、main CI 与上线仍待完成；最终结果见末节。无 Mobile 改动，本次为后端发布；视觉验收按用户要求不作为阻断，不宣称设备验证。
 
 ## G4 与主干验证
 
@@ -43,3 +43,14 @@
 [validate 41842943880](https://github.com/itsoso/health-llm-driven/actions/runs/41842943880) 在 canonical source/CI 首步失败：`trusted_release_gate._latest` 对同 SHA 的所有 CI 检查 main 身份，快进合并保留了同 SHA、feature 分支的绿色 PR run，因此拒绝。不是功能测试失败，也没有到 dispatch admission、production credential、SSH 或任何生产 claim。该次失败保持原样，不重发或删除。
 
 以本次验收文档更新形成独立 main 后继，实际应用字节与通过评审/实测的 424f 完全一致。后继只推 main，不产生同 SHA PR CI；仍要求新鲜精确 live gate、完整 CI 和新 SHA validate，不更改严格发布闸。文档 push 的轻量 CI 不能代替完整验证，因此显式补一次该候选完整 CI。生产截至本节仍为 91b1，未 stage、刷新凭据、轮换或部署。现有只读凭据过期，已准备受审刷新流程，但未执行。
+
+
+## 最终发布与线上读回（2026-11-05）
+
+最终应用发布 revision 为 `7665d92c38fc89b8defc0c8cf2153a7e7892158c`，与已审 424f 的应用字节一致。[完整 CI 41843626484](https://github.com/itsoso/health-llm-driven/actions/runs/41843626484) 32/32 通过，[validate 41845146155](https://github.com/itsoso/health-llm-driven/actions/runs/41845146155) 成功，精确真实模型闸通过。
+
+[后端发布 41864708858](https://github.com/itsoso/health-llm-driven/actions/runs/41864708858) 成功。独立只读验收确认：生产 HEAD 精确且干净，回执 SUCCEEDED，runtime COMMITTED/finalized/code-only-no-backup，lease 不存在；backend、worker、beat 全 active；内外网 health 200，受保护接口匿名访问 401。生产 executor 与症状测试文件摘要匹配该候选。完成回执 SHA256 `56da0bee7c705f8b88f98207352f4bbfe64f8e561f359a3423b4625c90af3b63`。
+
+授权首次本地操作在服务器 idle 检查、远端撤权意图之前停止。保留原失败与摘要；用户要求保留的其他只读扫描自然退出，没有终止扫描。新鲜 idle 证明与独立评审通过后，使用绑定原证据的限定续行完成轮换，未重跑旧发布。只读凭据 v1 成功后到期，v2 经独立评审正常续期；全部原回执保留。未新增备份或回退副本。
+
+无 Mobile 改动，不重复 OTA。视觉验收按用户明确指令省略；本次不代表设备呈现或生产 P95 验收。此前章节中的待办/未发布描述是当时状态，由本节终态取代。

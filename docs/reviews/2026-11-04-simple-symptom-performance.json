@@ -674,7 +674,7 @@
     "postgresql_17_non_superuser": "50 passed",
     "ci_mode": "3443 passed; source unchanged after run",
     "safety_review": "GO 424f1b462edd2bf6595b11066b1ec3f124dc1077; independent 44+204 tests and 4 positive/93 adversarial probes",
-    "production": "not_deployed",
+    "production": "deployed_and_independently_verified",
     "expanded_focused": "50 passed; decision_mode on, nasal variants, attachment, classifier failure",
     "system_map": "passed",
     "secret_scan": "passed",
@@ -710,5 +710,51 @@
     "admission_reached": false,
     "production_unchanged": true,
     "recovery": "distinct main documentation successor, application bytes unchanged; fresh live gate, full CI and new-SHA validation; do not rerun consumed validation or weaken gate"
+  },
+  "release": {
+    "sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+    "full_ci_run": 41843626484,
+    "validate_run": 41845146155,
+    "backend_run": 41864708858,
+    "completed_sha256": "56da0bee7c705f8b88f98207352f4bbfe64f8e561f359a3423b4625c90af3b63",
+    "readback": {
+      "http_statuses": {
+        "http://127.0.0.1:8000/api/v1/auth/me": 401,
+        "http://127.0.0.1:8000/api/v1/health": 200,
+        "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+        "https://health.executor.life/api/v1/auth/me": 401,
+        "https://health.executor.life/api/v1/health": 200,
+        "https://health.executor.life/api/v1/supplements/me/records": 401
+      },
+      "lease_absent": true,
+      "observed_at": 1793810594,
+      "production_clean": true,
+      "provenance": "Persisted prior independent read-only SSH stdout; no repeat runtime or HTTP scan.",
+      "release": {
+        "sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+        "state": "SUCCEEDED"
+      },
+      "runtime": {
+        "candidate_sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+        "mode": "code-only-no-backup",
+        "phase": "COMMITTED",
+        "result": "finalized",
+        "target": "candidate",
+        "terminal_sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c"
+      },
+      "services": {
+        "celery-beat": "active",
+        "celery-worker": "active",
+        "health-backend": "active"
+      },
+      "sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+      "source_sha256": {
+        "backend/app/services/agent_executor.py": "1ad21f39653dfd6b1e1af141522f9f0bfa572ad1a9c892b9626eb05e9ed96e6b",
+        "backend/tests/test_simple_symptom_record_latency.py": "634d26f68b5d4895f01301dae83d91eef150312c56e701218d42b895f0d66042"
+      }
+    },
+    "mobile_changed": false,
+    "device_acceptance": "not_performed_user_waived_visual",
+    "production_p95_measured": false
   }
 }

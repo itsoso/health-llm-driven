@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | S6 主干 CI 与发布 |
+| 状态 | shipped |
+| 当前阶段 | S7 生产读回完成 |
 | 工作流 | quick_fix + safety-gate |
 | 基线 | 7665d92c38fc89b8defc0c8cf2153a7e7892158c |
 
@@ -28,4 +28,17 @@
 
 首次 CI-mode 扩展回归为 4029 passed / 1 failed：既有静态契约以子串 `import re` 判断分类器是否引入正则，把 `import resolve_meal_count_input` 误判。按邻近代码使用括号导入修正，未弱化测试或改变业务逻辑，整组重跑 4030 passed / 11 warnings，156.77 秒。
 
-独立 G4 对应用提交 `209fbb8c6a12505d3e6f912522043f1db7256e0a` 裁决 GO，独立专项 39 项与邻接 275 项全部通过。该精确提交真实模型闸通过，79.71 秒，合成数据；日志 SHA256 `39a455c72cd8182cef377a59087535a66cb996539ca7c95192f5fe3c7a4ffec5`。精确 main CI、部署与线上读回待完成。没有移动端改动；视觉验收按用户要求不作为阻断，未宣称设备验收或历史误记清理完成。
+独立 G4 对应用提交 `209fbb8c6a12505d3e6f912522043f1db7256e0a` 裁决 GO，独立专项 39 项与邻接 275 项全部通过。该精确提交真实模型闸通过，79.71 秒，合成数据；日志 SHA256 `39a455c72cd8182cef377a59087535a66cb996539ca7c95192f5fe3c7a4ffec5`。精确 main CI、部署与线上读回结果见下节。没有移动端改动；视觉验收按用户要求不作为阻断，未宣称设备验收或历史误记清理完成。
+
+
+## 发布与线上验证（2026-11-05）
+
+[PR #310](https://github.com/itsoso/health-llm-driven/pull/310) 经 PR CI 后 squash 合入主干 `9b186e4fa91be2258d75aa9cfe81434299b5c97c`。独立 G4 确认该 tree 与通过验证的候选一致，应用代码相对 209f 未变。[精确 main CI 41872305423](https://github.com/itsoso/health-llm-driven/actions/runs/41872305423) 第三次 attempt 最终 32/32 成功；前两次 macOS 容量取消和初次 live 确认 SHA 时序错误均保留，未删除失败记录。该精确 main 的真实模型闸通过，合成数据、68.93 秒，日志摘要 `10792dc83579c8b727329d7ae27d64747f3333463a398bd67eff651336c82f90`。
+
+[validate 41944101334](https://github.com/itsoso/health-llm-driven/actions/runs/41944101334) 与唯一[后端发布 41947529871](https://github.com/itsoso/health-llm-driven/actions/runs/41947529871) 均成功。线上读回确认生产精确 SHA、干净工作区、SUCCEEDED 回执、COMMITTED/finalized 运行终态、已释放租约，三个服务 active；内外网 health 200，受保护接口匿名访问 401。四个应用/测试文件摘要匹配候选，实际生产源码的纯只读澄清检查通过，不连接数据库或模型。完成回执摘要 `fb919167c9b5cd05f99a1f21d84e74f61c42acd1572c0ad265689ae29587c753`。
+
+发布工具先发生一次本地 Python no_site 启动参数拒绝，控制流在创建意图或 mint 之前终止；保留证据并经独立诊断后使用正确启动方式。后续凭据刷新实际 mint 后在远端被错误的强制原生 build.lock 前提拒绝，旧凭据和生产均未改变。该失败与完整 WAL 保留，未重放。固定恢复入口仅接受原 7665 后端工作区无 build/native/OTA 活动的精确 inventory，复用 canonical 历史锁持续不存在规则，保留 launcher/provider locks、lease、CAS、完整 CI 和双重读回，先只读预检后进行一次明确的 replacement mint。14 项契约测试与独立 G4 通过。原未安装凭据不可恢复、未被撤销及其最大有效时间在恢复回执中明确保留；未伪装已撤销或原刷新成功。
+
+未创建备份或回退副本；无 Mobile 改动，不重复 OTA。视觉验收按用户指令省略，未宣称设备验收、生产 P95 或历史误记清理完成。机器证据见[发布回执](../reviews/2026-11-05-meal-count-clarification-release-receipt.json)。
+
+独立验收裁决：GO。第二次独立只读观察与上述生产状态一致，证据摘要 `53982b59499a4ed0dbe13cd71d774b2d1ca6005be09fe75680b9215220dfa40a`；原失败 WAL 摘要仍完整。
