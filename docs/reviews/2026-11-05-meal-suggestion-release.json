@@ -1,0 +1,130 @@
+{
+  "candidate_sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+  "baseline_sha": "493a7e1280bbefa8dff9a034a2ed883f6f34be85",
+  "scope": "ordinary prospective meal suggestion only",
+  "validation": {
+    "sqlite_regressions": 294,
+    "postgresql_regressions": 228,
+    "independent_regressions": 193,
+    "adversarial_positive": 5,
+    "adversarial_negative": 164,
+    "g4": "GO",
+    "live_gate": {
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 82.77,
+      "exit_code": 0,
+      "log_sha256": "5757b2898a57569b3732872d9ae53201be6e39fb736315f4c82a987eed8fd791",
+      "synthetic_only": true
+    }
+  },
+  "evidence_sha256": {
+    "reva-meal-advice-unit.log": "7ed319cd80ee98013f27db0f6efa82842d6484c4066c86fc91e127ce6dedbbd4",
+    "reva-meal-advice-pg.log": "3c755e29e11a829b40cde6b356c0771d49b92c2e634150c9e06fb8cfe5a573c5",
+    "reva-meal-advice-g4.json": "5ab78fcd05e2e0fcdc6041f9fe9e3980e3aa3fc22137496bd464558d11d129cd",
+    "reva-meal-advice-caba0b029-live-gate-result.json": "6dd9fbd57b851e14571415b07d785812f0bd1897b68e31a057a04bf12ae458b4"
+  },
+  "ci_run": 42005779104,
+  "deployment": "shipped_backend",
+  "ota": "not_applicable_no_mobile_change",
+  "device_latency": "not_measured",
+  "validate_run": 42007485071,
+  "backend_run": 42009247178,
+  "ota_mobile_tree": "55e77507ff757956823de4861e87bad842b62eb4",
+  "release_preparation": {
+    "stage": {
+      "receipt": {
+        "sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+        "source": "/var/lib/reva-release/bootstrap/caba0b029e9033df51a387d635a5904cd78c6e3e/source",
+        "state": "CANONICAL_STAGED"
+      },
+      "sha256": "5d7c585f5ceb40df7532a98aaebe1846a895043ead02e83a473d89f31ab5f55f"
+    },
+    "rotation": {
+      "receipt": {
+        "retired_sha": "22547e0cec309cf32821b94263cbad3b629a584b",
+        "sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+        "state": "INSTALLED"
+      },
+      "sha256": "315b897e327f879533875a40ae842933cc5c5beab663a0ec6e961e66eeff69f5"
+    },
+    "credential": {
+      "state": "READ_CREDENTIAL_REFRESHED",
+      "receipt_sha256": "dd84cd183847d8e6404752a3462b38b08f434fbede77748e943671458b61e3f5"
+    }
+  },
+  "independent_production_readback": {
+    "candidate_sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+    "http_statuses": {
+      "http://127.0.0.1:8000/api/v1/auth/me": 401,
+      "http://127.0.0.1:8000/api/v1/health": 200,
+      "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+      "https://health.executor.life/api/v1/auth/me": 401,
+      "https://health.executor.life/api/v1/health": 200,
+      "https://health.executor.life/api/v1/supplements/me/records": 401
+    },
+    "lease_absent": true,
+    "limits": [
+      "No authenticated personal record requests",
+      "No device presentation acceptance",
+      "No production latency P95 or three-second SLO claim"
+    ],
+    "mobile_runtime_tree_matches_prior_published_sha": "91b1f1ed3fccc21d83dae3d1982076be357a3f8f",
+    "no_backup_contents_read": true,
+    "no_new_ota": true,
+    "observed_at": 1793874184,
+    "production_clean": true,
+    "pure_probes": {
+      "database_or_model_calls": false,
+      "negative_count": 10,
+      "network_and_process_audit_events": [],
+      "positive_count": 5
+    },
+    "receipt_sha256": "d0cff3c562e2d8573763d8a484f47a018f00a28e45a7578f58fcd3743f65d0a9",
+    "release": {
+      "sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+      "state": "SUCCEEDED"
+    },
+    "runtime": {
+      "candidate_sha": "caba0b029e9033df51a387d635a5904cd78c6e3e",
+      "mode": "code-only-no-backup",
+      "phase": "COMMITTED",
+      "result": "finalized",
+      "terminal_sha": "caba0b029e9033df51a387d635a5904cd78c6e3e"
+    },
+    "runtime_terminal_sha256": "66c066f2d5e8590e97c5af81546d7f803633b2b1e3046cd090938a24253e36cc",
+    "services": {
+      "celery-beat": {
+        "active_since": "Thu 2026-11-05 18:19:54 CST",
+        "domain_prompt_optimization": true,
+        "pid": 1683891
+      },
+      "celery-worker": {
+        "active_since": "Thu 2026-11-05 18:19:54 CST",
+        "domain_prompt_optimization": true,
+        "pid": 1683890
+      },
+      "health-backend": {
+        "active_since": "Thu 2026-11-05 18:19:54 CST",
+        "domain_prompt_optimization": true,
+        "pid": 1683888
+      }
+    },
+    "source_sha256": {
+      "backend/app/services/agent_everyday_prompt.py": "f8bf1fbfbc27257c83c8829fcbf0168b5bfb45a0634a3d0e964c1a6e3ae29883",
+      "backend/app/services/agent_executor.py": "4b3f0ba258e0f1c689a4d275fce1314bf0487f80b841c210fe61ac30fa0c865d",
+      "backend/app/services/agent_kernel/current_input_advice_scope.py": "e449995872c05abb07a2be12066e09145ad38b4643b0e189adcd0bb5ee7eb0bd",
+      "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+      "backend/app/services/agent_send_meta.py": "885075b007005b06b29e36fe7944d8ca5f3b87791a25cbf30de2383bcce409fd",
+      "backend/app/services/llm/prompt_payload_budget.py": "b2b781b60d37e1911e46d8518b0da437c5d11d1d3ed7da3e7afd11ee07c406a8",
+      "backend/app/services/llm/usage_tracker.py": "72eb4971ddb473dd990b9177352f723d2b73148525c9d0fd0d6248af5d31e795",
+      "backend/app/services/utterance_intent_classifier.py": "33739bb9cd338e84919467db968dc94fb1737274a36c487e5546cc290757663e",
+      "backend/pi-runtime/index.mjs": "8872560500911ee703e43b196be14b42c01cf61c86386e024aecc33a9bb2ab5d"
+    },
+    "verdict": "PASS"
+  },
+  "independent_readback_sha256": "e08ff50d9ef1e64b4eb810778fbf353cb01d7e1f4a74aa77e8e6f7fa56693cdd",
+  "ci_status": "success_full_32_jobs",
+  "validate_status": "success",
+  "backend_status": "success"
+}

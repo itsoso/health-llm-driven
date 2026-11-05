@@ -664,3 +664,25 @@ PR #305 已合入 main。bbefd3a97 的完整 main CI 41982384643 为 32/32 succe
 PostgreSQL runner 初次因临时脚本替换了测试文件名而收集失败，已正常停库，修正测试清单重跑。
 独立 G4、精确主干完整 CI、生产部署和发布后验收尚待完成。Mobile 无变更，按部署规范不发布相同空 OTA。
 仅零模型路径验证不等于手机三秒体验或生产 P95 达标。
+
+
+### 第十轮 G4–G6 与生产交付
+
+- 固定候选 `caba0b029e9033df51a387d635a5904cd78c6e3e` 独立 G4 GO：193 项回归，
+  5 正例与 164 对抗反例通过。PostgreSQL 非超级用户 228 项通过，临时集群正常停库、runner exit 0。
+- 精确候选真实模型回归闸通过（82.77 秒，仅合成主体/内存测试库），对应 CONFIRMED 已绑定；
+  System Map、秘密扫描、diff 检查通过。实际单餐建议入口无需模型，不把该门耗时当 App 延迟。
+- 当前 main push 完整 CI `42005779104` 32/32 success；trusted validate `42007485071` success。
+  canonical staging、固定凭据刷新、旧成功授权退休及新授权安装均有独立审查和一次性完成回执。
+  全程沿用 no-backup 发布契约，未重放失败/未知发布。
+- 后端 `42009247178` success，独立线上复验 PASS：生产干净且精确为候选；SUCCEEDED 回执，
+  runtime COMMITTED/finalized，原租约释放。backend/Celery worker/beat 稳定 active，优化开关仍 true。
+  内外健康接口 200，未认证个人接口 401；9 个源码摘要与本地候选 Git、服务器 Git 和运行磁盘一致。
+- 生产纯合成分流探针 5 正例/10 反例通过，探针禁止外部 I/O，不读写用户数据或调用模型。
+  本地真实入口已覆盖天气与失败查询历史后的回复、streamed=persisted=replayed、无工具/无写回执。
+  这不等于使用真实用户账号做了端到端验收，也未测手机界面或生产 P95/三秒 SLO。
+- Mobile tree `55e77507ff757956823de4861e87bad842b62eb4` 与既有 OTA `91b1f1ed…` 完全一致；
+  无客户端修改，按适用边界不发布空 OTA，现有 App 使用新后端。合入的发布证据文档后继不需要重复部署。
+
+机器证据：`docs/reviews/2026-11-05-meal-suggestion-release.json`。
+部署工作流：https://github.com/itsoso/health-llm-driven/actions/runs/42009247178。
