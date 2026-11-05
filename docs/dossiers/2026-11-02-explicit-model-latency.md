@@ -626,3 +626,10 @@ Provider wrapper 新增纯数字 prompt_payload；真实 API token/cached token 
 
 
 第九轮扩大CI-mode490 passed，临时PG86 passed。真实模型配对[机器证据](../reviews/2026-11-04-everyday-prompt-performance.json)：生产既有domain开关双方均True，基线仅关闭新准入；三组请求各两次，12/12成功且仅用户选定DeepSeek单次调用。输入API token为12,175→545、12,175→542、12,294→663，缩减94.61–95.55%。候选实际释放首token1.34–2.68秒，中位2.56→1.94秒；完整中位2.58→1.95秒。基线缓存11,776/次，候选零缓存，输出长度不一致；不能当纯prefill因果或生产P95/设备呈现证据。初始off/on探针仅探索，不混入归因结果。最大14条原历史加当前消息的实际Pi载荷保留全部原文和更正。后续main分享UI已在隔离分支无冲突合并，后端受测源码摘要一致。
+
+
+第九轮发布续接（2026-11-05）：前序分享 UI 已于 91b1f1ed 完成后端与 OTA，随后生产推进至 c616a38d；本轮与该已发布 Mobile/shared 树完全一致，不重复发布空 OTA。整合最新主干得到 bbefd3a97，独立新鲜 G4 GO（175 项回归、12 项实际 Pi 探针）；鼻症状、餐次澄清与待补食物历史均不能进入 everyday，原始更正和正常写入边界保留。精确真实模型闸通过，System Map 通过，PostgreSQL 213 passed、pytest exit 0。临时 PostgreSQL 关闭等待超时使外层 runner exit 1；原关闭随后正常完成，独立确认进程已退出，未掩盖此清理异常。
+
+PR #305 已合入 main。bbefd3a97 的完整 main CI 41982384643 为 32/32 success；同 SHA 的 PR CI 41982348463 被取消为重复验证。validate 41983648177 在 canonical source/CI 首步失败：发布闸要求该 SHA 的所有 CI 都来自 main，同 SHA PR run 因身份不符被拒绝，即使其重跑通过也不满足来源要求。未进入 dispatch admission、生产凭据或部署；原失败保留且不重试。canonical staging 单次成功，无授权轮换/部署。
+
+采用已有症状发布相同问题的处理路径：以本段验证证据形成仅推 main 的文档后继，应用字节保持不变，重新绑定精确 live gate、完整 main CI 和新候选 validate；不放宽发布闸、不删除 CI 记录。当前生产与授权仍是 c616a38d，服务正常、无发布 lease，优化开关在三个进程均为 true；只读 GitHub 凭据已过期，须新候选固定刷新审查后继续。此时尚未部署本轮优化。

@@ -169,10 +169,34 @@
     "postgresql": {
       "passed": 86
     },
-    "g4": "pending",
-    "main_ci": "pending",
+    "g4": "GO_fixed_bbefd3a97",
+    "main_ci": "41982384643_32_success_predecessor",
     "backend": "not_deployed",
-    "ota": "native_baseline_and_prior_claim_blocked"
+    "ota": "unchanged_mobile_tree_covered_by_91b_publication"
   },
-  "exploratory_note": "Initial domain flag off/on probes are not attribution evidence; retained separately. Main comparison holds the existing production flag constant."
+  "exploratory_note": "Initial domain flag off/on probes are not attribution evidence; retained separately. Main comparison holds the existing production flag constant.",
+  "nov5_integration": {
+    "candidate_sha": "bbefd3a97df00d380292d2e1e70ef1b35437ad27",
+    "g4_regression_passed": 175,
+    "g4_independent_pi_passed": 12,
+    "postgresql_passed": 213,
+    "postgresql_pytest_exit": 0,
+    "postgresql_cleanup": "runner exit1 after pg_ctl timeout; original shutdown completed and independently verified stopped",
+    "live_gate": "passed_70.21s",
+    "runtime_source_sha256": {
+      "backend/app/services/agent_executor.py": "4b3f0ba258e0f1c689a4d275fce1314bf0487f80b841c210fe61ac30fa0c865d",
+      "backend/app/services/agent_everyday_prompt.py": "f8bf1fbfbc27257c83c8829fcbf0168b5bfb45a0634a3d0e964c1a6e3ae29883",
+      "backend/app/services/llm/usage_tracker.py": "72eb4971ddb473dd990b9177352f723d2b73148525c9d0fd0d6248af5d31e795",
+      "backend/app/services/llm/prompt_payload_budget.py": "b2b781b60d37e1911e46d8518b0da437c5d11d1d3ed7da3e7afd11ee07c406a8",
+      "backend/app/services/agent_send_meta.py": "885075b007005b06b29e36fe7944d8ca5f3b87791a25cbf30de2383bcce409fd",
+      "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+      "backend/app/services/utterance_intent_classifier.py": "33739bb9cd338e84919467db968dc94fb1737274a36c487e5546cc290757663e",
+      "backend/pi-runtime/index.mjs": "8872560500911ee703e43b196be14b42c01cf61c86386e024aecc33a9bb2ab5d"
+    },
+    "main_ci_run": 41982384643,
+    "validate_run": 41983648177,
+    "validate_status": "failed_before_dispatch_admission_due_same_sha_pr_ci_identity",
+    "canonical_stage": "completed_no_deployment",
+    "next_step": "main-only documentation successor with unchanged application bytes and fresh exact live/full CI/validate; expired credential refresh then backend deployment"
+  }
 }
