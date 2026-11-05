@@ -2,8 +2,8 @@
 
 | 字段 | 值 |
 | --- | --- |
-| 状态 | in_progress |
-| 当前阶段 | S5 验证 |
+| 状态 | shipped |
+| 当前阶段 | S7 生产读回完成 |
 | 工作流 | quick_fix + safety-gate |
 | 基线 | 06971995e58cc8aef17e4116aba4cb6535435166 |
 
@@ -25,10 +25,18 @@
 
 合成专项 RED：17 failed / 9 passed，确认原句无法生成更正提案，真实 run_stream 错误进入模型。开发期间数据库配置、测试路径及测试认证 token 夹具错误不计入产品 RED。
 
-首轮合成专项与相邻回归 116 passed。扩展测试增加自动保存无草稿 token 的真实卡片结构，以及保存、重算、回放、跨用户拒绝、过期版本冲突；PostgreSQL 17 临时非超级用户集群运行 128 项全部通过，包含实际保存、owner 隔离和幂等。扩大 CI-mode 回归初次 1454 passed / 5 skipped / 1 failed；失败来自新测试初始版本与更新落在 SQLite 同一秒，已显式固定合成初始版本时间以消除时钟依赖，整组重跑中。独立 G4 结果完成后补充。
+首轮合成专项与相邻回归 116 passed。扩展测试增加自动保存无草稿 token 的真实卡片结构，以及保存、重算、回放、跨用户拒绝、过期版本冲突；PostgreSQL 17 临时非超级用户集群运行 128 项全部通过，包含实际保存、owner 隔离和幂等。扩大 CI-mode 回归初次 1454 passed / 5 skipped / 1 failed；失败来自新测试初始版本与更新落在 SQLite 同一秒，已显式固定合成初始版本时间以消除时钟依赖，整组重跑 1455 passed / 5 PostgreSQL-only skipped。临时 PostgreSQL 集群因 shutdown checkpoint 超过首次等待窗口而使 runner 的收尾退出非零，但测试退出码为 0；随后只读确认日志 database system is shut down 且 pg_ctl 无运行服务，未中止或重跑数据库操作。独立 G4 GO，独立相邻回归 104 passed；真实模型合成评测 76.3 秒通过，日志摘要 0086f5154e0090834c6ab7e5dadb4774e89a2597065db844b2ed61882315cbd9。
 
 System Map 对局部模块无索引，已按规则检查源码与相邻测试，并运行完整 system-map-check，通过。未新增地图覆盖的架构实体。
 
-## 发布状态
+## 发布与生产验证
 
-本地候选评审中，未上线。后续必须独立 G4 GO、精确 main CI、可信发布和生产独立读回。无备份或回退副本，不重复旧发布操作。
+[PR #311](https://github.com/itsoso/health-llm-driven/pull/311) 已合入 `c616a38d57a2ba1528f9b8ff050f9807f43f7566`；整个 tree 与独立 G4 的应用候选 `87d4076f454a2e57b66f1f64995397a6f239b397` 一致。PR CI 41950705544 成功，[精确 main CI 41952043803](https://github.com/itsoso/health-llm-driven/actions/runs/41952043803) 32 项全部成功。
+
+[可信 validate 41953668752](https://github.com/itsoso/health-llm-driven/actions/runs/41953668752) 与唯一[后端发布 41955081126](https://github.com/itsoso/health-llm-driven/actions/runs/41955081126) 成功。canonical staging、过期只读 GitHub App 凭据刷新及授权切换均经独立固定脚本 G4；刷新前只读预检、12 项契约测试、原 launcher/provider 锁、精确旧后端 inventory、build.lock 持续不存在、CAS 与双重读回均保留。上次失败记录保持原状，本次使用新一次性操作，不重放旧发布。没有备份、回退副本、恢复演练或 Mobile OTA。
+
+生产读回确认精确 c616、干净源码、SUCCEEDED 回执、COMMITTED/finalized/code-only-no-backup 运行态、已释放租约，后端与 worker/beat 服务 active。内外网 health 200，受保护接口匿名 401。新模块及测试文件摘要匹配对应 git 对象，生产实际源码中的纯解析检查通过，并保留餐次澄清行为；未连接数据库或模型。完成回执摘要 `0d9cdd811c322d2bede16efb1cf5cbde9d1d4e54c19fb18e34dd202d2ab783be`。
+
+独立生产验收 GO：再次确认精确源码、回执、运行态、服务与 HTTP 探针；旧授权已退休/撤销，新授权和凭据回执一致。探针全部结束，未读写用户健康数据。独立验收文件摘要 `5b977131bb7c0fcabdcb8a730307d30ffcf9f93038ab3b55597871531a017a25`。
+
+机器证据与独立验收裁决见[发布回执](../reviews/2026-11-05-meal-food-identity-release-receipt.json)。视觉验收按用户要求省略，未宣称真机 UI、实际用户对话或生产 P95 已验证。截图中的原餐与历史失败回复未自动改写；新输入进入预填更正，保存后才更新原餐并重算营养。

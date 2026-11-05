@@ -1,0 +1,161 @@
+{
+  "schema_version": "reva.release-evidence.v1",
+  "status": "released_and_independently_verified",
+  "candidate_sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+  "previous_production_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+  "pr": 311,
+  "application_review_sha": "87d4076f454a2e57b66f1f64995397a6f239b397",
+  "merge_tree_identical": true,
+  "ci": {
+    "pr": 41950705544,
+    "main": 41952043803,
+    "full_main_jobs": 32,
+    "conclusion": "success"
+  },
+  "release": {
+    "validate": 41953668752,
+    "backend": 41955081126,
+    "conclusion": "success",
+    "unique_dispatches": true
+  },
+  "tests": {
+    "red": {
+      "failed": 17,
+      "passed": 9
+    },
+    "local_ci_mode": {
+      "passed": 1455,
+      "postgres_only_skipped": 5
+    },
+    "postgres": {
+      "passed": 128,
+      "test_exit_code": 0,
+      "shutdown_wait_initial_timeout": true,
+      "stopped_independently_verified": true
+    },
+    "independent": 104,
+    "credential_refresh_contract": 12,
+    "live_eval": {
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 76.3,
+      "exit_code": 0,
+      "log_sha256": "0086f5154e0090834c6ab7e5dadb4774e89a2597065db844b2ed61882315cbd9",
+      "synthetic_only": true
+    }
+  },
+  "production_readback": {
+    "completed_sha256": "0d9cdd811c322d2bede16efb1cf5cbde9d1d4e54c19fb18e34dd202d2ab783be",
+    "http_statuses": {
+      "http://127.0.0.1:8000/api/v1/auth/me": 401,
+      "http://127.0.0.1:8000/api/v1/health": 200,
+      "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+      "https://health.executor.life/api/v1/auth/me": 401,
+      "https://health.executor.life/api/v1/health": 200,
+      "https://health.executor.life/api/v1/supplements/me/records": 401
+    },
+    "lease_absent": true,
+    "observed_at": 1793845929,
+    "readonly_synthetic_identity_and_meal_count_smoke": "passed_no_database_or_model_calls",
+    "release": {
+      "sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+      "state": "SUCCEEDED"
+    },
+    "runtime": {
+      "candidate_sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+      "mode": "code-only-no-backup",
+      "phase": "COMMITTED",
+      "terminal_sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566"
+    },
+    "services": {
+      "celery-beat": "MainPID=1584234\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST",
+      "celery-worker": "MainPID=1584233\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST",
+      "health-backend": "MainPID=1584231\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST"
+    },
+    "sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+    "source_sha256": {
+      "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+      "backend/app/services/diet_photo_correction.py": "f5b476d8a440106b9af1db30f9b09a9b24a3efba10d8e427cb54d3f03a564b5c",
+      "backend/tests/test_diet_food_identity_correction.py": "520138ac7567ef5519200fdf92da66e99023dcbcb57ca8dc3f9df94b07dc5b69"
+    }
+  },
+  "evidence_sha256": {
+    "/tmp/reva-food-identity-g4.json": "0bb8d4390a28f14d5c3207ba0cb72f079ae065886223d1f72a22faa874abe0ac",
+    "/tmp/reva-food-identity-c616a38d-g4.json": "5aa1ae78bcc8c2ececcd9a1620e38c4f40b9aae629d7f1ce50135b4a7027b1a9",
+    "/tmp/reva-food-identity-c616a38d-stage-g4.json": "dbcea424fc6cea8303a6f4b5a64c2a1a4e07574e34c6830a4cebe209bc52e42e",
+    "/tmp/reva-food-identity-c616a38d-rotation-g4.json": "01b0e59dd7f2e0be04f03be5cfda657d547bed2569aa75316ef4443a6960d417",
+    "/tmp/reva-food-identity-c616a38d-credential-refresh-g4.json": "250c76761b9d94c6122559e1ee1b80d2fdde0509cfe7af23cf535a31aa32b580",
+    "/private/tmp/reva-release-ops/food-identity-c616a38d-read-credential-v1/completed.json": "c805e383ac53d3acbc63fa7dbf4b618d5ec910299a47053616b1464e4e836288",
+    "/tmp/reva-food-identity-c616a38d-stage-once.completed.json": "6bc97f83e1cd78a52e1989a8b6e63c4677171c280a59e0f1b5c9157df212b74c",
+    "/tmp/reva-food-identity-c616a38d-rotation-once.completed.json": "b3c187fdeb313130ebf4f2de87f7e2a0897cee71af1fc6d7a8ed78a30021a682",
+    "/tmp/reva-food-identity-c616a38d-backend-readback.json": "b3171aaab5abdff5fbe9b565d6252b168f4d3ff32b94408e22dee75e87108c0a"
+  },
+  "credential_refresh": {
+    "attempt": "food-identity-c616a38d-read-credential-v1",
+    "state": "READ_CREDENTIAL_REFRESHED",
+    "after_sha256": "8a1d84f73012001a70bed009157725b552c21fea04dbffae643f262a96e4f43f",
+    "expires_at": 1793848577,
+    "previous_success_preserved": true
+  },
+  "boundaries": {
+    "mobile_changes": false,
+    "ota_required": false,
+    "production_health_data_mutation_for_acceptance": false,
+    "visual_acceptance": "omitted_per_user_instruction",
+    "device_acceptance": "not_claimed",
+    "production_p95": "not_claimed",
+    "backup_created": false,
+    "old_failed_operations_replayed": false
+  },
+  "independent_production_readback": {
+    "decision": "GO",
+    "evidence": {
+      "authorization_evidence": {
+        "credential_expires_at": 1793848577,
+        "credential_sha256": "8a1d84f73012001a70bed009157725b552c21fea04dbffae643f262a96e4f43f",
+        "executor_sha256": "e352fa0ff71dc08d79c22b6c67e4e06114bddd1ca755c6e429cac13c78873f82",
+        "policy_sha256": "c3de0a1288c93ff06ceb7dd544e74b17b8e7ae0eda08ef0b5424283485f797e1",
+        "refresh_completed_sha256": "c805e383ac53d3acbc63fa7dbf4b618d5ec910299a47053616b1464e4e836288",
+        "retired_completed_sha256": "ee8c6076aecf275f453e1e2b15caf3cdf870377a1c9cfa58df6eb500a6d3f623",
+        "revoked_completed_sha256": "ab384fdf6433b9748ecb07309d13ecd1427f8f6c60e943bf99b69b68ab356b73"
+      },
+      "completed_sha256": "0d9cdd811c322d2bede16efb1cf5cbde9d1d4e54c19fb18e34dd202d2ab783be",
+      "http_statuses": {
+        "http://127.0.0.1:8000/api/v1/auth/me": 401,
+        "http://127.0.0.1:8000/api/v1/health": 200,
+        "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+        "https://health.executor.life/api/v1/auth/me": 401,
+        "https://health.executor.life/api/v1/health": 200,
+        "https://health.executor.life/api/v1/supplements/me/records": 401
+      },
+      "lease_absent": true,
+      "observed_at": 1793845966,
+      "production_clean": true,
+      "readonly_synthetic_identity_and_meal_count_smoke": "passed_no_database_or_model_calls",
+      "release": {
+        "sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+        "state": "SUCCEEDED"
+      },
+      "runtime": {
+        "candidate_sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+        "mode": "code-only-no-backup",
+        "phase": "COMMITTED",
+        "result": "finalized",
+        "target": "candidate",
+        "terminal_sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566"
+      },
+      "services": {
+        "celery-beat": "MainPID=1584234\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST",
+        "celery-worker": "MainPID=1584233\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST",
+        "health-backend": "MainPID=1584231\nActiveEnterTimestamp=Thu 2026-11-05 10:28:49 CST"
+      },
+      "sha": "c616a38d57a2ba1528f9b8ff050f9807f43f7566",
+      "source_sha256": {
+        "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+        "backend/app/services/diet_photo_correction.py": "f5b476d8a440106b9af1db30f9b09a9b24a3efba10d8e427cb54d3f03a564b5c",
+        "backend/tests/test_diet_food_identity_correction.py": "520138ac7567ef5519200fdf92da66e99023dcbcb57ca8dc3f9df94b07dc5b69"
+      }
+    },
+    "sha256": "5b977131bb7c0fcabdcb8a730307d30ffcf9f93038ab3b55597871531a017a25"
+  }
+}
