@@ -42,6 +42,31 @@ _PORTION_SUFFIX = re.compile(
     r"(?:约|大约)?(?:[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十两半]+)"
     r"(?:个|根|碗|杯|份|片|块|颗|粒|克|毫升|g|kg|ml|mL)(?:半)?"
 )
+# Closed photo-descriptor clarifications. These create an editable proposal,
+# not write authority. Keep questions, quotations and compound instructions out.
+_IDENTITY_DESCRIPTOR = (
+    r"(?:黄色|橙色|红色|绿色|白色|黑色|棕色)"
+    r"(?:条状|条装|块状|片状|圆形)(?:食物|物|的)"
+)
+_IDENTITY_REQUEST = re.compile(
+    rf"(?P<item>{_IDENTITY_DESCRIPTOR})是"
+    r"(?P<food>胡萝卜|白萝卜|土豆|红薯|紫薯|山药|南瓜|玉米|黄瓜|冬瓜|"
+    r"西葫芦|茄子|豆腐|鸡蛋|面包|馒头|年糕|牛肉|猪肉|鸡肉|鱼肉)[。.!！]?"
+)
+_IDENTITY_ITEM = re.compile(rf"(?P<item>{_IDENTITY_DESCRIPTOR})(?P<portion>.*)")
+_IDENTITY_PORTION = re.compile(
+    r"(?:约|大约)?(?:[0-9]+(?:\.[0-9]+)?|[一二三四五六七八九十两半]+)"
+    r"(?:小|大)?(?:个|根|条|段|碗|杯|份|片|块|颗|粒|克|g|kg)(?:半)?"
+)
+
+
+def _identity_item(text):
+    match = _IDENTITY_REQUEST.fullmatch(str(text or "").strip())
+    return (match["item"], match["food"]) if match else None
+
+
+def _descriptor_key(text):
+    return re.sub(r"(?:食物|物|的)$", "", text.replace("条装", "条状"))
 
 
 def _removal_item(text):
@@ -130,8 +155,9 @@ def _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id,
                      "点击保存后重新估算营养；成功后更新原记录，不会新增一餐。"}
 
 
-def _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now):
-    food = _removal_item(text)
+def _item_edit_proposal(db, user_id, conversation_id, current_message_id, text, now):
+    identity = _identity_item(text)
+    food = identity[0] if identity else _removal_item(text)
     if food is None:
         return None
     missing = _item_clarification("meal_item_target_required",
@@ -145,7 +171,7 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
               .filter(AgentMessage.conversation_id == conversation_id,
                       AgentMessage.id < current_message_id)
               .order_by(AgentMessage.id.desc()).limit(12).all())
-    # Allow a retry after a failed item-removal turn, not arbitrary intervening
+    # Allow a retry after a failed matching item-edit turn, not arbitrary intervening
     # conversation. Never skip a newer meal or let the model choose a target.
     while len(recent) >= 2:
         answer, source = recent[:2]
@@ -154,7 +180,9 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
                 or answer.meta.get("client_turn_finalized") is not True):
             return missing
         outcome = answer.meta.get("turn_outcome") or {}
-        if (_removal_item(source.content) and isinstance(outcome, dict)
+        retry_matches = (_identity_item(source.content) == identity if identity
+                         else bool(_removal_item(source.content)))
+        if (retry_matches and isinstance(outcome, dict)
                 and outcome.get("status") in {"blocked", "failed", "error"}):
             recent = recent[2:]
             continue
@@ -172,10 +200,14 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
     if card.get("type") != "diet_draft" or not isinstance(data, dict):
         return missing
     token = data.get("photo_draft_token")
-    if not isinstance(token, str) or not 1 <= len(token) <= 64:
+    has_draft = isinstance(token, str) and 1 <= len(token) <= 64
+    recorded_identity = bool(identity and data.get("recorded") is True
+        and type(data.get("user_id")) is int and data["user_id"] == user_id
+        and type(data.get("record_id")) is int and data["record_id"] > 0)
+    if not has_draft and not recorded_identity:
         return missing
     draft = (db.query(DietPhotoDraft).filter(
-        DietPhotoDraft.user_id == user_id, DietPhotoDraft.token == token).first())
+        DietPhotoDraft.user_id == user_id, DietPhotoDraft.token == token).first()) if has_draft else None
     if draft is not None:
         if (draft.source_message_id != source.id or draft.status != "consumed"
                 or not draft.consumed_record_id):
@@ -194,6 +226,10 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
                 or asset.classification != "food" or asset.photo_draft_token is not None
                 or not asset.diet_record_id):
             return missing
+        if recorded_identity and (data["record_id"] != asset.diet_record_id
+                or data.get("photo_asset_ids") != [asset.id]
+                or data.get("photo_asset_id") != asset.id):
+            return missing
         target_id, created_at = asset.diet_record_id, asset.created_at
     if created_at is None:
         return missing
@@ -207,15 +243,26 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
         return missing
     parts = [p.strip() for p in re.split(r"[+＋·、，,;；\n]", target.food_items or "") if p.strip()]
     matches = []
+    identity_replacement = None
     for index, part in enumerate(parts):
+        if identity:
+            item = _IDENTITY_ITEM.fullmatch(part)
+            if item and _descriptor_key(item["item"]) == _descriptor_key(food):
+                quantity = re.sub(r"\s+", "", item["portion"])
+                if not quantity or _IDENTITY_PORTION.fullmatch(quantity):
+                    matches.append(index)
+                    identity_replacement = identity[1] + item["portion"]
+            continue
         normalized = re.sub(r"\s+", "", part)
         if normalized == food or (normalized.startswith(food)
                 and _PORTION_SUFFIX.fullmatch(normalized[len(food):])):
             matches.append(index)
-    if len(matches) != 1 or len(parts) <= 1:
+    if len(matches) != 1 or (not identity and len(parts) <= 1):
         return _item_clarification("meal_item_ambiguous",
-            "无法唯一确认要去掉的食物及剩余内容；请在饮食编辑页核对，不会删除整餐。")
-    remaining = " + ".join(part for index, part in enumerate(parts) if index != matches[0])
+            "无法唯一确认要修正的食物；请在原餐卡片中点击修正本餐，核对食物和份量。")
+    remaining = " + ".join(
+        identity_replacement if identity and index == matches[0] else part
+        for index, part in enumerate(parts) if identity or index != matches[0])
     fields = ("meal_type", "food_items", "calories", "protein", "carbs", "fat", "fiber")
     action = build_diet_adjust_action(target.id, {key: getattr(target, key) for key in fields},
                                       current_record=target)
@@ -224,12 +271,18 @@ def _item_removal_proposal(db, user_id, conversation_id, current_message_id, tex
     meal_label = next((label for label, value in _MEALS.items() if value == target.meal_type), "这餐")
     card = {"type": "record_quality", "data": format_card_numbers({
         "domain": "diet", "title": f"{target.record_date} {meal_label}待修改",
-        "summary": f"准备去掉：{food}", "record_id": target.id,
+        "summary": (f"准备更正：{food} → {identity[1]}" if identity else f"准备去掉：{food}"),
+        "record_id": target.id,
         "expanded_sections": ["adjust_record"], "adjust_record": seed,
         "boundary": "尚未保存；确认后重新估算营养，只更新原记录，保留照片。",
     }), "actions": [action]}
     # This is a revision/command snapshot, not a display-only metric.
     card["data"]["adjust_record"] = dict(seed)
+    if identity:
+        return {"status": "waiting_for_user", "reason": "meal_identity_confirmation_required",
+                "cards": [card], "sources_used": ["本人照片与饮食记录绑定", "本轮食物名称补充"],
+                "reply": f"明白，{food}是{identity[1]}。已在下方预填更正，其他食物和份量保留。"
+                         "点击保存后重新估算营养并更新原餐，本轮尚未写入。"}
     return {"status": "waiting_for_user", "reason": "meal_item_confirmation_required",
             "cards": [card],
             "reply": f"尚未修改。准备从这份{meal_label}中去掉{food}，保留：{remaining}。"
@@ -285,7 +338,7 @@ def build_correction_proposal(db, user_id, conversation_id, current_message_id, 
     nutrition_proposal = _nutrition_repair_proposal(db, user_id, conversation_id, current_message_id, text, now)
     if nutrition_proposal is not None:
         return nutrition_proposal
-    item_proposal = _item_removal_proposal(db, user_id, conversation_id, current_message_id, text, now)
+    item_proposal = _item_edit_proposal(db, user_id, conversation_id, current_message_id, text, now)
     if item_proposal is not None:
         return item_proposal
     match = _REQUEST.fullmatch(str(text or "").strip())
