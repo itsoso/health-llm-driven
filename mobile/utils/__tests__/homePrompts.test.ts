@@ -19,7 +19,8 @@ it('keeps backend ranking and attribution after cleaning the display candidates'
     { text: '下一件事', key: 'second' },
   ];
   expect(selectHomeSuggestions(items)).toEqual([
-    { text: '看看记录', key: 'first' }, { text: '下一件事', key: 'second' },
+    { text: ' 看看记录 ', key: 'first' }, { text: '下一件事', key: 'second' },
   ]);
+  expect(selectHomeSuggestions(items)[0]).toBe(items[2]);
   expect(items[2].text).toBe(' 看看记录 ');
 });

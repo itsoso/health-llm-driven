@@ -10,7 +10,7 @@ export function selectHomeSuggestions<T extends { text: string }>(items: T[], li
     const text = item.text.trim();
     if (!text || isHomePhotoEntry(text) || seen.has(text)) return [];
     seen.add(text);
-    return [{ ...item, text }];
+    return [item];
   }).slice(0, limit);
 }
 

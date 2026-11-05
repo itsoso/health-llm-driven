@@ -41,13 +41,13 @@ export default function ComposerSuggestionsRow({
     >
       {starters.map((s, position) => (
         <Pressable
-          key={s.text}
+          key={s.text.trim()}
           style={({ pressed }) => [styles.chip, pressed && styles.chipPressed]}
           onPress={() => onSuggestionPress(s, position)}
           accessibilityRole="button"
-          accessibilityLabel={`向小气候提问: ${s.text}`}
+          accessibilityLabel={`向小气候提问: ${s.text.trim()}`}
         >
-          <Text style={txt.chip} numberOfLines={2}>{s.text}</Text>
+          <Text style={txt.chip} numberOfLines={2}>{s.text.trim()}</Text>
         </Pressable>
       ))}
     </ScrollView>
