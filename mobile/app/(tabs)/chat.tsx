@@ -317,7 +317,6 @@ export default function ChatScreen() {
   const [contextEntryActive, setContextEntryActive] = useState(params.contextEntry === '1');
   const [initialInput, setInitialInput] = useState<string | undefined>(undefined);
   const [initialInputKey, setInitialInputKey] = useState(0);
-  const [captureMealPhotoToken, setCaptureMealPhotoToken] = useState(0);
   const lastContextKey = useRef<string | null>(null);
 
   // P1: opener — chat tab mount 时拉一次, 用户发了第一条 message 后自动隐藏.
@@ -1336,7 +1335,9 @@ export default function ChatScreen() {
                       onPress={openLifeNavigation}
                       style={({ pressed }) => [styles.lifeNavigationEntry, pressed && { backgroundColor: C.green50 }]}
                     >
-                      <Ionicons name="compass-outline" size={21} color={C.green600} />
+                      <View style={styles.lifeNavigationIcon}>
+                        <Ionicons name="compass-outline" size={24} color={C.green600} />
+                      </View>
                       <View style={{ flex: 1 }}>
                         <Text style={txt.lifeNavigationTitle}>人生导航</Text>
                         <Text style={txt.lifeNavigationSubtitle}>今日安排 · 周计划 · 复盘</Text>
@@ -1439,9 +1440,7 @@ export default function ChatScreen() {
           && (
           <ComposerSuggestionsRow
             suggestions={starterSuggestions}
-            onCapturePhoto={() => setCaptureMealPhotoToken(token => token + 1)}
             onSuggestionPress={handleStarterPress}
-            showCapturePhoto={!startersOnboarding}
           />
         )}
         <ChatInputBar
@@ -1453,7 +1452,6 @@ export default function ChatScreen() {
           conversationId={conversationId}
           onMedicalExamImportResult={handleMedicalExamImportResult}
           autoFocusToken={composerFocusToken}
-          captureMealPhotoToken={captureMealPhotoToken}
         />
         <View testID="chat-bottom-spacer" style={{ height: bottomSpacerHeight }} />
       </View>
@@ -1667,16 +1665,20 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: revaSpacing.s3,
-    minHeight: 60,
-    marginHorizontal: revaSpacing.s4,
-    marginTop: revaSpacing.s2,
+    width: '100%',
+    maxWidth: 680,
+    alignSelf: 'center',
+    minHeight: 80,
+    marginTop: revaSpacing.s1,
     marginBottom: revaSpacing.s3,
-    padding: revaSpacing.s3,
-    borderRadius: revaRadii.md,
+    padding: revaSpacing.s4,
+    borderRadius: revaRadii.xl,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: C.line,
     backgroundColor: C.surface,
   },
+  lifeNavigationIcon: { width: 44, height: 44, borderRadius: revaRadii.md,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50 },
   scrollToBottomButton: {
     position: 'absolute',
     right: revaSpacing.s4,
@@ -1816,8 +1818,8 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  lifeNavigationTitle: { fontFamily: revaFonts.sans, fontSize: 15, fontWeight: '600', color: C.ink1 } as TextStyle,
-  lifeNavigationSubtitle: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, marginTop: 2, color: C.ink3 } as TextStyle,
+  lifeNavigationTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
+  lifeNavigationSubtitle: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, marginTop: 4, color: C.ink2 } as TextStyle,
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   loadEarlier: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, fontWeight: '700' } as TextStyle,
   timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,

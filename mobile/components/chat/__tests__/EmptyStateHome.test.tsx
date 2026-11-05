@@ -235,7 +235,7 @@ describe('EmptyStateHome', () => {
       text: '欢迎！先从这三件事之一开始。',
       source: 'memory_fact',
       quick_replies: [
-        { text: '拍照记一餐', action: 'photo_meal' },
+        { text: '记录体重', action: 'record_weight' },
         { text: '做到了' },
       ],
     } as any;
@@ -252,9 +252,9 @@ describe('EmptyStateHome', () => {
     );
 
     // action reply → 本地导航 handler, 不发文本。
-    fireEvent.press(getByLabelText('一键回复: 拍照记一餐'));
-    expect(onQuickAction).toHaveBeenCalledWith('photo_meal');
-    expect(onOpenerQuickReply).not.toHaveBeenCalledWith('拍照记一餐');
+    fireEvent.press(getByLabelText('一键回复: 记录体重'));
+    expect(onQuickAction).toHaveBeenCalledWith('record_weight');
+    expect(onOpenerQuickReply).not.toHaveBeenCalledWith('记录体重');
 
     // 同一 opener 里无 action 的 reply 仍走既有发送路径。
     fireEvent.press(getByLabelText('一键回复: 做到了'));
@@ -274,9 +274,8 @@ describe('EmptyStateHome', () => {
       />,
     );
 
-    // 三个首次价值动作都在, 点击各走对应 action。
-    fireEvent.press(getByLabelText('拍照记一餐'));
-    expect(onQuickAction).toHaveBeenCalledWith('photo_meal');
+    // Only the retained local actions remain; photo capture lives in attachments.
+    expect(queryByText('拍照记一餐')).toBeNull();
     fireEvent.press(getByLabelText('记录体重'));
     expect(onQuickAction).toHaveBeenCalledWith('record_weight');
     fireEvent.press(getByLabelText('连接设备'));
@@ -314,7 +313,8 @@ it('fresh conversation does not reuse a follow-up or unrelated medical memory', 
   />);
   expect(queryByText(/Garmin Readiness/)).toBeNull();
   expect(queryByText(/依据.*医嘱/)).toBeNull();
-  expect(getByText(/想记录饮食、体重/)).toBeTruthy();
-  fireEvent.press(getByLabelText('拍照记一餐'));
-  expect(action).toHaveBeenCalledWith('photo_meal');
+  expect(getByText(/早上好|中午好|下午好|晚上好|夜深了/)).toBeTruthy();
+  expect(queryByText('拍照记一餐')).toBeNull();
+  fireEvent.press(getByLabelText('记录体重'));
+  expect(action).toHaveBeenCalledWith('record_weight');
 });

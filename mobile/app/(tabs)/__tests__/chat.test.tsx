@@ -591,24 +591,15 @@ describe('ChatScreen', () => {
     expect(bar().props.autoFocusToken).toBeGreaterThan(initial);
   });
 
-  it('routes empty-state meal photo capture through the chat composer', async () => {
+  it('does not show the retired home photo shortcut or trigger capture on mount', async () => {
     mockFetchConversationStarters.mockResolvedValue({ opener: null, suggestions: null, onboarding: false });
     mockFetchMemoryOpener.mockResolvedValue([]);
-
-    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
+    const { UNSAFE_getAllByType, queryByLabelText } = render(<ChatScreen />);
     const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
-
-    await waitFor(() => {
-      expect(bar().props.autoFocusToken).toBeGreaterThan(0);
-    });
-    const before = bar().props.captureMealPhotoToken ?? 0;
-
-    await act(async () => {
-      fireEvent.press(getByLabelText('拍照记一餐'));
-    });
-
+    await waitFor(() => expect(bar().props.autoFocusToken).toBeGreaterThan(0));
+    expect(queryByLabelText('拍照记一餐')).toBeNull();
+    expect(bar().props.captureMealPhotoToken).toBeUndefined();
     expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
-    expect(bar().props.captureMealPhotoToken).toBeGreaterThan(before);
   });
 
   it('does NOT summon the keyboard when 小气候 has an opening message (opener present)', async () => {
@@ -648,7 +639,7 @@ describe('ChatScreen', () => {
     await waitFor(() => expect(getByText(/旧行动等待复盘/)).toBeTruthy());
     await act(async () => { fireEvent.press(getByLabelText('更多会诊操作')); });
     await act(async () => { fireEvent.press(getByLabelText('新建对话')); });
-    await waitFor(() => expect(getByText(/想记录饮食、体重/)).toBeTruthy());
+    await waitFor(() => expect(getByText(/直接告诉我就好/)).toBeTruthy());
     expect(queryByText(/旧行动等待复盘/)).toBeNull();
     mockSetMessages.mockClear();
     await act(async () => {
@@ -1114,7 +1105,7 @@ describe('ChatScreen', () => {
     await waitFor(() => {
       expect(mockFetchConversationStarters).toHaveBeenCalledTimes(2);
       expect(queryByText('复盘我最近一次跑步（5.2km / 30min / 均心率 145）')).toBeNull();
-      expect(getByText(/想记录饮食、体重/)).toBeTruthy();
+      expect(getByText(/直接告诉我就好/)).toBeTruthy();
     });
     expect(mockNewChat).toHaveBeenCalled();
   });
@@ -1239,23 +1230,14 @@ describe('ChatScreen', () => {
     expect(getByText('帮我提升补剂依从率（近7天完成率 42.9%）')).toBeTruthy();
   });
 
-  it('shows a composer-adjacent chips row with the camera chip first on empty chat', async () => {
+  it('shows only dynamic composer suggestions without the retired camera shortcut', async () => {
     mockFetchConversationStarters.mockResolvedValue({
       opener: null,
       suggestions: [{ text: '分析我的睡眠质量', key: 'sleep', priority: 10 }],
     });
 
-    const { UNSAFE_getAllByType, getByLabelText } = render(<ChatScreen />);
-    const bar = () => UNSAFE_getAllByType('ChatInputBar' as any)[0];
-
-    // Fixed 拍照记一餐 chip 存在 → 点击触发 ChatInputBar 直接拍照进当前对话。
-    await waitFor(() => {
-      expect(getByLabelText('拍照记一餐')).toBeTruthy();
-    });
-    const before = bar().props.captureMealPhotoToken ?? 0;
-    fireEvent.press(getByLabelText('拍照记一餐'));
-    expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
-    expect(bar().props.captureMealPhotoToken).toBeGreaterThan(before);
+    const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
+    expect(queryByLabelText('拍照记一餐')).toBeNull();
 
     // 动态 starter suggestion 也进 composer 行, 点击走既有发送。
     await waitFor(() => {
@@ -1325,7 +1307,7 @@ describe('ChatScreen', () => {
   });
 
   it('cold start with empty backend starters still suppresses DEFAULT_SUGGESTIONS', async () => {
-    // onboarding=true 但后端 suggestions 为空 → 仍不回注默认(只剩固定拍照 chip)。
+    // onboarding=true 但后端 suggestions 为空 → 仍不回注默认（保留体重和设备入口）。
     mockFetchConversationStarters.mockResolvedValue({
       opener: null,
       suggestions: null,
@@ -1334,7 +1316,7 @@ describe('ChatScreen', () => {
 
     const { getByLabelText, queryByText } = render(<ChatScreen />);
 
-    await waitFor(() => expect(getByLabelText('拍照记一餐')).toBeTruthy());
+    await waitFor(() => expect(getByLabelText('记录体重')).toBeTruthy());
     expect(queryByText('今天的健康状况如何？')).toBeNull();
     expect(queryByText('分析我的睡眠质量')).toBeNull();
   });
@@ -1370,9 +1352,9 @@ describe('ChatScreen', () => {
     fireEvent.press(getByLabelText('一键回复: 连接设备'));
     expect(mockPush).toHaveBeenCalledWith('/settings');
 
-    fireEvent.press(getByLabelText('一键回复: 拍照记一餐'));
-    expect(mockPush).toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
-    // 三个 action 全程零发送。
+    expect(() => getByLabelText('一键回复: 拍照记一餐')).toThrow();
+    expect(mockPush).not.toHaveBeenCalledWith('/diet?capture=photo&return_to=chat');
+    // 本地 action 全程零发送。
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
 

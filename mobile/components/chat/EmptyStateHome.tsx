@@ -1,25 +1,7 @@
-/**
- * EmptyStateHome — 小气候 会诊页「新对话」空状态首屏。
- *
- * 从 chat.tsx 抽出来（chat.tsx 500 行预算收紧）。纯 props-driven，
- * 所有 handler（发送 / 记忆跳转 / opener 快回复 / 埋点）仍留在 chat.tsx，
- * 本组件只负责排版与视觉。
- *
- * 「小气候先开口」(State A, 2026-07 founder CDS):
- * - system content 不再是卡片家具, 而是小气候在流里的开场消息气泡:
- *   30pt 小气候品牌头像 + 气泡(非对称圆角, surface + hairline)。
- * - 问候语(早上好/下午好…)折进气泡当第一句, opener.text 接在后面。
- * - 记忆 footnote 在气泡内部(hairline 分隔): 书签图标 + 清洗过的记忆文本 + 「校准」入口。
- * - quick replies 在气泡外下方(chips), 追加一个「换个话题」中性 chip。
- * - opener 为空但有记忆 → 退化成「记忆-only 气泡」(同一外壳, footnote 文本当正文)。
- * - 两者都无 → 只保留独立问候块。
- * - suggestion chips 已移到 composer 上方(chat.tsx), 本组件不再渲染「或者问我别的」。
- *
- * 记忆线索 snippet 客户端防御式清洗(后端并行修复中, 旧缓存文本仍可能到达):
- * 剥离 JSON 残渣 + 折叠空白; 清洗后若把残渣剥没了(<6 字) → 隐藏 footnote。
- */
-import React from 'react';
+/** Home presentation only: neutral greeting, owned content and existing explicit actions. */
+import React, { useEffect, useState } from 'react';
 import {
+  AppState,
   View,
   Text,
   TouchableOpacity,
@@ -36,12 +18,12 @@ import type {
 import { formatOpenerText } from './OpenerCard';
 import type { MemoryOpenerItem } from '../../services/memoryOpener';
 import { QUICK_ACTION_LABEL } from '../../utils/quickReplyAction';
+import { freshConversationPrompt, isHomePhotoEntry } from '../../utils/homePrompts';
 import XiaoBaAvatar from './XiaoBaAvatar';
 import {
   revaColors as C,
   revaRadii,
   revaSpacing,
-  revaShadows,
   revaFonts,
 } from '../../constants/revaTheme';
 
@@ -61,12 +43,11 @@ export type EmptyStateTodayFocus = {
 // 气泡外「换个话题」中性 chip — 发送语义走同一条 onQuickReply 路径。
 export const CHANGE_TOPIC_REPLY = '换个话题';
 
-// 第三态 Quick Start 卡的三个动作 (冷启动契约枚举)，与开场气泡视觉语言一致。
+// Retained local shortcuts; photo capture remains in the composer attachment menu.
 const QUICK_START_ACTIONS: {
   action: QuickReplyAction;
   icon: keyof typeof Ionicons.glyphMap;
 }[] = [
-  { action: 'photo_meal', icon: 'camera-outline' },
   { action: 'record_weight', icon: 'body-outline' },
   { action: 'connect_device', icon: 'watch-outline' },
 ];
@@ -159,6 +140,7 @@ export function buildVisibleOpenerReplies(
   const seen = new Set<string>();
 
   for (const reply of replies) {
+    if (isHomePhotoEntry(reply.text, reply.action)) continue;
     const label = reply.action
       ? QUICK_ACTION_LABEL[reply.action]
       : formatQuickReplyLabel(reply.text);
@@ -192,37 +174,6 @@ function quickActionIcon(action: QuickReplyAction): keyof typeof Ionicons.glyphM
   if (action === 'photo_meal') return 'camera-outline';
   if (action === 'record_weight') return 'body-outline';
   return 'watch-outline';
-}
-
-/**
- * 记忆 footnote — 气泡内部 hairline 分隔的一行: 书签图标 + 文本 + 「校准」入口。
- * 复用外层的 formatMemoryOpenerText 清洗结果(never render raw memory)。
- */
-function MemoryFootnote({
-  count,
-  typeLabel,
-  onOpenMemory,
-}: {
-  count: number;
-  typeLabel?: string;
-  onOpenMemory: () => void;
-}) {
-  return (
-    <TouchableOpacity
-      style={styles.footnote}
-      onPress={onOpenMemory}
-      hitSlop={8}
-      activeOpacity={0.62}
-      accessibilityRole="button"
-      accessibilityLabel="查看和校准 AI 记忆"
-    >
-      <Ionicons name="layers-outline" size={13} color={C.ink3} />
-      <Text style={txt.footnoteSource} numberOfLines={1}>
-        依据 {count} 条{typeLabel || '健康记录'}
-      </Text>
-      <Ionicons name="chevron-forward" size={13} color={C.ink3} />
-    </TouchableOpacity>
-  );
 }
 
 function TodayCockpit({
@@ -282,439 +233,152 @@ export default function EmptyStateHome({
   onOpenToday,
   showReplyActions = true,
 }: Props) {
-  const memoryText = formatMemoryOpenerText(memoryOpener);
-  const showMemory = memoryOpener.length > 0 && memoryText.length > 0;
-  const greeting = greetingForHour(new Date().getHours());
-  const todayCockpit = <TodayCockpit focus={todayFocus} onOpenToday={onOpenToday} />;
+  const [hour, setHour] = useState(() => new Date().getHours());
+  useEffect(() => {
+    const refresh = () => setHour(new Date().getHours());
+    const timer = setInterval(refresh, 60_000);
+    const subscription = AppState.addEventListener('change', state => {
+      if (state === 'active') refresh();
+    });
+    return () => { clearInterval(timer); subscription.remove(); };
+  }, []);
+  // A fresh conversation never presents an older opener, memory or Today focus.
+  const activeOpener = freshStart ? null : opener;
+  const memoryText = freshStart ? '' : formatMemoryOpenerText(memoryOpener);
+  const showMemory = !activeOpener && memoryText.length > 0;
+  const replies = activeOpener ? buildVisibleOpenerReplies(activeOpener.quick_replies || []) : [];
+  const showQuickStart = !activeOpener && !showMemory && (freshStart || onboarding);
+  const quickActions = QUICK_START_ACTIONS.filter(({ action }) => !freshStart || action !== 'connect_device');
 
-  if (freshStart) {
-    return (
-      <View style={styles.container}>
-        <View style={styles.bubbleRow}>
-          <XiaoBaAvatar size={AVATAR} />
-          <View style={styles.bubble}>
-            <Text style={txt.bubbleBody}>
-              <Text style={txt.greetingInline}>{greeting}。</Text>
-              想记录饮食、体重，或聊聊今天的健康情况？直接告诉我就好。
-            </Text>
-            {showReplyActions && onQuickAction && <View style={styles.quickStartRow}>
-              {QUICK_START_ACTIONS.filter(({ action }) => action !== 'connect_device').map(({ action, icon }) => (
-                <Pressable key={action} style={styles.quickStartAction}
-                  accessibilityRole="button" accessibilityLabel={QUICK_ACTION_LABEL[action]}
-                  onPress={() => onQuickAction(action)}>
-                  <Ionicons name={icon} size={16} color={C.green600} />
-                  <Text style={txt.quickStartLabel}>{QUICK_ACTION_LABEL[action]}</Text>
-                </Pressable>
-              ))}
-            </View>}
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // 开场内容只展示自己的来源，不把另一次记忆查询冒充为依据。
-  if (opener) {
-    const openerText = formatOpenerText(opener.text);
-    const replies = buildVisibleOpenerReplies(opener.quick_replies || []);
-    return (
-      <View style={styles.container}>
-        {todayCockpit}
-        <View style={styles.bubbleRow}>
-          <XiaoBaAvatar size={AVATAR} />
-          <View style={styles.bubble}>
-            <Text style={txt.bubbleBody}>
-              <Text style={txt.greetingInline}>{greeting}。</Text>
-              {openerText}
-            </Text>
-
-          </View>
-        </View>
-
-        {showReplyActions && replies.length > 0 && <View style={styles.repliesRow}>
-          {replies.map(({ key, label, reply, changeTopic }, i) => {
-            const tinted = i === 0;
-            // 带 action 的 reply → 本地导航 (不发文本); 否则走既有发送路径。
-            const onPress = reply.action && onQuickAction
-              ? () => onQuickAction(reply.action as QuickReplyAction)
-              : () => onOpenerQuickReply(reply.text);
-            // 无障碍标签: action reply 用动作标签; 文本 reply 保留原始文本(既有行为)。
-            const a11yLabel = reply.action ? label : reply.text;
-            return (
-              <Pressable
-                key={key}
-                style={({ pressed }) => [
-                  styles.reply,
-                  tinted ? styles.replyTinted : styles.replyNeutral,
-                  pressed && styles.replyPressed,
-                ]}
-                onPress={onPress}
-                accessibilityRole="button"
-                accessibilityLabel={changeTopic ? CHANGE_TOPIC_REPLY : `一键回复: ${a11yLabel}`}
-              >
-                {reply.action && (
-                  <Ionicons
-                    name={quickActionIcon(reply.action)}
-                    size={13}
-                    color={tinted ? C.green600 : C.ink2}
-                  />
-                )}
-                <Text style={[txt.reply, tinted ? txt.replyTinted : txt.replyNeutral]}>
-                  {label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </View>}
-      </View>
-    );
-  }
-
-  // opener 为空但有记忆 → 记忆-only 气泡(同一外壳, footnote 文本当正文)。
-  if (showMemory) {
-    return (
-      <View style={styles.container}>
-        {todayCockpit}
-        <View style={styles.greeting}>
-          <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
-          <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
-        </View>
-        <View style={styles.bubbleRow}>
-          <XiaoBaAvatar size={AVATAR} />
-          <View style={styles.bubble}>
-            <View style={styles.memorySourceBadge}>
-              <Ionicons name="bookmark-outline" size={11} color={C.green600} />
-              <Text style={txt.memorySourceBadge}>
-                记忆 · {memoryOpener[0]?.type_label || '健康'}
-              </Text>
-            </View>
-            <View style={styles.memoryOnlyLead}>
-              <Text style={txt.bubbleBody} numberOfLines={2}>{memoryText}</Text>
-            </View>
-            <View style={styles.memoryOnlyActionRow}>
-              <TouchableOpacity
-                onPress={onOpenMemory}
-                hitSlop={8}
-                accessibilityRole="button"
-                accessibilityLabel="查看和校准 AI 记忆"
-              >
-                <Text style={txt.footnoteAction}>校准</Text>
-              </TouchableOpacity>
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // 冷启动第三态 (onboarding 但 opener 因故未到 + 无记忆) → Quick Start 卡:
-  // 三个首次价值动作, 视觉与开场气泡一致 (小气候品牌头像 + 非对称圆角气泡 + Reva tokens)。
-  // opener 正常到达时上面已 return, 不会走到这里 → 不会气泡 + 卡 + chips 三层堆叠。
-  if (onboarding && onQuickAction) {
-    return (
-      <View style={styles.container}>
-        {todayCockpit}
-        <View style={styles.bubbleRow}>
-          <XiaoBaAvatar size={AVATAR} />
-          <View style={styles.bubble}>
-            <Text style={txt.bubbleBody}>
-              <Text style={txt.greetingInline}>{greeting}。</Text>
-              我是小气候，你的健康参谋。先从这三件事之一开始，我就能帮你看懂身体。
-            </Text>
-            <View style={styles.quickStartRow}>
-              {QUICK_START_ACTIONS.map(({ action, icon }) => (
-                <Pressable
-                  key={action}
-                  style={({ pressed }) => [styles.quickStartAction, pressed && styles.replyPressed]}
-                  onPress={() => onQuickAction(action)}
-                  accessibilityRole="button"
-                  accessibilityLabel={QUICK_ACTION_LABEL[action]}
-                >
-                  <View style={styles.quickStartIcon}>
-                    <Ionicons name={icon} size={16} color={C.green600} />
-                  </View>
-                  <Text style={txt.quickStartLabel} numberOfLines={1}>
-                    {QUICK_ACTION_LABEL[action]}
-                  </Text>
-                  <Ionicons name="chevron-forward" size={14} color={C.ink3} style={{ marginLeft: 'auto' }} />
-                </Pressable>
-              ))}
-            </View>
-          </View>
-        </View>
-      </View>
-    );
-  }
-
-  // 两者都无 → 只保留独立问候块。
   return (
-    <View style={styles.container}>
-      {todayCockpit}
-      <View style={styles.greeting}>
-        <Text style={txt.greetingHi} numberOfLines={1}>{greeting}</Text>
-        <Text style={txt.greetingSub} numberOfLines={1}>今天想从哪里开始？</Text>
+    <View style={[styles.container, !showReplyActions && styles.containerCompact]}>
+      <View style={styles.hero}>
+        <View style={styles.heroCopy}>
+          <Text accessibilityRole="header" style={[txt.greetingHi, !showReplyActions && txt.greetingCompact]}>
+            {greetingForHour(hour)}
+          </Text>
+          <Text style={txt.greetingSub}>
+            {showQuickStart ? freshConversationPrompt(hour).text : '今天想从哪里开始？'}
+          </Text>
+        </View>
+        <XiaoBaAvatar size={showReplyActions ? 56 : 40} compact />
       </View>
+
+      {!freshStart && <TodayCockpit focus={todayFocus} onOpenToday={onOpenToday} />}
+
+      {activeOpener && (
+        <View style={styles.contentCard}>
+          <Text style={txt.eyebrow}>小气候想和你聊聊</Text>
+          <Text style={txt.bubbleBody}>{formatOpenerText(activeOpener.text)}</Text>
+          {showReplyActions && replies.length > 0 && (
+            <View style={styles.repliesRow}>
+              {replies.map(({ key, label, reply, changeTopic }, index) => {
+                const primary = index === 0 && !changeTopic;
+                const onPress = reply.action && onQuickAction
+                  ? () => onQuickAction(reply.action as QuickReplyAction)
+                  : () => onOpenerQuickReply(reply.text);
+                return (
+                  <Pressable key={key} onPress={onPress}
+                    style={({ pressed }) => [styles.reply, primary ? styles.replyPrimary : styles.replyNeutral,
+                      pressed && styles.replyPressed]}
+                    accessibilityRole="button"
+                    accessibilityLabel={changeTopic ? CHANGE_TOPIC_REPLY : `一键回复: ${reply.action ? label : reply.text}`}>
+                    {reply.action && <Ionicons name={quickActionIcon(reply.action)} size={16}
+                      color={primary ? C.greenOn : C.green600} />}
+                    <Text style={[txt.reply, primary && txt.replyPrimary]}>{label}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          )}
+        </View>
+      )}
+
+      {showMemory && (
+        <View style={styles.contentCard}>
+          <View style={styles.memorySourceBadge}>
+            <Ionicons name="bookmark-outline" size={14} color={C.green600} />
+            <Text style={txt.memorySourceBadge}>记忆 · {memoryOpener[0]?.type_label || '健康'}</Text>
+          </View>
+          <Text style={txt.bubbleBody} numberOfLines={2}>{memoryText}</Text>
+          <TouchableOpacity onPress={onOpenMemory} activeOpacity={0.65}
+            style={styles.memoryAction} accessibilityRole="button" accessibilityLabel="查看和校准 AI 记忆">
+            <Text style={txt.footnoteAction}>查看与校准</Text>
+            <Ionicons name="chevron-forward" size={16} color={C.green600} />
+          </TouchableOpacity>
+        </View>
+      )}
+
+      {showQuickStart && showReplyActions && onQuickAction && (
+        <View style={styles.quickStartRow}>
+          {quickActions.map(({ action, icon }) => (
+            <Pressable key={action} onPress={() => onQuickAction(action)}
+              style={({ pressed }) => [styles.quickStartAction, pressed && styles.replyPressed]}
+              accessibilityRole="button" accessibilityLabel={QUICK_ACTION_LABEL[action]}>
+              <View style={styles.quickStartIcon}><Ionicons name={icon} size={20} color={C.green600} /></View>
+              <Text style={txt.quickStartLabel}>{QUICK_ACTION_LABEL[action]}</Text>
+              <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
-const AVATAR = 30;
-
 const styles = StyleSheet.create({
-  container: {
-    paddingHorizontal: revaSpacing.s4,
-    paddingTop: revaSpacing.s3,
-    gap: revaSpacing.s3,
-  },
-  greeting: {
-    paddingHorizontal: revaSpacing.s1,
-    paddingTop: revaSpacing.s2,
-    paddingBottom: revaSpacing.s1,
-  },
-  bubbleRow: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: revaSpacing.s2,
-    paddingTop: revaSpacing.s2,
-  },
-  bubble: {
-    flexShrink: 1,
-    maxWidth: '88%',
-    paddingHorizontal: revaSpacing.s1,
-    paddingVertical: 2,
-  },
-  footnote: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 5,
-    minHeight: 28,
-    marginTop: revaSpacing.s2,
-    paddingHorizontal: 0,
-  },
-  memorySourceBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    alignSelf: 'flex-start',
-    gap: 3,
-    minHeight: 22,
-    paddingHorizontal: 7,
-    paddingVertical: 2,
-    marginBottom: 4,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-  },
-  memoryOnlyLead: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 6,
-  },
-  memoryOnlyActionRow: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    marginTop: revaSpacing.s2,
-    paddingTop: revaSpacing.s2,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-  },
-  repliesRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 6,
-    paddingLeft: AVATAR + revaSpacing.s2,
-  },
-  reply: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 4,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: 7,
-    borderRadius: revaRadii.pill,
-    borderWidth: StyleSheet.hairlineWidth,
-  },
-  replyTinted: {
-    backgroundColor: C.green50,
-    borderColor: C.green100,
-  },
-  replyNeutral: {
-    backgroundColor: C.surface,
-    borderColor: C.line,
-  },
-  replyPressed: { opacity: 0.6 },
-  // Quick Start 卡 (冷启动第三态): 气泡内部, hairline 分隔的动作列。
-  quickStartRow: {
-    marginTop: revaSpacing.s3,
-    paddingTop: revaSpacing.s2,
-    borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: C.line,
-    gap: revaSpacing.s2,
-  },
-  quickStartAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s2,
-    minHeight: 44,
-    paddingHorizontal: revaSpacing.s2,
-    paddingVertical: revaSpacing.s2,
-    borderRadius: revaRadii.md,
-    backgroundColor: C.paper2,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-  },
-  quickStartIcon: {
-    width: 28,
-    height: 28,
-    borderRadius: revaRadii.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: C.green50,
-  },
-  todayCockpit: {
-    backgroundColor: C.surface,
-    borderRadius: revaRadii.lg,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    paddingHorizontal: revaSpacing.s3,
-    paddingVertical: revaSpacing.s3,
-    gap: revaSpacing.s2,
-    ...revaShadows.sm,
-  },
-  todayCockpitHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: revaSpacing.s2,
-  },
-  todayCockpitMark: {
-    width: 30,
-    height: 30,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  todayCockpitPill: {
-    maxWidth: 96,
-    borderRadius: revaRadii.pill,
-    backgroundColor: C.green50,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.green100,
-    paddingHorizontal: revaSpacing.s2,
-    paddingVertical: 4,
-  },
-  todayCockpitBody: {
-    paddingLeft: 38,
-    gap: 2,
-  },
-  todayCockpitAction: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    gap: 2,
-  },
+  // The FlatList already owns the page gutter; do not inset the home a second time.
+  container: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingTop: revaSpacing.s6,
+    paddingBottom: revaSpacing.s4, gap: revaSpacing.s5 },
+  containerCompact: { paddingTop: revaSpacing.s2, gap: revaSpacing.s3 },
+  hero: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s4, paddingBottom: revaSpacing.s2 },
+  heroCopy: { flex: 1, minWidth: 0 },
+  contentCard: { backgroundColor: C.surface, borderRadius: revaRadii.xl, padding: revaSpacing.s5,
+    borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, gap: revaSpacing.s3 },
+  repliesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2,
+    paddingTop: revaSpacing.s2 },
+  reply: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
+    minHeight: 44, maxWidth: '100%', paddingHorizontal: revaSpacing.s4, paddingVertical: revaSpacing.s2,
+    borderRadius: revaRadii.md },
+  replyPrimary: { backgroundColor: C.green600 },
+  replyNeutral: { backgroundColor: C.paper2 },
+  replyPressed: { opacity: 0.65 },
+  memorySourceBadge: { flexDirection: 'row', alignItems: 'center', gap: 6 },
+  memoryAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
+    gap: revaSpacing.s1, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
+    paddingTop: revaSpacing.s2 },
+  quickStartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s3 },
+  quickStartAction: { flexGrow: 1, flexBasis: 145, minHeight: 72, flexDirection: 'row',
+    alignItems: 'center', gap: revaSpacing.s2, padding: revaSpacing.s3, borderRadius: revaRadii.lg,
+    backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
+  quickStartIcon: { width: 36, height: 36, borderRadius: revaRadii.sm,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50 },
+  todayCockpit: { backgroundColor: C.green50, borderRadius: revaRadii.xl, padding: revaSpacing.s5,
+    gap: revaSpacing.s3, borderWidth: StyleSheet.hairlineWidth, borderColor: C.green100 },
+  todayCockpitHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
+  todayCockpitMark: { width: 36, height: 36, borderRadius: revaRadii.sm, backgroundColor: C.surface,
+    alignItems: 'center', justifyContent: 'center' },
+  todayCockpitPill: { maxWidth: 96, borderRadius: revaRadii.pill, backgroundColor: C.surface,
+    paddingHorizontal: revaSpacing.s2, paddingVertical: revaSpacing.s1 },
+  todayCockpitBody: { gap: revaSpacing.s1 },
+  todayCockpitAction: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', gap: 4, minHeight: 44 },
 });
 
 const txt = {
-  greetingHi: {
-    fontFamily: revaFonts.sans,
-    fontSize: 20,
-    fontWeight: '700',
-    color: C.ink1,
-  } as TextStyle,
-  greetingSub: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    color: C.ink3,
-    fontWeight: '500',
-    marginTop: 2,
-  } as TextStyle,
-  bubbleBody: {
-    fontFamily: revaFonts.sans,
-    fontSize: 15,
-    lineHeight: 22,
-    color: C.ink1,
-    fontWeight: '400',
-    flexShrink: 1,
-  } as TextStyle,
-  greetingInline: {
-    fontWeight: '600',
-    color: C.ink1,
-  } as TextStyle,
-  footnoteSource: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    color: C.ink3,
-    lineHeight: 16,
-    fontWeight: '600',
-  } as TextStyle,
-  memorySourceBadge: {
-    fontFamily: revaFonts.sans,
-    fontSize: 10,
-    lineHeight: 14,
-    color: C.green600,
-    fontWeight: '700',
-  } as TextStyle,
-  footnoteAction: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    color: C.green600,
-    fontWeight: '700',
-  } as TextStyle,
-  reply: {
-    fontFamily: revaFonts.sans,
-    fontSize: 13,
-    fontWeight: '600',
-  } as TextStyle,
-  replyTinted: {
-    color: C.green600,
-  } as TextStyle,
-  replyNeutral: {
-    color: C.ink2,
-  } as TextStyle,
-  quickStartLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 14,
-    fontWeight: '700',
-    color: C.ink1,
-  } as TextStyle,
-  todayCockpitEyebrow: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.green600,
-  } as TextStyle,
-  todayCockpitLabel: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '600',
-    color: C.ink3,
-    marginTop: 1,
-  } as TextStyle,
-  todayCockpitPill: {
-    fontFamily: revaFonts.sans,
-    fontSize: 11,
-    fontWeight: '800',
-    color: C.green600,
-  } as TextStyle,
-  todayCockpitTitle: {
-    fontFamily: revaFonts.sans,
-    fontSize: 15,
-    lineHeight: 21,
-    fontWeight: '800',
-    color: C.ink1,
-  } as TextStyle,
-  todayCockpitSub: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    lineHeight: 17,
-    fontWeight: '500',
-    color: C.ink3,
-  } as TextStyle,
-  todayCockpitAction: {
-    fontFamily: revaFonts.sans,
-    fontSize: 12,
-    fontWeight: '800',
-    color: C.green600,
-  } as TextStyle,
+  greetingHi: { fontFamily: revaFonts.sans, fontSize: 30, lineHeight: 38, fontWeight: '700', color: C.ink1 } as TextStyle,
+  greetingCompact: { fontSize: 24, lineHeight: 32 } as TextStyle,
+  greetingSub: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 24, color: C.ink2, marginTop: revaSpacing.s2 } as TextStyle,
+  eyebrow: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.green600, fontWeight: '600' } as TextStyle,
+  bubbleBody: { fontFamily: revaFonts.sans, fontSize: 16, lineHeight: 26, color: C.ink1, fontWeight: '400' } as TextStyle,
+  reply: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, color: C.ink2, fontWeight: '600', flexShrink: 1 } as TextStyle,
+  replyPrimary: { color: C.greenOn } as TextStyle,
+  memorySourceBadge: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.green600, fontWeight: '600' } as TextStyle,
+  footnoteAction: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, fontWeight: '600', color: C.green600 } as TextStyle,
+  quickStartLabel: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, flex: 1 } as TextStyle,
+  todayCockpitEyebrow: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.green600 } as TextStyle,
+  todayCockpitLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
+  todayCockpitPill: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.green600 } as TextStyle,
+  todayCockpitTitle: { fontFamily: revaFonts.sans, fontSize: 17, lineHeight: 25, fontWeight: '600', color: C.ink1 } as TextStyle,
+  todayCockpitSub: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, color: C.ink2 } as TextStyle,
+  todayCockpitAction: { fontFamily: revaFonts.sans, fontSize: 13, fontWeight: '600', color: C.green600 } as TextStyle,
 };

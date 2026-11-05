@@ -4,14 +4,14 @@
  * 「小气候先开口」把 opener 抬成流里的开场气泡后, 建议 chip 从空状态卡片
  * 下沉到贴着输入框的一行, 让「想问别的」的动作离手最近。
  *
- * - 第一颗 FIXED「拍照记一餐」(相机图标) → 触发 ChatInputBar 拍照并把照片作为当前对话消息发送。
- * - 其后最多 2 颗动态 starter suggestion, 单行 numberOfLines 1, 点击走既有 send handler。
- * - chip 视觉: surface + hairline + pill, 13px ink2; 相机 chip 图标 green600。
+ * - 最多 2 颗去重后的动态 starter suggestion, 点击走既有 send handler。
+ * - 拍照统一由附件菜单提供，兼容过滤旧后端返回的拍照推荐。
+ * - chip 视觉: surface + hairline + pill, 13px ink2。
  * - 只在空对话且非多选态渲染(由 chat.tsx 门控), 本组件不做可见性判断。
  */
 import React from 'react';
 import { ScrollView, Pressable, Text, StyleSheet, TextStyle } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { selectHomeSuggestions } from '../../utils/homePrompts';
 import type { EmptyStateSuggestion } from './EmptyStateHome';
 import {
   revaColors as C,
@@ -22,18 +22,15 @@ import {
 
 interface Props {
   suggestions: EmptyStateSuggestion[];
-  onCapturePhoto: () => void;
   onSuggestionPress: (s: EmptyStateSuggestion, position: number) => void;
-  showCapturePhoto?: boolean;
 }
 
 export default function ComposerSuggestionsRow({
   suggestions,
-  onCapturePhoto,
   onSuggestionPress,
-  showCapturePhoto = true,
 }: Props) {
-  const starters = suggestions.slice(0, 2);
+  const starters = selectHomeSuggestions(suggestions);
+  if (starters.length === 0) return null;
   return (
     <ScrollView
       horizontal
@@ -42,17 +39,6 @@ export default function ComposerSuggestionsRow({
       contentContainerStyle={styles.row}
       style={styles.scroll}
     >
-      {showCapturePhoto ? (
-        <Pressable
-          style={({ pressed }) => [styles.chip, styles.chipCamera, pressed && styles.chipPressed]}
-          onPress={onCapturePhoto}
-          accessibilityRole="button"
-          accessibilityLabel="拍照记一餐"
-        >
-          <Ionicons name="camera-outline" size={15} color={C.green600} />
-          <Text style={txt.chip} numberOfLines={1}>拍照记一餐</Text>
-        </Pressable>
-      ) : null}
       {starters.map((s, position) => (
         <Pressable
           key={s.text}
@@ -61,7 +47,7 @@ export default function ComposerSuggestionsRow({
           accessibilityRole="button"
           accessibilityLabel={`向小气候提问: ${s.text}`}
         >
-          <Text style={txt.chip} numberOfLines={1}>{s.text}</Text>
+          <Text style={txt.chip} numberOfLines={2}>{s.text}</Text>
         </Pressable>
       ))}
     </ScrollView>
@@ -83,7 +69,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 5,
-    height: 36,
+    minHeight: 44,
+    paddingVertical: revaSpacing.s2,
     paddingHorizontal: revaSpacing.s3,
     borderRadius: revaRadii.pill,
     backgroundColor: C.surface,
@@ -91,16 +78,14 @@ const styles = StyleSheet.create({
     borderColor: C.line,
     maxWidth: 260,
   },
-  chipCamera: {
-    gap: 6,
-  },
   chipPressed: { opacity: 0.6 },
 });
 
 const txt = {
   chip: {
     fontFamily: revaFonts.sans,
-    fontSize: 13,
+    fontSize: 14,
+    lineHeight: 21,
     color: C.ink2,
     fontWeight: '600',
     flexShrink: 1,
