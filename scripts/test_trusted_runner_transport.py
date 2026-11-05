@@ -110,8 +110,9 @@ def test_workflow_transport_is_after_exact_gate_and_before_any_secret():
     preflight = workflow['jobs']['preflight']
     steps = preflight['steps']
     index = next(i for i,s in enumerate(steps) if 'trusted_runner_transport.py' in s.get('run',''))
-    assert index > 0
-    assert 'trusted_release_gate.py' in steps[index-1]['run']
+    assert index > 1
+    assert 'trusted_release_gate.py' in steps[index-2]['run']
+    assert 'release_dispatch_admission.py' in steps[index-1]['run']
     assert 'secrets.' not in str(preflight)
     assert steps[index].get('continue-on-error') is not True
     assert '--host' not in steps[index]['run']

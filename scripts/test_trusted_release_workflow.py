@@ -194,6 +194,19 @@ def test_actions_are_immutable_and_preflight_has_no_production_secret():
                 assert "secrets." not in str(step)
 
 
+def test_duplicate_admission_is_before_transport_environment_and_production_credentials():
+    steps = WORKFLOW["jobs"]["preflight"]["steps"]
+    assert steps[1]["name"] == "Admit unique exact release dispatch"
+    assert "--token-stdin" in steps[1]["run"]
+    assert steps[1]["env"] == {
+        "GH_TOKEN": "${{ github.token }}",
+        "TARGET_SHA": "${{ inputs.sha }}",
+        "RELEASE_TARGET": "${{ inputs.target }}",
+    }
+    assert "secrets." not in str(steps[1])
+    assert "Probe fixed production" in steps[2]["name"]
+
+
 @pytest.mark.parametrize("key,hostkeys", [("", ""), ("fake-private-key", ""), ("", "fake-host-key")])
 def test_missing_backend_credential_fails_before_ssh(key, hostkeys):
     body = WORKFLOW["jobs"]["backend"]["steps"][1]["run"]

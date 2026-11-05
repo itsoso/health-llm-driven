@@ -15,7 +15,7 @@ def module(name):
     return result
 
 
-@pytest.mark.parametrize("action", ["check-backend-v1", "run-backend-v1"])
+@pytest.mark.parametrize("action", ["check-backend", "run-backend", "check-backend-v1", "run-backend-v1"])
 def test_backend_rpc_is_an_explicit_fixed_action(action):
     server = module("trusted_release_server")
     sha = "a" * 40
@@ -57,6 +57,16 @@ def test_backend_fast_workflow_does_not_change_native_or_ota_admission():
         assert "backend-v1" in str(workflow["jobs"][name])
     for name in ("ios-build", "testflight"):
         assert "backend-v1" not in str(workflow["jobs"][name])
+
+
+def test_backend_target_uses_backend_specific_full_ci_commands():
+    workflow = yaml.safe_load((ROOT / ".github/workflows/trusted-release.yml").read_text())
+    readiness = workflow["jobs"]["build-permission"]["steps"][-1]["env"]
+    deployment = workflow["jobs"]["backend"]["steps"][-1]["env"]
+    assert "inputs.target == 'backend' && 'check-backend'" in readiness["RELEASE_RPC"]
+    assert "inputs.target == 'backend' && 'run-backend'" in deployment["BACKEND_RPC"]
+    assert "check-backend-v1" in readiness["RELEASE_RPC"]
+    assert "run-backend-v1" in deployment["BACKEND_RPC"]
 
 
 @pytest.mark.parametrize('bad_result', [None, 'skipped', 'cancelled', 'failure', 'unknown'])

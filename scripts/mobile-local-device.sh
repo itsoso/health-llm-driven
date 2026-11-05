@@ -70,7 +70,7 @@ cat <<EOF
 
 后续日常迭代 (装机后):
   - 开发内环  → ./scripts/mobile-fast-device.sh metro (Fast Refresh)
-  - JS/TS 验收 → ./scripts/mobile-ota.sh production "..." (设备前台下载,确认后应用)
+  - JS/TS production → trusted-ota.yml 同 SHA 先 validate 后 publish
   - Release 验收 → ./scripts/mobile-fast-device.sh release (复用 DerivedData,不重装 Pods)
   - native 结构变化 → 才重跑本脚本 (prebuild + Pods)
 

@@ -1,0 +1,237 @@
+{
+  "candidate_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+  "pr": 310,
+  "full_main_ci": {
+    "run_id": 41872305423,
+    "attempt": 3,
+    "result": "success",
+    "jobs_success": 32
+  },
+  "validate_run": 41944101334,
+  "backend_run": 41947529871,
+  "backend_result": "success",
+  "application_g4": {
+    "reviewed_commit": "209fbb8c6a12505d3e6f912522043f1db7256e0a",
+    "main_content_binding": "GO tree identical to reviewed candidate plus dossier updates"
+  },
+  "validation": {
+    "focused": 39,
+    "ci_mode": 4030,
+    "postgresql_17_non_superuser": 49,
+    "independent_neighbor": 275,
+    "operator_contract": 14,
+    "live_model_gate": {
+      "configuration": "existing_provider_allowlist",
+      "database": "sqlite_memory",
+      "elapsed_seconds": 68.93,
+      "exit_code": 0,
+      "log_sha256": "10792dc83579c8b727329d7ae27d64747f3333463a398bd67eff651336c82f90",
+      "synthetic_only": true
+    }
+  },
+  "production_readback": {
+    "completed_sha256": "fb919167c9b5cd05f99a1f21d84e74f61c42acd1572c0ad265689ae29587c753",
+    "http_statuses": {
+      "http://127.0.0.1:8000/api/v1/auth/me": 401,
+      "http://127.0.0.1:8000/api/v1/health": 200,
+      "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+      "https://health.executor.life/api/v1/auth/me": 401,
+      "https://health.executor.life/api/v1/health": 200,
+      "https://health.executor.life/api/v1/supplements/me/records": 401
+    },
+    "lease_absent": true,
+    "observed_at": 1793841810,
+    "readonly_synthetic_meal_smoke": "passed_no_database_or_model_calls",
+    "release": {
+      "sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "state": "SUCCEEDED"
+    },
+    "runtime": {
+      "candidate_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "mode": "code-only-no-backup",
+      "phase": "COMMITTED",
+      "terminal_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c"
+    },
+    "services": {
+      "celery-beat": "MainPID=1551052\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST",
+      "celery-worker": "MainPID=1551051\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST",
+      "health-backend": "MainPID=1551049\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST"
+    },
+    "sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "3a39abf47125be724852f1bc26f214802dcd53c387d979794a63a512adc908dc",
+      "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+      "backend/app/services/utterance_intent_classifier.py": "33739bb9cd338e84919467db968dc94fb1737274a36c487e5546cc290757663e",
+      "backend/tests/test_meal_count_clarification.py": "77f24a54e4cdcdb9223ff1c5f46a79f24dfb53804a7e15eef0677ff63f20c848"
+    }
+  },
+  "authorization_readback": {
+    "observed_at": 1793841447,
+    "state": "AUTHORIZATION_READBACK_PASSED",
+    "sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+    "policy_sha256": "ee25ef8318ac2d3d7d41988ed76d4b0858cfc94d24031254b13ea4af8275ec0c",
+    "executor_sha256": "e352fa0ff71dc08d79c22b6c67e4e06114bddd1ca755c6e429cac13c78873f82",
+    "retirement_sha256": "6949731b90c060910e7f90290d8980d8987013f39aa14cde591790cd66905eff",
+    "revocation_sha256": "98b9843ae02fa076a174fad6e257cf54e4a3d1433e40c622665b820ce42ddcde",
+    "lease_absent": true
+  },
+  "preserved_failures": {
+    "ci_attempt_1": "live confirmation revision mismatch then corrected; macOS hosted runner capacity cancellation",
+    "ci_attempt_2": "macOS hosted runner capacity cancellation; all other 31 jobs passed",
+    "local_invocation": "wrong no_site runtime rejected before operation directory/provider/mint; original evidence retained and exact correct invocation independently reviewed",
+    "credential": {
+      "candidate_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "observed_at": 1793840433,
+      "original_operation": "/private/tmp/reva-release-ops/meal-count-9b186e4f-predeploy-read-credential-v1",
+      "files": {
+        "exit.json": "15a32754099a7c22a7057426ce5b5921f87399393e4682b9fc45109a2273a7aa",
+        "intent.json": "72bb7b8603024e9f99d6da6e47bf1b96225e0c9f23c8768825a285f6a5a31c77",
+        "minted.json": "ae3d63cbf59c0567d0854550226752b917db21f6e7309e92b1140db1beb4140d",
+        "phase-01.json": "1e370d1a3407f41919a92cfebe754d1c64e85b9e03e194d96f8740b61a5f3dc6",
+        "phase-02.json": "1bdf3cf460cdbc19ac0e1ac4211aa715022b9c6e0b41263cc4f52527c2453c31",
+        "phase-03.json": "c3820c948afcf42a5c356d2b4d16f15eeedf3e3f5d740631783329bd164eec97",
+        "phase-04.json": "7a1bf06444a27465bb4142b1e8777b24fcff2c38c7b180c9647a94b0fb15bd9d",
+        "phase-05.json": "402e9d27db061f54e9b601c63a29bbfc471c3ec9543724b35ba796e3e3b09606",
+        "phase-06.json": "bacadf2e3f6d69369e3eeb470cd7abed39a2e8d1dff360f003cf841d856e2a24",
+        "phase-07.json": "7eab33674e81a2741144c21894f559718fee835ba66bb2e5ef36ffc929dd0080",
+        "phase-08.json": "b9c4c39cf8f7387668a7fa7974b3ffcfc217806e86a947546dbb0cbec96cbe1e",
+        "phase-09.json": "55e1925baa50ac38731a535b25ce0cb474deb0b96500b4380bfd5a8f5cba7ddf",
+        "phase-10.json": "272eea03aa217613204ce38bd8249b776005c0a43bc2eee11b18c250e1ee2f55",
+        "phase-11.json": "827efa8047705aef0235e18b3d0a3eb54ef857894417f2275f616096a5ed631c",
+        "phase-12.json": "07f4f4ece4dd2742da0b4dd7a43cdad9ea2daa45e006f3400882683b8954d894",
+        "phase-13.json": "5ebfef2eead71a718a26c6e01ce69ed983132cd628d88aab3bacbc9420d2a92f",
+        "phase-14.json": "970bffd32358806c1248d0f09966459bb02a33f63607f418e33604c866b63a36",
+        "phase-15.json": "ce6f0e29d70c4c1d2e2b40dca9877094fe3448b043b92bbf5ade332d4c8d7c94",
+        "phase-16.json": "f855ca041d8689e691ebb2117b53ac387ac7aab53258c887309d06767619c1fa",
+        "phase-17.json": "08ce6f699243aaefda14da6d4e1b155a7adf213abc78317554ab09c20fa19ae0",
+        "phase-18.json": "ff6921fd50c6ebc725fd25dc1e7871a886060b14ca3838aa6494cacbd5ae7ac4",
+        "refresh.result.json": "e99cbc4f9ddda4323fb7f40acae90136816c27fa293c60370d74d6f8babe965e",
+        "refresh.stderr": "146384f98d05cdffecceabb5b3f51fab18ae8d5d53a3aa19f76c15faa02e0798",
+        "refresh.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "script_sha256": "b6a0cebd80d74d9e498da6508728628c52cc2532996e858676ac0e855cb74d01",
+      "remote_script_sha256": "cfa7df1db3d70205fe73b95e1b2e401a8e9ac748d793afefff2a6e9758362bfe",
+      "minted_expiry": 1793843909,
+      "state": "MINTED_REMOTE_REJECTED_PRESERVE_NO_RETRY"
+    }
+  },
+  "credential_recovery": {
+    "completed_sha256": "f82ce35d933608d7733ba89eb0118c786f7f2f671c34a740ef96f828344af9e4",
+    "completed": {
+      "after_sha256": "312c51c734f8385931ff58ec991f3eed7c317d2db33af37dcdf15d40f2fcb30d",
+      "app_id": 5376682,
+      "attempt": "meal-count-9b186e4f-backend-only-continuation-v1",
+      "authorized_sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+      "before_sha256": "616f95c4cc34fea39c2bd977e10544e5595e84e3608852133ebae34b0f2b12f5",
+      "candidate_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "expires_at": 1793844559,
+      "installation_id": 172918270,
+      "old_credential_expiry": 1793811589,
+      "production_sha": "7665d92c38fc89b8defc0c8cf2153a7e7892158c",
+      "recovery": {
+        "original_attempt": "meal-count-9b186e4f-predeploy-read-credential-v1",
+        "original_evidence_sha256": {
+          "/tmp/reva-meal-count-9b186e4f-credential-invocation-diagnostic-g4.json": "34fd0e68c45e6aa65745f5b0859d3532b2a5f3106bef46f1e2ba9b8b0200286f",
+          "/tmp/reva-meal-count-9b186e4f-credential-invocation-g4.json": "9aefa610907382ab47e4496546974f33b530658acf117cd9bf0fdb8590af60fa",
+          "/tmp/reva-meal-count-9b186e4f-refresh-failure-review.json": "911ae1dd3076e28f40918e4ecb914d8898db88d7d67762e7ff96bcf7ab3a511d",
+          "/tmp/reva-meal-count-credential-v1-failure-evidence.json": "f7c31b69cf1b232dae73577f89ef1f913c1b7a2355b7069b2ac3b9d060e9b912",
+          "/tmp/reva-read-credential-provider-meal-count-9b186e4f-v1.py": "57605fccd89cda3ed99badfaf8b93764baf9ae09d5800dd9b7b7339dce202451",
+          "/tmp/reva-refresh-read-credential-meal-count-9b186e4f-v1-g4.json": "ca75eb07fb4873880727476601a1628c078d7d99f7709b979057d4989a04ea75",
+          "/tmp/reva-refresh-read-credential-meal-count-9b186e4f-v1-remote.py": "cfa7df1db3d70205fe73b95e1b2e401a8e9ac748d793afefff2a6e9758362bfe",
+          "/tmp/reva-refresh-read-credential-meal-count-9b186e4f-v1.py": "b6a0cebd80d74d9e498da6508728628c52cc2532996e858676ac0e855cb74d01"
+        },
+        "original_minted_token_expires_at": 1793843909,
+        "original_token_status": "validated_read_only_not_installed_not_recoverable_not_revoked_may_remain_valid_until_expiry",
+        "original_transport_terminated": true,
+        "original_wal_sha256": {
+          "exit.json": "15a32754099a7c22a7057426ce5b5921f87399393e4682b9fc45109a2273a7aa",
+          "intent.json": "72bb7b8603024e9f99d6da6e47bf1b96225e0c9f23c8768825a285f6a5a31c77",
+          "minted.json": "ae3d63cbf59c0567d0854550226752b917db21f6e7309e92b1140db1beb4140d",
+          "phase-01.json": "1e370d1a3407f41919a92cfebe754d1c64e85b9e03e194d96f8740b61a5f3dc6",
+          "phase-02.json": "1bdf3cf460cdbc19ac0e1ac4211aa715022b9c6e0b41263cc4f52527c2453c31",
+          "phase-03.json": "c3820c948afcf42a5c356d2b4d16f15eeedf3e3f5d740631783329bd164eec97",
+          "phase-04.json": "7a1bf06444a27465bb4142b1e8777b24fcff2c38c7b180c9647a94b0fb15bd9d",
+          "phase-05.json": "402e9d27db061f54e9b601c63a29bbfc471c3ec9543724b35ba796e3e3b09606",
+          "phase-06.json": "bacadf2e3f6d69369e3eeb470cd7abed39a2e8d1dff360f003cf841d856e2a24",
+          "phase-07.json": "7eab33674e81a2741144c21894f559718fee835ba66bb2e5ef36ffc929dd0080",
+          "phase-08.json": "b9c4c39cf8f7387668a7fa7974b3ffcfc217806e86a947546dbb0cbec96cbe1e",
+          "phase-09.json": "55e1925baa50ac38731a535b25ce0cb474deb0b96500b4380bfd5a8f5cba7ddf",
+          "phase-10.json": "272eea03aa217613204ce38bd8249b776005c0a43bc2eee11b18c250e1ee2f55",
+          "phase-11.json": "827efa8047705aef0235e18b3d0a3eb54ef857894417f2275f616096a5ed631c",
+          "phase-12.json": "07f4f4ece4dd2742da0b4dd7a43cdad9ea2daa45e006f3400882683b8954d894",
+          "phase-13.json": "5ebfef2eead71a718a26c6e01ce69ed983132cd628d88aab3bacbc9420d2a92f",
+          "phase-14.json": "970bffd32358806c1248d0f09966459bb02a33f63607f418e33604c866b63a36",
+          "phase-15.json": "ce6f0e29d70c4c1d2e2b40dca9877094fe3448b043b92bbf5ade332d4c8d7c94",
+          "phase-16.json": "f855ca041d8689e691ebb2117b53ac387ac7aab53258c887309d06767619c1fa",
+          "phase-17.json": "08ce6f699243aaefda14da6d4e1b155a7adf213abc78317554ab09c20fa19ae0",
+          "phase-18.json": "ff6921fd50c6ebc725fd25dc1e7871a886060b14ca3838aa6494cacbd5ae7ac4",
+          "refresh.result.json": "e99cbc4f9ddda4323fb7f40acae90136816c27fa293c60370d74d6f8babe965e",
+          "refresh.stderr": "146384f98d05cdffecceabb5b3f51fab18ae8d5d53a3aa19f76c15faa02e0798",
+          "refresh.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        "profile": "7665-backend-only-lock-absence-v1",
+        "replacement_policy": "one_explicit_replacement_mint_only_no_retry"
+      },
+      "repository": "itsoso/health-llm-driven",
+      "state": "READ_CREDENTIAL_REFRESHED",
+      "workspace_completed_sha256": "56da0bee7c705f8b88f98207352f4bbfe64f8e561f359a3423b4625c90af3b63"
+    },
+    "independent_g4_sha256": "cea947111b942b1f75139ca02c91b4886b3ababf5ed37f327198801e14aba406",
+    "semantics": "fixed backend-only historical build-lock absence invariant; preflight before one explicit replacement mint; no original WAL overwritten"
+  },
+  "mobile_changed": false,
+  "ota_required": false,
+  "visual_acceptance": "not_performed_user_requested_nonvisual_release",
+  "production_user_record_mutation": "none_by_acceptance_probes",
+  "historical_wrong_record_cleanup": "not_performed",
+  "independent_readback": {
+    "authorization_evidence": {
+      "executor_sha256": "e352fa0ff71dc08d79c22b6c67e4e06114bddd1ca755c6e429cac13c78873f82",
+      "original_remote_attempt_absent": true,
+      "policy_sha256": "ee25ef8318ac2d3d7d41988ed76d4b0858cfc94d24031254b13ea4af8275ec0c",
+      "replacement_receipt_sha256": "f82ce35d933608d7733ba89eb0118c786f7f2f671c34a740ef96f828344af9e4",
+      "replacement_token_expiry": 1793844559,
+      "retired_completed_sha256": "6949731b90c060910e7f90290d8980d8987013f39aa14cde591790cd66905eff",
+      "revoked_completed_sha256": "98b9843ae02fa076a174fad6e257cf54e4a3d1433e40c622665b820ce42ddcde"
+    },
+    "completed_sha256": "fb919167c9b5cd05f99a1f21d84e74f61c42acd1572c0ad265689ae29587c753",
+    "http_statuses": {
+      "http://127.0.0.1:8000/api/v1/auth/me": 401,
+      "http://127.0.0.1:8000/api/v1/health": 200,
+      "http://127.0.0.1:8000/api/v1/supplements/me/records": 401,
+      "https://health.executor.life/api/v1/auth/me": 401,
+      "https://health.executor.life/api/v1/health": 200,
+      "https://health.executor.life/api/v1/supplements/me/records": 401
+    },
+    "lease_absent": true,
+    "observed_at": 1793841856,
+    "production_clean": true,
+    "readonly_synthetic_meal_smoke": "passed_no_database_or_model_calls",
+    "release": {
+      "sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "state": "SUCCEEDED"
+    },
+    "runtime": {
+      "candidate_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+      "mode": "code-only-no-backup",
+      "phase": "COMMITTED",
+      "result": "finalized",
+      "target": "candidate",
+      "terminal_sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c"
+    },
+    "services": {
+      "celery-beat": "MainPID=1551052\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST",
+      "celery-worker": "MainPID=1551051\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST",
+      "health-backend": "MainPID=1551049\nActiveEnterTimestamp=Thu 2026-11-05 09:21:41 CST"
+    },
+    "sha": "9b186e4fa91be2258d75aa9cfe81434299b5c97c",
+    "source_sha256": {
+      "backend/app/services/agent_executor.py": "3a39abf47125be724852f1bc26f214802dcd53c387d979794a63a512adc908dc",
+      "backend/app/services/agent_meal_input_clarification.py": "d0b51102c8d03be3601d626aecb93f26e811b1f95bd1dacd20dd07211e9773da",
+      "backend/app/services/utterance_intent_classifier.py": "33739bb9cd338e84919467db968dc94fb1737274a36c487e5546cc290757663e",
+      "backend/tests/test_meal_count_clarification.py": "77f24a54e4cdcdb9223ff1c5f46a79f24dfb53804a7e15eef0677ff63f20c848"
+    }
+  },
+  "independent_readback_sha256": "53982b59499a4ed0dbe13cd71d774b2d1ca6005be09fe75680b9215220dfa40a",
+  "final_verdict": "GO_RELEASED_AND_VERIFIED"
+}

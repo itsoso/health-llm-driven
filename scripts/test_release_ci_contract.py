@@ -23,6 +23,7 @@ RELEASE_TESTS = (
     "scripts/test_deploy_no_backup.py",
     "scripts/test_release_timing.py",
     "scripts/test_release_performance_report.py",
+    "scripts/test_release_dispatch_admission.py",
     "scripts/test_ci_timing_drift.py",
     "scripts/test_trusted_ota_startup.py",
     "scripts/test_trusted_ota_unclaimed_retirement.py",
