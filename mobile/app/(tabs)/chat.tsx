@@ -1333,16 +1333,16 @@ export default function ChatScreen() {
                       accessibilityLabel="人生导航"
                       accessibilityHint="打开今日安排、周计划和复盘，保留当前对话"
                       onPress={openLifeNavigation}
-                      style={({ pressed }) => [styles.lifeNavigationEntry, pressed && { backgroundColor: C.green50 }]}
+                      style={({ pressed }) => [styles.lifeNavigationEntry, pressed && styles.lifeNavigationEntryPressed]}
                     >
                       <View style={styles.lifeNavigationIcon}>
-                        <Ionicons name="compass-outline" size={24} color={C.green600} />
+                        <Ionicons name="compass-outline" size={23} color={C.greenBright} />
                       </View>
                       <View style={{ flex: 1 }}>
                         <Text style={txt.lifeNavigationTitle}>人生导航</Text>
                         <Text style={txt.lifeNavigationSubtitle}>今日安排 · 周计划 · 复盘</Text>
                       </View>
-                      <Ionicons name="chevron-forward" size={16} color={C.ink3} />
+                      <Ionicons name="chevron-forward" size={17} color={C.focusInk2} />
                     </Pressable>
                   )}
                 </>
@@ -1668,17 +1668,17 @@ const styles = StyleSheet.create({
     width: '100%',
     maxWidth: 680,
     alignSelf: 'center',
-    minHeight: 80,
+    minHeight: 92,
     marginTop: revaSpacing.s1,
     marginBottom: revaSpacing.s3,
     padding: revaSpacing.s4,
     borderRadius: revaRadii.xl,
-    borderWidth: StyleSheet.hairlineWidth,
-    borderColor: C.line,
-    backgroundColor: C.surface,
+    borderWidth: 0,
+    backgroundColor: C.focusBg,
   },
+  lifeNavigationEntryPressed: { backgroundColor: C.focusBg2, opacity: 0.92 },
   lifeNavigationIcon: { width: 44, height: 44, borderRadius: revaRadii.md,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50 },
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.focusBg2 },
   scrollToBottomButton: {
     position: 'absolute',
     right: revaSpacing.s4,
@@ -1818,8 +1818,8 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  lifeNavigationTitle: { fontFamily: revaFonts.sans, fontSize: 16, fontWeight: '600', color: C.ink1 } as TextStyle,
-  lifeNavigationSubtitle: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, marginTop: 4, color: C.ink2 } as TextStyle,
+  lifeNavigationTitle: { fontFamily: revaFonts.sans, fontSize: 17, lineHeight: 23, fontWeight: '600', color: C.focusInk1 } as TextStyle,
+  lifeNavigationSubtitle: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, marginTop: 3, color: C.focusInk2 } as TextStyle,
   bootstrapLoading: { fontFamily: revaFonts.sans, fontSize: 13, color: C.ink2, fontWeight: '700' } as TextStyle,
   loadEarlier: { fontFamily: revaFonts.sans, fontSize: 12, color: C.green500, fontWeight: '700' } as TextStyle,
   timeDivider: { fontFamily: revaFonts.mono, fontSize: 10.5, lineHeight: 14, color: C.ink3, fontWeight: '700' } as TextStyle,

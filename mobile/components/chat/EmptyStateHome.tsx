@@ -261,14 +261,19 @@ export default function EmptyStateHome({
             {showQuickStart ? freshConversationPrompt(hour).text : '今天想从哪里开始？'}
           </Text>
         </View>
-        <XiaoBaAvatar size={showReplyActions ? 56 : 40} compact />
       </View>
 
       {!freshStart && <TodayCockpit focus={todayFocus} onOpenToday={onOpenToday} />}
 
       {activeOpener && (
         <View style={styles.contentCard}>
-          <Text style={txt.eyebrow}>小气候想和你聊聊</Text>
+          <View style={styles.contentCardHeader}>
+            <XiaoBaAvatar size={32} compact />
+            <View>
+              <Text style={txt.eyebrow}>小气候</Text>
+              <Text style={txt.contentCardMeta}>想和你聊聊</Text>
+            </View>
+          </View>
           <Text style={txt.bubbleBody}>{formatOpenerText(activeOpener.text)}</Text>
           {showReplyActions && replies.length > 0 && (
             <View style={styles.repliesRow}>
@@ -310,16 +315,18 @@ export default function EmptyStateHome({
       )}
 
       {showQuickStart && showReplyActions && onQuickAction && (
-        <View style={styles.quickStartRow}>
-          {quickActions.map(({ action, icon }) => (
-            <Pressable key={action} onPress={() => onQuickAction(action)}
-              style={({ pressed }) => [styles.quickStartAction, pressed && styles.replyPressed]}
-              accessibilityRole="button" accessibilityLabel={QUICK_ACTION_LABEL[action]}>
-              <View style={styles.quickStartIcon}><Ionicons name={icon} size={20} color={C.green600} /></View>
-              <Text style={txt.quickStartLabel}>{QUICK_ACTION_LABEL[action]}</Text>
-              <Ionicons name="chevron-forward" size={16} color={C.ink3} />
-            </Pressable>
-          ))}
+        <View style={styles.quickStartSection}>
+          <Text style={txt.quickStartEyebrow}>快捷记录</Text>
+          <View style={styles.quickStartRow}>
+            {quickActions.map(({ action, icon }) => (
+              <Pressable key={action} onPress={() => onQuickAction(action)}
+                style={({ pressed }) => [styles.quickStartAction, pressed && styles.replyPressed]}
+                accessibilityRole="button" accessibilityLabel={QUICK_ACTION_LABEL[action]}>
+                <View style={styles.quickStartIcon}><Ionicons name={icon} size={18} color={C.green600} /></View>
+                <Text style={txt.quickStartLabel}>{QUICK_ACTION_LABEL[action]}</Text>
+              </Pressable>
+            ))}
+          </View>
         </View>
       )}
     </View>
@@ -328,13 +335,14 @@ export default function EmptyStateHome({
 
 const styles = StyleSheet.create({
   // The FlatList already owns the page gutter; do not inset the home a second time.
-  container: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingTop: revaSpacing.s6,
-    paddingBottom: revaSpacing.s4, gap: revaSpacing.s5 },
+  container: { width: '100%', maxWidth: 680, alignSelf: 'center', paddingTop: revaSpacing.s4,
+    paddingBottom: revaSpacing.s4, gap: revaSpacing.s4 },
   containerCompact: { paddingTop: revaSpacing.s2, gap: revaSpacing.s3 },
-  hero: { flexDirection: 'row', alignItems: 'flex-start', gap: revaSpacing.s4, paddingBottom: revaSpacing.s2 },
+  hero: { paddingHorizontal: revaSpacing.s1, paddingBottom: revaSpacing.s1 },
   heroCopy: { flex: 1, minWidth: 0 },
   contentCard: { backgroundColor: C.surface, borderRadius: revaRadii.xl, padding: revaSpacing.s5,
     borderWidth: StyleSheet.hairlineWidth, borderColor: C.line, gap: revaSpacing.s3 },
+  contentCardHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
   repliesRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2,
     paddingTop: revaSpacing.s2 },
   reply: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6,
@@ -347,12 +355,13 @@ const styles = StyleSheet.create({
   memoryAction: { minHeight: 44, flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end',
     gap: revaSpacing.s1, borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: C.line,
     paddingTop: revaSpacing.s2 },
-  quickStartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s3 },
-  quickStartAction: { flexGrow: 1, flexBasis: 145, minHeight: 72, flexDirection: 'row',
-    alignItems: 'center', gap: revaSpacing.s2, padding: revaSpacing.s3, borderRadius: revaRadii.lg,
-    backgroundColor: C.surface, borderWidth: StyleSheet.hairlineWidth, borderColor: C.line },
-  quickStartIcon: { width: 36, height: 36, borderRadius: revaRadii.sm,
-    alignItems: 'center', justifyContent: 'center', backgroundColor: C.green50 },
+  quickStartSection: { gap: revaSpacing.s2, paddingHorizontal: revaSpacing.s1 },
+  quickStartRow: { flexDirection: 'row', flexWrap: 'wrap', gap: revaSpacing.s2 },
+  quickStartAction: { minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2,
+    paddingVertical: revaSpacing.s2, paddingLeft: revaSpacing.s2, paddingRight: revaSpacing.s4,
+    borderRadius: revaRadii.pill, backgroundColor: C.green50 },
+  quickStartIcon: { width: 32, height: 32, borderRadius: revaRadii.pill,
+    alignItems: 'center', justifyContent: 'center', backgroundColor: C.surface },
   todayCockpit: { backgroundColor: C.green50, borderRadius: revaRadii.xl, padding: revaSpacing.s5,
     gap: revaSpacing.s3, borderWidth: StyleSheet.hairlineWidth, borderColor: C.green100 },
   todayCockpitHeader: { flexDirection: 'row', alignItems: 'center', gap: revaSpacing.s2 },
@@ -365,16 +374,18 @@ const styles = StyleSheet.create({
 });
 
 const txt = {
-  greetingHi: { fontFamily: revaFonts.sans, fontSize: 30, lineHeight: 38, fontWeight: '700', color: C.ink1 } as TextStyle,
-  greetingCompact: { fontSize: 24, lineHeight: 32 } as TextStyle,
-  greetingSub: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 24, color: C.ink2, marginTop: revaSpacing.s2 } as TextStyle,
+  greetingHi: { fontFamily: revaFonts.sans, fontSize: 26, lineHeight: 34, fontWeight: '700', color: C.ink1 } as TextStyle,
+  greetingCompact: { fontSize: 22, lineHeight: 29 } as TextStyle,
+  greetingSub: { fontFamily: revaFonts.sans, fontSize: 15, lineHeight: 23, color: C.ink2, marginTop: revaSpacing.s1 } as TextStyle,
   eyebrow: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.green600, fontWeight: '600' } as TextStyle,
+  contentCardMeta: { fontFamily: revaFonts.sans, fontSize: 11, lineHeight: 16, color: C.ink3 } as TextStyle,
   bubbleBody: { fontFamily: revaFonts.sans, fontSize: 16, lineHeight: 26, color: C.ink1, fontWeight: '400' } as TextStyle,
   reply: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, color: C.ink2, fontWeight: '600', flexShrink: 1 } as TextStyle,
   replyPrimary: { color: C.greenOn } as TextStyle,
   memorySourceBadge: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, color: C.green600, fontWeight: '600' } as TextStyle,
   footnoteAction: { fontFamily: revaFonts.sans, fontSize: 13, lineHeight: 20, fontWeight: '600', color: C.green600 } as TextStyle,
-  quickStartLabel: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.ink1, flex: 1 } as TextStyle,
+  quickStartEyebrow: { fontFamily: revaFonts.sans, fontSize: 12, lineHeight: 18, fontWeight: '600', color: C.ink3 } as TextStyle,
+  quickStartLabel: { fontFamily: revaFonts.sans, fontSize: 14, lineHeight: 21, fontWeight: '600', color: C.green700 } as TextStyle,
   todayCockpitEyebrow: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.green600 } as TextStyle,
   todayCockpitLabel: { fontFamily: revaFonts.sans, fontSize: 12, color: C.ink2, marginTop: 2 } as TextStyle,
   todayCockpitPill: { fontFamily: revaFonts.sans, fontSize: 12, fontWeight: '600', color: C.green600 } as TextStyle,

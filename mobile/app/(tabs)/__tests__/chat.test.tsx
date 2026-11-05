@@ -1405,7 +1405,13 @@ describe('ChatScreen', () => {
 
     const { getByLabelText, queryByLabelText } = render(<ChatScreen />);
     await waitFor(() => expect(getByLabelText('一键回复: 做到了')).toBeTruthy());
-    expect(getByLabelText('人生导航')).toBeTruthy();
+    const lifeNavigation = getByLabelText('人生导航');
+    expect(lifeNavigation).toBeTruthy();
+    expect(StyleSheet.flatten(lifeNavigation.props.style)).toEqual(expect.objectContaining({
+      minHeight: 92,
+      borderWidth: 0,
+      backgroundColor: revaColors.focusBg,
+    }));
 
     act(() => {
       keyboardListeners.keyboardDidShow({

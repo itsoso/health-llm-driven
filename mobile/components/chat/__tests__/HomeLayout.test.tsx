@@ -2,11 +2,23 @@ import React from 'react';
 import { act, fireEvent, render } from '@testing-library/react-native';
 import { AppState, StyleSheet } from 'react-native';
 import EmptyStateHome from '../EmptyStateHome';
+import { revaColors } from '../../../constants/revaTheme';
 
 const base = {
   memoryOpener: [], opener: null,
   onOpenMemory: jest.fn(), onOpenerQuickReply: jest.fn(), onQuickAction: jest.fn(),
 };
+
+it('uses a compact fresh-home hierarchy without repeating the header avatar', () => {
+  const view = render(<EmptyStateHome {...base} freshStart />);
+  expect(view.queryByLabelText('小气候形象')).toBeNull();
+  expect(view.getByText('快捷记录')).toBeTruthy();
+  expect(StyleSheet.flatten(view.getByRole('header').props.style).fontSize).toBe(26);
+  const quickAction = StyleSheet.flatten(view.getByLabelText('记录体重').props.style);
+  expect(quickAction.minHeight).toBe(48);
+  expect(quickAction.backgroundColor).toBe(revaColors.green50);
+  expect(quickAction.borderWidth).toBeUndefined();
+});
 
 it('gives the home greeting a heading and does not truncate long opening content', () => {
   const text = '这是一条需要完整阅读的开场说明。'.repeat(12);
