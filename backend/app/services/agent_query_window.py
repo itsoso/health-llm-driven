@@ -8,7 +8,7 @@ cannot prove sleep episode completeness or reattribute travel across timezones.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta, timezone
 import re
 import json
 from typing import Any, Mapping
@@ -19,6 +19,7 @@ MAX_CALENDAR_DAYS = 31
 MAX_CALENDAR_ROWS = 256
 MAX_CALENDAR_RESULT_CHARS = 24000
 SUPPORTED_CALENDAR_DIMENSIONS = frozenset({"diet", "sleep", "spo2"})
+READABLE_CALENDAR_DIMENSIONS = SUPPORTED_CALENDAR_DIMENSIONS | {"events", "activity"}
 _DATE_RE = re.compile(r"(?<!\d)(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})(?:日|号)?(?!\d)")
 _RELATIVE_RE = re.compile(
     r"前一晚|前一夜|前晚|前夜|前天|昨天|昨日|今天|今日|昨晚|昨夜"
@@ -178,8 +179,49 @@ def read_calendar_health_query(
         raise ValueError('calendar_query_period_unsupported')
     # Heart-rate access is bound by the closed post-record recovery scope;
     # do not broaden the generic natural-language calendar resolver.
-    if dimension not in SUPPORTED_CALENDAR_DIMENSIONS | {'heart_rate', 'weight', 'waist', 'water'}:
+    if dimension not in READABLE_CALENDAR_DIMENSIONS | {'heart_rate', 'weight', 'waist', 'water'}:
         raise ValueError("calendar_query_dimension_unsupported")
+    if dimension == 'events':
+        from app.models.episode import HealthEpisode
+
+        zone = ZoneInfo(window.timezone)
+        start = datetime.combine(window.start_date, time.min, tzinfo=zone).astimezone(timezone.utc)
+        end = datetime.combine(
+            window.end_date + timedelta(days=1), time.min, tzinfo=zone,
+        ).astimezone(timezone.utc)
+        rows = (
+            db.query(HealthEpisode)
+            .filter(
+                HealthEpisode.user_id == user_id,
+                HealthEpisode.episode_type == 'life_event',
+                HealthEpisode.occurred_at >= start,
+                HealthEpisode.occurred_at < end,
+            )
+            .order_by(HealthEpisode.occurred_at, HealthEpisode.id)
+            .limit(MAX_CALENDAR_ROWS + 1)
+            .all()
+        )
+        if len(rows) > MAX_CALENDAR_ROWS:
+            raise ValueError("calendar_query_result_limit_exceeded: 记录较多，请缩小查询日期范围。")
+        records = []
+        for row in rows:
+            occurred = row.occurred_at
+            if occurred.utcoffset() is None:
+                occurred = occurred.replace(tzinfo=timezone.utc)
+            local_occurred = occurred.astimezone(zone)
+            records.append({
+                'id': row.id,
+                'record_date': local_occurred.date().isoformat(),
+                'occurred_at': local_occurred.isoformat(),
+                'title': row.headline or '',
+            })
+        return _bounded_result({
+            'dimension': dimension,
+            'window': window.as_dict(),
+            'records': records,
+            'availability': 'available' if records else 'no_data',
+            'limitations': ['recorded_life_events_only', 'missing_event_is_unknown_not_no_trip'],
+        })
     from app.models.daily_health import DietRecord, GarminData, WaterIntake
 
     from app.models.weight import WeightRecord
@@ -226,13 +268,18 @@ def read_calendar_health_query(
     keys = ("sleep_score", "total_sleep_duration", "deep_sleep_duration",
             "rem_sleep_duration", "light_sleep_duration", "awake_duration",
             "sleep_start_time", "sleep_end_time")
-    if dimension == 'heart_rate':
+    if dimension == 'activity':
+        keys = ('steps', 'active_calories', 'active_minutes')
+    elif dimension == 'heart_rate':
         keys = ('avg_heart_rate', 'max_heart_rate', 'min_heart_rate', 'resting_heart_rate')
     result["date_attribution"] = "wake_date" if dimension == 'sleep' else 'source_record_date'
     result["sync_status"] = "unknown"
     result["limitations"] = ["sync_status_unknown", "daily_rows_not_full_episode_timestamps",
                              "missing_metric_is_unknown_not_abnormal"]
-    if dimension == 'heart_rate':
+    if dimension == 'activity':
+        result['limitations'] = ['sync_status_unknown', 'daily_activity_summary_only',
+                                 'missing_metric_is_unknown_not_zero']
+    elif dimension == 'heart_rate':
         result['limitations'] = ['sync_status_unknown', 'daily_summary_not_workout_measurement',
                                 'missing_metric_is_unknown_not_abnormal']
     by_day: dict[date, list[Any]] = {}

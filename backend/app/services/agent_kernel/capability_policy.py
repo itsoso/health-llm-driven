@@ -15,6 +15,7 @@ from typing import Any
 from app.services.agent_kernel.daily_read_plan import (
     daily_question_dimension,
     daily_read_plan_contract_payload,
+    has_unresolved_day_overview_scope,
     resolve_daily_read_plan,
 )
 from app.services.agent_kernel.goal_spec import (
@@ -3238,9 +3239,13 @@ def decide_tool_capability(
                 and longitudinal_read_restrictions_unresolved(snapshot)):
             # Preserve the existing ownership denial when both checks fail;
             # ownership can change the rejection reason, never grant scope.
-            reason = ("health_query_subject_not_current_user"
-                      if illness_read_has_unowned_subject(_query_scope_text(snapshot.envelope.text))
-                      else "longitudinal_read_scope_unresolved")
+            reason = (
+                "longitudinal_read_scope_unresolved"
+                if has_unresolved_day_overview_scope(snapshot.envelope.text)
+                else "health_query_subject_not_current_user"
+                if illness_read_has_unowned_subject(_query_scope_text(snapshot.envelope.text))
+                else "longitudinal_read_scope_unresolved"
+            )
             return _decision("block", reason, tool_name, args)
         # Preserve the existing exact-day/meal binder where it applies.
         daily = resolve_daily_read_plan(snapshot.envelope.text, snapshot.context.current_time,

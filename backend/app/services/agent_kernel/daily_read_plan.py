@@ -21,9 +21,11 @@ from app.services.agent_kernel.health_semantics import (
 from app.services.agent_query_window import resolve_calendar_query_window
 
 
-# These are the currently date-exact data planes. A summary must disclose this
-# scope rather than imply unqueried medication, genetics or activity are known.
+# These are the bounded data planes for the two accepted summary grammars. A
+# summary must disclose its selected scope rather than imply other domains are
+# known.
 DAILY_SUMMARY_DIMENSIONS = ("diet", "sleep")
+DAY_OVERVIEW_DIMENSIONS = ("events", "diet", "activity", "sleep")
 # Recommendation copy and the accepted read frame share this contract. Keep the
 # visible scope honest; sending/editing a chip still recompiles the user's text
 # and never supplies a trusted plan or extra permission from the client.
@@ -55,6 +57,18 @@ _SUMMARY_RE = re.compile(
 _COLLOQUIAL_SUMMARY_RE = re.compile(
     rf"(?:(?:我(?:的)?)(?:{_SUMMARY_DAY})|(?:{_SUMMARY_DAY})(?:的)?我(?:的)?)"
     r"(?:整体)?过[得的](?:怎么样|怎样|如何)"
+)
+_DAY_OVERVIEW_RE = re.compile(
+    rf"(?:请)?(?:给我|帮我)?总结(?:一下)?(?:我(?:的)?)?"
+    rf"(?P<day>{_SUMMARY_DAY})(?:的)?"
+    r"行程(?:、|，|,|和|与|及)*饮食(?:、|，|,|和|与|及)*"
+    r"活动(?:、|，|,|和|与|及)*睡眠"
+)
+_AMBIGUOUS_DAY_OVERVIEW_RE = re.compile(
+    r"(?:请)?(?:给我|帮我)?总结(?:一下)?(?:我(?:的)?)?"
+    rf"(?:{_SUMMARY_DAY})?\d{{8}}(?:的)?"
+    r"行程(?:、|，|,|和|与|及)*饮食(?:、|，|,|和|与|及)*"
+    r"活动(?:、|，|,|和|与|及)*睡眠"
 )
 _ADVICE_SUFFIX_RE = re.compile(
     r"[，,。.!！?？；;]*(?:(?:并且|然后|并|再|也)(?:请)?)?"
@@ -153,12 +167,27 @@ def _daily_read_frame(text: str) -> tuple[str, tuple[str, ...], bool, bool, str 
         if sync_status or normalized != original:
             return None
         return core, DAILY_SUMMARY_DIMENSIONS, True, True, None, False
+    overview = _DAY_OVERVIEW_RE.fullmatch(core)
+    if overview:
+        if sync_status or normalized != original:
+            return None
+        return overview['day'], DAY_OVERVIEW_DIMENSIONS, False, True, None, False
     return None
 
 
 def is_daily_summary_request(text: str) -> bool:
     frame = _daily_read_frame(text)
     return bool(frame and frame[3])
+
+
+def has_unresolved_day_overview_scope(text: str) -> bool:
+    """Classify a self-only overview with a malformed date without granting it."""
+    if health_read_cancelled(text):
+        return False
+    original = re.sub(r"\s+", "", normalize_health_authorization_text(text))
+    active = re.sub(r"\s+", "", normalize_health_authorization_text(
+        active_health_read_clause(text)))
+    return active == original and _AMBIGUOUS_DAY_OVERVIEW_RE.fullmatch(active) is not None
 
 
 def daily_question_dimension(text: str) -> str | None:
@@ -174,8 +203,12 @@ def resolve_daily_read_plan(
     if frame is None:
         return None
     core, dimensions, asks_advice, is_summary, meal, sync_status = frame
+    # events/activity readers are intentionally not generic natural-language
+    # calendar authority. This closed four-domain grammar borrows only diet's
+    # date resolver, then binds every reader to the same exact day below.
+    window_dimension = "diet" if dimensions == DAY_OVERVIEW_DIMENSIONS else dimensions[0]
     window = resolve_calendar_query_window(
-        core, reference_now, dimensions[0], timezone_name=timezone_name)
+        core, reference_now, window_dimension, timezone_name=timezone_name)
     if window is None:
         return None
     return DailyReadPlan(dimensions=dimensions, **window, meal_type=meal,

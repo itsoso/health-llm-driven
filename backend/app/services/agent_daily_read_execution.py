@@ -24,15 +24,21 @@ def planned_daily_calls(plan: DailyReadPlan) -> list[dict[str, Any]]:
 
 
 def daily_read_prompt(plan: DailyReadPlan) -> str:
-    domains = '、'.join({'diet': '饮食', 'sleep': '睡眠'}[d] for d in plan.dimensions)
+    labels = {'events': '行程', 'diet': '饮食', 'activity': '活动', 'sleep': '睡眠'}
+    domains = '、'.join(labels[d] for d in plan.dimensions)
+    answer_scope = (
+        '分别说明查到的事实、未查到的项目和依据这些结果可给出的建议。'
+        if plan.asks_advice else
+        '只汇总本轮已核验事实和未查到的项目；用户未请求建议，不要生成建议。'
+    )
     return (
         f'\n[本轮查询范围]\n{plan.start_date} 至 {plan.end_date}，{plan.timezone}，{domains}。'
         + ('饮食只查询晚餐。' if plan.meal_type == 'dinner' else '')
         + ('另读取当前账号同步状态；最近成功时间不证明本次任务完成，不得自动触发同步。' if plan.sync_status_requested else '')
         + '必须用本轮工具结果回答；无记录不等于没有发生。'
-        + ('本次今日总结仅覆盖饮食与睡眠，开头简短说明范围；不要暗示其他健康领域也已查询。' if plan.is_summary else '')
-        + '分别说明查到的事实、未查到的项目和依据这些结果可给出的建议。'
-        '卡片已展示的完整记录不要再重复为同一张表；正文解释重点和不确定性。'
+        + ('本次总结仅覆盖上述明确列出的领域，开头简短说明范围；不要暗示其他健康领域也已查询。' if plan.is_summary else '')
+        + answer_scope
+        + '卡片已展示的完整记录不要再重复为同一张表；正文解释重点和不确定性。'
     )
 
 
@@ -424,8 +430,10 @@ def verified_daily_summary(
         return ''
     date_label = plan.start_date if plan.start_date == plan.end_date else f'{plan.start_date}至{plan.end_date}'
     zone_label = '北京时间' if plan.timezone == 'Asia/Shanghai' else plan.timezone
-    labels = {'diet': '饮食', 'sleep': '睡眠'}
-    domains = '与'.join(labels[dimension] for dimension in plan.dimensions)
+    labels = {'events': '行程', 'diet': '饮食', 'activity': '活动', 'sleep': '睡眠'}
+    domain_labels = [labels[dimension] for dimension in plan.dimensions]
+    domains = (domain_labels[0] if len(domain_labels) == 1 else
+               '、'.join(domain_labels[:-1]) + '与' + domain_labels[-1])
     kind = '总结' if plan.is_summary else '查询'
     lines = [f'本次{kind}仅覆盖{domains}记录（{date_label}，{zone_label}）。'
              + ('已记录饮食不代表全天完整摄入，未记录不等于没有发生。'
@@ -441,11 +449,25 @@ def verified_daily_summary(
             lines.append(f'{label}：本轮查询结果无法核对，暂不汇总。')
             continue
         if not rows:
-            suffix = '，不代表没有进食' if dimension == 'diet' else '，不能据此判断睡眠情况'
+            suffix = {
+                'events': '，不代表当天没有行程',
+                'diet': '，不代表没有进食',
+                'activity': '，不代表当天没有活动',
+                'sleep': '，不能据此判断睡眠情况',
+            }[dimension]
             lines.append(f'{label}：目标日期没有可用记录{suffix}。')
             continue
         count = format_display_number(len(rows))
-        if dimension == 'diet':
+        if dimension == 'events':
+            line = f'行程：已记录{count}条生活事件。'
+            title = next((row.get('title') for row in rows
+                          if include_food_names and isinstance(row.get('title'), str)
+                          and row['title'].strip()), None)
+            if title is not None and not any(marker in title for marker in ('{', '}', '[', ']')):
+                line += f'记录中包括“{" ".join(title.split())[:36]}”。'
+            line += '这些记录不代表当天完整行程。'
+            lines.append(line)
+        elif dimension == 'diet':
             line = f'饮食：已记录{count}条。'
             known = [value for row in rows if (value := _summary_decimal(row.get('calories'))) is not None]
             total = _summary_display(sum(known, Decimal(0))) if known else None
@@ -462,6 +484,18 @@ def verified_daily_summary(
                     line += f'记录中包括“{" ".join(food.split())[:36]}”。'
                     break
             lines.append(line)
+        elif dimension == 'activity':
+            if len(rows) != 1:
+                lines.append(f'活动：查询到{count}条记录，未合并为单一日读数，请查看明细。')
+                continue
+            row = rows[0]
+            facts = []
+            for field, unit in (('steps', '步'), ('active_calories', '千卡'),
+                                ('active_minutes', '分钟')):
+                value = _summary_decimal(row.get(field))
+                display = _summary_display(value) if value is not None else None
+                facts.append(f'{display}{unit}' if display is not None else f'{unit}数缺少有效读数')
+            lines.append('活动：' + '；'.join(facts) + '。')
         elif len(rows) != 1:
             lines.append(f'睡眠：查询到{count}条记录，未合并为单一读数，请查看明细。')
         else:

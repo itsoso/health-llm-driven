@@ -134,3 +134,48 @@ async def test_actual_starter_through_pi_gateway_and_persisted_answer(
         assert "已记录热量合计300千卡" in public
     goals = {goal["goal_id"]: goal["status"] for goal in done["turn_outcome"]["goals"]}
     assert goals == {"diet": "verified", "sleep": "failed" if expected == "partial" else "verified", "summary_advice": "verified"}
+
+
+@pytest.mark.asyncio
+async def test_yesterday_four_domain_summary_executes_instead_of_scope_refusal(
+    db, auth_user_and_headers, monkeypatch, isolated_agent_protocol_transport,
+):
+    user, _ = auth_user_and_headers
+    query = "总结昨天的行程 饮食 活动 和睡眠"
+
+    def dispatch(request):
+        dimension = request.arguments["dimension"]
+        rows = {
+            "events": [{"record_date": request.arguments["start_date"],
+                        "id": 1, "title": "上午到达办公室"}],
+            "diet": [{"record_date": request.arguments["start_date"],
+                      "id": 2, "food_name": "合成燕麦", "calories": 300}],
+            "activity": [{"record_date": request.arguments["start_date"],
+                          "steps": 4321, "active_calories": 321, "active_minutes": 54}],
+            "sleep": [{"record_date": request.arguments["start_date"],
+                       "total_sleep_duration": 420, "sleep_score": 80}],
+        }[dimension]
+        return _calendar_payload(request, records=rows, availability="available")
+
+    _, done, persisted, public, dispatched = await _run_scripted(
+        db, user, monkeypatch, query=query,
+        first_tool="health_analysis", first_args={"analysis_type": "orchestrator"},
+        dispatch=dispatch, reply="以上是按目标日期汇总的已记录信息。",
+        turn_id="yesterday-four-domain-summary",
+    )
+
+    assert [request.arguments["dimension"] for request in dispatched] == [
+        "events", "diet", "activity", "sleep",
+    ]
+    assert all(request.arguments["start_date"] == request.arguments["end_date"]
+               for request in dispatched)
+    assert done["turn_outcome"]["status"] == "complete"
+    assert done["completion_status"] == "complete"
+    assert done["perf"]["model_call_count"] == 1
+    assert not done["write_receipts"]
+    assert "行程、饮食、活动与睡眠" in public
+    assert "4321步" in public and "上午到达办公室" in public
+    assert "范围限制尚不能完整解析" not in public
+    assert "行程、饮食、活动与睡眠" in persisted.content
+    assert "4321步" in persisted.content and "上午到达办公室" in persisted.content
+    assert "范围限制尚不能完整解析" not in persisted.content

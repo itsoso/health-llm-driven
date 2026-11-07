@@ -3,7 +3,7 @@ import pytest
 from dataclasses import replace
 
 from app.services.agent_kernel.capability_policy import decide_tool_capability
-from app.services.agent_kernel.daily_read_plan import DAILY_SUMMARY_STARTER
+from app.services.agent_kernel.daily_read_plan import DAILY_SUMMARY_STARTER, resolve_daily_read_plan
 from app.services.agent_kernel.intent_frame import build_intent_frame
 from app.services.agent_kernel.types import (
     AgentEnvelope, ExecutionContext, ToolExecutionRequest, TurnSnapshot,
@@ -68,6 +68,133 @@ def test_daily_summary_is_explicit_bounded_read(message, dimension):
         "dimension": dimension, "start_date": "2026-07-17",
         "end_date": "2026-07-17", "timezone": "Asia/Shanghai",
     }
+
+
+@pytest.mark.parametrize("message", [
+    "总结昨天的行程 饮食 活动 和睡眠",
+    "总结一下昨天的行程、饮食、活动和睡眠",
+    "总结我的昨天的行程 饮食 活动 和睡眠",
+])
+def test_yesterday_four_domain_summary_is_bound_to_owned_exact_day(message):
+    plan = resolve_daily_read_plan(
+        message, snapshot(message).context.current_time,
+        timezone_name=snapshot(message).context.timezone,
+    )
+    assert plan is not None and plan.is_summary
+    assert plan.dimensions == ("events", "diet", "activity", "sleep")
+    assert plan.start_date == plan.end_date == "2026-07-16"
+
+    for dimension in plan.dimensions:
+        result = decide(message, "health_query", {"dimension": dimension, "days": 30})
+        assert result.action == "allow", (dimension, result.reason)
+        assert result.normalized_args == {
+            "dimension": dimension, "start_date": "2026-07-16",
+            "end_date": "2026-07-16", "timezone": "Asia/Shanghai",
+        }
+
+    batch = decide(message, "health_query_batch", {
+        "queries": [{"dimension": dimension} for dimension in plan.dimensions],
+    })
+    assert batch.action == "allow", batch.reason
+    assert batch.normalized_args == {"queries": list(plan.queries())}
+
+
+@pytest.mark.parametrize("message", [
+    "总结妈妈昨天的行程、饮食、活动和睡眠",
+    "总结昨天的行程、饮食、活动和睡眠，然后删除饮食记录",
+    "总结昨天和今天的行程、饮食、活动和睡眠",
+    "总结昨天的行程、饮食、活动、睡眠和用药",
+])
+def test_four_domain_summary_never_discards_owner_date_or_extra_scope(message):
+    assert resolve_daily_read_plan(message, snapshot(message).context.current_time) is None
+    assert decide(message, "health_query", {"dimension": "diet"}).action == "block"
+
+
+@pytest.mark.parametrize(("message", "dimension"), [
+    ("查询昨天行程", "events"),
+    ("看看昨天的行程", "events"),
+    ("查询昨天活动", "activity"),
+])
+def test_four_domain_readers_are_not_generic_calendar_authority(message, dimension):
+    result = decide(message, "health_query", {"dimension": dimension})
+    assert result.action == "block"
+
+
+def test_ambiguous_four_domain_date_reports_scope_not_owner_failure():
+    message = "总结昨天2026 11 06 的行程 饮食 活动 和睡眠"
+    result = decide(message, "health_query", {"dimension": "diet"})
+    assert result.action == "block"
+    assert result.reason == "longitudinal_read_scope_unresolved"
+
+    foreign = decide(
+        "总结妈妈昨天2026 11 06 的行程 饮食 活动 和睡眠",
+        "health_query",
+        {"dimension": "diet"},
+    )
+    assert foreign.action == "block"
+    assert foreign.reason == "health_query_subject_not_current_user"
+
+
+@pytest.mark.asyncio
+async def test_four_domain_summary_reaches_only_owned_target_day_rows(db, auth_user_and_headers):
+    import json
+    from datetime import date, datetime, timezone
+
+    from app.models.daily_health import DietRecord, GarminData
+    from app.models.episode import HealthEpisode
+    from app.models.user import User
+    from app.services.agent_executor import AgentExecutor
+
+    owner, _ = auth_user_and_headers
+    other = User(username="four-domain-other", name="Synthetic other", hashed_password="fixture")
+    db.add(other)
+    db.flush()
+    target = date(2026, 7, 16)
+    db.add_all([
+        DietRecord(user_id=owner.id, record_date=target, meal_type="午餐", food_name="本人饮食"),
+        DietRecord(user_id=other.id, record_date=target, meal_type="午餐", food_name="他人饮食"),
+        GarminData(user_id=owner.id, record_date=target, data_source="garmin",
+                   sleep_score=80, total_sleep_duration=420,
+                   steps=4321, active_calories=321, active_minutes=54),
+        GarminData(user_id=other.id, record_date=target, data_source="garmin",
+                   sleep_score=99, total_sleep_duration=600,
+                   steps=9999, active_calories=999, active_minutes=99),
+        HealthEpisode(user_id=owner.id, episode_type="life_event", headline="本人行程",
+                      occurred_at=datetime(2026, 7, 16, 4, tzinfo=timezone.utc)),
+        HealthEpisode(user_id=other.id, episode_type="life_event", headline="他人行程",
+                      occurred_at=datetime(2026, 7, 16, 4, tzinfo=timezone.utc)),
+    ])
+    db.commit()
+
+    message = "总结昨天的行程 饮食 活动 和睡眠"
+    snap = snapshot(message)
+    snap = replace(snap, envelope=replace(snap.envelope, user_id=owner.id),
+                   context=replace(snap.context, user_id=owner.id))
+    plan = resolve_daily_read_plan(
+        message, snap.context.current_time, timezone_name=snap.context.timezone,
+    )
+    assert plan is not None
+
+    executor = AgentExecutor(db)
+    executor._current_user_id = owner.id
+    executor._current_turn_user_message = message
+    executor._agent_kernel_snapshot = snap
+    payloads = {}
+    for query in plan.queries():
+        decision = decide_tool_capability(
+            snap, ToolExecutionRequest(tool_name="health_query", arguments=query),
+        )
+        assert decision.action == "allow", (query["dimension"], decision.reason)
+        raw = await executor._exec_health_query("http://unused", {}, decision.normalized_args)
+        assert not raw.startswith("Error:"), raw
+        payloads[query["dimension"]] = json.loads(raw)
+
+    assert [row["title"] for row in payloads["events"]["records"]] == ["本人行程"]
+    assert [row["food_name"] for row in payloads["diet"]["records"]] == ["本人饮食"]
+    assert payloads["activity"]["records"][0]["steps"] == 4321
+    assert payloads["sleep"]["records"][0]["sleep_score"] == 80
+    assert all(payload["window"]["start_date"] == payload["window"]["end_date"] == target.isoformat()
+               for payload in payloads.values())
 
 
 @pytest.mark.parametrize("message", [

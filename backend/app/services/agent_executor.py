@@ -20781,6 +20781,34 @@ class AgentExecutor:
                                     simple_lookup_rendered = True
                                     simple_lookup_text = lookup_reply
                                     continue
+                            if (
+                                round_idx > 0
+                                and self._turn_daily_read_plan is not None
+                                and self._turn_daily_read_plan.is_summary
+                                and not self._turn_daily_read_plan.asks_advice
+                                and not daily_diet_evaluation
+                                and not health_advice_buffered
+                                and not remaining_batch_tools
+                                and not blocked_pi_calls
+                                and not pending_pi_writes
+                                and not write_receipts
+                                and not failed_write_operations
+                                and not unverified_write_operations
+                                and not last_recoverable_write_rejection
+                            ):
+                                # Pure summaries are a deterministic projection of
+                                # verified reads. Do not send record text back to a
+                                # model or generate advice the user did not request.
+                                facts = verified_daily_summary(
+                                    self._turn_daily_read_plan,
+                                    self._turn_daily_read_payloads,
+                                    self._turn_daily_read_results,
+                                )
+                                await pi.respond(
+                                    request, content=facts,
+                                    tool_calls=[], finish_reason="stop",
+                                )
+                                continue
                             composed_messages = self._composed_synthesis_messages(
                                 user_id, conv.id, user_auth_token, message,
                                 sealed=health_advice_buffered,

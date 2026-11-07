@@ -36,6 +36,15 @@ def test_calendar_day_is_user_local_and_last_night_is_wake_date():
     assert resolve_calendar_query_window('昨天和今天的饮食', now, 'diet') is None
 
 
+@pytest.mark.parametrize('dimension', ['events', 'activity'])
+def test_daily_overview_dimensions_do_not_open_generic_calendar_resolution(dimension):
+    from app.services.agent_query_window import resolve_calendar_query_window
+    now = datetime(2031, 4, 2, 17, tzinfo=timezone.utc)
+    assert resolve_calendar_query_window(
+        '总结昨天的行程、饮食、活动和睡眠', now, dimension,
+    ) is None
+
+
 def test_window_validation_rejects_partial_reverse_and_unbounded_inputs():
     from app.services.agent_query_window import parse_query_window
     for args in ({'start_date': '2031-04-01'},
@@ -100,6 +109,49 @@ def test_sleep_never_substitutes_old_night_and_preserves_unknown_stages(db, owne
     assert row['rem_sleep_duration'] is None
     assert row['sources']['total_sleep_duration'] == 'apple_health'
     assert 'sync_status_unknown' in result['limitations']
+
+
+def test_activity_returns_only_owned_target_day_metrics(db, owners):
+    from app.models.daily_health import GarminData
+    from app.services.agent_query_window import read_calendar_health_query
+    a, b = owners
+    db.add_all([
+        GarminData(user_id=a, record_date=date(2031, 4, 1), data_source='garmin', steps=999),
+        GarminData(user_id=a, record_date=date(2031, 4, 2), data_source='garmin',
+                   steps=4321, active_calories=321, active_minutes=54),
+        GarminData(user_id=b, record_date=date(2031, 4, 2), data_source='garmin', steps=8888),
+    ])
+    db.flush()
+    result = read_calendar_health_query(db, a, 'activity', window())
+    assert result['availability'] == 'available'
+    assert len(result['records']) == 1
+    assert result['records'][0]['record_date'] == '2031-04-02'
+    assert result['records'][0]['steps'] == 4321
+    assert result['records'][0]['active_calories'] == 321
+    assert result['records'][0]['active_minutes'] == 54
+
+
+def test_events_return_only_owned_target_local_day(db, owners):
+    from app.models.episode import HealthEpisode
+    from app.services.agent_query_window import read_calendar_health_query
+    a, b = owners
+    db.add_all([
+        HealthEpisode(user_id=a, episode_type='life_event', headline='目标行程',
+                      occurred_at=datetime(2031, 4, 1, 16, 30, tzinfo=timezone.utc)),
+        HealthEpisode(user_id=a, episode_type='life_event', headline='前一天',
+                      occurred_at=datetime(2031, 4, 1, 15, 59, tzinfo=timezone.utc)),
+        HealthEpisode(user_id=a, episode_type='life_event', headline='后一天',
+                      occurred_at=datetime(2031, 4, 2, 16, tzinfo=timezone.utc)),
+        HealthEpisode(user_id=b, episode_type='life_event', headline='他人行程',
+                      occurred_at=datetime(2031, 4, 2, 8, tzinfo=timezone.utc)),
+        HealthEpisode(user_id=a, episode_type='sleep', headline='非行程事件',
+                      occurred_at=datetime(2031, 4, 2, 8, tzinfo=timezone.utc)),
+    ])
+    db.flush()
+    result = read_calendar_health_query(db, a, 'events', window())
+    assert result['availability'] == 'available'
+    assert [row['title'] for row in result['records']] == ['目标行程']
+    assert result['records'][0]['record_date'] == '2031-04-02'
 
 
 def test_resolver_accepts_explicit_weekday_and_bounded_date_range():
