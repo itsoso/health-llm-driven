@@ -19,7 +19,6 @@ let choose: (decision: 'accept' | 'decline' | 'revoke' | 'keep') => void;
 const buttons = () => (showAIConsent as jest.Mock).mock.calls.at(-1)[1] === 'manage'
   ? [{ onPress: () => choose('keep') }, { onPress: () => choose('revoke') }]
   : [{ onPress: () => choose('decline') }, { onPress: () => choose('accept') }];
-const acceptFirst = async () => { const result = ensureAIConsent(); await flush(); buttons()[1].onPress(); return result; };
 
 beforeEach(() => {
   jest.clearAllMocks();
@@ -65,15 +64,23 @@ it('does not inherit an open consent dialog across account changes', async () =>
   expect(api.put).not.toHaveBeenCalled();
 });
 
-it('requires an explicit mobile decision even with a persisted server grant, then reuses it only in this session', async () => {
+it('reuses a persisted current-policy grant across app sessions without repeated disclosure', async () => {
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  expect(await acceptFirst()).toBe(true);
-  expect(showAIConsent).toHaveBeenCalledTimes(1);
-  await expect(ensureAIConsent()).resolves.toBe(true);
-  expect(showAIConsent).toHaveBeenCalledTimes(1);
+  const restored = ensureAIConsent(); await flush();
+  expect(showAIConsent).not.toHaveBeenCalled();
+  await expect(restored).resolves.toBe(true);
+  expect(api.put).not.toHaveBeenCalled();
+
+  invalidateAIConsent();
+  const restarted = ensureAIConsent(); await flush();
+  expect(showAIConsent).not.toHaveBeenCalled();
+  await expect(restarted).resolves.toBe(true);
+  expect(api.put).not.toHaveBeenCalled();
+
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, policy_version: 'new-policy' } });
   const pending = ensureAIConsent(); await flush(); buttons()[0].onPress();
   await expect(pending).resolves.toBe(false);
+  expect(showAIConsent).toHaveBeenCalledTimes(1);
 });
 
 it('revocation is persisted and blocks later sharing', async () => {
@@ -89,7 +96,7 @@ it('revocation is persisted and blocks later sharing', async () => {
 
 it('keeps sharing blocked while revocation is waiting for the server', async () => {
   (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  await acceptFirst();
+  await expect(ensureAIConsent()).resolves.toBe(true);
   expect(hasAIConsent()).toBe(true);
   let finish: (value: unknown) => void = () => {};
   (api.put as jest.Mock).mockImplementation(() => new Promise(resolve => { finish = resolve; }));
@@ -108,7 +115,7 @@ it('coalesces concurrent first sends into one disclosure', async () => {
 
 it('clears prior authorization when policy fetch fails', async () => {
   (api.get as jest.Mock).mockResolvedValueOnce({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  await acceptFirst();
+  await expect(ensureAIConsent()).resolves.toBe(true);
   (api.get as jest.Mock).mockRejectedValueOnce(new Error('offline'));
   await expect(ensureAIConsent()).resolves.toBe(false);
   expect(hasAIConsent()).toBe(false);
@@ -118,9 +125,9 @@ it('clears prior authorization when policy fetch fails', async () => {
 it('retries one transient policy read without granting or sending content early', async () => {
   (api.get as jest.Mock).mockRejectedValueOnce({ code: 'ERR_NETWORK' });
   (api.get as jest.Mock).mockResolvedValueOnce({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  expect(await acceptFirst()).toBe(true);
+  await expect(ensureAIConsent()).resolves.toBe(true);
   expect(api.get).toHaveBeenCalledTimes(2);
-  expect(api.put).toHaveBeenCalledTimes(1);
+  expect(api.put).not.toHaveBeenCalled();
   expect(Alert.alert).not.toHaveBeenCalled();
 });
 
@@ -146,14 +153,14 @@ it('does not show a stale policy failure after an account switch', async () => {
   expect(Alert.alert).not.toHaveBeenCalled();
 });
 
-it('does not reuse an old server grant after the local user declines', async () => {
-  (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: '2026-09-06T00:00:00Z' } });
-  const first = ensureAIConsent(); await flush(); buttons()[0].onPress();
-  await expect(first).resolves.toBe(false);
+it('does not reuse an incomplete server grant without a persisted acceptance time', async () => {
+  (api.get as jest.Mock).mockResolvedValue({ data: { ...policy, accepted: true, accepted_at: null } });
+  const request = ensureAIConsent(); await flush();
+  expect(showAIConsent).toHaveBeenCalledWith(expect.objectContaining({ accepted_at: null }), 'request');
+  buttons()[0].onPress();
+  await expect(request).resolves.toBe(false);
   expect(hasAIConsent()).toBe(false);
-  const second = ensureAIConsent(); await flush();
-  expect(showAIConsent).toHaveBeenCalledTimes(2);
-  buttons()[0].onPress(); await expect(second).resolves.toBe(false);
+  expect(api.put).not.toHaveBeenCalled();
 });
 
 it('shares a pending grant with settings instead of opening a contradictory second decision', async () => {

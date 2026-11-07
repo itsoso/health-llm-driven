@@ -22,7 +22,6 @@ export interface AIConsentPolicy {
 let pending: { revision: number; promise: Promise<boolean> } | null = null;
 
 let revocationInFlight: number | null = null;
-let disclosed: { revision: number; policyVersion: string } | null = null;
 
 function validPolicy(value: AIConsentPolicy): boolean {
   return Boolean(value?.policy_version && typeof value.accepted === 'boolean'
@@ -82,7 +81,6 @@ async function promptConsent(policy: AIConsentPolicy, revision: number): Promise
     const saved = validPolicy(data) && data.accepted === true && Boolean(data.accepted_at)
       && data.policy_version === policy.policy_version;
     if (!saved || !acceptAIConsentRevision(revision)) return false;
-    disclosed = { revision, policyVersion: policy.policy_version };
     return true;
   } catch {
     if (revision === aiConsentRevision()) Alert.alert('授权未保存', '暂未发送内容。请检查网络后重试。');
@@ -102,8 +100,7 @@ export async function ensureAIConsent(): Promise<boolean> {
     try {
       const policy = await loadCurrentPolicy(revision);
       if (revision !== aiConsentRevision()) return false;
-      if (policy.accepted && policy.accepted_at && disclosed?.revision === revision
-        && disclosed.policyVersion === policy.policy_version) return acceptAIConsentRevision(revision);
+      if (policy.accepted && policy.accepted_at) return acceptAIConsentRevision(revision);
       clearAIConsentAuthorization();
       return await promptConsent(policy, revision);
     } catch (error) {

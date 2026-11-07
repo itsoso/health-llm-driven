@@ -50,9 +50,9 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
 
 ## Remediation and acceptance
 
-- Show a scrollable standalone disclosure with fixed explicit choices. Require one
-  local decision per authenticated process/policy even if the server already has a
-  grant; retain server enforcement and account/revocation invalidation.
+- Show a scrollable standalone disclosure with fixed explicit choices before the
+  first grant for an account/current policy. Reuse only the server-persisted,
+  version-matched grant across app processes; retain account/revocation invalidation.
 - Gate realtime dictation before opening its socket; refusal preserves non-AI use.
 - Add a visible voice-screen disclosure entry; settings retains withdrawal.
 - Make Info.plist the HealthKit purpose string source and verify the full Expo plugin
@@ -208,3 +208,25 @@ Build 286 source: `e6f26f6230e429a29113e4322ff5d7be22764787`.
   inspecting the rebased commit against current main, rerunning 120/120 focused
   tests and reproducing both workflow reads plus all four pinned digests.
   Exact-revision CI remains required before merge or release-state rotation.
+
+## 2026-11-07 persisted-consent correction
+
+- User acceptance found that the process-local disclosure receipt caused the full
+  AI data-sharing screen to reappear after iOS reclaimed or restarted the app, even
+  though the authenticated account still had a current, server-persisted grant.
+- The intended rule is one explicit grant per account and policy version, not one
+  decision per process. The backend remains the durable authority: only a current
+  `accepted=true` record with `accepted_at` may restore authorization. Revocation,
+  account changes, missing acceptance time, policy changes and unreadable policy
+  state still fail closed and require a fresh decision or retry.
+- TDD reproduced the repeated disclosure before implementation. Focused Mobile
+  consent tests pass 16/16 after the minimal change; broader consent/chat/voice
+  coverage passes 174/174, the full Mobile suite passes 393 suites / 4213 tests /
+  1 skipped, and TypeScript, design-token and repository structure gates pass.
+- The change is pure Mobile TypeScript and stays within the existing runtime. It is
+  eligible for trusted iOS OTA only after independent safety GO, merge to current
+  `main`, exact-SHA CI, compatibility validation and publish/readback evidence.
+- The prior simulator evidence that forced disclosure despite a historical grant
+  belongs only to the superseded 2026-11-04 candidate. Final acceptance for this
+  correction must instead verify silent restoration of a current grant and the
+  truthful revoke-then-disclose path documented for App Review.
