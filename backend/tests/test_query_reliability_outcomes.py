@@ -356,20 +356,25 @@ async def test_summary_advice_cannot_publish_contradictory_total(db,auth_user_an
 
 
 @pytest.mark.asyncio
-async def test_daily_facts_do_not_turn_provider_error_into_success(db, auth_user_and_headers, monkeypatch):
+async def test_pure_daily_summary_does_not_request_a_second_provider_answer(
+    db, auth_user_and_headers, monkeypatch,
+):
     user, _ = auth_user_and_headers
     def dispatch(request):
         return _calendar_payload(request, records=[], availability="no_data")
     _, done, persisted, public, _ = await _run_scripted(
         db, user, monkeypatch, query="给我今天总结", first_tool="health_analysis",
         first_args={"analysis_type": "orchestrator"}, dispatch=dispatch,
-        reply="本轮生成失败，请重试。", turn_id="summary-generation-error",
+        reply="不应请求的第二轮模型回答。", turn_id="summary-without-second-model",
         answer_finish_reason="error",
     )
-    assert done["generation_status"] == "error"
-    assert done["completion_status"] == "error"
-    assert done["turn_outcome"]["status"] != "complete"
-    assert "本轮生成失败" in public and "本轮生成失败" in persisted.content
+    assert done["perf"]["model_call_count"] == 1
+    assert done["generation_status"] == "complete"
+    assert done["completion_status"] == "complete"
+    assert done["turn_outcome"]["status"] == "complete"
+    assert "没有可用记录" in public and "没有可用记录" in persisted.content
+    assert "不应请求的第二轮模型回答" not in public
+    assert "不应请求的第二轮模型回答" not in persisted.content
 
 
 @pytest.mark.asyncio
