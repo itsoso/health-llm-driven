@@ -33,8 +33,9 @@ describe('goals → API interceptor → consent → transport', () => {
       return { config, status: 200, statusText: 'OK', headers: {}, data: config.url === '/auth/ai-consent' ? policy : [] };
     };
     await expect(generateGoalsFromAnalysis()).resolves.toEqual([]);
-    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
+    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
     expect(hasAIConsent()).toBe(true);
+    expect(showAIConsent).not.toHaveBeenCalled();
     expect(Alert.alert).not.toHaveBeenCalled();
   });
 
@@ -73,7 +74,7 @@ describe('goals → API interceptor → consent → transport', () => {
         { config, status: 403, statusText: 'Forbidden', headers: {}, data: { detail: { code: 'ai_consent_required' } } });
     };
     await expect(generateGoalsFromAnalysis()).rejects.toMatchObject({ response: { status: 403 } });
-    expect(requests).toEqual(['/auth/ai-consent', '/auth/ai-consent', '/goals/me/generate-from-analysis']);
+    expect(requests).toEqual(['/auth/ai-consent', '/goals/me/generate-from-analysis']);
     expect(hasAIConsent()).toBe(false);
   });
 });

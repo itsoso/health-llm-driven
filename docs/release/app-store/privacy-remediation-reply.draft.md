@@ -16,13 +16,14 @@ privacy findings in version 1.3.6, replacement build [VERIFIED STORE BUILD].
 
 **Third-party AI disclosure and permission (5.1.1(i), 5.1.2(i))**
 
-The app now presents a dedicated, scrollable AI Data Sharing screen before the
-first AI action in the current authenticated app session, even if the account
-already has a previously saved permission. It identifies the actual recipients,
-the data categories to be transmitted and their purposes, and provides separate
-“Not now” and “Agree and continue” choices. Permission must be successfully saved
-before transmission. Login, HealthKit access and microphone permission do not
-constitute AI sharing consent.
+The app presents a dedicated, scrollable AI Data Sharing screen before the first
+AI action when the authenticated account has not accepted the current policy. It
+identifies the actual recipients, the data categories to be transmitted and their
+purposes, and provides separate “Not now” and “Agree and continue” choices. The
+current policy grant must be successfully saved before transmission; the same
+account may reuse that version-matched grant until it is withdrawn or the policy
+changes. Login, HealthKit access and microphone permission do not constitute AI
+sharing consent.
 
 We also added the missing client disclosure gate to realtime voice dictation.
 Withdrawing permission cancels active realtime recording/transmission and blocks
@@ -30,11 +31,13 @@ subsequent audio frames. Declining preserves the existing composer draft and
 non-AI functionality. The voice conversation screen has a visible link to review
 AI recipients and sharing permission.
 
-Please sign in with the review account, open the voice conversation from the
-more menu and tap the microphone, or use realtime dictation in the message
-composer. The AI Data Sharing screen appears before audio transmission. Choose
-“暂不使用” to decline, or “同意并继续” to agree. You can review or withdraw permission
-under Personal Center → Settings → AI Data Sharing (“AI 数据共享”).
+Please sign in with the review account and open Personal Center → Settings →
+AI Data Sharing (“AI 数据共享”) to review the current recipients, data categories,
+purposes and saved permission. To exercise the first-use gate when that account
+already has a current grant, withdraw permission on that screen, then open voice
+conversation from the more menu and tap the microphone, or use realtime dictation
+in the message composer. The AI Data Sharing screen then appears before audio
+transmission. Choose “暂不使用” to decline, or “同意并继续” to agree.
 
 The in-app and public privacy policies explain collection methods, AI recipients,
 processing purposes, the providers' published security and privacy measures, and
